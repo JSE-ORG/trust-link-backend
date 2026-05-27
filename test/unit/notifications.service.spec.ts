@@ -17,12 +17,14 @@ describe('NotificationsService (issue #18)', () => {
   const escrow: EscrowRecord = {
     id: 'escrow-1',
     itemName: 'Vintage jacket',
+    itemRef: 'jacket-001',
     amount: 80,
     currency: 'USDC',
     buyerAddress: 'buyer-address',
     vendorAddress: 'vendor-address',
     state: 'FUNDED',
     trackingId: null,
+    shippedAt: null,
     deliveredAt: null,
     deliveryRecordedAt: null,
     autoReleaseSubmittedAt: null,
@@ -87,6 +89,26 @@ describe('NotificationsService (issue #18)', () => {
       expect.arrayContaining([
         expect.objectContaining({ channel: 'EMAIL', type: 'FUNDED' }),
         expect.objectContaining({ channel: 'SMS', type: 'FUNDED' }),
+      ]),
+    );
+  });
+
+  it('supports all escrow notification event types and stores records', async () => {
+    await service.notifyFunded(escrow);
+    await service.notifyShipped(escrow);
+    await service.notifyDelivered(escrow);
+    await service.notifyDisputed(escrow);
+    await service.notifyCompleted(escrow);
+    await service.notifyRefunded(escrow);
+
+    const records = await prisma.notification.findMany();
+    expect(records).toHaveLength(12);
+    expect(records).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: 'DELIVERED' }),
+        expect.objectContaining({ type: 'DISPUTED' }),
+        expect.objectContaining({ type: 'COMPLETED' }),
+        expect.objectContaining({ type: 'REFUNDED' }),
       ]),
     );
   });

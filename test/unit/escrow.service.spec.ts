@@ -18,12 +18,14 @@ describe('EscrowService.handleShipment (issue #16)', () => {
   const fundedEscrow: EscrowRecord = {
     id: 'escrow-1',
     itemName: 'Leather bag',
+    itemRef: 'bag-123',
     amount: 125,
     currency: 'USDC',
     buyerAddress: 'buyer-address',
     vendorAddress: 'vendor-address',
     state: 'FUNDED',
     trackingId: null,
+    shippedAt: null,
     deliveredAt: null,
     deliveryRecordedAt: null,
     autoReleaseSubmittedAt: null,
@@ -37,6 +39,7 @@ describe('EscrowService.handleShipment (issue #16)', () => {
     repository = {
       create: jest.fn(),
       findById: jest.fn(),
+      findByVendorAndItem: jest.fn(),
       markShipped: jest.fn(),
     } as unknown as jest.Mocked<EscrowRepository>;
     notifications = {
@@ -105,5 +108,65 @@ describe('EscrowService.handleShipment (issue #16)', () => {
     await expect(
       service.handleShipment('missing', 'vendor-address', 'TRK-123'),
     ).rejects.toThrow(NotFoundException);
+  });
+
+  it('creates a new escrow and returns a payment URL', async () => {
+    const createDto = {
+      itemName: 'Leather bag',
+      itemRef: 'bag-123',
+      amount: 125,
+      currency: 'USDC',
+      buyerAddress: 'buyer-address',
+    };
+    const createdEscrow = {
+      ...fundedEscrow,
+      id: 'escrow-2',
+    };
+    repository.findByVendorAndItem.mockResolvedValue(null);
+    repository.create.mockResolvedValue(createdEscrow);
+    notifications.notifyFunded.mockResolvedValue();
+
+    await expect(
+      service.createEscrow(createDto as any, 'vendor-address'),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        id: 'escrow-2',
+        paymentUrl: 'https://trust-link.local/pay/escrow-2',
+      }),
+    );
+    expect(repository.create).toHaveBeenCalledWith(createDto, 'vendor-address');
+    expect(notifications.notifyFunded).toHaveBeenCalledWith(createdEscrow);
+  });
+
+  it('throws ConflictException for duplicate escrow references', async () => {
+    const createDto = {
+      itemName: 'Leather bag',
+      itemRef: 'bag-123',
+      amount: 125,
+      currency: 'USDC',
+      buyerAddress: 'buyer-address',
+    };
+    repository.findByVendorAndItem.mockResolvedValue(fundedEscrow);
+
+    await expect(
+      service.createEscrow(createDto as any, 'vendor-address'),
+    ).rejects.toThrow(ConflictException);
+    expect(repository.create).not.toHaveBeenCalled();
+  });
+
+  it('throws BadRequestException for invalid amount', async () => {
+    const createDto = {
+      itemName: 'Leather bag',
+      itemRef: 'bag-123',
+      amount: 0,
+      currency: 'USDC',
+      buyerAddress: 'buyer-address',
+    };
+    repository.findByVendorAndItem.mockResolvedValue(null);
+
+    await expect(
+      service.createEscrow(createDto as any, 'vendor-address'),
+    ).rejects.toThrow(BadRequestException);
+    expect(repository.create).not.toHaveBeenCalled();
   });
 });

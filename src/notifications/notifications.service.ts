@@ -1,5 +1,9 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
-import { EscrowRecord, PrismaService } from '../prisma/prisma.service';
+import {
+  EscrowRecord,
+  NotificationType,
+  PrismaService,
+} from '../prisma/prisma.service';
 import { SENDGRID_CLIENT, TWILIO_CLIENT } from './notifications.tokens';
 
 interface SendGridClient {
@@ -41,8 +45,24 @@ export class NotificationsService {
     return this.dispatch('SHIPPED', escrow, escrow.buyerAddress);
   }
 
+  notifyDelivered(escrow: EscrowRecord): Promise<void> {
+    return this.dispatch('DELIVERED', escrow, escrow.buyerAddress);
+  }
+
+  notifyDisputed(escrow: EscrowRecord): Promise<void> {
+    return this.dispatch('DISPUTED', escrow, escrow.vendorAddress);
+  }
+
+  notifyCompleted(escrow: EscrowRecord): Promise<void> {
+    return this.dispatch('COMPLETED', escrow, escrow.buyerAddress);
+  }
+
+  notifyRefunded(escrow: EscrowRecord): Promise<void> {
+    return this.dispatch('REFUNDED', escrow, escrow.buyerAddress);
+  }
+
   private async dispatch(
-    type: 'FUNDED' | 'SHIPPED',
+    type: NotificationType,
     escrow: EscrowRecord,
     recipientAddress: string,
   ): Promise<void> {

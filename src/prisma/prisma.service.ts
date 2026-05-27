@@ -6,20 +6,29 @@ export type EscrowState =
   | 'DELIVERED'
   | 'COMPLETED'
   | 'RELEASED'
-  | 'DISPUTED';
+  | 'DISPUTED'
+  | 'REFUNDED';
 export type NotificationChannel = 'EMAIL' | 'SMS';
-export type NotificationType = 'FUNDED' | 'SHIPPED';
+export type NotificationType =
+  | 'FUNDED'
+  | 'SHIPPED'
+  | 'DELIVERED'
+  | 'DISPUTED'
+  | 'COMPLETED'
+  | 'REFUNDED';
 export type DisputeState = 'OPEN' | 'UNDER_REVIEW' | 'RESOLVED';
 
 export interface EscrowRecord {
   id: string;
   itemName: string;
+  itemRef: string;
   amount: number;
   currency: string;
   buyerAddress: string;
   vendorAddress: string;
   state: EscrowState;
   trackingId: string | null;
+  shippedAt: Date | null;
   deliveredAt: Date | null;
   deliveryRecordedAt: Date | null;
   autoReleaseSubmittedAt: Date | null;
@@ -54,6 +63,7 @@ type EscrowCreateInput = Omit<
   | 'id'
   | 'state'
   | 'trackingId'
+  | 'shippedAt'
   | 'deliveredAt'
   | 'deliveryRecordedAt'
   | 'autoReleaseSubmittedAt'
@@ -64,6 +74,7 @@ type EscrowCreateInput = Omit<
 > & {
   state?: EscrowState;
   trackingId?: string | null;
+  shippedAt?: Date | null;
   deliveredAt?: Date | null;
   deliveryRecordedAt?: Date | null;
   autoReleaseSubmittedAt?: Date | null;
@@ -84,6 +95,7 @@ type EscrowUpdateInput = Partial<
     EscrowRecord,
     | 'state'
     | 'trackingId'
+    | 'shippedAt'
     | 'deliveredAt'
     | 'deliveryRecordedAt'
     | 'autoReleaseSubmittedAt'
@@ -113,6 +125,7 @@ export class PrismaService implements OnModuleDestroy {
         id: String(this.escrowId++),
         state: data.state ?? 'FUNDED',
         trackingId: data.trackingId ?? null,
+        shippedAt: data.shippedAt ?? null,
         deliveredAt: data.deliveredAt ?? null,
         deliveryRecordedAt: data.deliveryRecordedAt ?? null,
         autoReleaseSubmittedAt: data.autoReleaseSubmittedAt ?? null,
@@ -143,8 +156,9 @@ export class PrismaService implements OnModuleDestroy {
           | 'vendorAddress'
           | 'buyerAddress'
           | 'disputeId'
+          | 'itemRef'
         >
-      >;
+      > & { shippedAt?: { lte: Date } };
     } = {}): Promise<EscrowRecord[]> => {
       const escrows = [...this.escrows.values()].filter((escrow) => {
         if (!where) {
@@ -154,6 +168,11 @@ export class PrismaService implements OnModuleDestroy {
         return Object.entries(where).every(([key, value]) => {
           if (value === undefined) {
             return true;
+          }
+
+          if (key === 'shippedAt' && typeof value === 'object' && 'lte' in value) {
+            const lte = (value as any).lte as Date;
+            return escrow.shippedAt !== null && escrow.shippedAt <= lte;
           }
 
           return escrow[key as keyof EscrowRecord] === value;

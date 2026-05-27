@@ -18,6 +18,27 @@ export class ContractService {
     private readonly server?: StellarServer,
   ) {}
 
+  async resolveDispute(
+    escrowId: string,
+    resolution: 'RELEASE' | 'REFUND',
+  ): Promise<string> {
+    if (!this.server) {
+      throw new ContractCallFailedException('Stellar server is not configured');
+    }
+    const result = await this.server.submitTransaction({
+      operation: 'resolveDispute',
+      escrowId,
+      resolution,
+    });
+    if (result.status === 'ERROR' || result.resultXdr === 'TxFailed') {
+      throw new ContractCallFailedException();
+    }
+    if (!result.hash) {
+      throw new ContractCallFailedException('Missing transaction hash');
+    }
+    return result.hash;
+  }
+
   async submitAutoRelease(escrowId: string, maxRetries = 2): Promise<string> {
     if (!this.server) {
       throw new ContractCallFailedException('Stellar server is not configured');
