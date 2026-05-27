@@ -58,6 +58,14 @@ export interface NotificationRecord {
   createdAt: Date;
 }
 
+export interface EscrowEventRecord {
+  id: string;
+  escrowId: string;
+  fromState: EscrowState | null;
+  toState: EscrowState;
+  createdAt: Date;
+}
+
 type EscrowCreateInput = Omit<
   EscrowRecord,
   | 'id'
@@ -113,9 +121,30 @@ export class PrismaService implements OnModuleDestroy {
   private escrows = new Map<string, EscrowRecord>();
   private disputes = new Map<string, DisputeRecord>();
   private notifications = new Map<string, NotificationRecord>();
+  private escrowEvents = new Map<string, EscrowEventRecord>();
   private escrowId = 1;
   private disputeId = 1;
   private notificationId = 1;
+  private escrowEventId = 1;
+
+  // Single chokepoint for transition logging (#71/#72): every escrow state
+  // change funnels through here so the EscrowEvent audit log is complete. With
+  // a real Prisma client this is the equivalent of a query extension / DB
+  // trigger; here it lives alongside the in-memory escrow mutations.
+  private recordEscrowEvent(
+    escrowId: string,
+    fromState: EscrowState | null,
+    toState: EscrowState,
+  ): void {
+    const event: EscrowEventRecord = {
+      id: String(this.escrowEventId++),
+      escrowId,
+      fromState,
+      toState,
+      createdAt: new Date(),
+    };
+    this.escrowEvents.set(event.id, event);
+  }
 
   escrow = {
     create: ({ data }: { data: EscrowCreateInput }): Promise<EscrowRecord> => {
@@ -135,6 +164,7 @@ export class PrismaService implements OnModuleDestroy {
         updatedAt: now,
       };
       this.escrows.set(escrow.id, escrow);
+      this.recordEscrowEvent(escrow.id, null, escrow.state);
       return Promise.resolve({ ...escrow });
     },
     findUnique: ({
@@ -198,6 +228,9 @@ export class PrismaService implements OnModuleDestroy {
       }
       const updated = { ...existing, ...data, updatedAt: new Date() };
       this.escrows.set(where.id, updated);
+      if (data.state !== undefined && data.state !== existing.state) {
+        this.recordEscrowEvent(where.id, existing.state, data.state);
+      }
       return Promise.resolve({ ...updated });
     },
     deleteMany: (): Promise<{ count: number }> => {
@@ -233,6 +266,9 @@ export class PrismaService implements OnModuleDestroy {
           disputeId: dispute.id,
           updatedAt: now,
         });
+        if (escrow.state !== 'DISPUTED') {
+          this.recordEscrowEvent(dispute.escrowId, escrow.state, 'DISPUTED');
+        }
       }
 
       return Promise.resolve({ ...dispute });
@@ -316,13 +352,49 @@ export class PrismaService implements OnModuleDestroy {
     },
   };
 
+  escrowEvent = {
+    create: ({
+      data,
+    }: {
+      data: Omit<EscrowEventRecord, 'id' | 'createdAt'> & {
+        fromState?: EscrowState | null;
+      };
+    }): Promise<EscrowEventRecord> => {
+      const event: EscrowEventRecord = {
+        ...data,
+        id: String(this.escrowEventId++),
+        fromState: data.fromState ?? null,
+        createdAt: new Date(),
+      };
+      this.escrowEvents.set(event.id, event);
+      return Promise.resolve({ ...event });
+    },
+    findMany: ({
+      where,
+    }: {
+      where?: Partial<Pick<EscrowEventRecord, 'escrowId'>>;
+    } = {}): Promise<EscrowEventRecord[]> => {
+      const events = [...this.escrowEvents.values()]
+        .filter((event) => !where?.escrowId || event.escrowId === where.escrowId)
+        .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+      return Promise.resolve(events.map((event) => ({ ...event })));
+    },
+    deleteMany: (): Promise<{ count: number }> => {
+      const count = this.escrowEvents.size;
+      this.escrowEvents.clear();
+      return Promise.resolve({ count });
+    },
+  };
+
   async reset(): Promise<void> {
     await this.notification.deleteMany();
+    await this.escrowEvent.deleteMany();
     await this.dispute.deleteMany();
     await this.escrow.deleteMany();
     this.escrowId = 1;
     this.disputeId = 1;
     this.notificationId = 1;
+    this.escrowEventId = 1;
   }
 
   async onModuleDestroy(): Promise<void> {

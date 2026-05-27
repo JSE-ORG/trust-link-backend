@@ -26,6 +26,23 @@ model Escrow {
 
   notifications Notification[]
   disputes      Dispute[]
+  events        EscrowEvent[]
+}
+
+/// Append-only audit log of escrow state transitions (issues #71/#72).
+/// One row is written for the initial FUNDED creation and for every subsequent
+/// state change, capturing the previous and new state so the full lifecycle is
+/// reconstructable.
+model EscrowEvent {
+  id        String   @id @default(cuid())
+  escrowId  String
+  fromState String?
+  toState   String
+  createdAt DateTime @default(now())
+
+  escrow Escrow @relation(fields: [escrowId], references: [id], onDelete: Cascade)
+
+  @@index([escrowId])
 }
 
 model Notification {
