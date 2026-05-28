@@ -15,6 +15,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { StellarModule } from './stellar/stellar.module';
 import { VendorModule } from './vendor/vendor.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
+import { StressTestModule } from './stress-test/stress-test.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { WebhooksModule } from './webhooks/webhooks.module';
 
     // Webhook receivers
     WebhooksModule, // issue #76 – POST /webhooks/stellar
+    StressTestModule,
   ],
   controllers: [AppController],
   providers: [

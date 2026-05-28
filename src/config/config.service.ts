@@ -14,6 +14,7 @@ export interface Config {
   ALLOWED_ORIGINS?: string;
   STELLAR_WEBHOOK_SECRET?: string;
   LOG_LEVEL?: string;
+  API_BASE_URL?: string;
 }
 
 @Injectable()
@@ -52,6 +53,7 @@ export class ConfigService {
         { infer: true },
       ),
       LOG_LEVEL: this.nestConfigService.get('LOG_LEVEL', { infer: true }),
+      API_BASE_URL: this.nestConfigService.get('API_BASE_URL', { infer: true }),
     };
   }
 

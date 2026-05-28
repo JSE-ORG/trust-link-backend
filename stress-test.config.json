@@ -1,0 +1,33 @@
+{
+  "testName": "API Load Test",
+  "profiles": [
+    {
+      "concurrentUsers": 10,
+      "requestsPerSecond": 50,
+      "duration": 30,
+      "endpoint": "/api/health",
+      "method": "GET"
+    },
+    {
+      "concurrentUsers": 50,
+      "requestsPerSecond": 200,
+      "duration": 60,
+      "endpoint": "/api/escrow",
+      "method": "GET"
+    },
+    {
+      "concurrentUsers": 100,
+      "requestsPerSecond": 500,
+      "duration": 120,
+      "endpoint": "/api/vendor",
+      "method": "GET"
+    }
+  ],
+  "thresholds": {
+    "maxResponseTime": 1000,
+    "maxErrorRate": 5,
+    "minThroughput": 100
+  },
+  "enableAlerts": true,
+  "rampUpTime": 5
+}

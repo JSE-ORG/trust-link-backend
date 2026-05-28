@@ -27,6 +27,7 @@ model Escrow {
 
   notifications Notification[]
   disputes      Dispute[]
+  vendor        VendorProfile @relation("VendorEscrows", fields: [vendorAddress], references: [address])
 }
 
 model Notification {
@@ -54,11 +55,79 @@ model Dispute {
 }
 
 model VendorProfile {
-  address      String   @id
-  businessName String
-  email        String?
-  phone        String?
-  description  String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  address             String              @id
+  businessName        String
+  email               String?
+  phone               String?
+  description         String?
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+
+  accountDetails      VendorAccountDetails?
+  trackingSettings    VendorTrackingSettings?
+  escrows             Escrow[]            @relation("VendorEscrows")
+}
+
+model VendorAccountDetails {
+  id                  String              @id @default(cuid())
+  vendorAddress       String              @unique
+  businessLicense     String?
+  taxId               String?
+  bankAccountNumber   String?
+  bankRoutingNumber   String?
+  paymentMethods      String[]            @default([])
+  preferredCurrency   String              @default("USD")
+  billingAddress      String?
+  billingCity         String?
+  billingState        String?
+  billingCountry      String?
+  billingPostalCode   String?
+  shippingAddress     String?
+  shippingCity        String?
+  shippingState       String?
+  shippingCountry     String?
+  shippingPostalCode  String?
+  websiteUrl          String?
+  socialMediaLinks    String[]            @default([])
+  businessHours       String?
+  timezone            String              @default("UTC")
+  language            String              @default("en")
+  verificationStatus  String              @default("PENDING")
+  verifiedAt          DateTime?
+  kycStatus           String              @default("NOT_STARTED")
+  kycCompletedAt      DateTime?
+  riskScore           Int                 @default(0)
+  complianceNotes     String?
+  customFields        Json?
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+
+  vendor              VendorProfile       @relation(fields: [vendorAddress], references: [address], onDelete: Cascade)
+}
+
+model VendorTrackingSettings {
+  id                      String              @id @default(cuid())
+  vendorAddress           String              @unique
+  enableTracking          Boolean             @default(true)
+  trackingProvider       String?
+  trackingApiKey          String?
+  autoUpdateTracking     Boolean             @default(false)
+  trackingUpdateInterval Int                 @default(3600)
+  notifyOnDelivery       Boolean             @default(true)
+  notifyOnDelay          Boolean             @default(true)
+  notifyOnException      Boolean             @default(true)
+  delayThresholdHours    Int                 @default(24)
+  deliveryConfirmation   Boolean             @default(true)
+  requireSignature      Boolean             @default(false)
+  insuranceRequired      Boolean             @default(false)
+  insuranceValue        Float?
+  customTrackingRules    Json?
+  webhookUrl             String?
+  webhookSecret          String?
+  notificationChannels   String[]            @default(["EMAIL"])
+  trackingHistoryRetentionDays Int          @default(90)
+  createdAt              DateTime            @default(now())
+  updatedAt              DateTime            @updatedAt
+
+  vendor                  VendorProfile      @relation(fields: [vendorAddress], references: [address], onDelete: Cascade)
 }

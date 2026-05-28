@@ -2,6 +2,8 @@
   <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
 </p>
 
+[![Lint](https://github.com/JSE-ORG/trust-link-backend/actions/workflows/lint.yml/badge.svg)](https://github.com/JSE-ORG/trust-link-backend/actions/workflows/lint.yml)
+
 [circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
 [circleci-url]: https://circleci.com/gh/nestjs/nest
 
