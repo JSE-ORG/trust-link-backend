@@ -15,6 +15,7 @@ import { EscrowRecord } from '../../src/prisma/prisma.service';
 import { ContractService } from '../../src/stellar/contract.service';
 import { DisputeController } from '../../src/admin/dispute/dispute.controller';
 import { JwtGuard } from '../../src/auth/guards/jwt.guard';
+import { ConfigService } from '../../src/config/config.service';
 
 // ── shared fixture ────────────────────────────────────────────────────────
 
@@ -29,6 +30,12 @@ const shippedEscrow: EscrowRecord = {
   state: 'SHIPPED',
   trackingId: 'TRK-XYZ',
   shippedAt: new Date('2026-01-01T00:00:00.000Z'),
+  deliveredAt: null,
+  deliveryRecordedAt: null,
+  autoReleaseSubmittedAt: null,
+  autoReleaseTxHash: null,
+  disputeId: null,
+  cancelledAt: null,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
   updatedAt: new Date('2026-01-01T00:00:00.000Z'),
 };
@@ -133,6 +140,11 @@ describe('POST /admin/dispute/:id/resolve (admin guard)', () => {
   let app: INestApplication;
   let disputeService: jest.Mocked<DisputeService>;
 
+  // Mock ConfigService so AdminGuard can resolve ADMIN_ADDRESS
+  const mockConfigService = {
+    get: jest.fn().mockReturnValue('admin-address'),
+  };
+
   beforeEach(async () => {
     disputeService = {
       resolve: jest.fn().mockResolvedValue({
@@ -145,6 +157,7 @@ describe('POST /admin/dispute/:id/resolve (admin guard)', () => {
       controllers: [DisputeController],
       providers: [
         { provide: DisputeService, useValue: disputeService },
+        { provide: ConfigService, useValue: mockConfigService },
         JwtGuard,
         AdminGuard,
       ],
