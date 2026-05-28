@@ -1,97 +1,109 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, EscrowState, DisputeStatus } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
 async function main() {
-  // Create vendor profile
-  const vendorProfile = await prisma.vendorProfile.upsert({
-    where: { address: '0xVendorAddress456' },
-    update: {},
-    create: {
-      address: '0xVendorAddress456',
-      businessName: 'Tech Solutions Inc',
-      email: 'contact@techsolutions.com',
-      phone: '+1-555-0123',
-      description: 'Leading technology solutions provider',
-    },
-  });
+  // Check if seeding is already done (idempotency gate)
+  const count = await prisma.escrow.count();
+  if (count > 0) {
+    console.log('Database already seeded. Skipping...');
+    return;
+  }
 
-  // Create vendor account details
-  const accountDetails = await prisma.vendorAccountDetails.upsert({
-    where: { vendorAddress: '0xVendorAddress456' },
-    update: {},
-    create: {
-      vendorAddress: '0xVendorAddress456',
-      businessLicense: 'BL-2024-12345',
-      taxId: 'TAX-987654321',
-      bankAccountNumber: '****1234',
-      bankRoutingNumber: '****5678',
-      paymentMethods: ['BANK_TRANSFER', 'CRYPTO'],
-      preferredCurrency: 'USD',
-      billingAddress: '123 Business Ave',
-      billingCity: 'San Francisco',
-      billingState: 'CA',
-      billingCountry: 'USA',
-      billingPostalCode: '94105',
-      shippingAddress: '123 Business Ave',
-      shippingCity: 'San Francisco',
-      shippingState: 'CA',
-      shippingCountry: 'USA',
-      shippingPostalCode: '94105',
-      websiteUrl: 'https://techsolutions.com',
-      socialMediaLinks: ['https://twitter.com/techsolutions', 'https://linkedin.com/company/techsolutions'],
-      businessHours: 'Mon-Fri 9:00-17:00 UTC',
-      timezone: 'America/Los_Angeles',
-      language: 'en',
-      verificationStatus: 'VERIFIED',
-      verifiedAt: new Date(),
-      kycStatus: 'COMPLETED',
-      kycCompletedAt: new Date(),
-      riskScore: 10,
-      complianceNotes: 'All compliance checks passed',
-    },
-  });
+  // 1. Generate 3 vendor addresses, 5 buyer addresses (deterministic Stellar-like public keys)
+  const vendors = [
+    'GD3W57WQA63W6V5P2K7G2RD4M4JYZ736H72Z5TQX6Z62S7H3L2B2J5V6',
+    'GBRPDO4JDHPUC253QA46TQX6S7D67V72Z5TQX6Z62S7H3L2B2J5V6VND',
+    'GC2Y4F5HJK56TQX6S7D67V72Z5TQX6Z62S7H3L2B2J5V6VND782L5N',
+  ];
 
-  // Create vendor tracking settings
-  const trackingSettings = await prisma.vendorTrackingSettings.upsert({
-    where: { vendorAddress: '0xVendorAddress456' },
-    update: {},
-    create: {
-      vendorAddress: '0xVendorAddress456',
-      enableTracking: true,
-      trackingProvider: 'FedEx',
-      trackingApiKey: 'fedex_api_key_12345',
-      autoUpdateTracking: true,
-      trackingUpdateInterval: 1800,
-      notifyOnDelivery: true,
-      notifyOnDelay: true,
-      notifyOnException: true,
-      delayThresholdHours: 24,
-      deliveryConfirmation: true,
-      requireSignature: false,
-      insuranceRequired: true,
-      insuranceValue: 5000,
-      notificationChannels: ['EMAIL', 'SMS'],
-      trackingHistoryRetentionDays: 180,
-    },
-  });
+  const buyers = [
+    'GDBW53QA46TQX6S7D67V72Z5TQX6Z62S7H3L2B2J5V6BUY18274L2P',
+    'GDC46TQX6S7D67V72Z5TQX6Z62S7H3L2B2J5V6BUY28274L2P981N',
+    'GDDQX6S7D67V72Z5TQX6Z62S7H3L2B2J5V6BUY38274L2P981N2893',
+    'GDE6S7D67V72Z5TQX6Z62S7H3L2B2J5V6BUY48274L2P981N289311',
+    'GDF7D67V72Z5TQX6Z62S7H3L2B2J5V6BUY58274L2P981N28931102',
+  ];
 
-  // Create escrow linked to vendor
-  await prisma.escrow.create({
+  // 2. Create exactly 15 escrows distributed evenly across 5 states (3 per state)
+  const states: EscrowState[] = [
+    EscrowState.CREATED,
+    EscrowState.FUNDED,
+    EscrowState.SHIPPED,
+    EscrowState.DELIVERED,
+    EscrowState.COMPLETED,
+  ];
+
+  const escrowIds: string[] = [];
+
+  for (let i = 0; i < 15; i++) {
+    const state = states[Math.floor(i / 3)];
+    const vendorAddress = vendors[i % vendors.length];
+    const buyerAddress = buyers[i % buyers.length];
+    const amount = (100.5 + i * 50).toFixed(4);
+
+    const escrow = await prisma.escrow.create({
+      data: {
+        itemName: `Item #${i + 1}`,
+        itemRef: `REF-DET-${1000 + i}`,
+        amount: amount,
+        currency: 'USD',
+        buyerAddress,
+        vendorAddress,
+        state,
+        trackingId: state === EscrowState.SHIPPED || state === EscrowState.DELIVERED || state === EscrowState.COMPLETED ? `TRK-${2000 + i}` : null,
+        shippedAt: state === EscrowState.SHIPPED || state === EscrowState.DELIVERED || state === EscrowState.COMPLETED ? new Date() : null,
+      },
+    });
+    escrowIds.push(escrow.id);
+  }
+
+  // 3. Create 3 disputes (2 OPEN, 1 RESOLVED) linked to valid escrow IDs
+  // We link them to some created escrows, for example escrows at index 0, 1, 2
+  const dispute1 = await prisma.dispute.create({
     data: {
-      itemName: 'Mock Item 1',
-      amount: 100,
-      currency: 'USDC',
-      buyerAddress: '0xBuyerAddress123',
-      vendorAddress: '0xVendorAddress456',
-      state: 'FUNDED',
+      escrowId: escrowIds[0],
+      status: DisputeStatus.OPEN,
+      reason: 'Item not received',
     },
   });
 
-  console.log('Seeding completed!');
-  console.log('Created vendor profile:', vendorProfile.businessName);
-  console.log('Created account details for vendor:', accountDetails.vendorAddress);
-  console.log('Created tracking settings for vendor:', trackingSettings.vendorAddress);
+  const dispute2 = await prisma.dispute.create({
+    data: {
+      escrowId: escrowIds[1],
+      status: DisputeStatus.OPEN,
+      reason: 'Damaged packaging',
+    },
+  });
+
+  const dispute3 = await prisma.dispute.create({
+    data: {
+      escrowId: escrowIds[2],
+      status: DisputeStatus.RESOLVED,
+      reason: 'Defective item, resolved by refund',
+    },
+  });
+
+  // Also update these escrows to DISPUTED state to keep consistency, though not strictly required, it matches business logic
+  await prisma.escrow.updateMany({
+    where: { id: { in: [escrowIds[0], escrowIds[1], escrowIds[2]] } },
+    data: { state: EscrowState.DISPUTED },
+  });
+
+  // 4. Create 10 notification records linked to escrows or disputes
+  for (let i = 0; i < 10; i++) {
+    await prisma.notification.create({
+      data: {
+        escrowId: escrowIds[i % escrowIds.length],
+        type: 'STATE_CHANGE',
+        channel: 'EMAIL',
+        recipientAddress: buyers[i % buyers.length],
+        message: `Notification for Escrow state change event #${i + 1}`,
+      },
+    });
+  }
+
+  console.log('Seeding completed successfully!');
 }
 
 main()
