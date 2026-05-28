@@ -26,6 +26,7 @@ import { VendorModule } from './vendor/vendor.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 import { StressTestModule } from './stress-test/stress-test.module';
 import { CacheService } from './common/cache.service';
+import { DlqModule } from './dlq/dlq.module';
 
 @Module({
   imports: [
@@ -55,6 +56,7 @@ import { CacheService } from './common/cache.service';
     // Webhook receivers
     WebhooksModule, // issue #76 – POST /webhooks/stellar
     StressTestModule,
+    DlqModule,
 
     ThrottlerModule.forRootAsync({
       imports: [ConfigModule],
