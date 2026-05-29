@@ -43,6 +43,20 @@ model Escrow {
   @@index([vendorAddress, state])
 }
 
+/// Append-only audit log of escrow state transitions (#108).
+/// One row per state change captures previous and new state for lifecycle reconstruction.
+model EscrowEvent {
+  id        String   @id @default(cuid())
+  escrowId  String
+  fromState String?
+  toState   String
+  createdAt DateTime @default(now())
+
+  escrow Escrow @relation(fields: [escrowId], references: [id], onDelete: Cascade)
+
+  @@index([escrowId])
+}
+
 model Dispute {
   id        String        @id @default(uuid())
   escrowId  String
