@@ -11,3 +11,9 @@ CREATE TABLE "EscrowEvent" (
 
     CONSTRAINT "EscrowEvent_pkey" PRIMARY KEY ("id")
 );
+
+-- CreateIndex
+CREATE INDEX "EscrowEvent_escrowId_idx" ON "EscrowEvent"("escrowId");
+
+-- AddForeignKey
+ALTER TABLE "EscrowEvent" ADD CONSTRAINT "EscrowEvent_escrowId_fkey" FOREIGN KEY ("escrowId") REFERENCES "Escrow"("id") ON DELETE CASCADE ON UPDATE CASCADE;
