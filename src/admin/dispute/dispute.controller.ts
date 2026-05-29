@@ -1,16 +1,39 @@
-import { Body, Controller, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
 import { JwtGuard } from '../../auth/guards/jwt.guard';
+import { CurrentUser } from '../../auth/decorators/current-user.decorator';
+import type { AuthUser } from '../../auth/auth-user';
 import { AdminGuard } from '../guards/admin.guard';
+import { AuditLogService } from '../../audit-log/audit-log.service';
 import { ResolveDisputeDto } from './dto/resolve-dispute.dto';
 import { DisputeService } from './dispute.service';
 
-@Controller('admin/dispute')
+@Controller('admin')
 @UseGuards(JwtGuard, AdminGuard)
 export class DisputeController {
-  constructor(private readonly disputeService: DisputeService) {}
+  constructor(
+    private readonly disputeService: DisputeService,
+    private readonly auditLogService: AuditLogService,
+  ) {}
 
-  @Post(':id/resolve')
-  resolve(@Param('id') id: string, @Body() dto: ResolveDisputeDto) {
-    return this.disputeService.resolve(id, dto.resolution);
+  @Post('dispute/:id/resolve')
+  async resolve(
+    @Param('id') id: string,
+    @Body() dto: ResolveDisputeDto,
+    @CurrentUser() admin: AuthUser,
+  ) {
+    const result = await this.disputeService.resolve(id, dto.resolution);
+    this.auditLogService.append({
+      action: 'DISPUTE_RESOLVED',
+      adminAddress: admin.address,
+      entityType: 'escrow',
+      entityId: id,
+      details: { resolution: dto.resolution },
+    });
+    return result;
+  }
+
+  @Get('audit-log')
+  getAuditLog() {
+    return this.auditLogService.findAll();
   }
 }

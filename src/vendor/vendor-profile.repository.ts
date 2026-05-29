@@ -7,6 +7,7 @@ import { UpdateVendorProfileDto } from './dto/update-vendor-profile.dto';
 export class VendorProfileRepository {
   constructor(private readonly prisma: PrismaService) {}
 
+  /** Creates a new vendor profile linked to the given Stellar address. */
   create(
     address: string,
     dto: CreateVendorProfileDto,
@@ -22,10 +23,12 @@ export class VendorProfileRepository {
     });
   }
 
+  /** Returns the vendor profile for the given Stellar address, or null if not registered. */
   findByAddress(address: string): Promise<VendorProfileRecord | null> {
     return this.prisma.vendorProfile.findUnique({ where: { address } });
   }
 
+  /** Updates mutable fields on the vendor profile identified by address. */
   update(
     address: string,
     dto: UpdateVendorProfileDto,

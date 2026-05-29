@@ -10,6 +10,7 @@ import {
 export class DisputeRepository {
   constructor(private readonly prisma: PrismaService) {}
 
+  /** Creates a new dispute record linked to the given escrow. */
   create(data: {
     escrowId: string;
     reason: string;
@@ -20,10 +21,12 @@ export class DisputeRepository {
     return this.prisma.dispute.create({ data });
   }
 
+  /** Returns a dispute by its primary key, or null if not found. */
   findById(id: string): Promise<DisputeRecord | null> {
     return this.prisma.dispute.findUnique({ where: { id } });
   }
 
+  /** Returns the first dispute linked to the given escrow, or null if none exists. */
   async findByEscrow(escrowId: string): Promise<DisputeRecord | null> {
     const disputes = await this.prisma.dispute.findMany({
       where: { escrowId },
@@ -31,6 +34,7 @@ export class DisputeRepository {
     return disputes[0] ?? null;
   }
 
+  /** Returns all disputes in OPEN or UNDER_REVIEW status. */
   findAllOpen(): Promise<DisputeRecord[]> {
     return this.prisma.dispute
       .findMany()
@@ -42,6 +46,10 @@ export class DisputeRepository {
       );
   }
 
+  /**
+   * Marks the dispute as RESOLVED, records the resolution timestamp,
+   * and transitions the linked escrow to the specified final state.
+   */
   async resolve(
     disputeId: string,
     escrowState: EscrowState = 'COMPLETED',

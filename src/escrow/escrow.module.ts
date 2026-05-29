@@ -10,12 +10,11 @@ import { VendorEscrowController } from './vendor-escrow.controller';
 import { EscrowRepository } from './escrow.repository';
 import { EscrowService } from './escrow.service';
 import { BuyerDisputeService } from './buyer-dispute.service';
-import { LogisticsService } from '../logistics/logistics.service';
 
 @Module({
   imports: [PrismaModule, NotificationsModule, DisputeModule],
   controllers: [EscrowController, VendorEscrowController],
-  providers: [EscrowService, EscrowRepository, BuyerDisputeService, S3PresignService, JwtGuard, LogisticsService, CacheService],
+  providers: [EscrowService, EscrowRepository, BuyerDisputeService, S3PresignService, JwtGuard, CacheService],
   exports: [EscrowService, EscrowRepository],
 })
 export class EscrowModule {}

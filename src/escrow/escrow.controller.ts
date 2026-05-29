@@ -40,6 +40,12 @@ export class EscrowController {
     return this.escrowService.findById(id);
   }
 
+  @Get(':id/events')
+  @RateLimit({ windowMs: 60000, max: 100 })
+  getEvents(@Param('id', ParseUUIDPipe) id: string) {
+    return this.escrowService.getEvents(id);
+  }
+
   @Get(':id/tracking')
   @RateLimit({ windowMs: 60000, max: 200 }) // 200 requests per minute
   async getTracking(@Param('id', ParseUUIDPipe) id: string) {
