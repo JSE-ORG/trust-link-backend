@@ -92,7 +92,6 @@ model VendorProfile {
 
   accountDetails      VendorAccountDetails?
   trackingSettings    VendorTrackingSettings?
-  escrows             Escrow[]            @relation("VendorEscrows")
 }
 
 model VendorAccountDetails {
