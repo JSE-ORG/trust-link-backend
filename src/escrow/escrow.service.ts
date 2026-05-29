@@ -96,6 +96,11 @@ export class EscrowService {
     }
   }
 
+  /** Returns chronological event history for an escrow; empty array if not found. */
+  async getEvents(id: string): Promise<Array<{ event: string; occurredAt: Date }>> {
+    return this.escrowRepository.findEvents(id);
+  }
+
   async getPublicEscrow(id: string): Promise<EscrowResponseDto> {
     const escrow = await this.findById(id);
     return this.toPublicEscrow(escrow);
