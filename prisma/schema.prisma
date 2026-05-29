@@ -37,6 +37,7 @@ model Escrow {
   updatedAt     DateTime       @updatedAt
   disputes      Dispute[]
   notifications Notification[]
+  events        EscrowEvent[]
 
   @@index([vendorAddress])
   @@index([buyerAddress])
