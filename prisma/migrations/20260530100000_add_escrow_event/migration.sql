@@ -1,0 +1,2 @@
+-- Issue #108: EscrowEvent table for append-only escrow state-transition auditing.
+-- Supports reconstructing the full escrow lifecycle from persisted from/to states.
