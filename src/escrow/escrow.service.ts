@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import { NotificationsService } from '../notifications/notifications.service';
 import { EscrowRecord } from '../prisma/prisma.service';
+import { PrismaService } from '../prisma/prisma.service';
 import { LogisticsService } from '../logistics/logistics.service';
 import { CacheService } from '../common/cache.service';
 import { EscrowResponseDto } from './dto/escrow-response.dto';
@@ -19,6 +20,31 @@ import { EscrowRepository } from './escrow.repository';
 export type EscrowWithPaymentUrl = EscrowRecord & {
   paymentUrl: string;
 };
+
+/** Parsed Soroban event forwarded from the blockchain listener. */
+export interface SorobanChainEvent {
+  /** Soroban event name: EscrowFunded | EscrowShipped | EscrowCompleted |
+   *  DisputeRaised | DisputeResolved | AutoReleased */
+  eventType: string;
+  /** Trust-Link escrow ID stored in the contract. */
+  escrowId: string;
+  /** For EscrowShipped — on-chain tracking reference. */
+  trackingId?: string;
+  /** For AutoReleased — on-chain transaction hash. */
+  txHash?: string;
+  /** For DisputeRaised — reason/description surfaced from contract data. */
+  reason?: string;
+}
+
+/** States that represent a terminal escrow lifecycle — no further transitions. */
+const TERMINAL_STATES = new Set<string>([
+  'COMPLETED',
+  'RELEASED',
+  'REFUNDED',
+  'CANCELLED',
+]);
+
+export type SyncResult = { skipped: boolean; reason?: string } | { skipped: false };
 
 @Injectable()
 export class EscrowService {
@@ -31,6 +57,8 @@ export class EscrowService {
     private readonly logisticsService?: LogisticsService,
     @Optional()
     private readonly cacheService?: CacheService,
+    @Optional()
+    private readonly prisma?: PrismaService,
   ) {}
 
   /** Returns cached or live shipment tracking status for an escrow. */
@@ -285,6 +313,147 @@ export class EscrowService {
         error,
       );
       throw error;
+    }
+  }
+
+  // ── Issue #40: on-chain event handler ─────────────────────────────────────
+
+  /**
+   * Receives a parsed Soroban event from the blockchain listener and syncs the
+   * corresponding escrow (and dispute) record in the database.
+   *
+   * Idempotent: calling this method twice with the same event payload is safe —
+   * a record that is already in the expected post-event state is silently
+   * skipped rather than updated again.
+   *
+   * Supported events
+   * ─────────────────
+   * EscrowFunded      → CREATED → FUNDED, notifyFunded
+   * EscrowShipped     → FUNDED  → SHIPPED (with trackingId), notifyShipped
+   * EscrowCompleted   → *       → COMPLETED, notifyCompleted
+   * DisputeRaised     → *       → DISPUTED, creates Dispute row, notifyDisputed
+   * DisputeResolved   → DISPUTED → COMPLETED, marks dispute RESOLVED, notifyCompleted
+   * AutoReleased      → *       → RELEASED (records txHash), notifyCompleted
+   */
+  async syncStateFromChain(event: SorobanChainEvent): Promise<SyncResult> {
+    const { eventType, escrowId } = event;
+
+    this.logger.log(
+      JSON.stringify({ msg: 'escrow.sync.received', eventType, escrowId }),
+    );
+
+    const escrow = await this.escrowRepository.findById(escrowId);
+    if (!escrow) {
+      this.logger.warn(
+        JSON.stringify({ msg: 'escrow.sync.not_found', eventType, escrowId }),
+      );
+      return { skipped: true, reason: 'escrow_not_found' };
+    }
+
+    switch (eventType) {
+      case 'EscrowFunded': {
+        if (escrow.state === 'FUNDED' || TERMINAL_STATES.has(escrow.state)) {
+          return { skipped: true, reason: 'already_funded_or_terminal' };
+        }
+        const funded = await this.escrowRepository.updateState(escrowId, 'FUNDED');
+        this.notificationsService.notifyFunded(funded).catch((err) =>
+          this.logger.error('notifyFunded failed', err),
+        );
+        return { skipped: false };
+      }
+
+      case 'EscrowShipped': {
+        if (escrow.state === 'SHIPPED' || TERMINAL_STATES.has(escrow.state)) {
+          return { skipped: true, reason: 'already_shipped_or_terminal' };
+        }
+        const trackingId = event.trackingId ?? escrow.trackingId ?? '';
+        const shipped = await this.escrowRepository.markShipped(escrowId, trackingId);
+        this.notificationsService.notifyShipped(shipped).catch((err) =>
+          this.logger.error('notifyShipped failed', err),
+        );
+        return { skipped: false };
+      }
+
+      case 'EscrowCompleted': {
+        if (escrow.state === 'COMPLETED' || TERMINAL_STATES.has(escrow.state)) {
+          return { skipped: true, reason: 'already_completed_or_terminal' };
+        }
+        const completed = await this.escrowRepository.markCompleted(escrowId);
+        this.notificationsService.notifyCompleted(completed).catch((err) =>
+          this.logger.error('notifyCompleted failed', err),
+        );
+        return { skipped: false };
+      }
+
+      case 'DisputeRaised': {
+        if (escrow.state === 'DISPUTED') {
+          return { skipped: true, reason: 'already_disputed' };
+        }
+        if (TERMINAL_STATES.has(escrow.state)) {
+          return { skipped: true, reason: 'terminal_state' };
+        }
+        // Create the dispute record then flip escrow state.
+        if (this.prisma) {
+          await this.prisma.dispute.create({
+            data: {
+              escrowId,
+              reason: event.reason ?? 'on-chain dispute',
+              description: '',
+              evidenceUrls: [],
+            },
+          });
+        }
+        const disputed = await this.escrowRepository.updateState(escrowId, 'DISPUTED');
+        this.notificationsService.notifyDisputed(disputed).catch((err) =>
+          this.logger.error('notifyDisputed failed', err),
+        );
+        return { skipped: false };
+      }
+
+      case 'DisputeResolved': {
+        // Idempotency: skip if the dispute is already resolved.
+        if (this.prisma) {
+          const dispute = await this.prisma.dispute.findFirst({
+            where: { escrowId },
+          });
+          if (dispute?.status === 'RESOLVED') {
+            return { skipped: true, reason: 'dispute_already_resolved' };
+          }
+          if (dispute) {
+            await this.prisma.dispute.update({
+              where: { id: dispute.id },
+              data: { status: 'RESOLVED', resolvedAt: new Date() },
+            });
+          }
+        }
+        const resolved = await this.escrowRepository.markCompleted(escrowId);
+        this.notificationsService.notifyCompleted(resolved).catch((err) =>
+          this.logger.error('notifyCompleted(dispute resolved) failed', err),
+        );
+        return { skipped: false };
+      }
+
+      case 'AutoReleased': {
+        if (escrow.state === 'RELEASED') {
+          return { skipped: true, reason: 'already_released' };
+        }
+        if (TERMINAL_STATES.has(escrow.state)) {
+          return { skipped: true, reason: 'terminal_state' };
+        }
+        const txHash = event.txHash ?? '';
+        const released = await this.escrowRepository.markAutoReleased(escrowId, txHash);
+        this.notificationsService.notifyCompleted(released).catch((err) =>
+          this.logger.error('notifyCompleted(auto-released) failed', err),
+        );
+        return { skipped: false };
+      }
+
+      default: {
+        this.logger.warn(
+          JSON.stringify({ msg: 'escrow.sync.unknown_event', eventType, escrowId }),
+        );
+        return { skipped: true, reason: 'unknown_event_type' };
+      }
     }
   }
 }
