@@ -5,6 +5,7 @@ import compression from 'compression';
 import { AppModule } from './app.module';
 import { ConfigService } from './config/config.service';
 import { JsonLoggerService } from './common/logger/json-logger.service';
+import { SanitizationPipe } from './common/pipes/sanitization.pipe';
 
 async function bootstrap() {
   // Bootstrap with a temporary console logger so early errors are visible,
@@ -65,7 +66,9 @@ async function bootstrap() {
   // (1 KB) avoids the overhead for tiny payloads that wouldn't benefit.
   app.use(compression({ threshold: 1024 }));
 
-  // ── Validation pipe ────────────────────────────────────────────────────────
+  // ── Validation + sanitization pipes (issue #83) ───────────────────────────
+  // ValidationPipe rejects malformed objects before they reach handlers, then
+  // SanitizationPipe strips dangerous characters from every string field.
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -73,6 +76,7 @@ async function bootstrap() {
       forbidNonWhitelisted: true,
       transformOptions: { enableImplicitConversion: true },
     }),
+    new SanitizationPipe(),
   );
 
   // ── Graceful shutdown ──────────────────────────────────────────────────────
