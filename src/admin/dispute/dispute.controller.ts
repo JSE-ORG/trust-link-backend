@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Query, UseGuards } from '@nestjs/common';
 import { JwtGuard } from '../../auth/guards/jwt.guard';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import type { AuthUser } from '../../auth/auth-user';
@@ -14,6 +14,19 @@ export class DisputeController {
     private readonly disputeService: DisputeService,
     private readonly auditLogService: AuditLogService,
   ) {}
+
+  @Get('disputes')
+  async getDisputes(
+    @Query('status') status?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.disputeService.getDisputes({
+      status,
+      page: page ? parseInt(page, 10) : undefined,
+      limit: limit ? parseInt(limit, 10) : undefined,
+    });
+  }
 
   @Patch('dispute/:id/resolve')
   async resolve(

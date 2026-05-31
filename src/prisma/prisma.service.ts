@@ -109,7 +109,6 @@ export interface EscrowEventRecord {
 
 type EscrowCreateInput = Omit<
   EscrowRecord,
-  | 'id'
   | 'state'
   | 'trackingId'
   | 'shippedAt'
@@ -122,6 +121,7 @@ type EscrowCreateInput = Omit<
   | 'createdAt'
   | 'updatedAt'
 > & {
+  id?: string;
   itemRef?: string;
   state?: EscrowState;
   trackingId?: string | null;
@@ -136,8 +136,9 @@ type EscrowCreateInput = Omit<
 
 type DisputeCreateInput = Omit<
   DisputeRecord,
-  'id' | 'status' | 'resolvedAt' | 'createdAt' | 'updatedAt' | 'evidenceUrls'
+  'status' | 'resolvedAt' | 'createdAt' | 'updatedAt' | 'evidenceUrls'
 > & {
+  id?: string;
   description?: string;
   status?: DisputeState;
   resolvedAt?: Date | null;
@@ -221,7 +222,7 @@ export class PrismaService implements OnModuleDestroy {
       const now = new Date();
       const escrow: EscrowRecord = {
         ...data,
-        id: String(this.escrowId++),
+        id: data.id ?? String(this.escrowId++),
         state: data.state ?? 'FUNDED',
         trackingId: data.trackingId ?? null,
         shippedAt: data.shippedAt ?? null,
@@ -332,7 +333,7 @@ export class PrismaService implements OnModuleDestroy {
       const now = new Date();
       const dispute: DisputeRecord = {
         ...data,
-        id: String(this.disputeId++),
+        id: data.id ?? String(this.disputeId++),
         status: data.status ?? 'OPEN',
         evidenceUrls: data.evidenceUrls ?? [],
         resolvedAt: data.resolvedAt ?? null,
