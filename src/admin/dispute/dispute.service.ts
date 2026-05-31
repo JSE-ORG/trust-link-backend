@@ -3,7 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { EscrowRecord } from '../../prisma/prisma.service';
+import { EscrowRecord, PrismaService } from '../../prisma/prisma.service';
 import { EscrowRepository } from '../../escrow/escrow.repository';
 import { ContractService } from '../../stellar/contract.service';
 
@@ -12,7 +12,25 @@ export class DisputeService {
   constructor(
     private readonly escrowRepository: EscrowRepository,
     private readonly contractService: ContractService,
+    private readonly prisma: PrismaService,
   ) {}
+
+  async getDisputes(query: {
+    status?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<{ data: any[]; total: number; page: number; limit: number }> {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 20;
+    const allDisputes = await this.prisma.dispute.findMany({
+      where: query.status ? { status: query.status as any } : undefined,
+    });
+
+    const total = allDisputes.length;
+    const start = (page - 1) * limit;
+    const data = allDisputes.slice(start, start + limit);
+    return { data, total, page, limit };
+  }
 
   /** Resolves a dispute by submitting the contract action and finalizing escrow state. */
   async resolve(
