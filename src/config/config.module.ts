@@ -11,6 +11,20 @@ import { ConfigService } from './config.service';
         PORT: Joi.number().default(3000),
         DATABASE_URL: Joi.string().required(),
         SEP10_JWT_SECRET: Joi.string().min(32).required(),
+        // Stellar system signer secret key — must start with 'S' (StrKey encoded)
+        SYSTEM_SIGNER_SECRET: Joi.string()
+          .pattern(/^S[A-Z2-7]{55}$/)
+          .required()
+          .messages({
+            'string.pattern.base':
+              'Config validation error: SYSTEM_SIGNER_SECRET must be a valid Stellar secret key (starts with S)',
+            'any.required':
+              'Config validation error: SYSTEM_SIGNER_SECRET is required',
+          }),
+        // Soroban smart contract ID for the escrow contract
+        CONTRACT_ID: Joi.string().required().messages({
+          'any.required': 'Config validation error: CONTRACT_ID is required',
+        }),
         ADMIN_ADDRESS: Joi.string().required(),
         NODE_ENV: Joi.string()
           .valid('development', 'production', 'test')
@@ -21,27 +35,18 @@ import { ConfigService } from './config.service';
         STELLAR_NETWORK: Joi.string()
           .valid('TESTNET', 'MAINNET')
           .default('TESTNET'),
-        // Comma-separated list of allowed frontend origins, e.g.
-        // "https://app.trust-link.io,https://staging.trust-link.io"
         ALLOWED_ORIGINS: Joi.string().optional(),
-        // HMAC secret used to verify Stellar Horizon webhook payloads
         STELLAR_WEBHOOK_SECRET: Joi.string().optional(),
-        // Minimum log level: trace | debug | info | warn | error | fatal
         LOG_LEVEL: Joi.string()
           .valid('trace', 'debug', 'info', 'warn', 'error', 'fatal')
           .default('info'),
-        // Issue #103 – Redis connection URL for response caching.
-        // Omitting this disables caching gracefully (no-op fallback).
         REDIS_URL: Joi.string().uri().optional(),
-        // Issue #105 – Database connection pool tuning
         DB_POOL_CONNECTION_LIMIT: Joi.number().integer().min(1).default(10),
         DB_POOL_TIMEOUT_MS: Joi.number().integer().min(0).default(10000),
-        // Issue #79 – OpenTelemetry distributed tracing
         OTEL_ENABLED: Joi.string().valid('true', 'false').default('true'),
         OTEL_SERVICE_NAME: Joi.string().default('trustlink-backend'),
         OTEL_SERVICE_VERSION: Joi.string().default('1.0.0'),
         OTEL_EXPORTER_OTLP_ENDPOINT: Joi.string().uri().optional(),
-        // Issue #28 – Sentry error monitoring
         SENTRY_DSN: Joi.when('NODE_ENV', {
           is: 'production',
           then: Joi.string().uri().required(),
@@ -49,6 +54,10 @@ import { ConfigService } from './config.service';
         }),
         GIT_SHA: Joi.string().optional(),
       }),
+      validationOptions: {
+        abortEarly: true,
+        allowUnknown: true,
+      },
     }),
   ],
   providers: [ConfigService],

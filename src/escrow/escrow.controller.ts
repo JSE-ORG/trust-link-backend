@@ -12,6 +12,7 @@ import {
   HttpStatus,
   Query,
 } from '@nestjs/common';
+import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { AuthUser } from '../auth/auth-user';
 import { JwtGuard } from '../auth/guards/jwt.guard';
@@ -23,7 +24,9 @@ import { EscrowService } from './escrow.service';
 import { BuyerDisputeService } from './buyer-dispute.service';
 import { SkipThrottle, Throttle } from '@nestjs/throttler';
 
-@SkipThrottle({ auth: true }) // Skip auth limit for escrow endpoints
+@ApiTags('Escrow')
+@ApiBearerAuth()
+@SkipThrottle({ auth: true })
 @Controller('escrow')
 export class EscrowController {
   constructor(
@@ -31,6 +34,10 @@ export class EscrowController {
     private readonly buyerDisputeService: BuyerDisputeService,
   ) {}
 
+  @ApiOperation({ summary: 'Create a new escrow' })
+  @ApiResponse({ status: 201, description: 'Escrow created successfully.' })
+  @ApiResponse({ status: 400, description: 'Invalid request body.' })
+  @ApiResponse({ status: 401, description: 'Unauthorized.' })
   @Post()
   @HttpCode(HttpStatus.CREATED)
   @UseGuards(JwtGuard)
@@ -39,6 +46,9 @@ export class EscrowController {
     return this.escrowService.createEscrow(dto, user.address);
   }
 
+  @ApiOperation({ summary: 'Generate pre-signed S3 URL for evidence upload' })
+  @ApiResponse({ status: 201, description: 'Pre-signed upload URL returned.' })
+  @ApiResponse({ status: 401, description: 'Unauthorized.' })
   @Post('evidence-upload')
   @HttpCode(HttpStatus.CREATED)
   @UseGuards(JwtGuard)
@@ -50,6 +60,9 @@ export class EscrowController {
     return this.escrowService.generateEvidenceUploadUrl(user.address, fileName);
   }
 
+  @ApiOperation({ summary: 'Get escrow by ID' })
+  @ApiResponse({ status: 200, description: 'Escrow record returned.' })
+  @ApiResponse({ status: 404, description: 'Escrow not found.' })
   @Get(':id')
   @UseGuards(OptionalJwtGuard)
   getEscrow(
@@ -59,17 +72,28 @@ export class EscrowController {
     return this.escrowService.getEscrowForViewer(id, user?.address);
   }
 
+  @ApiOperation({ summary: 'Get Stellar contract events for an escrow' })
+  @ApiResponse({ status: 200, description: 'Event list returned.' })
+  @ApiResponse({ status: 404, description: 'Escrow not found.' })
   @Get(':id/events')
   @Throttle({ public: { limit: 100, ttl: 60000 } })
   getEvents(@Param('id', ParseUUIDPipe) id: string) {
     return this.escrowService.getEvents(id);
   }
 
+  @ApiOperation({ summary: 'Get shipment tracking info for an escrow' })
+  @ApiResponse({ status: 200, description: 'Tracking data returned.' })
+  @ApiResponse({ status: 404, description: 'Escrow not found.' })
   @Get(':id/tracking')
   async getTracking(@Param('id', ParseUUIDPipe) id: string) {
     return this.escrowService.getTracking(id);
   }
 
+  @ApiOperation({ summary: 'Mark escrow as shipped with tracking ID' })
+  @ApiResponse({ status: 200, description: 'Escrow updated to SHIPPED state.' })
+  @ApiResponse({ status: 401, description: 'Unauthorized.' })
+  @ApiResponse({ status: 403, description: 'Not the vendor for this escrow.' })
+  @ApiResponse({ status: 404, description: 'Escrow not found.' })
   @Patch(':id/ship')
   @HttpCode(HttpStatus.OK)
   @UseGuards(JwtGuard)
@@ -82,6 +106,11 @@ export class EscrowController {
     return this.escrowService.handleShipment(id, user.address, dto.trackingId);
   }
 
+  @ApiOperation({ summary: 'Cancel an escrow (buyer or vendor)' })
+  @ApiResponse({ status: 200, description: 'Escrow cancelled.' })
+  @ApiResponse({ status: 401, description: 'Unauthorized.' })
+  @ApiResponse({ status: 403, description: 'Not a participant in this escrow.' })
+  @ApiResponse({ status: 404, description: 'Escrow not found.' })
   @Patch(':id/cancel')
   @HttpCode(HttpStatus.OK)
   @UseGuards(JwtGuard)
@@ -93,6 +122,11 @@ export class EscrowController {
     return this.escrowService.cancelEscrow(id, user.address);
   }
 
+  @ApiOperation({ summary: 'Delete a pending escrow before it is funded' })
+  @ApiResponse({ status: 200, description: 'Pending escrow deleted.' })
+  @ApiResponse({ status: 401, description: 'Unauthorized.' })
+  @ApiResponse({ status: 403, description: 'Forbidden.' })
+  @ApiResponse({ status: 404, description: 'Escrow not found.' })
   @Delete(':id')
   @HttpCode(HttpStatus.OK)
   @UseGuards(JwtGuard)
@@ -104,6 +138,12 @@ export class EscrowController {
     return this.escrowService.cancelPendingEscrow(id, user.address);
   }
 
+  @ApiOperation({ summary: 'Open a dispute for an escrow' })
+  @ApiResponse({ status: 201, description: 'Dispute opened successfully.' })
+  @ApiResponse({ status: 400, description: 'Invalid dispute payload.' })
+  @ApiResponse({ status: 401, description: 'Unauthorized.' })
+  @ApiResponse({ status: 403, description: 'Not a participant in this escrow.' })
+  @ApiResponse({ status: 404, description: 'Escrow not found.' })
   @Post(':id/dispute')
   @HttpCode(HttpStatus.CREATED)
   @UseGuards(JwtGuard)
@@ -116,6 +156,11 @@ export class EscrowController {
     return this.buyerDisputeService.openDispute(id, user.address, dto);
   }
 
+  @ApiOperation({ summary: 'Get the active dispute for an escrow' })
+  @ApiResponse({ status: 200, description: 'Dispute record returned.' })
+  @ApiResponse({ status: 401, description: 'Unauthorized.' })
+  @ApiResponse({ status: 403, description: 'Not a participant in this escrow.' })
+  @ApiResponse({ status: 404, description: 'No dispute found for this escrow.' })
   @Get(':id/dispute')
   @UseGuards(JwtGuard)
   @Throttle({ public: { limit: 30, ttl: 60000 } })
