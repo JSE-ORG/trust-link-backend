@@ -27,6 +27,8 @@ export interface Config {
   PUBLIC_WINDOW?: number;
   PUBLIC_LIMIT?: number;
   REFRESH_TOKEN_TTL?: number;
+  SENTRY_DSN?: string;
+  GIT_SHA?: string;
 }
 
 @Injectable()

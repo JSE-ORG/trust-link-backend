@@ -6,6 +6,7 @@ import {
   HttpStatus,
   Patch,
   Post,
+  Put,
   UseGuards,
 } from '@nestjs/common';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -30,6 +31,12 @@ export class VendorProfileController {
   @Get()
   get(@CurrentUser() user: AuthUser) {
     return this.vendorProfileService.getProfile(user.address);
+  }
+
+  @Put()
+  @HttpCode(HttpStatus.OK)
+  upsert(@Body() dto: CreateVendorProfileDto, @CurrentUser() user: AuthUser) {
+    return this.vendorProfileService.upsertProfile(user.address, dto);
   }
 
   @Patch()
