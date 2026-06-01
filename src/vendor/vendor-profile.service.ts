@@ -27,6 +27,14 @@ export class VendorProfileService {
     return this.repository.create(address, dto);
   }
 
+  /** Creates or updates the vendor profile for the given address (idempotent). */
+  async upsertProfile(
+    address: string,
+    dto: CreateVendorProfileDto,
+  ): Promise<VendorProfileRecord> {
+    return this.repository.upsert(address, dto);
+  }
+
   /** Returns a vendor profile by address or raises a not-found error. */
   async getProfile(address: string): Promise<VendorProfileRecord> {
     const profile = await this.repository.findByAddress(address);

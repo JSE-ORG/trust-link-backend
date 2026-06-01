@@ -41,6 +41,13 @@ import { ConfigService } from './config.service';
         OTEL_SERVICE_NAME: Joi.string().default('trustlink-backend'),
         OTEL_SERVICE_VERSION: Joi.string().default('1.0.0'),
         OTEL_EXPORTER_OTLP_ENDPOINT: Joi.string().uri().optional(),
+        // Issue #28 – Sentry error monitoring
+        SENTRY_DSN: Joi.when('NODE_ENV', {
+          is: 'production',
+          then: Joi.string().uri().required(),
+          otherwise: Joi.string().uri().optional(),
+        }),
+        GIT_SHA: Joi.string().optional(),
       }),
     }),
   ],

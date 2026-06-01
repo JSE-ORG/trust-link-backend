@@ -30,6 +30,29 @@ export class VendorProfileRepository {
     return this.prisma.vendorProfile.findUnique({ where: { address } });
   }
 
+  /** Creates or updates a vendor profile — safe to call without checking existence first. */
+  upsert(
+    address: string,
+    dto: CreateVendorProfileDto,
+  ): Promise<VendorProfileRecord> {
+    return this.prisma.vendorProfile.upsert({
+      where: { address },
+      create: {
+        address,
+        businessName: dto.businessName,
+        email: dto.email ?? null,
+        phone: dto.phone ?? null,
+        description: dto.description ?? null,
+      },
+      update: {
+        businessName: dto.businessName,
+        email: dto.email ?? null,
+        phone: dto.phone ?? null,
+        description: dto.description ?? null,
+      },
+    });
+  }
+
   /** Updates mutable fields on the vendor profile identified by address. */
   update(
     address: string,

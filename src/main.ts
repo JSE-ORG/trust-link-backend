@@ -1,4 +1,5 @@
 import './tracing/tracing.bootstrap';
+import * as Sentry from '@sentry/nestjs';
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
@@ -8,8 +9,20 @@ import { AppModule } from './app.module';
 import { ConfigService } from './config/config.service';
 import { JsonLoggerService } from './common/logger/json-logger.service';
 import { SanitizationPipe } from './common/pipes/sanitization.pipe';
+import { SentryInterceptor } from './common/interceptors/sentry.interceptor';
 
 async function bootstrap() {
+  // ── Sentry – must init before NestFactory so instrumentation wraps all modules
+  const sentryDsn = process.env.SENTRY_DSN;
+  if (sentryDsn) {
+    Sentry.init({
+      dsn: sentryDsn,
+      release: process.env.GIT_SHA,
+      environment: process.env.NODE_ENV ?? 'development',
+      tracesSampleRate: process.env.NODE_ENV === 'production' ? 0.2 : 1.0,
+    });
+  }
+
   // Bootstrap with a temporary console logger so early errors are visible,
   // then swap to the structured JSON logger once the DI container is ready.
   const app = await NestFactory.create(AppModule, {
@@ -90,6 +103,11 @@ async function bootstrap() {
   // Applied before routing so every JSON response is compressed. The threshold
   // (1 KB) avoids the overhead for tiny payloads that wouldn't benefit.
   app.use(compression({ threshold: 1024 }));
+
+  // ── Sentry global interceptor (issue #28) ─────────────────────────────────
+  if (sentryDsn) {
+    app.useGlobalInterceptors(new SentryInterceptor());
+  }
 
   // ── Validation + sanitization pipes (issue #83) ───────────────────────────
   // ValidationPipe rejects malformed objects before they reach handlers, then

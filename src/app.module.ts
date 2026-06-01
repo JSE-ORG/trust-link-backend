@@ -1,5 +1,6 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD } from '@nestjs/core';
+import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { AdminStatsModule } from './admin/stats/admin-stats.module';
 import { DisputeModule as AdminDisputeModule } from './admin/dispute/dispute.module';
@@ -28,6 +29,8 @@ import { WebhooksModule } from './webhooks/webhooks.module';
 import { StressTestModule } from './stress-test/stress-test.module';
 import { CacheService } from './common/cache.service';
 import { DlqModule } from './dlq/dlq.module';
+import { NotificationsModule } from './notifications/notifications.module';
+import { WorkersModule } from './workers/workers.module';
 
 @Module({
   imports: [
@@ -39,6 +42,8 @@ import { DlqModule } from './dlq/dlq.module';
     CacheModule,
     LogisticsModule,
     AuditLogModule,
+    NotificationsModule,
+    ScheduleModule.forRoot(),
 
     // Auth
     Sep10Module,
@@ -47,6 +52,7 @@ import { DlqModule } from './dlq/dlq.module';
     EscrowModule,
     StellarModule,
     VendorModule,
+    WorkersModule,
 
     // Admin modules
     AdminStatsModule,
