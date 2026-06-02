@@ -188,6 +188,27 @@ export class EscrowService {
     return this.toPublicEscrow(escrow);
   }
 
+  /**
+   * Returns the public escrow projection plus an optional viewer field when a
+   * caller address is provided.  The viewer field is computed purely from the
+   * existing record — no additional DB query is needed.
+   */
+  async getEscrowForViewer(
+    id: string,
+    callerAddress?: string,
+  ): Promise<EscrowResponseDto & { viewer?: { isBuyer: boolean; isVendor: boolean } }> {
+    const escrow = await this.findById(id);
+    const base = this.toPublicEscrow(escrow);
+    if (!callerAddress) return base;
+    return {
+      ...base,
+      viewer: {
+        isBuyer: escrow.buyerAddress === callerAddress,
+        isVendor: escrow.vendorAddress === callerAddress,
+      },
+    };
+  }
+
   /** Returns a paginated vendor escrow summary list using query defaults. */
   async findVendorEscrows(
     vendorAddress: string,
