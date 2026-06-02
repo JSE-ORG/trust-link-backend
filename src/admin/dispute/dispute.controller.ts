@@ -6,7 +6,7 @@ import type { AuthUser } from '../../auth/auth-user';
 import { AdminGuard } from '../guards/admin.guard';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { ResolveDisputeDto } from './dto/resolve-dispute.dto';
-import { DisputeService } from './dispute.service';
+import { AdminService } from '../admin.service';
 
 @ApiTags('Admin')
 @ApiBearerAuth()
@@ -14,7 +14,7 @@ import { DisputeService } from './dispute.service';
 @UseGuards(JwtGuard, AdminGuard)
 export class DisputeController {
   constructor(
-    private readonly disputeService: DisputeService,
+    private readonly adminService: AdminService,
     private readonly auditLogService: AuditLogService,
   ) {}
 
@@ -28,7 +28,7 @@ export class DisputeController {
     @Query('page') page?: string,
     @Query('limit') limit?: string,
   ) {
-    return this.disputeService.getDisputes({
+    return this.adminService.listAllDisputes({
       status,
       page: page ? parseInt(page, 10) : undefined,
       limit: limit ? parseInt(limit, 10) : undefined,
@@ -47,7 +47,7 @@ export class DisputeController {
     @Body() dto: ResolveDisputeDto,
     @CurrentUser() admin: AuthUser,
   ) {
-    const result = await this.disputeService.resolve(id, dto.resolution);
+    const result = await this.adminService.resolveDispute(id, dto.resolution);
     this.auditLogService.append({
       action: 'DISPUTE_RESOLVED',
       adminAddress: admin.address,
