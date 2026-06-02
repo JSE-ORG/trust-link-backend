@@ -1,11 +1,11 @@
 import { Module } from '@nestjs/common';
 import { JwtGuard } from '../../auth/guards/jwt.guard';
-import { AdminGuard } from '../guards/admin.guard';
+import { AdminModule } from '../admin.module';
 import { AdminStatsController } from './admin-stats.controller';
-import { AdminStatsService } from './admin-stats.service';
 
 @Module({
+  imports: [AdminModule],
   controllers: [AdminStatsController],
-  providers: [AdminStatsService, AdminGuard, JwtGuard],
+  providers: [JwtGuard],
 })
 export class AdminStatsModule {}
