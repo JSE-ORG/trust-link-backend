@@ -219,7 +219,16 @@ export class Sep10Service {
 
   private issueJwt(sub: string): string {
     const now = Math.floor(Date.now() / 1000);
-    const payload = { sub, iat: now, exp: now + 3600 };
+    const adminAddress = this.configService.get('ADMIN_ADDRESS');
+    const payload: {
+      sub: string;
+      iat: number;
+      exp: number;
+      role?: 'admin';
+    } = { sub, iat: now, exp: now + 3600 };
+    if (adminAddress && sub === adminAddress) {
+      payload.role = 'admin';
+    }
     const header = Buffer.from(
       JSON.stringify({ alg: 'HS256', typ: 'JWT' }),
     ).toString('base64url');

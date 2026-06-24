@@ -4,6 +4,7 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import compression from 'compression';
+import * as express from 'express';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { ConfigService } from './config/config.service';
@@ -27,6 +28,7 @@ async function bootstrap() {
   // then swap to the structured JSON logger once the DI container is ready.
   const app = await NestFactory.create(AppModule, {
     bufferLogs: true,
+    bodyParser: false,
   });
 
   // ── Structured JSON logger (issue #81) ────────────────────────────────────
@@ -34,6 +36,34 @@ async function bootstrap() {
   app.useLogger(jsonLogger);
 
   const configService = app.get(ConfigService);
+
+  // ── Body parsing ──────────────────────────────────────────────────────────
+  // Webhook HMAC verification must hash the exact bytes received on the wire.
+  // Capture those bytes before JSON parsing mutates whitespace or key order.
+  app.use(
+    '/webhooks/stellar',
+    express.raw({ type: 'application/json' }),
+    (
+      req: express.Request,
+      _res: express.Response,
+      next: express.NextFunction,
+    ) => {
+      const request = req as express.Request & { rawBody?: Buffer };
+      if (Buffer.isBuffer(request.body)) {
+        request.rawBody = Buffer.from(request.body);
+        try {
+          request.body = JSON.parse(
+            request.rawBody.toString('utf8'),
+          ) as unknown;
+        } catch {
+          request.body = undefined;
+        }
+      }
+      next();
+    },
+  );
+  app.use(express.json());
+  app.use(express.urlencoded({ extended: true }));
 
   // ── HTTP security headers (issue #84) ─────────────────────────────────────
   // Helmet injects a hardened set of response headers (CSP, HSTS, frame and
@@ -55,6 +85,7 @@ async function bootstrap() {
       },
       // This service is a JSON API consumed by separate frontend origins.
       crossOriginResourcePolicy: { policy: 'cross-origin' },
+      frameguard: { action: 'deny' },
     }),
   );
 
