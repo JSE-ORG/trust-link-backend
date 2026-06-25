@@ -4,15 +4,16 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import compression from 'compression';
+import * as express from 'express';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { ConfigService } from './config/config.service';
 import { JsonLoggerService } from './common/logger/json-logger.service';
 import { SanitizationPipe } from './common/pipes/sanitization.pipe';
 import { SentryInterceptor } from './common/interceptors/sentry.interceptor';
+import { buildCspConnectSrc } from './common/security/csp.config';
 
 async function bootstrap() {
-  // ── Sentry – must init before NestFactory so instrumentation wraps all modules
   const sentryDsn = process.env.SENTRY_DSN;
   if (sentryDsn) {
     Sentry.init({
@@ -23,17 +24,51 @@ async function bootstrap() {
     });
   }
 
-  // Bootstrap with a temporary console logger so early errors are visible,
-  // then swap to the structured JSON logger once the DI container is ready.
   const app = await NestFactory.create(AppModule, {
     bufferLogs: true,
+    bodyParser: false,
   });
 
-  // ── Structured JSON logger (issue #81) ────────────────────────────────────
   const jsonLogger = app.get(JsonLoggerService);
   app.useLogger(jsonLogger);
 
   const configService = app.get(ConfigService);
+  const connectSrc = buildCspConnectSrc({
+    stellarNetwork: configService.get('STELLAR_NETWORK'),
+    stellarHorizonUrl: configService.get<string | undefined>('STELLAR_HORIZON_URL'),
+    sentryDsn,
+    otelExporterOtlpEndpoint: configService.get<string | undefined>('OTEL_EXPORTER_OTLP_ENDPOINT'),
+    logisticsApiBaseUrl: configService.get<string | undefined>('LOGISTICS_API_BASE_URL'),
+    extraConnectSrc: configService.get<string | undefined>('CSP_CONNECT_SRC'),
+  });
+
+  // ── Body parsing ──────────────────────────────────────────────────────────
+  // Webhook HMAC verification must hash the exact bytes received on the wire.
+  // Capture those bytes before JSON parsing mutates whitespace or key order.
+  app.use(
+    '/webhooks/stellar',
+    express.raw({ type: 'application/json' }),
+    (
+      req: express.Request,
+      _res: express.Response,
+      next: express.NextFunction,
+    ) => {
+      const request = req as express.Request & { rawBody?: Buffer };
+      if (Buffer.isBuffer(request.body)) {
+        request.rawBody = Buffer.from(request.body);
+        try {
+          request.body = JSON.parse(
+            request.rawBody.toString('utf8'),
+          ) as unknown;
+        } catch {
+          request.body = undefined;
+        }
+      }
+      next();
+    },
+  );
+  app.use(express.json());
+  app.use(express.urlencoded({ extended: true }));
 
   // ── HTTP security headers (issue #84) ─────────────────────────────────────
   // Helmet injects a hardened set of response headers (CSP, HSTS, frame and
@@ -47,18 +82,17 @@ async function bootstrap() {
         useDefaults: true,
         directives: {
           defaultSrc: ["'self'"],
-          connectSrc: ["'self'", 'https://*.stellar.org'],
+          connectSrc,
           objectSrc: ["'none'"],
           frameAncestors: ["'self'"],
           upgradeInsecureRequests: [],
         },
       },
-      // This service is a JSON API consumed by separate frontend origins.
       crossOriginResourcePolicy: { policy: 'cross-origin' },
+      frameguard: { action: 'deny' },
     }),
   );
 
-  // ── CORS – restrict to known frontend origins (issue #85) ─────────────────
   const allowedOrigins = configService.getAllowedOrigins();
 
   if (allowedOrigins.length > 0) {
@@ -67,7 +101,6 @@ async function bootstrap() {
         origin: string | undefined,
         callback: (err: Error | null, allow?: boolean) => void,
       ) => {
-        // Allow requests with no origin (server-to-server, curl, Postman)
         if (!origin) {
           callback(null, true);
           return;
@@ -90,8 +123,6 @@ async function bootstrap() {
       maxAge: 86400,
     });
   } else {
-    // No origins configured – block all cross-origin requests in production,
-    // allow all in development/test for convenience.
     if (configService.isProduction()) {
       app.enableCors({ origin: false });
     } else {
@@ -99,19 +130,12 @@ async function bootstrap() {
     }
   }
 
-  // ── Gzip compression (issue #106) ─────────────────────────────────────────
-  // Applied before routing so every JSON response is compressed. The threshold
-  // (1 KB) avoids the overhead for tiny payloads that wouldn't benefit.
   app.use(compression({ threshold: 1024 }));
 
-  // ── Sentry global interceptor (issue #28) ─────────────────────────────────
   if (sentryDsn) {
     app.useGlobalInterceptors(new SentryInterceptor());
   }
 
-  // ── Validation + sanitization pipes (issue #83) ───────────────────────────
-  // ValidationPipe rejects malformed objects before they reach handlers, then
-  // SanitizationPipe strips dangerous characters from every string field.
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -122,10 +146,6 @@ async function bootstrap() {
     new SanitizationPipe(),
   );
 
-  // ── Swagger / OpenAPI docs (issue #47) ────────────────────────────────────
-  // DTOs are annotated with @ApiProperty so the generated schema shows
-  // descriptions and realistic examples for every request/response body.
-  // Served at GET /api/docs (JSON at /api/docs-json).
   const swaggerConfig = new DocumentBuilder()
     .setTitle('TrustLink API')
     .setDescription(
@@ -137,7 +157,6 @@ async function bootstrap() {
   const document = SwaggerModule.createDocument(app, swaggerConfig);
   SwaggerModule.setup('api/docs', app, document);
 
-  // ── Graceful shutdown ──────────────────────────────────────────────────────
   app.enableShutdownHooks();
 
   const port = configService.get('PORT');
@@ -150,6 +169,7 @@ async function bootstrap() {
       env: configService.get('NODE_ENV'),
       network: configService.get('STELLAR_NETWORK'),
       allowedOrigins: allowedOrigins.length > 0 ? allowedOrigins : 'all',
+      cspConnectSrc: connectSrc,
     }),
     'Bootstrap',
   );

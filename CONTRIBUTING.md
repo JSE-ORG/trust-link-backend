@@ -56,6 +56,20 @@ This repository participates in the **[Stellar Wave Program](https://www.drips.n
 
 ---
 
+## 📜 Specification Requirements Document
+
+Before contributing, read **[SPECIFICATION.md](SPECIFICATION.md)** — it is the authoritative specification for this project. Every code change must conform to its requirements. PRs that violate the specification **will be rejected**.
+
+Key requirements from the SRD:
+- **No `any` types** — strict TypeScript required
+- **Tests required** for all new code — coverage must not drop below 70%
+- **Security first** — JWT signature verification, input sanitization, PII encryption
+- **CI must pass** — lint, typecheck, test, build, audit all required
+- **Conventional commits** — `type(scope): description`
+- **Repository pattern** — services never call Prisma directly
+
+---
+
 ## Before You Start
 
 ### Finding Work

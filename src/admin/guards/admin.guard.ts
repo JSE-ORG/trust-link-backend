@@ -19,11 +19,20 @@ export class AdminGuard implements CanActivate {
     const request = context.switchToHttp().getRequest<RequestWithUser>();
     const adminAddress = this.configService.get('ADMIN_ADDRESS');
 
-    if (!request.user || request.user.role !== 'admin') {
+    if (!request.user) {
       throw new ForbiddenException('Admin role required');
     }
 
-    if (adminAddress && request.user.address !== adminAddress) {
+    const isAdminRole = request.user.role === 'admin';
+    const isAdminAddress = Boolean(
+      adminAddress && request.user.address === adminAddress,
+    );
+
+    if (!isAdminRole && !isAdminAddress) {
+      throw new ForbiddenException('Admin role required');
+    }
+
+    if (adminAddress && !isAdminAddress) {
       throw new ForbiddenException('Admin access required');
     }
     return true;

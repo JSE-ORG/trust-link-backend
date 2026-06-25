@@ -1,4 +1,7 @@
 /node_modules
+issues.txt
+upload_issues.sh
+WAVE_ISSUES.md
 /dist
 /coverage
 .github/copilot-instructions.md

@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { EscrowModule } from '../escrow/escrow.module';
 import { StellarWebhookController } from './stellar-webhook.controller';
 import { StellarWebhookService } from './stellar-webhook.service';
@@ -11,7 +11,7 @@ import { StellarWebhookService } from './stellar-webhook.service';
  * deposits.
  */
 @Module({
-  imports: [EscrowModule],
+  imports: [forwardRef(() => EscrowModule)],
   controllers: [StellarWebhookController],
   providers: [StellarWebhookService],
   exports: [StellarWebhookService],
