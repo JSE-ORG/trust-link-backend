@@ -55,7 +55,7 @@ export class DlqController {
    */
   @Post(':id/replay')
   async replay(@Param('id') id: string, @Body() _body: ReplayBody = {}) {
-    const record = this.dlq.get(id);
+    const record = await this.dlq.get(id);
     return this.dlq.replay(record.id, async (r) => {
       if (r.operation === 'submitAutoRelease' && r.escrowId) {
         return this.contract.submitAutoRelease(r.escrowId);
