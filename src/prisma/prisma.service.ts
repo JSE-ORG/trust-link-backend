@@ -260,6 +260,7 @@ export class PrismaService implements OnModuleDestroy {
     },
     findMany: ({
       where,
+      select,
     }: {
       where?: Partial<
         Pick<
@@ -276,8 +277,10 @@ export class PrismaService implements OnModuleDestroy {
       > & {
         shippedAt?: { lte: Date };
         deliveredAt?: { lte: Date } | null;
+        createdAt?: { gte: Date; lte: Date };
       };
-    } = {}): Promise<EscrowRecord[]> => {
+      select?: Partial<Record<keyof EscrowRecord, boolean>>;
+    } = {}): Promise<EscrowRecord[] | Partial<EscrowRecord>[]> => {
       let escrows = [...this.escrows.values()].filter((escrow) => {
         if (!where) {
           return true;
@@ -297,7 +300,18 @@ export class PrismaService implements OnModuleDestroy {
             const { lte } = value;
             const field =
               key === 'shippedAt' ? escrow.shippedAt : escrow.deliveredAt;
-            return field !== null && field <= lte;
+            return field !== null && field !== undefined && field <= lte;
+          }
+
+          if (
+            key === 'createdAt' &&
+            typeof value === 'object' &&
+            value !== null &&
+            'gte' in value &&
+            'lte' in value
+          ) {
+            const { gte, lte } = value;
+            return escrow.createdAt >= gte && escrow.createdAt <= lte;
           }
 
           return escrow[key as keyof EscrowRecord] === value;
@@ -306,6 +320,18 @@ export class PrismaService implements OnModuleDestroy {
 
       if (!where?.state) {
         escrows = escrows.filter((e) => e.state !== 'CANCELLED');
+      }
+
+      if (select) {
+        return Promise.resolve(
+          escrows.map((escrow) => {
+            const selected: Partial<EscrowRecord> = {};
+            for (const key of Object.keys(select) as Array<keyof EscrowRecord>) {
+              selected[key] = escrow[key];
+            }
+            return selected;
+          })
+        );
       }
 
       return Promise.resolve(escrows.map((escrow) => ({ ...escrow })));
@@ -688,12 +714,24 @@ export class PrismaService implements OnModuleDestroy {
   vendorTrackingSettings = {
     findUnique: ({
       where,
+      select,
     }: {
       where: { vendorAddress: string };
+      select?: { notificationChannels?: boolean };
     }): Promise<Record<string, unknown> | null> => {
       const settings = this.vendorTrackingSettingsStore.get(
         where.vendorAddress,
       );
+      if (!settings) {
+        return Promise.resolve(null);
+      }
+      
+      if (select?.notificationChannels) {
+        return Promise.resolve({
+          notificationChannels: (settings as any).notificationChannels || [],
+        });
+      }
+      
       return Promise.resolve(settings ? { ...settings } : null);
     },
     upsert: ({
@@ -719,6 +757,80 @@ export class PrismaService implements OnModuleDestroy {
       return Promise.resolve({ ...created });
     },
   };
+
+  /**
+   * Mock implementation of Prisma's $queryRaw for testing.
+   * Supports basic aggregation queries for the analytics service.
+   */
+  async $queryRaw<T = unknown>(
+    query: TemplateStringsArray,
+    ...values: unknown[]
+  ): Promise<T[]> {
+    const queryString = query.join('?');
+    
+    // Parse the query to extract vendorAddress, startDate, endDate, and timezone
+    const vendorAddress = values[0] as string;
+    const startDate = values[1] as Date;
+    const endDate = values[2] as Date;
+    const timezone = values[3] as string || 'UTC';
+
+    // Filter escrows by vendor and date range
+    const filteredEscrows = [...this.escrows.values()].filter(
+      (escrow) =>
+        escrow.vendorAddress === vendorAddress &&
+        escrow.createdAt >= startDate &&
+        escrow.createdAt <= endDate
+    );
+
+    // Group by date in the specified timezone
+    const dailyMap = new Map<string, {
+      date: string;
+      totalVolume: number;
+      transactionCount: number;
+      completedCount: number;
+      disputedCount: number;
+    }>();
+
+    for (const escrow of filteredEscrows) {
+      const dateKey = this.formatDateInTimezone(escrow.createdAt, timezone);
+
+      if (!dailyMap.has(dateKey)) {
+        dailyMap.set(dateKey, {
+          date: dateKey,
+          totalVolume: 0,
+          transactionCount: 0,
+          completedCount: 0,
+          disputedCount: 0,
+        });
+      }
+
+      const daily = dailyMap.get(dateKey)!;
+      daily.totalVolume += Number(escrow.amount);
+      daily.transactionCount += 1;
+
+      if (escrow.state === 'COMPLETED' || escrow.state === 'RELEASED') {
+        daily.completedCount += 1;
+      }
+
+      if (escrow.state === 'DISPUTED') {
+        daily.disputedCount += 1;
+      }
+    }
+
+    // Sort by date ascending
+    const result = Array.from(dailyMap.values()).sort((a, b) =>
+      a.date.localeCompare(b.date)
+    );
+
+    return result as T[];
+  }
+
+  /**
+   * Formats a Date object to ISO date string (YYYY-MM-DD) in a specific timezone
+   */
+  private formatDateInTimezone(date: Date, timezone: string): string {
+    return date.toLocaleDateString('en-CA', { timeZone: timezone });
+  }
 
   /** Clears all in-memory Prisma test data and resets generated IDs. */
   async reset(): Promise<void> {

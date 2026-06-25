@@ -30,7 +30,8 @@
     "docker:build": "docker build -t trustlink-backend .",
     "docker:run": "docker run -p 3000:3000 trustlink-backend",
     "stress:test": "ts-node scripts/stress-test-runner.ts",
-    "stress:test:config": "ts-node scripts/stress-test-runner.ts"
+    "stress:test:config": "ts-node scripts/stress-test-runner.ts",
+    "benchmark:chart": "ts-node scripts/benchmark-chart-aggregation.ts"
   },
   "dependencies": {
     "@nestjs/axios": "^4.0.0",

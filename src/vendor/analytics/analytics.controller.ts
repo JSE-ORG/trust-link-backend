@@ -36,14 +36,17 @@ export class AnalyticsController {
    * Returns daily transaction volume data for the authenticated vendor.
    * Query Parameters:
    *   - days: number of days to retrieve (default: 30, max: 365)
+   *   - timezone: timezone for date grouping (default: UTC)
    */
   @Get('chart')
   @HttpCode(HttpStatus.OK)
   async getDailyVolumeChart(
     @Query('days') daysParam?: string,
+    @Query('timezone') timezoneParam?: string,
     @CurrentUser() user?: AuthUser,
   ): Promise<ChartDataResponse> {
     let days = 30;
+    let timezone = 'UTC';
 
     if (daysParam) {
       const parsed = parseInt(daysParam, 10);
@@ -52,6 +55,10 @@ export class AnalyticsController {
       }
     }
 
-    return this.analyticsService.getDailyVolumeChart(user!.address, days);
+    if (timezoneParam) {
+      timezone = timezoneParam;
+    }
+
+    return this.analyticsService.getDailyVolumeChart(user!.address, days, timezone);
   }
 }

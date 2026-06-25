@@ -79,6 +79,11 @@ import { WorkersModule } from './workers/workers.module';
           ttl: config.get<number>('PUBLIC_WINDOW') || 60000,
           limit: config.get<number>('PUBLIC_LIMIT') || 60,
         },
+        {
+          name: 'evidence-upload',
+          ttl: config.get<number>('EVIDENCE_UPLOAD_TTL') || 60000,
+          limit: config.get<number>('EVIDENCE_UPLOAD_LIMIT') || 10,
+        },
       ],
     }),
   ],

@@ -29,6 +29,8 @@ export interface Config {
   REFRESH_TOKEN_TTL?: number;
   SENTRY_DSN?: string;
   GIT_SHA?: string;
+  EVIDENCE_UPLOAD_LIMIT?: number;
+  EVIDENCE_UPLOAD_TTL?: number;
 }
 
 @Injectable()
