@@ -4,6 +4,7 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import compression from 'compression';
+import * as express from 'express';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { ConfigService } from './config/config.service';
@@ -25,6 +26,7 @@ async function bootstrap() {
 
   const app = await NestFactory.create(AppModule, {
     bufferLogs: true,
+    bodyParser: false,
   });
 
   const jsonLogger = app.get(JsonLoggerService);
@@ -40,6 +42,40 @@ async function bootstrap() {
     extraConnectSrc: configService.get<string | undefined>('CSP_CONNECT_SRC'),
   });
 
+  // ── Body parsing ──────────────────────────────────────────────────────────
+  // Webhook HMAC verification must hash the exact bytes received on the wire.
+  // Capture those bytes before JSON parsing mutates whitespace or key order.
+  app.use(
+    '/webhooks/stellar',
+    express.raw({ type: 'application/json' }),
+    (
+      req: express.Request,
+      _res: express.Response,
+      next: express.NextFunction,
+    ) => {
+      const request = req as express.Request & { rawBody?: Buffer };
+      if (Buffer.isBuffer(request.body)) {
+        request.rawBody = Buffer.from(request.body);
+        try {
+          request.body = JSON.parse(
+            request.rawBody.toString('utf8'),
+          ) as unknown;
+        } catch {
+          request.body = undefined;
+        }
+      }
+      next();
+    },
+  );
+  app.use(express.json());
+  app.use(express.urlencoded({ extended: true }));
+
+  // ── HTTP security headers (issue #84) ─────────────────────────────────────
+  // Helmet injects a hardened set of response headers (CSP, HSTS, frame and
+  // cross-origin policies, etc.) to protect browser clients against injection
+  // vulnerabilities. The CSP connect-src is widened to the Stellar network so
+  // the app can still reach the required blockchain API systems (Horizon and
+  // Soroban RPC, on both mainnet and testnet).
   app.use(
     helmet({
       contentSecurityPolicy: {
@@ -53,6 +89,7 @@ async function bootstrap() {
         },
       },
       crossOriginResourcePolicy: { policy: 'cross-origin' },
+      frameguard: { action: 'deny' },
     }),
   );
 

@@ -20,7 +20,10 @@ export class StellarWebhookController {
 
   @ApiOperation({ summary: 'Receive Stellar Horizon ledger event webhook' })
   @ApiResponse({ status: 200, description: 'Webhook event processed.' })
-  @ApiResponse({ status: 400, description: 'Invalid payload or missing HMAC signature.' })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid payload or missing HMAC signature.',
+  })
   @Post('stellar')
   @HttpCode(HttpStatus.OK)
   async handleStellarWebhook(
@@ -28,18 +31,14 @@ export class StellarWebhookController {
     @Headers('x-stellar-signature') signature: string | undefined,
     @Body() dto: StellarWebhookDto,
   ): Promise<{ received: boolean; skipped?: boolean; reason?: string }> {
-    const rawBody = this.extractRawBody(req, dto);
+    const rawBody = this.extractRawBody(req);
     return this.webhookService.handleEvent(rawBody, signature, dto);
   }
 
-  private extractRawBody(req: Request, dto: StellarWebhookDto): Buffer {
+  private extractRawBody(req: Request): Buffer {
     const raw = (req as Request & { rawBody?: Buffer }).rawBody;
     if (raw instanceof Buffer) return raw;
 
-    try {
-      return Buffer.from(JSON.stringify(dto), 'utf8');
-    } catch {
-      throw new BadRequestException('Unable to read request body');
-    }
+    throw new BadRequestException('Unable to read raw request body');
   }
 }

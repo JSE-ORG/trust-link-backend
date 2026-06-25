@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { ContractService } from './contract.service';
 import { STELLAR_SERVER } from './stellar.tokens';
 import { EventReplayService } from './event-replay.service';
@@ -6,7 +6,7 @@ import { BlockchainListenerService } from './blockchain-listener.service';
 import { WebhooksModule } from '../webhooks/webhooks.module';
 
 @Module({
-  imports: [WebhooksModule],
+  imports: [forwardRef(() => WebhooksModule)],
   providers: [
     ContractService,
     EventReplayService,

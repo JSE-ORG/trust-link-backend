@@ -76,6 +76,21 @@ describe('StellarWebhookService — HMAC signature verification (issue #48)', ()
       });
     });
 
+    it('verifies HMAC with a known test vector', async () => {
+      configService.get.mockReturnValue('key');
+      const raw = Buffer.from(
+        'The quick brown fox jumps over the lazy dog',
+        'utf8',
+      );
+      const sig =
+        'f7bc83f430538424b13298e6aa6fb143ef4d59a14946175997479dbc2d1a3cd8';
+      const dto = makeDto({ id: 'known-vector-001' });
+
+      await expect(service.handleEvent(raw, sig, dto)).resolves.toEqual({
+        received: true,
+      });
+    });
+
     it('verifies the digest of the raw bytes, independent of DTO field order', async () => {
       configService.get.mockReturnValue(SECRET);
       // A body whose JSON key order differs from a naive re-serialization of the
@@ -233,8 +248,8 @@ describe('StellarWebhookService — HMAC signature verification (issue #48)', ()
     const raw = Buffer.from(JSON.stringify(dto), 'utf8');
 
     // Even a clearly bogus signature is accepted because checks are disabled.
-    await expect(
-      service.handleEvent(raw, 'whatever', dto),
-    ).resolves.toEqual({ received: true });
+    await expect(service.handleEvent(raw, 'whatever', dto)).resolves.toEqual({
+      received: true,
+    });
   });
 });
