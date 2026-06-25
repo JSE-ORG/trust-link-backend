@@ -1,5 +1,5 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { randomUUID } from 'crypto';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
 import {
   EnqueueFailedTransactionInput,
   FailedTransactionRecord,
@@ -9,56 +9,57 @@ import {
 } from './dlq.types';
 
 /**
- * In-memory dead-letter queue for failed Stellar contract submissions (#74).
+ * Issue #303 – Persistent dead-letter queue backed by Prisma.
  *
- * Submitters (e.g. `ContractService`) call {@link enqueue} when a transaction
- * fails so the full ledger feedback is preserved; admins use the controller
- * endpoints to {@link list}, {@link get}, {@link replay} or {@link abandon}
- * records.
- *
- * The store is process-local on purpose — failed submissions matter most while
- * a single node is running; persistence can be swapped in later by replacing
- * the map with a Prisma model behind the same surface.
+ * Migrates the in-memory DLQ to database-backed storage so failed Stellar
+ * contract submissions survive application restarts. The API surface is
+ * unchanged — existing callers see no difference.
  */
 @Injectable()
 export class DlqService {
-  private readonly records = new Map<string, FailedTransactionRecord>();
+  private readonly logger = new Logger(DlqService.name);
 
-  enqueue(input: EnqueueFailedTransactionInput): FailedTransactionRecord {
-    const now = new Date();
-    const record: FailedTransactionRecord = {
-      id: randomUUID(),
-      operation: input.operation,
-      escrowId: input.escrowId ?? null,
-      errorMessage: input.errorMessage,
-      ledgerFeedback: input.ledgerFeedback ?? null,
-      attempts: input.attempts ?? 1,
-      status: 'PENDING_REVIEW',
-      createdAt: now,
-      updatedAt: now,
-      reviewedAt: null,
-      replayedAt: null,
-      lastReplayTxHash: null,
-    };
-    this.records.set(record.id, record);
-    return { ...record };
+  constructor(private readonly prisma: PrismaService) {}
+
+  async enqueue(
+    input: EnqueueFailedTransactionInput,
+  ): Promise<FailedTransactionRecord> {
+    const record = await this.prisma.failedTransaction.create({
+      data: {
+        operation: input.operation,
+        escrowId: input.escrowId ?? null,
+        errorMessage: input.errorMessage,
+        ledgerFeedback: input.ledgerFeedback ?? undefined,
+        attempts: input.attempts ?? 1,
+        status: 'PENDING_REVIEW',
+      },
+    });
+    return this.toRecord(record);
   }
 
-  list(query: ListFailedTransactionsQuery = {}): FailedTransactionRecord[] {
-    return [...this.records.values()]
-      .filter((r) => (query.status ? r.status === query.status : true))
-      .filter((r) => (query.operation ? r.operation === query.operation : true))
-      .filter((r) => (query.escrowId ? r.escrowId === query.escrowId : true))
-      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
-      .map((r) => ({ ...r }));
+  async list(
+    query: ListFailedTransactionsQuery = {},
+  ): Promise<FailedTransactionRecord[]> {
+    const where: Record<string, unknown> = {};
+    if (query.status) where.status = query.status;
+    if (query.operation) where.operation = query.operation;
+    if (query.escrowId) where.escrowId = query.escrowId;
+
+    const records = await this.prisma.failedTransaction.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+    });
+    return records.map((r) => this.toRecord(r));
   }
 
-  get(id: string): FailedTransactionRecord {
-    const record = this.records.get(id);
+  async get(id: string): Promise<FailedTransactionRecord> {
+    const record = await this.prisma.failedTransaction.findUnique({
+      where: { id },
+    });
     if (!record) {
       throw new NotFoundException(`Failed transaction ${id} not found`);
     }
-    return { ...record };
+    return this.toRecord(record);
   }
 
   /**
@@ -67,53 +68,77 @@ export class DlqService {
    * counter is bumped and the record stays `PENDING_REVIEW` for further review.
    */
   async replay(id: string, replay: ReplayFn): Promise<FailedTransactionRecord> {
-    const record = this.requireRecord(id);
+    const record = await this.requireRecord(id);
     if (record.status !== 'PENDING_REVIEW') {
       throw new Error(`Failed transaction ${id} is not pending review`);
     }
 
     let txHash: string;
     try {
-      txHash = await replay({ ...record });
+      txHash = await replay(record);
     } catch (err) {
-      record.attempts += 1;
-      record.errorMessage = err instanceof Error ? err.message : String(err);
-      record.updatedAt = new Date();
-      this.records.set(record.id, record);
+      await this.prisma.failedTransaction.update({
+        where: { id },
+        data: {
+          attempts: { increment: 1 },
+          errorMessage: err instanceof Error ? err.message : String(err),
+        },
+      });
       throw err;
     }
 
-    record.status = 'REPLAYED';
-    record.replayedAt = new Date();
-    record.updatedAt = record.replayedAt;
-    record.lastReplayTxHash = txHash;
-    this.records.set(record.id, record);
-    return { ...record };
+    const updated = await this.prisma.failedTransaction.update({
+      where: { id },
+      data: {
+        status: 'REPLAYED',
+        replayedAt: new Date(),
+        lastReplayTxHash: txHash,
+      },
+    });
+    return this.toRecord(updated);
   }
 
-  abandon(id: string): FailedTransactionRecord {
-    const record = this.requireRecord(id);
-    record.status = 'ABANDONED';
-    record.reviewedAt = new Date();
-    record.updatedAt = record.reviewedAt;
-    this.records.set(record.id, record);
-    return { ...record };
+  async abandon(id: string): Promise<FailedTransactionRecord> {
+    await this.requireRecord(id);
+    const updated = await this.prisma.failedTransaction.update({
+      where: { id },
+      data: {
+        status: 'ABANDONED',
+        reviewedAt: new Date(),
+      },
+    });
+    return this.toRecord(updated);
   }
 
-  markReviewed(id: string): FailedTransactionRecord {
-    const record = this.requireRecord(id);
-    record.reviewedAt = new Date();
-    record.updatedAt = record.reviewedAt;
-    this.records.set(record.id, record);
-    return { ...record };
+  async markReviewed(id: string): Promise<FailedTransactionRecord> {
+    await this.requireRecord(id);
+    const updated = await this.prisma.failedTransaction.update({
+      where: { id },
+      data: {
+        reviewedAt: new Date(),
+      },
+    });
+    return this.toRecord(updated);
   }
 
-  /** Internal helper that returns the live map entry (no clone). */
-  private requireRecord(id: string): FailedTransactionRecord {
-    const record = this.records.get(id);
-    if (!record) {
-      throw new NotFoundException(`Failed transaction ${id} not found`);
-    }
-    return record;
+  private async requireRecord(id: string): Promise<FailedTransactionRecord> {
+    return this.get(id);
+  }
+
+  private toRecord(row: Record<string, unknown>): FailedTransactionRecord {
+    return {
+      id: row.id as string,
+      operation: row.operation as string,
+      escrowId: (row.escrowId as string) ?? null,
+      errorMessage: row.errorMessage as string,
+      ledgerFeedback: (row.ledgerFeedback as Record<string, unknown>) ?? null,
+      attempts: row.attempts as number,
+      status: row.status as FailedTransactionStatus,
+      createdAt: row.createdAt as Date,
+      updatedAt: row.updatedAt as Date,
+      reviewedAt: (row.reviewedAt as Date) ?? null,
+      replayedAt: (row.replayedAt as Date) ?? null,
+      lastReplayTxHash: (row.lastReplayTxHash as string) ?? null,
+    };
   }
 }

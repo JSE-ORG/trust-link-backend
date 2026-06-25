@@ -2,21 +2,16 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import axios from 'axios';
 import { ConfigService } from '../config/config.service';
 import { StellarWebhookService } from '../webhooks/stellar-webhook.service';
-import * as fs from 'fs';
-import * as path from 'path';
+import { CursorService } from './cursor.service';
 
 @Injectable()
 export class EventReplayService implements OnModuleInit {
   private readonly logger = new Logger(EventReplayService.name);
-  private readonly cursorFile = path.resolve(
-    process.cwd(),
-    'data',
-    'stellar_cursor.txt',
-  );
 
   constructor(
     private readonly config: ConfigService,
     private readonly webhookService: StellarWebhookService,
+    private readonly cursorService: CursorService,
   ) {}
 
   /** Replays recent Horizon operations from the persisted cursor on startup. */
@@ -28,11 +23,7 @@ export class EventReplayService implements OnModuleInit {
           ? 'https://horizon.stellar.org'
           : 'https://horizon-testnet.stellar.org';
 
-      let cursor: string | undefined = undefined;
-      if (fs.existsSync(this.cursorFile)) {
-        cursor = fs.readFileSync(this.cursorFile, 'utf8').trim();
-        if (!cursor) cursor = undefined;
-      }
+      const cursor = await this.cursorService.get();
 
       const url = `${horizon}/operations?order=asc&limit=200${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`;
       this.logger.log(`EventReplay fetching operations from ${url}`);
@@ -55,14 +46,13 @@ export class EventReplayService implements OnModuleInit {
         } catch (err) {
           this.logger.error('Failed to process replayed op', err);
         }
+      }
 
-        // persist last processed id
-        try {
-          fs.mkdirSync(path.dirname(this.cursorFile), { recursive: true });
-          fs.writeFileSync(this.cursorFile, String(rec.paging_token || rec.id));
-        } catch (err) {
-          this.logger.warn('Failed to persist cursor file: ' + err.message);
-        }
+      // Persist cursor atomically after processing all records
+      if (records.length > 0) {
+        const lastRec = records[records.length - 1];
+        const newCursor = String(lastRec.paging_token || lastRec.id);
+        await this.cursorService.set(newCursor);
       }
 
       this.logger.log(`Event replay processed ${records.length} operations`);

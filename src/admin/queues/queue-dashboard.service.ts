@@ -1,93 +1,117 @@
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleInit,
+  OnApplicationShutdown,
+} from '@nestjs/common';
+import { Queue } from 'bullmq';
+import { ConfigService } from '../../config/config.service';
 import { QueuesDashboardDto, QueueStatsDto } from './queue-stats.dto';
 
 /**
- * Issue #75 – BullMQ queue dashboard service.
+ * Issue #305 – Real BullMQ queue dashboard service.
  *
- * In a full BullMQ integration this service would inject Queue instances
- * (via @InjectQueue) and call queue.getJobCounts() on each one.
- *
- * Because BullMQ / ioredis are not available in this environment the service
- * uses an in-process mock that mirrors the real BullMQ Queue API surface.
- * Swapping the mock for real queues only requires:
- *   1. `npm install bullmq ioredis`
- *   2. Register BullModule.forRoot / BullModule.registerQueue in the module.
- *   3. Replace MockQueue with @InjectQueue('auto-release') queue: Queue, etc.
+ * Connects to actual BullMQ Queue instances to return accurate job counts
+ * for waiting/active/completed/failed/delayed jobs. Falls back gracefully
+ * when Redis is unavailable.
  */
 
-// ---------------------------------------------------------------------------
-// Mock queue – mirrors the BullMQ Queue public API used here
-// ---------------------------------------------------------------------------
-
-interface MockJobCounts {
-  waiting: number;
-  active: number;
-  completed: number;
-  failed: number;
-  delayed: number;
-  paused: number;
-}
-
-class MockQueue {
-  constructor(
-    public readonly name: string,
-    private readonly counts: MockJobCounts,
-    private paused = false,
-  ) {}
-
-  getJobCounts(): Promise<MockJobCounts> {
-    return Promise.resolve({ ...this.counts });
-  }
-
-  isPaused(): Promise<boolean> {
-    return Promise.resolve(this.paused);
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Service
-// ---------------------------------------------------------------------------
-
 @Injectable()
-export class QueueDashboardService {
+export class QueueDashboardService
+  implements OnModuleInit, OnApplicationShutdown
+{
   private readonly logger = new Logger(QueueDashboardService.name);
+  private readonly queues: Queue[] = [];
+  private redisConnected = false;
 
-  /**
-   * Registry of queues to monitor.
-   *
-   * Replace MockQueue instances with real BullMQ Queue objects when the
-   * dependency is available.
-   */
-  private readonly queues: MockQueue[] = [
-    new MockQueue('auto-release', {
-      waiting: 0,
-      active: 0,
-      completed: 0,
-      failed: 0,
-      delayed: 0,
-      paused: 0,
-    }),
-    new MockQueue('tracking-poll', {
-      waiting: 0,
-      active: 0,
-      completed: 0,
-      failed: 0,
-      delayed: 0,
-      paused: 0,
-    }),
-  ];
+  constructor(private readonly config: ConfigService) {}
 
-  /** Returns the current queue health summary for the admin dashboard. */
+  onModuleInit(): void {
+    const redisUrl = this.config.get('REDIS_URL');
+    if (!redisUrl) {
+      this.logger.warn(
+        'REDIS_URL not set; dashboard will return empty queue data',
+      );
+      return;
+    }
+
+    const queueNames = ['auto-release', 'tracking-poll', 'notifications-retry'];
+
+    for (const name of queueNames) {
+      try {
+        const queue = new Queue(name, {
+          connection: { url: redisUrl },
+        });
+        this.queues.push(queue);
+        this.redisConnected = true;
+      } catch (err) {
+        this.logger.warn(
+          `Failed to create queue ${name}: ` +
+            (err instanceof Error ? err.message : String(err)),
+        );
+      }
+    }
+
+    if (this.redisConnected) {
+      this.logger.log(
+        `Dashboard connected to ${this.queues.length} BullMQ queues`,
+      );
+    }
+  }
+
+  async onApplicationShutdown(): Promise<void> {
+    for (const queue of this.queues) {
+      try {
+        await queue.close();
+      } catch {
+        // Ignore close errors during shutdown
+      }
+    }
+  }
+
   async getDashboard(): Promise<QueuesDashboardDto> {
     this.logger.log(
       JSON.stringify({ msg: 'admin.queues.dashboard_requested' }),
     );
 
+    if (!this.redisConnected || this.queues.length === 0) {
+      return {
+        queues: this.getEmptyStats(),
+        generatedAt: new Date().toISOString(),
+      };
+    }
+
     const stats: QueueStatsDto[] = await Promise.all(
       this.queues.map(async (queue) => {
-        const counts = await queue.getJobCounts();
-        const isPaused = await queue.isPaused();
-        return { name: queue.name, counts, isPaused };
+        try {
+          const counts = await queue.getJobCounts(
+            'waiting',
+            'active',
+            'completed',
+            'failed',
+            'delayed',
+            'paused',
+          );
+          const isPaused = await queue.isPaused();
+          return { name: queue.name, counts, isPaused };
+        } catch (err) {
+          this.logger.warn(
+            `Failed to get counts for queue ${queue.name}: ` +
+              (err instanceof Error ? err.message : String(err)),
+          );
+          return {
+            name: queue.name,
+            counts: {
+              waiting: 0,
+              active: 0,
+              completed: 0,
+              failed: 0,
+              delayed: 0,
+              paused: 0,
+            },
+            isPaused: false,
+          };
+        }
       }),
     );
 
@@ -95,5 +119,46 @@ export class QueueDashboardService {
       queues: stats,
       generatedAt: new Date().toISOString(),
     };
+  }
+
+  private getEmptyStats(): QueueStatsDto[] {
+    return [
+      {
+        name: 'auto-release',
+        counts: {
+          waiting: 0,
+          active: 0,
+          completed: 0,
+          failed: 0,
+          delayed: 0,
+          paused: 0,
+        },
+        isPaused: false,
+      },
+      {
+        name: 'tracking-poll',
+        counts: {
+          waiting: 0,
+          active: 0,
+          completed: 0,
+          failed: 0,
+          delayed: 0,
+          paused: 0,
+        },
+        isPaused: false,
+      },
+      {
+        name: 'notifications-retry',
+        counts: {
+          waiting: 0,
+          active: 0,
+          completed: 0,
+          failed: 0,
+          delayed: 0,
+          paused: 0,
+        },
+        isPaused: false,
+      },
+    ];
   }
 }
