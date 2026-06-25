@@ -110,6 +110,28 @@ export interface EscrowEventRecord {
   createdAt: Date;
 }
 
+export interface CursorRecord {
+  id: string;
+  cursorValue: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface FailedTransactionRecord {
+  id: string;
+  operation: string;
+  escrowId: string | null;
+  errorMessage: string;
+  ledgerFeedback: Record<string, unknown> | null;
+  attempts: number;
+  status: string;
+  lastReplayTxHash: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  reviewedAt: Date | null;
+  replayedAt: Date | null;
+}
+
 type EscrowCreateInput = Omit<
   EscrowRecord,
   | 'state'
@@ -326,11 +348,13 @@ export class PrismaService implements OnModuleDestroy {
         return Promise.resolve(
           escrows.map((escrow) => {
             const selected: Partial<EscrowRecord> = {};
-            for (const key of Object.keys(select) as Array<keyof EscrowRecord>) {
+            for (const key of Object.keys(select) as Array<
+              keyof EscrowRecord
+            >) {
               selected[key] = escrow[key];
             }
             return selected;
-          })
+          }),
         );
       }
 
@@ -725,13 +749,13 @@ export class PrismaService implements OnModuleDestroy {
       if (!settings) {
         return Promise.resolve(null);
       }
-      
+
       if (select?.notificationChannels) {
         return Promise.resolve({
           notificationChannels: (settings as any).notificationChannels || [],
         });
       }
-      
+
       return Promise.resolve(settings ? { ...settings } : null);
     },
     upsert: ({
@@ -767,29 +791,32 @@ export class PrismaService implements OnModuleDestroy {
     ...values: unknown[]
   ): Promise<T[]> {
     const queryString = query.join('?');
-    
+
     // Parse the query to extract vendorAddress, startDate, endDate, and timezone
     const vendorAddress = values[0] as string;
     const startDate = values[1] as Date;
     const endDate = values[2] as Date;
-    const timezone = values[3] as string || 'UTC';
+    const timezone = (values[3] as string) || 'UTC';
 
     // Filter escrows by vendor and date range
     const filteredEscrows = [...this.escrows.values()].filter(
       (escrow) =>
         escrow.vendorAddress === vendorAddress &&
         escrow.createdAt >= startDate &&
-        escrow.createdAt <= endDate
+        escrow.createdAt <= endDate,
     );
 
     // Group by date in the specified timezone
-    const dailyMap = new Map<string, {
-      date: string;
-      totalVolume: number;
-      transactionCount: number;
-      completedCount: number;
-      disputedCount: number;
-    }>();
+    const dailyMap = new Map<
+      string,
+      {
+        date: string;
+        totalVolume: number;
+        transactionCount: number;
+        completedCount: number;
+        disputedCount: number;
+      }
+    >();
 
     for (const escrow of filteredEscrows) {
       const dateKey = this.formatDateInTimezone(escrow.createdAt, timezone);
@@ -819,7 +846,7 @@ export class PrismaService implements OnModuleDestroy {
 
     // Sort by date ascending
     const result = Array.from(dailyMap.values()).sort((a, b) =>
-      a.date.localeCompare(b.date)
+      a.date.localeCompare(b.date),
     );
 
     return result as T[];
@@ -855,4 +882,119 @@ export class PrismaService implements OnModuleDestroy {
   async onModuleDestroy(): Promise<void> {
     await this.reset();
   }
+
+  private cursorStore = new Map<string, CursorRecord>();
+  private failedTransactionStore = new Map<string, FailedTransactionRecord>();
+
+  cursor = {
+    findFirst: ({
+      where,
+    }: {
+      where: { id: string };
+    }): Promise<CursorRecord | null> => {
+      const record = this.cursorStore.get(where.id);
+      return Promise.resolve(record ? { ...record } : null);
+    },
+    upsert: ({
+      where,
+      update,
+      create,
+    }: {
+      where: { id: string };
+      update: { cursorValue: string };
+      create: { id: string; cursorValue: string };
+    }): Promise<CursorRecord> => {
+      const existing = this.cursorStore.get(where.id);
+      if (existing) {
+        const updated = {
+          ...existing,
+          cursorValue: update.cursorValue,
+          updatedAt: new Date(),
+        };
+        this.cursorStore.set(where.id, updated);
+        return Promise.resolve({ ...updated });
+      }
+      const now = new Date();
+      const record: CursorRecord = {
+        id: create.id,
+        cursorValue: create.cursorValue,
+        createdAt: now,
+        updatedAt: now,
+      };
+      this.cursorStore.set(record.id, record);
+      return Promise.resolve({ ...record });
+    },
+  };
+
+  failedTransaction = {
+    create: ({
+      data,
+    }: {
+      data: Omit<
+        FailedTransactionRecord,
+        'id' | 'createdAt' | 'updatedAt' | 'reviewedAt' | 'replayedAt'
+      >;
+    }): Promise<FailedTransactionRecord> => {
+      const now = new Date();
+      const record: FailedTransactionRecord = {
+        ...data,
+        id: String(this.failedTransactionStore.size + 1),
+        lastReplayTxHash: null,
+        createdAt: now,
+        updatedAt: now,
+        reviewedAt: null,
+        replayedAt: null,
+      };
+      this.failedTransactionStore.set(record.id, record);
+      return Promise.resolve({ ...record });
+    },
+    findMany: ({
+      where,
+      orderBy,
+    }: {
+      where?: Record<string, unknown>;
+      orderBy?: { createdAt?: string };
+    }): Promise<FailedTransactionRecord[]> => {
+      let records = [...this.failedTransactionStore.values()];
+      if (where) {
+        records = records.filter((r) =>
+          Object.entries(where).every(([key, value]) => {
+            if (value === undefined) return true;
+            return (r as Record<string, unknown>)[key] === value;
+          }),
+        );
+      }
+      if (orderBy?.createdAt === 'desc') {
+        records.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+      }
+      return Promise.resolve(records.map((r) => ({ ...r })));
+    },
+    findUnique: ({
+      where,
+    }: {
+      where: { id: string };
+    }): Promise<FailedTransactionRecord | null> => {
+      const record = this.failedTransactionStore.get(where.id);
+      return Promise.resolve(record ? { ...record } : null);
+    },
+    update: ({
+      where,
+      data,
+    }: {
+      where: { id: string };
+      data: Record<string, unknown>;
+    }): Promise<FailedTransactionRecord> => {
+      const existing = this.failedTransactionStore.get(where.id);
+      if (!existing) {
+        throw new Error(`FailedTransaction ${where.id} not found`);
+      }
+      const updated = {
+        ...existing,
+        ...data,
+        updatedAt: new Date(),
+      } as FailedTransactionRecord;
+      this.failedTransactionStore.set(where.id, updated);
+      return Promise.resolve({ ...updated });
+    },
+  };
 }

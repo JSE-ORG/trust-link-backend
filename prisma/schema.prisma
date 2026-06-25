@@ -213,3 +213,31 @@ model Nonce {
 
   @@index([walletAddress])
 }
+
+// Issue #306 - Database-backed cursor persistence for blockchain listener
+model Cursor {
+  id          String   @id @default(cuid())
+  cursorValue String
+  updatedAt   DateTime @updatedAt
+  createdAt   DateTime @default(now())
+}
+
+// Issue #303 - Persistent dead-letter queue storage
+model FailedTransaction {
+  id               String   @id @default(cuid())
+  operation        String
+  escrowId         String?
+  errorMessage     String
+  ledgerFeedback   Json?
+  attempts         Int      @default(1)
+  status           String   @default("PENDING_REVIEW")
+  lastReplayTxHash String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  reviewedAt       DateTime?
+  replayedAt       DateTime?
+
+  @@index([status])
+  @@index([escrowId])
+  @@index([createdAt])
+}
