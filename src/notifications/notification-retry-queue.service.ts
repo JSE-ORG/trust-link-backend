@@ -161,6 +161,10 @@ export class NotificationRetryQueueService
                 lastError = err;
                 if (attempt >= attempts) break;
                 const delay = computeBackoffDelay(attempt + 1, this.options.backoff);
+                this.logger.warn(
+                    `Retry attempt ${attempt}/${attempts} for ${job.type}/${job.channel} ` +
+                    `(requestId: ${job.requestId}) — next retry in ${delay}ms`,
+                );
                 await this.sleep(delay);
             }
         }
