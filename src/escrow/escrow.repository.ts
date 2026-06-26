@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { Injectable, Optional } from '@nestjs/common';
 import { CacheService } from '../cache/cache.service';
 import {
@@ -29,7 +30,7 @@ export class EscrowRepository {
   create(dto: CreateEscrowDto, vendorAddress: string): Promise<EscrowRecord> {
     return this.prisma.escrow.create({
       data: {
-        id: crypto.randomUUID(),
+        id: randomUUID(),
         ...dto,
         vendorAddress,
       },
