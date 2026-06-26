@@ -5,5 +5,7 @@
   "testRegex": "test/integration/.*\\.integration-spec\\.ts$",
   "transform": {
     "^.+\\.(t|j)s$": "ts-jest"
-  }
+  },
+  "maxWorkers": 1,
+  "setupFiles": ["<rootDir>/test/setup-env.ts"]
 }

@@ -1,13 +1,15 @@
 import { Module } from '@nestjs/common';
 import { JwtGuard } from '../auth/guards/jwt.guard';
 import { PrismaModule } from '../prisma/prisma.module';
-import { VendorController } from './vendor.controller';
-import { VendorService } from './vendor.service';
+import { VendorProfileController } from './vendor-profile.controller';
+import { VendorProfileRepository } from './vendor-profile.repository';
+import { VendorProfileService } from './vendor-profile.service';
+import { AnalyticsModule } from './analytics/analytics.module';
 
 @Module({
-  imports: [PrismaModule],
-  controllers: [VendorController],
-  providers: [VendorService, JwtGuard],
-  exports: [VendorService],
+  imports: [PrismaModule, AnalyticsModule],
+  controllers: [VendorProfileController],
+  providers: [VendorProfileService, VendorProfileRepository, JwtGuard],
+  exports: [VendorProfileService],
 })
 export class VendorModule {}

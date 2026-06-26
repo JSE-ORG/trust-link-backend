@@ -11,20 +11,27 @@ import { ContractService } from '../../src/stellar/contract.service';
 const makeShippedEscrow = (id: string): EscrowRecord => ({
   id,
   itemName: `Item ${id}`,
+  itemRef: `ref-${id}`,
   amount: 100,
   currency: 'USDC',
   buyerAddress: 'buyer-address',
   vendorAddress: 'vendor-address',
   state: 'SHIPPED',
   trackingId: 'TRK-001',
-  shippedAt: new Date('2026-01-01T00:00:00.000Z'), // older than the 7-day cutoff
+  shippedAt: new Date('2026-01-01T00:00:00.000Z'),
+  deliveredAt: new Date('2026-01-01T00:00:00.000Z'),
+  deliveryRecordedAt: new Date('2026-01-01T00:00:00.000Z'),
+  autoReleaseSubmittedAt: null,
+  autoReleaseTxHash: null,
+  disputeId: null,
+  cancelledAt: null,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
   updatedAt: new Date('2026-01-01T00:00:00.000Z'),
 });
 
 // ── tests ─────────────────────────────────────────────────────────────────
 
-describe('AutoReleaseService.run (issue #24)', () => {
+describe('AutoReleaseService.run', () => {
   let service: AutoReleaseService;
   let repository: jest.Mocked<EscrowRepository>;
   let contractService: jest.Mocked<ContractService>;
@@ -32,7 +39,9 @@ describe('AutoReleaseService.run (issue #24)', () => {
   beforeEach(async () => {
     repository = {
       findAutoReleaseEligible: jest.fn(),
-      markReleased: jest.fn(),
+      markAutoReleaseSubmitting: jest.fn(),
+      clearAutoReleaseSubmitting: jest.fn(),
+      markAutoReleased: jest.fn(),
     } as unknown as jest.Mocked<EscrowRepository>;
 
     contractService = {
@@ -49,22 +58,37 @@ describe('AutoReleaseService.run (issue #24)', () => {
 
     service = moduleRef.get(AutoReleaseService);
     jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
   });
 
   afterEach(() => {
     jest.restoreAllMocks();
   });
 
-  it('calls submitAutoRelease and markReleased for each eligible escrow', async () => {
+  it('claims, submits, and marks released for each eligible escrow', async () => {
     const escrow = makeShippedEscrow('escrow-1');
+    const claimed = { ...escrow, autoReleaseSubmittedAt: new Date() };
+    const released = {
+      ...escrow,
+      state: 'RELEASED' as const,
+      autoReleaseTxHash: 'tx-hash',
+    };
+
     repository.findAutoReleaseEligible.mockResolvedValue([escrow]);
+    repository.markAutoReleaseSubmitting.mockResolvedValue(claimed);
     contractService.submitAutoRelease.mockResolvedValue('tx-hash');
-    repository.markReleased.mockResolvedValue({ ...escrow, state: 'RELEASED' });
+    repository.markAutoReleased.mockResolvedValue(released);
 
     await service.run();
 
+    expect(repository.markAutoReleaseSubmitting).toHaveBeenCalledWith(
+      'escrow-1',
+    );
     expect(contractService.submitAutoRelease).toHaveBeenCalledWith('escrow-1');
-    expect(repository.markReleased).toHaveBeenCalledWith('escrow-1');
+    expect(repository.markAutoReleased).toHaveBeenCalledWith(
+      'escrow-1',
+      'tx-hash',
+    );
   });
 
   it('makes no contract calls when there are 0 eligible escrows', async () => {
@@ -72,60 +96,130 @@ describe('AutoReleaseService.run (issue #24)', () => {
 
     await service.run();
 
+    expect(repository.markAutoReleaseSubmitting).not.toHaveBeenCalled();
     expect(contractService.submitAutoRelease).not.toHaveBeenCalled();
-    expect(repository.markReleased).not.toHaveBeenCalled();
   });
 
-  it('logs error and continues processing remaining escrows on contract failure', async () => {
+  it('skips an escrow when the optimistic lock is already held by another worker', async () => {
+    const escrow = makeShippedEscrow('escrow-1');
+    repository.findAutoReleaseEligible.mockResolvedValue([escrow]);
+    repository.markAutoReleaseSubmitting.mockResolvedValue(null); // lock not acquired
+
+    await service.run();
+
+    expect(contractService.submitAutoRelease).not.toHaveBeenCalled();
+    expect(repository.markAutoReleased).not.toHaveBeenCalled();
+  });
+
+  it('logs error, clears the lock, and continues on contract failure', async () => {
     const escrow1 = makeShippedEscrow('escrow-1');
     const escrow2 = makeShippedEscrow('escrow-2');
+
     repository.findAutoReleaseEligible.mockResolvedValue([escrow1, escrow2]);
+    repository.markAutoReleaseSubmitting
+      .mockResolvedValueOnce({ ...escrow1, autoReleaseSubmittedAt: new Date() })
+      .mockResolvedValueOnce({
+        ...escrow2,
+        autoReleaseSubmittedAt: new Date(),
+      });
     contractService.submitAutoRelease
-      .mockRejectedValueOnce(new Error('contract error for escrow-1'))
+      .mockRejectedValueOnce(new Error('contract error'))
       .mockResolvedValueOnce('tx-hash-2');
-    repository.markReleased.mockResolvedValue({
+    repository.clearAutoReleaseSubmitting.mockResolvedValue({
+      ...escrow1,
+      autoReleaseSubmittedAt: null,
+    });
+    repository.markAutoReleased.mockResolvedValue({
       ...escrow2,
       state: 'RELEASED',
+      autoReleaseTxHash: 'tx-hash-2',
     });
 
     await service.run();
 
-    expect(contractService.submitAutoRelease).toHaveBeenCalledTimes(2);
     expect(Logger.prototype.error).toHaveBeenCalledWith(
       expect.stringContaining('escrow-1'),
       expect.any(Error),
     );
-    // escrow-2 was still processed despite escrow-1 failing
-    expect(repository.markReleased).toHaveBeenCalledWith('escrow-2');
-    expect(repository.markReleased).not.toHaveBeenCalledWith('escrow-1');
+    expect(repository.clearAutoReleaseSubmitting).toHaveBeenCalledWith(
+      'escrow-1',
+    );
+    expect(repository.markAutoReleased).toHaveBeenCalledWith(
+      'escrow-2',
+      'tx-hash-2',
+    );
+    expect(repository.markAutoReleased).not.toHaveBeenCalledWith(
+      'escrow-1',
+      expect.anything(),
+    );
   });
 
-  it('idempotency check prevents the same escrow from being submitted twice', async () => {
+  it('DB-level lock prevents duplicate submission across two sequential runs', async () => {
     const escrow = makeShippedEscrow('escrow-1');
-    // Mock always returns the same escrow — in production, state change to
-    // RELEASED would filter it out, but here we verify the in-process guard.
+    // Both runs return the same escrow (mock doesn't filter by state)
     repository.findAutoReleaseEligible.mockResolvedValue([escrow]);
+    // First run acquires the lock; second run sees it already held
+    repository.markAutoReleaseSubmitting
+      .mockResolvedValueOnce({ ...escrow, autoReleaseSubmittedAt: new Date() })
+      .mockResolvedValueOnce(null);
     contractService.submitAutoRelease.mockResolvedValue('tx-hash');
-    repository.markReleased.mockResolvedValue({ ...escrow, state: 'RELEASED' });
+    repository.markAutoReleased.mockResolvedValue({
+      ...escrow,
+      state: 'RELEASED',
+      autoReleaseTxHash: 'tx-hash',
+    });
 
-    await service.run(); // first run: processes escrow-1 → added to processingIds
-    await service.run(); // second run: escrow-1 is in processingIds → skipped
+    await service.run();
+    await service.run();
 
     expect(contractService.submitAutoRelease).toHaveBeenCalledTimes(1);
+    expect(repository.markAutoReleased).toHaveBeenCalledTimes(1);
   });
 
-  it('removes failed escrows from processingIds so they can be retried', async () => {
+  it('clears the lock on failure so the next run can retry', async () => {
     const escrow = makeShippedEscrow('escrow-1');
     repository.findAutoReleaseEligible.mockResolvedValue([escrow]);
+    repository.markAutoReleaseSubmitting
+      .mockResolvedValueOnce({ ...escrow, autoReleaseSubmittedAt: new Date() })
+      .mockResolvedValueOnce({ ...escrow, autoReleaseSubmittedAt: new Date() });
     contractService.submitAutoRelease
       .mockRejectedValueOnce(new Error('transient failure'))
       .mockResolvedValueOnce('tx-hash');
-    repository.markReleased.mockResolvedValue({ ...escrow, state: 'RELEASED' });
+    repository.clearAutoReleaseSubmitting.mockResolvedValue({
+      ...escrow,
+      autoReleaseSubmittedAt: null,
+    });
+    repository.markAutoReleased.mockResolvedValue({
+      ...escrow,
+      state: 'RELEASED',
+      autoReleaseTxHash: 'tx-hash',
+    });
 
-    await service.run(); // first run: fails → removed from processingIds
+    await service.run(); // first run: fails → lock cleared
     await service.run(); // second run: retried → succeeds
 
     expect(contractService.submitAutoRelease).toHaveBeenCalledTimes(2);
-    expect(repository.markReleased).toHaveBeenCalledTimes(1);
+    expect(repository.clearAutoReleaseSubmitting).toHaveBeenCalledTimes(1);
+    expect(repository.markAutoReleased).toHaveBeenCalledTimes(1);
+  });
+
+  it('concurrent worker runs: only one submission when two workers race', async () => {
+    const escrow = makeShippedEscrow('escrow-1');
+    repository.findAutoReleaseEligible.mockResolvedValue([escrow]);
+    // Worker A claims the lock; worker B finds it already held
+    repository.markAutoReleaseSubmitting
+      .mockResolvedValueOnce({ ...escrow, autoReleaseSubmittedAt: new Date() })
+      .mockResolvedValueOnce(null);
+    contractService.submitAutoRelease.mockResolvedValue('tx-hash');
+    repository.markAutoReleased.mockResolvedValue({
+      ...escrow,
+      state: 'RELEASED',
+      autoReleaseTxHash: 'tx-hash',
+    });
+
+    await Promise.all([service.run(), service.run()]);
+
+    expect(contractService.submitAutoRelease).toHaveBeenCalledTimes(1);
+    expect(repository.markAutoReleased).toHaveBeenCalledTimes(1);
   });
 });

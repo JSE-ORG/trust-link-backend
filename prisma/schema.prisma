@@ -4,32 +4,240 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
+}
+
+enum EscrowState {
+  CREATED
+  FUNDED
+  SHIPPED
+  DELIVERED
+  COMPLETED
+  RELEASED
+  DISPUTED
+  REFUNDED
+  CANCELLED
+}
+
+enum DisputeStatus {
+  OPEN
+  UNDER_REVIEW
+  RESOLVED
 }
 
 model Escrow {
-  id            String   @id @default(cuid())
-  itemName      String
-  amount        Float
-  currency      String
-  buyerAddress  String
-  vendorAddress String
-  state         String   @default("FUNDED")
-  trackingId    String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id                     String        @id @default(uuid())
+  itemName               String
+  itemRef                String
+  amount                 Decimal       @db.Decimal(18, 8)
+  currency               String
+  buyerAddress           String
+  vendorAddress          String
+  state                  EscrowState   @default(CREATED)
+  trackingId             String?
+  shippedAt              DateTime?
+  deliveredAt            DateTime?
+  deliveryRecordedAt     DateTime?
+  autoReleaseSubmittedAt DateTime?
+  autoReleaseTxHash      String?
+  disputeId              String?
+  buyerContactEmail      String?
+  buyerContactPhone      String?
+  cancelledAt            DateTime?
+  createdAt              DateTime      @default(now())
+  updatedAt              DateTime      @updatedAt
+  disputes               Dispute[]
+  notifications          Notification[]
+  vendor                 VendorProfile @relation("VendorEscrows", fields: [vendorAddress], references: [address])
+  events                 EscrowEvent[]
+ 
+  @@index([vendorAddress])
+  @@index([buyerAddress])
+  @@index([vendorAddress, state])
+  @@index([vendorAddress, itemRef])
+  @@index([state, trackingId])
+  @@index([state, createdAt])
+  @@index([state, deliveredAt])
+}
 
-  notifications Notification[]
+/// Append-only audit log of escrow state transitions (issues #71/#72).
+/// One row is written for the initial FUNDED creation and for every subsequent
+/// state change, capturing the previous and new state so the full lifecycle is
+/// reconstructable.
+model EscrowEvent {
+  id        String   @id @default(cuid())
+  escrowId  String
+  fromState String?
+  toState   String
+  createdAt DateTime @default(now())
+
+  escrow Escrow @relation(fields: [escrowId], references: [id], onDelete: Cascade)
+
+  @@index([escrowId])
+}
+
+model Dispute {
+  id           String        @id @default(cuid())
+  escrowId     String        @unique
+  reason       String
+  description  String        @default("")
+  evidenceUrls String[]      @default([])
+  status       DisputeStatus @default(OPEN)
+  resolvedAt   DateTime?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  escrow       Escrow        @relation(fields: [escrowId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@index([escrowId])
 }
 
 model Notification {
-  id                String   @id @default(cuid())
-  escrowId          String
-  type              String
-  channel           String
-  recipientAddress  String
-  providerMessageId String?
-  createdAt         DateTime @default(now())
+  id               String   @id @default(uuid())
+  escrowId         String
+  type             String
+  channel          String
+  recipientAddress String
+  message          String
+  createdAt        DateTime @default(now())
+  escrow           Escrow   @relation(fields: [escrowId], references: [id], onDelete: Cascade)
 
-  escrow Escrow @relation(fields: [escrowId], references: [id], onDelete: Cascade)
+  @@index([escrowId])
+}
+
+model VendorProfile {
+  address          String                  @id
+  businessName     String
+  email            String?
+  phone            String?
+  description      String?
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+
+  accountDetails   VendorAccountDetails?
+  trackingSettings VendorTrackingSettings?
+  escrows          Escrow[]                @relation("VendorEscrows")
+}
+
+model VendorAccountDetails {
+  id                  String    @id @default(cuid())
+  vendorAddress       String    @unique
+  businessLicense     String?
+  taxId               String?
+  bankAccountNumber   String?
+  bankRoutingNumber   String?
+  paymentMethods      String[]  @default([])
+  preferredCurrency   String    @default("USD")
+  billingAddress      String?
+  billingCity         String?
+  billingState        String?
+  billingCountry      String?
+  billingPostalCode   String?
+  shippingAddress     String?
+  shippingCity        String?
+  shippingState       String?
+  shippingCountry     String?
+  shippingPostalCode  String?
+  websiteUrl          String?
+  socialMediaLinks    String[]  @default([])
+  businessHours       String?
+  timezone            String    @default("UTC")
+  language            String    @default("en")
+  verificationStatus  String    @default("PENDING")
+  verifiedAt          DateTime?
+  kycStatus           String    @default("NOT_STARTED")
+  kycCompletedAt      DateTime?
+  riskScore           Int       @default(0)
+  complianceNotes     String?
+  customFields        Json?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  vendor VendorProfile @relation(fields: [vendorAddress], references: [address], onDelete: Cascade)
+}
+
+model VendorTrackingSettings {
+  id                           String    @id @default(cuid())
+  vendorAddress                String    @unique
+  enableTracking               Boolean   @default(true)
+  trackingProvider             String?
+  trackingApiKey               String?
+  autoUpdateTracking           Boolean   @default(false)
+  trackingUpdateInterval       Int       @default(3600)
+  notifyOnDelivery             Boolean   @default(true)
+  notifyOnDelay                Boolean   @default(true)
+  notifyOnException            Boolean   @default(true)
+  delayThresholdHours          Int       @default(24)
+  deliveryConfirmation         Boolean   @default(true)
+  requireSignature             Boolean   @default(false)
+  insuranceRequired            Boolean   @default(false)
+  insuranceValue               Float?
+  customTrackingRules          Json?
+  webhookUrl                   String?
+  webhookSecret                String?
+  notificationChannels         String[]  @default(["EMAIL"])
+  trackingHistoryRetentionDays Int       @default(90)
+  createdAt                    DateTime  @default(now())
+  updatedAt                    DateTime  @updatedAt
+
+  vendor VendorProfile @relation(fields: [vendorAddress], references: [address], onDelete: Cascade)
+}
+
+// Issue #77 - Persistent cursor for the Stellar webhook listener.
+model ProcessedWebhookEvent {
+  operationId String   @id
+  processedAt DateTime @default(now())
+
+  @@index([processedAt])
+}
+
+model RefreshToken {
+  id            String   @id @default(cuid())
+  userId        String
+  tokenHash     String   @unique
+  parentTokenId String?
+  revoked       Boolean  @default(false)
+  expiresAt     DateTime
+  createdAt     DateTime @default(now())
+
+  @@index([userId])
+}
+
+model Nonce {
+  id            String   @id @default(cuid())
+  nonce         String   @unique
+  walletAddress String
+  challenge     String
+  used          Boolean  @default(false)
+  expiresAt     DateTime
+  createdAt     DateTime @default(now())
+
+  @@index([walletAddress])
+}
+
+// Issue #306 - Database-backed cursor persistence for blockchain listener
+model Cursor {
+  id          String   @id @default(cuid())
+  cursorValue String
+  updatedAt   DateTime @updatedAt
+  createdAt   DateTime @default(now())
+}
+
+// Issue #303 - Persistent dead-letter queue storage
+model FailedTransaction {
+  id               String   @id @default(cuid())
+  operation        String
+  escrowId         String?
+  errorMessage     String
+  ledgerFeedback   Json?
+  attempts         Int      @default(1)
+  status           String   @default("PENDING_REVIEW")
+  lastReplayTxHash String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  reviewedAt       DateTime?
+  replayedAt       DateTime?
+
+  @@index([status])
+  @@index([escrowId])
+  @@index([createdAt])
 }

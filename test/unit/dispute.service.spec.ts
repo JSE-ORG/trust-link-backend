@@ -11,16 +11,19 @@ import request from 'supertest';
 import { AdminGuard } from '../../src/admin/guards/admin.guard';
 import { DisputeService } from '../../src/admin/dispute/dispute.service';
 import { EscrowRepository } from '../../src/escrow/escrow.repository';
-import { EscrowRecord } from '../../src/prisma/prisma.service';
+import { EscrowRecord, PrismaService } from '../../src/prisma/prisma.service';
 import { ContractService } from '../../src/stellar/contract.service';
 import { DisputeController } from '../../src/admin/dispute/dispute.controller';
 import { JwtGuard } from '../../src/auth/guards/jwt.guard';
+import { ConfigService } from '../../src/config/config.service';
+import { AuditLogService } from '../../src/audit-log/audit-log.service';
 
 // ── shared fixture ────────────────────────────────────────────────────────
 
 const shippedEscrow: EscrowRecord = {
   id: 'escrow-1',
   itemName: 'Vintage camera',
+  itemRef: 'camera-001',
   amount: 200,
   currency: 'USDC',
   buyerAddress: 'buyer-address',
@@ -28,6 +31,12 @@ const shippedEscrow: EscrowRecord = {
   state: 'SHIPPED',
   trackingId: 'TRK-XYZ',
   shippedAt: new Date('2026-01-01T00:00:00.000Z'),
+  deliveredAt: null,
+  deliveryRecordedAt: null,
+  autoReleaseSubmittedAt: null,
+  autoReleaseTxHash: null,
+  disputeId: null,
+  cancelledAt: null,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
   updatedAt: new Date('2026-01-01T00:00:00.000Z'),
 };
@@ -38,6 +47,7 @@ describe('DisputeService (issue #25)', () => {
   let service: DisputeService;
   let repository: jest.Mocked<EscrowRepository>;
   let contractService: jest.Mocked<ContractService>;
+  let prisma: jest.Mocked<PrismaService>;
 
   beforeEach(async () => {
     repository = {
@@ -50,11 +60,14 @@ describe('DisputeService (issue #25)', () => {
       resolveDispute: jest.fn(),
     } as unknown as jest.Mocked<ContractService>;
 
+    prisma = {} as unknown as jest.Mocked<PrismaService>;
+
     const moduleRef = await Test.createTestingModule({
       providers: [
         DisputeService,
         { provide: EscrowRepository, useValue: repository },
         { provide: ContractService, useValue: contractService },
+        { provide: PrismaService, useValue: prisma },
       ],
     }).compile();
 
@@ -117,6 +130,19 @@ describe('DisputeService (issue #25)', () => {
     expect(contractService.resolveDispute).not.toHaveBeenCalled();
   });
 
+  it('does not update escrow state when contract resolution fails', async () => {
+    repository.findById.mockResolvedValue(shippedEscrow);
+    contractService.resolveDispute.mockRejectedValue(
+      new Error('Network failure'),
+    );
+
+    await expect(service.resolve('escrow-1', 'RELEASE')).rejects.toThrow(
+      'Network failure',
+    );
+    expect(repository.markCompleted).not.toHaveBeenCalled();
+    expect(repository.markRefunded).not.toHaveBeenCalled();
+  });
+
   it('throws NotFoundException when escrow does not exist', async () => {
     repository.findById.mockResolvedValue(null);
 
@@ -128,9 +154,14 @@ describe('DisputeService (issue #25)', () => {
 
 // ── endpoint-level tests (admin guard) ───────────────────────────────────
 
-describe('POST /admin/dispute/:id/resolve (admin guard)', () => {
+describe('PATCH /admin/dispute/:id/resolve (admin guard)', () => {
   let app: INestApplication;
   let disputeService: jest.Mocked<DisputeService>;
+
+  // Mock ConfigService so AdminGuard can resolve ADMIN_ADDRESS
+  const mockConfigService = {
+    get: jest.fn().mockReturnValue('admin-address'),
+  };
 
   beforeEach(async () => {
     disputeService = {
@@ -144,8 +175,10 @@ describe('POST /admin/dispute/:id/resolve (admin guard)', () => {
       controllers: [DisputeController],
       providers: [
         { provide: DisputeService, useValue: disputeService },
+        { provide: ConfigService, useValue: mockConfigService },
         JwtGuard,
         AdminGuard,
+        AuditLogService,
       ],
     }).compile();
 
@@ -160,24 +193,28 @@ describe('POST /admin/dispute/:id/resolve (admin guard)', () => {
     await app.close();
   });
 
-  it('returns 403 for a non-admin caller', async () => {
+  it('returns 403 for a vendor-role JWT', async () => {
     await request(app.getHttpServer())
-      .post('/admin/dispute/escrow-1/resolve')
-      .set('Authorization', 'Bearer non-admin-address')
+      .patch('/admin/dispute/escrow-1/resolve')
+      .set(
+        'Authorization',
+        'Bearer eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiJ2ZW5kb3ItYWRkcmVzcyIsInJvbGUiOiJ2ZW5kb3IifQ.signature',
+      )
       .send({ resolution: 'RELEASE' })
       .expect(403);
   });
 
-  it('returns 201 for the admin caller', async () => {
+  it('returns 200 for an admin-role JWT', async () => {
     const res = await request(app.getHttpServer())
-      .post('/admin/dispute/escrow-1/resolve')
-      .set('Authorization', 'Bearer admin-address')
+      .patch('/admin/dispute/escrow-1/resolve')
+      .set(
+        'Authorization',
+        'Bearer eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiJhZG1pbi1hZGRyZXNzIiwicm9sZSI6ImFkbWluIn0.signature',
+      )
       .send({ resolution: 'RELEASE' })
-      .expect(201);
+      .expect(200);
 
-    expect(res.body).toEqual(
-      expect.objectContaining({ state: 'COMPLETED' }),
-    );
+    expect(res.body).toEqual(expect.objectContaining({ state: 'COMPLETED' }));
   });
 
   it('propagates ConflictException (409) from service', async () => {
@@ -186,8 +223,11 @@ describe('POST /admin/dispute/:id/resolve (admin guard)', () => {
     );
 
     await request(app.getHttpServer())
-      .post('/admin/dispute/escrow-1/resolve')
-      .set('Authorization', 'Bearer admin-address')
+      .patch('/admin/dispute/escrow-1/resolve')
+      .set(
+        'Authorization',
+        'Bearer eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiJhZG1pbi1hZGRyZXNzIiwicm9sZSI6ImFkbWluIn0.signature',
+      )
       .send({ resolution: 'RELEASE' })
       .expect(409);
   });
@@ -197,8 +237,11 @@ describe('POST /admin/dispute/:id/resolve (admin guard)', () => {
     disputeService.resolve.mockRejectedValue(new ForbiddenException());
 
     await request(app.getHttpServer())
-      .post('/admin/dispute/escrow-1/resolve')
-      .set('Authorization', 'Bearer non-admin-address')
+      .patch('/admin/dispute/escrow-1/resolve')
+      .set(
+        'Authorization',
+        'Bearer eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiJ2ZW5kb3ItYWRkcmVzcyIsInJvbGUiOiJ2ZW5kb3IifQ.signature',
+      )
       .send({ resolution: 'RELEASE' })
       .expect(403);
 

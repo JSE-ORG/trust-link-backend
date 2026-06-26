@@ -1,62 +1,66 @@
-import { Injectable, OnModuleDestroy } from '@nestjs/common';
-
-// ── Vendor profile types ──────────────────────────────────────────────────────
-
-export interface NotificationPreferences {
-  email: boolean;
-  sms: boolean;
-  inApp: boolean;
-}
-
-export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences = {
-  email: true,
-  sms: false,
-  inApp: true,
-};
-
-export interface VendorProfile {
-  id: string;
-  vendorAddress: string;
-  businessName: string;
-  contactEmail: string;
-  contactPhone: string | null;
-  notificationPreferences: NotificationPreferences;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-type VendorProfileCreateInput = Omit<VendorProfile, 'id' | 'notificationPreferences' | 'createdAt' | 'updatedAt'> & {
-  notificationPreferences?: Partial<NotificationPreferences>;
-};
-
-type VendorProfileUpdateInput = Partial<
-  Pick<VendorProfile, 'businessName' | 'contactEmail' | 'contactPhone'>
-> & {
-  notificationPreferences?: Partial<NotificationPreferences>;
-};
-
-// ── Escrow types ──────────────────────────────────────────────────────────────
+import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 
 export type EscrowState =
+  | 'CREATED'
   | 'FUNDED'
   | 'SHIPPED'
   | 'DELIVERED'
+  | 'COMPLETED'
   | 'RELEASED'
+  | 'DISPUTED'
+  | 'REFUNDED'
+  | 'CANCELLED';
+export type NotificationChannel = 'EMAIL' | 'SMS';
+export type NotificationType =
+  | 'FUNDED'
+  | 'SHIPPED'
+  | 'DELIVERED'
+  | 'DISPUTED'
   | 'COMPLETED'
   | 'REFUNDED';
-export type NotificationChannel = 'EMAIL' | 'SMS';
-export type NotificationType = 'FUNDED' | 'SHIPPED';
+export type DisputeState = 'OPEN' | 'UNDER_REVIEW' | 'RESOLVED';
 
 export interface EscrowRecord {
   id: string;
   itemName: string;
+  itemRef?: string;
   amount: number;
   currency: string;
   buyerAddress: string;
   vendorAddress: string;
   state: EscrowState;
   trackingId: string | null;
-  shippedAt: Date | null;
+  shippedAt?: Date | null;
+  deliveredAt: Date | null;
+  deliveryRecordedAt: Date | null;
+  autoReleaseSubmittedAt: Date | null;
+  autoReleaseTxHash: string | null;
+  disputeId: string | null;
+  cancelledAt?: Date | null;
+  buyerContactEmail?: string | null;
+  buyerContactPhone?: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface VendorProfileRecord {
+  address: string;
+  businessName: string;
+  email: string | null;
+  phone: string | null;
+  description: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface DisputeRecord {
+  id: string;
+  escrowId: string;
+  reason: string;
+  description?: string;
+  evidenceUrls?: string[];
+  status: DisputeState;
+  resolvedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -68,50 +72,243 @@ export interface NotificationRecord {
   channel: NotificationChannel;
   recipientAddress: string;
   providerMessageId: string | null;
+  attemptCount: number;
+  lastResponseCode: number | null;
   createdAt: Date;
+}
+
+export interface ProcessedWebhookEventRecord {
+  operationId: string;
+  processedAt: Date;
+}
+
+export interface RefreshTokenRecord {
+  id: string;
+  userId: string;
+  tokenHash: string;
+  parentTokenId: string | null;
+  revoked: boolean;
+  expiresAt: Date;
+  createdAt: Date;
+}
+
+export interface NonceRecord {
+  id: string;
+  nonce: string;
+  walletAddress: string;
+  challenge: string;
+  used: boolean;
+  expiresAt: Date;
+  createdAt: Date;
+}
+
+export interface EscrowEventRecord {
+  id: string;
+  escrowId: string;
+  fromState: EscrowState | null;
+  toState: EscrowState;
+  createdAt: Date;
+}
+
+export interface CursorRecord {
+  id: string;
+  cursorValue: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface FailedTransactionRecord {
+  id: string;
+  operation: string;
+  escrowId: string | null;
+  errorMessage: string;
+  ledgerFeedback: Record<string, unknown> | null;
+  attempts: number;
+  status: string;
+  lastReplayTxHash: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  reviewedAt: Date | null;
+  replayedAt: Date | null;
 }
 
 type EscrowCreateInput = Omit<
   EscrowRecord,
-  'id' | 'state' | 'trackingId' | 'shippedAt' | 'createdAt' | 'updatedAt'
+  | 'state'
+  | 'trackingId'
+  | 'shippedAt'
+  | 'deliveredAt'
+  | 'deliveryRecordedAt'
+  | 'autoReleaseSubmittedAt'
+  | 'autoReleaseTxHash'
+  | 'disputeId'
+  | 'cancelledAt'
+  | 'createdAt'
+  | 'updatedAt'
 > & {
+  id?: string;
+  itemRef?: string;
   state?: EscrowState;
   trackingId?: string | null;
   shippedAt?: Date | null;
+  deliveredAt?: Date | null;
+  deliveryRecordedAt?: Date | null;
+  autoReleaseSubmittedAt?: Date | null;
+  autoReleaseTxHash?: string | null;
+  disputeId?: string | null;
+  cancelledAt?: Date | null;
+};
+
+type DisputeCreateInput = Omit<
+  DisputeRecord,
+  'status' | 'resolvedAt' | 'createdAt' | 'updatedAt' | 'evidenceUrls'
+> & {
+  id?: string;
+  description?: string;
+  status?: DisputeState;
+  resolvedAt?: Date | null;
+  evidenceUrls?: string[];
 };
 
 type EscrowUpdateInput = Partial<
-  Pick<EscrowRecord, 'state' | 'trackingId' | 'shippedAt'>
+  Pick<
+    EscrowRecord,
+    | 'state'
+    | 'trackingId'
+    | 'shippedAt'
+    | 'deliveredAt'
+    | 'deliveryRecordedAt'
+    | 'autoReleaseSubmittedAt'
+    | 'autoReleaseTxHash'
+    | 'disputeId'
+    | 'cancelledAt'
+    | 'buyerContactEmail'
+    | 'buyerContactPhone'
+  >
 >;
 
-interface EscrowWhereInput {
-  state?: EscrowState;
-  vendorAddress?: string;
-  shippedAt?: { lte: Date };
-}
+type VendorProfileCreateInput = Omit<
+  VendorProfileRecord,
+  'createdAt' | 'updatedAt'
+>;
+
+type VendorProfileUpdateInput = Partial<
+  Omit<VendorProfileRecord, 'address' | 'createdAt' | 'updatedAt'>
+>;
+
+type DisputeUpdateInput = Partial<
+  Pick<
+    DisputeRecord,
+    'status' | 'resolvedAt' | 'reason' | 'escrowId' | 'evidenceUrls'
+  >
+>;
 
 @Injectable()
 export class PrismaService implements OnModuleDestroy {
+  // databaseUrl is accepted so the module can pass the pool-tuned URL from
+  // ConfigService. The in-memory store does not use it, but a real PrismaClient
+  // replacement should forward it to `new PrismaClient({ datasources: { db: { url } } })`.
+  constructor(readonly databaseUrl?: string) {
+    // Issue #316: apply statement_timeout to prevent long-running queries
+    if (databaseUrl) {
+      try {
+        const url = new URL(databaseUrl);
+        url.searchParams.set('statement_timeout', process.env.QUERY_TIMEOUT_MS ?? '30000');
+        url.searchParams.set('connect_timeout', '10');
+        this.effectiveDatabaseUrl = url.toString();
+      } catch {
+        this.effectiveDatabaseUrl = databaseUrl;
+      }
+    }
+  }
+
+  readonly effectiveDatabaseUrl?: string;
+
+  // Issue #315: slow query logging middleware
+  private readonly slowQueryThresholdMs =
+    parseInt(process.env.SLOW_QUERY_THRESHOLD_MS ?? '500', 10);
+
+  private readonly logger = new Logger('PrismaService');
+
+  async $use<T>(
+    action: string,
+    model: string | undefined,
+    next: () => Promise<T>,
+  ): Promise<T> {
+    // Exclude health check queries from logging
+    if (model === 'HealthCheck') return next();
+    const start = Date.now();
+    const result = await next();
+    const duration = Date.now() - start;
+    if (duration > this.slowQueryThresholdMs) {
+      this.logger.warn(
+        `Slow query: ${model ?? 'unknown'}.${action} took ${duration}ms ` +
+        `(threshold: ${this.slowQueryThresholdMs}ms)`,
+      );
+    }
+    return result;
+  }
+
   private escrows = new Map<string, EscrowRecord>();
+  private disputes = new Map<string, DisputeRecord>();
   private notifications = new Map<string, NotificationRecord>();
-  private vendorProfiles = new Map<string, VendorProfile>();
+  private vendorProfiles = new Map<string, VendorProfileRecord>();
+  private vendorTrackingSettingsStore = new Map<
+    string,
+    Record<string, unknown>
+  >();
+  private webhookEvents = new Map<string, ProcessedWebhookEventRecord>();
+  private refreshTokens = new Map<string, RefreshTokenRecord>();
+  private nonces = new Map<string, NonceRecord>();
+  private escrowEvents = new Map<string, EscrowEventRecord>();
   private escrowId = 1;
+  private disputeId = 1;
   private notificationId = 1;
-  private vendorProfileId = 1;
+  private refreshTokenId = 1;
+  private nonceId = 1;
+  private escrowEventId = 1;
+
+  // Single chokepoint for transition logging (#71/#72): every escrow state
+  // change funnels through here so the EscrowEvent audit log is complete. With
+  // a real Prisma client this is the equivalent of a query extension / DB
+  // trigger; here it lives alongside the in-memory escrow mutations.
+  private recordEscrowEvent(
+    escrowId: string,
+    fromState: EscrowState | null,
+    toState: EscrowState,
+  ): void {
+    const event: EscrowEventRecord = {
+      id: String(this.escrowEventId++),
+      escrowId,
+      fromState,
+      toState,
+      createdAt: new Date(),
+    };
+    this.escrowEvents.set(event.id, event);
+  }
 
   escrow = {
     create: ({ data }: { data: EscrowCreateInput }): Promise<EscrowRecord> => {
       const now = new Date();
       const escrow: EscrowRecord = {
         ...data,
-        id: String(this.escrowId++),
+        id: data.id ?? String(this.escrowId++),
         state: data.state ?? 'FUNDED',
         trackingId: data.trackingId ?? null,
         shippedAt: data.shippedAt ?? null,
+        deliveredAt: data.deliveredAt ?? null,
+        deliveryRecordedAt: data.deliveryRecordedAt ?? null,
+        autoReleaseSubmittedAt: data.autoReleaseSubmittedAt ?? null,
+        autoReleaseTxHash: data.autoReleaseTxHash ?? null,
+        disputeId: data.disputeId ?? null,
+        cancelledAt: data.cancelledAt ?? null,
+        buyerContactEmail: data.buyerContactEmail ?? null,
+        buyerContactPhone: data.buyerContactPhone ?? null,
         createdAt: now,
         updatedAt: now,
       };
       this.escrows.set(escrow.id, escrow);
+      this.recordEscrowEvent(escrow.id, null, escrow.state);
       return Promise.resolve({ ...escrow });
     },
     findUnique: ({
@@ -124,25 +321,84 @@ export class PrismaService implements OnModuleDestroy {
     },
     findMany: ({
       where,
+      select,
     }: {
-      where?: EscrowWhereInput;
-    } = {}): Promise<EscrowRecord[]> => {
-      let results = [...this.escrows.values()];
-      if (where?.state) {
-        results = results.filter((e) => e.state === where.state);
+      where?: Partial<
+        Pick<
+          EscrowRecord,
+          | 'state'
+          | 'trackingId'
+          | 'vendorAddress'
+          | 'buyerAddress'
+          | 'disputeId'
+          | 'itemRef'
+          | 'autoReleaseTxHash'
+          | 'autoReleaseSubmittedAt'
+        >
+      > & {
+        shippedAt?: { lte: Date };
+        deliveredAt?: { lte: Date } | null;
+        createdAt?: { gte: Date; lte: Date };
+      };
+      select?: Partial<Record<keyof EscrowRecord, boolean>>;
+    } = {}): Promise<EscrowRecord[] | Partial<EscrowRecord>[]> => {
+      let escrows = [...this.escrows.values()].filter((escrow) => {
+        if (!where) {
+          return true;
+        }
+
+        return Object.entries(where).every(([key, value]) => {
+          if (value === undefined) {
+            return true;
+          }
+
+          if (
+            (key === 'shippedAt' || key === 'deliveredAt') &&
+            typeof value === 'object' &&
+            value !== null &&
+            'lte' in value
+          ) {
+            const { lte } = value;
+            const field =
+              key === 'shippedAt' ? escrow.shippedAt : escrow.deliveredAt;
+            return field !== null && field !== undefined && field <= lte;
+          }
+
+          if (
+            key === 'createdAt' &&
+            typeof value === 'object' &&
+            value !== null &&
+            'gte' in value &&
+            'lte' in value
+          ) {
+            const { gte, lte } = value;
+            return escrow.createdAt >= gte && escrow.createdAt <= lte;
+          }
+
+          return escrow[key as keyof EscrowRecord] === value;
+        });
+      });
+
+      if (!where?.state) {
+        escrows = escrows.filter((e) => e.state !== 'CANCELLED');
       }
-      if (where?.vendorAddress) {
-        results = results.filter((e) => e.vendorAddress === where.vendorAddress);
-      }
-      if (where?.shippedAt?.lte) {
-        const lte = where.shippedAt.lte;
-        results = results.filter(
-          (e) => e.shippedAt !== null && e.shippedAt <= lte,
+
+      if (select) {
+        return Promise.resolve(
+          escrows.map((escrow) => {
+            const selected: Partial<EscrowRecord> = {};
+            for (const key of Object.keys(select) as Array<
+              keyof EscrowRecord
+            >) {
+              selected[key] = escrow[key];
+            }
+            return selected;
+          }),
         );
       }
-      return Promise.resolve(results.map((e) => ({ ...e })));
-    },
 
+      return Promise.resolve(escrows.map((escrow) => ({ ...escrow })));
+    },
     update: ({
       where,
       data,
@@ -156,11 +412,100 @@ export class PrismaService implements OnModuleDestroy {
       }
       const updated = { ...existing, ...data, updatedAt: new Date() };
       this.escrows.set(where.id, updated);
+      if (data.state !== undefined && data.state !== existing.state) {
+        this.recordEscrowEvent(where.id, existing.state, data.state);
+      }
       return Promise.resolve({ ...updated });
     },
     deleteMany: (): Promise<{ count: number }> => {
       const count = this.escrows.size;
       this.escrows.clear();
+      return Promise.resolve({ count });
+    },
+  };
+
+  dispute = {
+    create: ({
+      data,
+    }: {
+      data: DisputeCreateInput;
+    }): Promise<DisputeRecord> => {
+      const now = new Date();
+      const dispute: DisputeRecord = {
+        ...data,
+        id: data.id ?? String(this.disputeId++),
+        status: data.status ?? 'OPEN',
+        evidenceUrls: data.evidenceUrls ?? [],
+        resolvedAt: data.resolvedAt ?? null,
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      this.disputes.set(dispute.id, dispute);
+
+      const escrow = this.escrows.get(dispute.escrowId);
+      if (escrow) {
+        this.escrows.set(dispute.escrowId, {
+          ...escrow,
+          state: 'DISPUTED',
+          disputeId: dispute.id,
+          updatedAt: now,
+        });
+        if (escrow.state !== 'DISPUTED') {
+          this.recordEscrowEvent(dispute.escrowId, escrow.state, 'DISPUTED');
+        }
+      }
+
+      return Promise.resolve({ ...dispute });
+    },
+    findUnique: ({
+      where,
+    }: {
+      where: { id: string };
+    }): Promise<DisputeRecord | null> => {
+      const dispute = this.disputes.get(where.id);
+      return Promise.resolve(dispute ? { ...dispute } : null);
+    },
+    findMany: ({
+      where,
+    }: {
+      where?: Partial<Pick<DisputeRecord, 'escrowId' | 'status'>>;
+    } = {}): Promise<DisputeRecord[]> => {
+      const disputes = [...this.disputes.values()].filter((dispute) => {
+        if (!where) {
+          return true;
+        }
+
+        return Object.entries(where).every(([key, value]) => {
+          if (value === undefined) {
+            return true;
+          }
+
+          return dispute[key as keyof DisputeRecord] === value;
+        });
+      });
+
+      return Promise.resolve(disputes.map((dispute) => ({ ...dispute })));
+    },
+    update: ({
+      where,
+      data,
+    }: {
+      where: { id: string };
+      data: DisputeUpdateInput;
+    }): Promise<DisputeRecord> => {
+      const existing = this.disputes.get(where.id);
+      if (!existing) {
+        throw new Error(`Dispute ${where.id} not found`);
+      }
+
+      const updated = { ...existing, ...data, updatedAt: new Date() };
+      this.disputes.set(where.id, updated);
+      return Promise.resolve({ ...updated });
+    },
+    deleteMany: (): Promise<{ count: number }> => {
+      const count = this.disputes.size;
+      this.disputes.clear();
       return Promise.resolve({ count });
     },
   };
@@ -192,71 +537,270 @@ export class PrismaService implements OnModuleDestroy {
     },
   };
 
-  vendorProfile = {
-    create: ({ data }: { data: VendorProfileCreateInput }): Promise<VendorProfile> => {
-      // Reject duplicate vendorAddress
-      for (const v of this.vendorProfiles.values()) {
-        if (v.vendorAddress === data.vendorAddress) {
-          const err = new Error('Unique constraint failed: vendorAddress') as Error & { code: string };
-          err.code = 'P2002';
-          throw err;
+  processedWebhookEvent = {
+    findUnique: ({
+      where,
+    }: {
+      where: { operationId: string };
+    }): Promise<ProcessedWebhookEventRecord | null> => {
+      const event = this.webhookEvents.get(where.operationId);
+      return Promise.resolve(event ? { ...event } : null);
+    },
+    create: ({
+      data,
+    }: {
+      data: { operationId: string };
+    }): Promise<ProcessedWebhookEventRecord> => {
+      const event: ProcessedWebhookEventRecord = {
+        operationId: data.operationId,
+        processedAt: new Date(),
+      };
+      this.webhookEvents.set(data.operationId, event);
+      return Promise.resolve({ ...event });
+    },
+    delete: ({
+      where,
+    }: {
+      where: { operationId: string };
+    }): Promise<ProcessedWebhookEventRecord | null> => {
+      const event = this.webhookEvents.get(where.operationId) ?? null;
+      this.webhookEvents.delete(where.operationId);
+      return Promise.resolve(event ? { ...event } : null);
+    },
+    deleteMany: (): Promise<{ count: number }> => {
+      const count = this.webhookEvents.size;
+      this.webhookEvents.clear();
+      return Promise.resolve({ count });
+    },
+  };
+
+  escrowEvent = {
+    create: ({
+      data,
+    }: {
+      data: Omit<EscrowEventRecord, 'id' | 'createdAt'> & {
+        fromState?: EscrowState | null;
+      };
+    }): Promise<EscrowEventRecord> => {
+      const event: EscrowEventRecord = {
+        ...data,
+        id: String(this.escrowEventId++),
+        fromState: data.fromState ?? null,
+        createdAt: new Date(),
+      };
+      this.escrowEvents.set(event.id, event);
+      return Promise.resolve({ ...event });
+    },
+    findMany: ({
+      where,
+    }: {
+      where?: Partial<Pick<EscrowEventRecord, 'escrowId'>>;
+    } = {}): Promise<EscrowEventRecord[]> => {
+      const events = [...this.escrowEvents.values()]
+        .filter(
+          (event) => !where?.escrowId || event.escrowId === where.escrowId,
+        )
+        .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+      return Promise.resolve(events.map((event) => ({ ...event })));
+    },
+    deleteMany: (): Promise<{ count: number }> => {
+      const count = this.escrowEvents.size;
+      this.escrowEvents.clear();
+      return Promise.resolve({ count });
+    },
+  };
+
+  refreshToken = {
+    create: ({
+      data,
+    }: {
+      data: Omit<RefreshTokenRecord, 'id' | 'createdAt'>;
+    }): Promise<RefreshTokenRecord> => {
+      const token: RefreshTokenRecord = {
+        ...data,
+        id: String(this.refreshTokenId++),
+        parentTokenId: data.parentTokenId ?? null,
+        createdAt: new Date(),
+      };
+      this.refreshTokens.set(token.id, token);
+      return Promise.resolve({ ...token });
+    },
+    findUnique: ({
+      where,
+    }: {
+      where: { id?: string; tokenHash?: string };
+    }): Promise<RefreshTokenRecord | null> => {
+      const token = where.id
+        ? this.refreshTokens.get(where.id)
+        : [...this.refreshTokens.values()].find(
+            (record) => record.tokenHash === where.tokenHash,
+          );
+      return Promise.resolve(token ? { ...token } : null);
+    },
+    update: ({
+      where,
+      data,
+    }: {
+      where: { id: string };
+      data: Partial<Pick<RefreshTokenRecord, 'revoked'>>;
+    }): Promise<RefreshTokenRecord> => {
+      const existing = this.refreshTokens.get(where.id);
+      if (!existing) {
+        throw new Error(`Refresh token ${where.id} not found`);
+      }
+      const updated = { ...existing, ...data };
+      this.refreshTokens.set(where.id, updated);
+      return Promise.resolve({ ...updated });
+    },
+    updateMany: ({
+      where,
+      data,
+    }: {
+      where: { userId?: string };
+      data: Partial<Pick<RefreshTokenRecord, 'revoked'>>;
+    }): Promise<{ count: number }> => {
+      let count = 0;
+      for (const [id, token] of this.refreshTokens.entries()) {
+        if (!where.userId || token.userId === where.userId) {
+          this.refreshTokens.set(id, { ...token, ...data });
+          count++;
         }
       }
-      const now = new Date();
-      const profile: VendorProfile = {
+      return Promise.resolve({ count });
+    },
+    deleteMany: (): Promise<{ count: number }> => {
+      const count = this.refreshTokens.size;
+      this.refreshTokens.clear();
+      return Promise.resolve({ count });
+    },
+  };
+
+  nonce = {
+    create: ({
+      data,
+    }: {
+      data: Omit<NonceRecord, 'id' | 'createdAt'>;
+    }): Promise<NonceRecord> => {
+      const nonce: NonceRecord = {
         ...data,
-        id: String(this.vendorProfileId++),
-        notificationPreferences: {
-          ...DEFAULT_NOTIFICATION_PREFERENCES,
-          ...(data.notificationPreferences ?? {}),
-        },
-        contactPhone: data.contactPhone ?? null,
+        id: String(this.nonceId++),
+        createdAt: new Date(),
+      };
+      this.nonces.set(nonce.id, nonce);
+      return Promise.resolve({ ...nonce });
+    },
+    findUnique: ({
+      where,
+    }: {
+      where: { id?: string; nonce?: string };
+    }): Promise<NonceRecord | null> => {
+      const nonce = where.id
+        ? this.nonces.get(where.id)
+        : [...this.nonces.values()].find(
+            (record) => record.nonce === where.nonce,
+          );
+      return Promise.resolve(nonce ? { ...nonce } : null);
+    },
+    update: ({
+      where,
+      data,
+    }: {
+      where: { id: string };
+      data: Partial<Pick<NonceRecord, 'used'>>;
+    }): Promise<NonceRecord> => {
+      const existing = this.nonces.get(where.id);
+      if (!existing) {
+        throw new Error(`Nonce ${where.id} not found`);
+      }
+      const updated = { ...existing, ...data };
+      this.nonces.set(where.id, updated);
+      return Promise.resolve({ ...updated });
+    },
+    deleteMany: (): Promise<{ count: number }> => {
+      const count = this.nonces.size;
+      this.nonces.clear();
+      return Promise.resolve({ count });
+    },
+  };
+
+  vendorProfile = {
+    create: ({
+      data,
+    }: {
+      data: VendorProfileCreateInput;
+    }): Promise<VendorProfileRecord> => {
+      if (this.vendorProfiles.has(data.address)) {
+        throw new Error(`Vendor profile for ${data.address} already exists`);
+      }
+      const now = new Date();
+      const profile: VendorProfileRecord = {
+        ...data,
+        email: data.email ?? null,
+        phone: data.phone ?? null,
+        description: data.description ?? null,
         createdAt: now,
         updatedAt: now,
       };
-      this.vendorProfiles.set(profile.id, profile);
-      return Promise.resolve({ ...profile, notificationPreferences: { ...profile.notificationPreferences } });
+      this.vendorProfiles.set(data.address, profile);
+      return Promise.resolve({ ...profile });
     },
-
-    findUnique: ({ where }: { where: { vendorAddress?: string; id?: string } }): Promise<VendorProfile | null> => {
-      let found: VendorProfile | undefined;
-      if (where.vendorAddress !== undefined) {
-        found = [...this.vendorProfiles.values()].find(v => v.vendorAddress === where.vendorAddress);
-      } else if (where.id !== undefined) {
-        found = this.vendorProfiles.get(where.id);
-      }
-      return Promise.resolve(found ? { ...found, notificationPreferences: { ...found.notificationPreferences } } : null);
+    findUnique: ({
+      where,
+    }: {
+      where: { address: string };
+    }): Promise<VendorProfileRecord | null> => {
+      const profile = this.vendorProfiles.get(where.address);
+      return Promise.resolve(profile ? { ...profile } : null);
     },
-
-    update: ({ where, data }: { where: { vendorAddress?: string; id?: string }; data: VendorProfileUpdateInput }): Promise<VendorProfile> => {
-      let existing: VendorProfile | undefined;
-      if (where.vendorAddress !== undefined) {
-        existing = [...this.vendorProfiles.values()].find(v => v.vendorAddress === where.vendorAddress);
-      } else if (where.id !== undefined) {
-        existing = this.vendorProfiles.get(where.id);
+    upsert: ({
+      where,
+      create,
+      update,
+    }: {
+      where: { address: string };
+      create: VendorProfileCreateInput;
+      update: VendorProfileUpdateInput;
+    }): Promise<VendorProfileRecord> => {
+      const existing = this.vendorProfiles.get(where.address);
+      if (existing) {
+        const safeUpdate = Object.fromEntries(
+          Object.entries(update).filter(([, v]) => v !== undefined),
+        ) as VendorProfileUpdateInput;
+        const updated = { ...existing, ...safeUpdate, updatedAt: new Date() };
+        this.vendorProfiles.set(where.address, updated);
+        return Promise.resolve({ ...updated });
       }
-      if (!existing) throw new Error('VendorProfile not found');
-      // Strip undefined values so optional DTO fields don't overwrite existing data
+      const now = new Date();
+      const profile: VendorProfileRecord = {
+        ...create,
+        email: create.email ?? null,
+        phone: create.phone ?? null,
+        description: create.description ?? null,
+        createdAt: now,
+        updatedAt: now,
+      };
+      this.vendorProfiles.set(where.address, profile);
+      return Promise.resolve({ ...profile });
+    },
+    update: ({
+      where,
+      data,
+    }: {
+      where: { address: string };
+      data: VendorProfileUpdateInput;
+    }): Promise<VendorProfileRecord> => {
+      const existing = this.vendorProfiles.get(where.address);
+      if (!existing) {
+        throw new Error(`Vendor profile for ${where.address} not found`);
+      }
+      // Strip undefined so optional DTO fields don't overwrite existing values
       const safeData = Object.fromEntries(
         Object.entries(data).filter(([, v]) => v !== undefined),
       ) as VendorProfileUpdateInput;
-      const safePrefs = data.notificationPreferences
-        ? Object.fromEntries(
-            Object.entries(data.notificationPreferences).filter(([, v]) => v !== undefined),
-          ) as Partial<NotificationPreferences>
-        : undefined;
-      const updated: VendorProfile = {
-        ...existing,
-        ...safeData,
-        notificationPreferences: safePrefs
-          ? { ...existing.notificationPreferences, ...safePrefs }
-          : existing.notificationPreferences,
-        updatedAt: new Date(),
-      };
-      this.vendorProfiles.set(existing.id, updated);
-      return Promise.resolve({ ...updated, notificationPreferences: { ...updated.notificationPreferences } });
+      const updated = { ...existing, ...safeData, updatedAt: new Date() };
+      this.vendorProfiles.set(where.address, updated);
+      return Promise.resolve({ ...updated });
     },
-
     deleteMany: (): Promise<{ count: number }> => {
       const count = this.vendorProfiles.size;
       this.vendorProfiles.clear();
@@ -264,16 +808,266 @@ export class PrismaService implements OnModuleDestroy {
     },
   };
 
-  async reset(): Promise<void> {
-    await this.notification.deleteMany();
-    await this.escrow.deleteMany();
-    await this.vendorProfile.deleteMany();
-    this.escrowId = 1;
-    this.notificationId = 1;
-    this.vendorProfileId = 1;
+  vendorTrackingSettings = {
+    findUnique: ({
+      where,
+      select,
+    }: {
+      where: { vendorAddress: string };
+      select?: { notificationChannels?: boolean };
+    }): Promise<Record<string, unknown> | null> => {
+      const settings = this.vendorTrackingSettingsStore.get(
+        where.vendorAddress,
+      );
+      if (!settings) {
+        return Promise.resolve(null);
+      }
+
+      if (select?.notificationChannels) {
+        return Promise.resolve({
+          notificationChannels: (settings as any).notificationChannels || [],
+        });
+      }
+
+      return Promise.resolve(settings ? { ...settings } : null);
+    },
+    upsert: ({
+      where,
+      create,
+      update,
+    }: {
+      where: { vendorAddress: string };
+      create: Record<string, unknown>;
+      update: Record<string, unknown>;
+    }): Promise<Record<string, unknown>> => {
+      const existing = this.vendorTrackingSettingsStore.get(
+        where.vendorAddress,
+      );
+      if (existing) {
+        const updated = { ...existing, ...update, updatedAt: new Date() };
+        this.vendorTrackingSettingsStore.set(where.vendorAddress, updated);
+        return Promise.resolve({ ...updated });
+      }
+      const now = new Date();
+      const created = { ...create, createdAt: now, updatedAt: now };
+      this.vendorTrackingSettingsStore.set(where.vendorAddress, created);
+      return Promise.resolve({ ...created });
+    },
+  };
+
+  /**
+   * Mock implementation of Prisma's $queryRaw for testing.
+   * Supports basic aggregation queries for the analytics service.
+   */
+  async $queryRaw<T = unknown>(
+    query: TemplateStringsArray,
+    ...values: unknown[]
+  ): Promise<T[]> {
+    const queryString = query.join('?');
+
+    // SQL template order: ${timezone}, ${vendorAddress}, ${startDate}, ${endDate}, ${timezone}
+    const timezone = (values[0] as string) || 'UTC';
+    const vendorAddress = values[1] as string;
+    const startDate = values[2] as Date;
+    const endDate = values[3] as Date;
+
+    // Filter escrows by vendor and date range
+    const filteredEscrows = [...this.escrows.values()].filter(
+      (escrow) =>
+        escrow.vendorAddress === vendorAddress &&
+        escrow.createdAt >= startDate &&
+        escrow.createdAt <= endDate,
+    );
+
+    // Group by date in the specified timezone
+    const dailyMap = new Map<
+      string,
+      {
+        date: string;
+        totalVolume: number;
+        transactionCount: number;
+        completedCount: number;
+        disputedCount: number;
+      }
+    >();
+
+    for (const escrow of filteredEscrows) {
+      const dateKey = this.formatDateInTimezone(escrow.createdAt, timezone);
+
+      if (!dailyMap.has(dateKey)) {
+        dailyMap.set(dateKey, {
+          date: dateKey,
+          totalVolume: 0,
+          transactionCount: 0,
+          completedCount: 0,
+          disputedCount: 0,
+        });
+      }
+
+      const daily = dailyMap.get(dateKey)!;
+      daily.totalVolume += Number(escrow.amount);
+      daily.transactionCount += 1;
+
+      if (escrow.state === 'COMPLETED' || escrow.state === 'RELEASED') {
+        daily.completedCount += 1;
+      }
+
+      if (escrow.state === 'DISPUTED') {
+        daily.disputedCount += 1;
+      }
+    }
+
+    // Sort by date ascending
+    const result = Array.from(dailyMap.values()).sort((a, b) =>
+      a.date.localeCompare(b.date),
+    );
+
+    return result as T[];
   }
 
+  /**
+   * Formats a Date object to ISO date string (YYYY-MM-DD) in a specific timezone
+   */
+  private formatDateInTimezone(date: Date, timezone: string): string {
+    return date.toLocaleDateString('en-CA', { timeZone: timezone });
+  }
+
+  /** Clears all in-memory Prisma test data and resets generated IDs. */
+  async reset(): Promise<void> {
+    await this.refreshToken.deleteMany();
+    await this.nonce.deleteMany();
+    await this.vendorProfile.deleteMany();
+    await this.notification.deleteMany();
+    await this.escrowEvent.deleteMany();
+    await this.dispute.deleteMany();
+    await this.escrow.deleteMany();
+    await this.processedWebhookEvent.deleteMany();
+    this.vendorTrackingSettingsStore.clear();
+    this.escrowId = 1;
+    this.disputeId = 1;
+    this.notificationId = 1;
+    this.refreshTokenId = 1;
+    this.nonceId = 1;
+    this.escrowEventId = 1;
+  }
+
+  /** Clears in-memory data when the Nest module is destroyed. */
   async onModuleDestroy(): Promise<void> {
     await this.reset();
   }
+
+  private cursorStore = new Map<string, CursorRecord>();
+  private failedTransactionStore = new Map<string, FailedTransactionRecord>();
+
+  cursor = {
+    findFirst: ({
+      where,
+    }: {
+      where: { id: string };
+    }): Promise<CursorRecord | null> => {
+      const record = this.cursorStore.get(where.id);
+      return Promise.resolve(record ? { ...record } : null);
+    },
+    upsert: ({
+      where,
+      update,
+      create,
+    }: {
+      where: { id: string };
+      update: { cursorValue: string };
+      create: { id: string; cursorValue: string };
+    }): Promise<CursorRecord> => {
+      const existing = this.cursorStore.get(where.id);
+      if (existing) {
+        const updated = {
+          ...existing,
+          cursorValue: update.cursorValue,
+          updatedAt: new Date(),
+        };
+        this.cursorStore.set(where.id, updated);
+        return Promise.resolve({ ...updated });
+      }
+      const now = new Date();
+      const record: CursorRecord = {
+        id: create.id,
+        cursorValue: create.cursorValue,
+        createdAt: now,
+        updatedAt: now,
+      };
+      this.cursorStore.set(record.id, record);
+      return Promise.resolve({ ...record });
+    },
+  };
+
+  failedTransaction = {
+    create: ({
+      data,
+    }: {
+      data: Omit<
+        FailedTransactionRecord,
+        'id' | 'createdAt' | 'updatedAt' | 'reviewedAt' | 'replayedAt'
+      >;
+    }): Promise<FailedTransactionRecord> => {
+      const now = new Date();
+      const record: FailedTransactionRecord = {
+        ...data,
+        id: String(this.failedTransactionStore.size + 1),
+        lastReplayTxHash: null,
+        createdAt: now,
+        updatedAt: now,
+        reviewedAt: null,
+        replayedAt: null,
+      };
+      this.failedTransactionStore.set(record.id, record);
+      return Promise.resolve({ ...record });
+    },
+    findMany: ({
+      where,
+      orderBy,
+    }: {
+      where?: Record<string, unknown>;
+      orderBy?: { createdAt?: string };
+    }): Promise<FailedTransactionRecord[]> => {
+      let records = [...this.failedTransactionStore.values()];
+      if (where) {
+        records = records.filter((r) =>
+          Object.entries(where).every(([key, value]) => {
+            if (value === undefined) return true;
+            return (r as Record<string, unknown>)[key] === value;
+          }),
+        );
+      }
+      if (orderBy?.createdAt === 'desc') {
+        records.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+      }
+      return Promise.resolve(records.map((r) => ({ ...r })));
+    },
+    findUnique: ({
+      where,
+    }: {
+      where: { id: string };
+    }): Promise<FailedTransactionRecord | null> => {
+      const record = this.failedTransactionStore.get(where.id);
+      return Promise.resolve(record ? { ...record } : null);
+    },
+    update: ({
+      where,
+      data,
+    }: {
+      where: { id: string };
+      data: Record<string, unknown>;
+    }): Promise<FailedTransactionRecord> => {
+      const existing = this.failedTransactionStore.get(where.id);
+      if (!existing) {
+        throw new Error(`FailedTransaction ${where.id} not found`);
+      }
+      const updated = {
+        ...existing,
+        ...data,
+        updatedAt: new Date(),
+      } as FailedTransactionRecord;
+      this.failedTransactionStore.set(where.id, updated);
+      return Promise.resolve({ ...updated });
+    },
+  };
 }

@@ -1,0 +1,53 @@
+name: Integration Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  integration-test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: trustlink
+          POSTGRES_PASSWORD: trustlink
+          POSTGRES_DB: trustlink_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://trustlink:trustlink@localhost:5432/trustlink_test
+      SEP10_JWT_SECRET: test-jwt-secret-must-be-at-least-32-chars
+      SYSTEM_SIGNER_SECRET: SCZANGBA5XTONSXE2SCBA5XTONSXE2SCBA5XTONSXE2SCBA5XTONSXE2SC
+      CONTRACT_ID: CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4
+      ADMIN_ADDRESS: GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5
+      NODE_ENV: test
+      STELLAR_NETWORK: TESTNET
+      PORT: 3000
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run database migrations
+        run: npx prisma migrate deploy
+
+      - name: Run integration tests
+        run: npm run test:integration

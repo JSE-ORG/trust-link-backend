@@ -35,6 +35,7 @@ describe('POST /escrow integration (issue #20)', () => {
       .set('Authorization', 'Bearer vendor-address')
       .send({
         itemName: 'Vintage jacket',
+        itemRef: 'jacket-001',
         amount: 75,
         currency: 'USDC',
         buyerAddress: 'buyer-address',
@@ -45,10 +46,12 @@ describe('POST /escrow integration (issue #20)', () => {
       expect.objectContaining({
         id: expect.any(String),
         itemName: 'Vintage jacket',
+        itemRef: 'jacket-001',
         amount: 75,
         vendorAddress: 'vendor-address',
         buyerAddress: 'buyer-address',
         state: 'FUNDED',
+        paymentUrl: expect.stringContaining('/pay/'),
       }),
     );
     await expect(
@@ -65,6 +68,7 @@ describe('POST /escrow integration (issue #20)', () => {
 
     expect(response.body.message).toEqual(
       expect.arrayContaining([
+        expect.stringContaining('itemRef'),
         expect.stringContaining('amount'),
         expect.stringContaining('currency'),
         expect.stringContaining('buyerAddress'),
@@ -84,12 +88,13 @@ describe('POST /escrow integration (issue #20)', () => {
       .expect(401);
   });
 
-  it('retrieves a created escrow via GET /escrow/:id', async () => {
+  it('retrieves a created escrow via GET /escrow/:id without authentication', async () => {
     const createResponse = await request(app.getHttpServer())
       .post('/escrow')
       .set('Authorization', 'Bearer vendor-address')
       .send({
         itemName: 'Vintage jacket',
+        itemRef: 'jacket-001',
         amount: 75,
         currency: 'USDC',
         buyerAddress: 'buyer-address',
@@ -98,15 +103,80 @@ describe('POST /escrow integration (issue #20)', () => {
 
     await request(app.getHttpServer())
       .get(`/escrow/${createResponse.body.id}`)
-      .set('Authorization', 'Bearer buyer-address')
       .expect(200)
       .expect((response) => {
         expect(response.body).toEqual(
           expect.objectContaining({
             id: createResponse.body.id,
             itemName: 'Vintage jacket',
+            itemRef: 'jacket-001',
           }),
         );
+        expect(response.body).not.toHaveProperty('vendorAddress');
+        expect(response.body).not.toHaveProperty('buyerAddress');
       });
+  });
+
+  it('returns paginated vendor escrows with state filtering and sorting', async () => {
+    await request(app.getHttpServer())
+      .post('/escrow')
+      .set('Authorization', 'Bearer vendor-address')
+      .send({
+        itemName: 'Vintage jacket',
+        itemRef: 'jacket-001',
+        amount: 75,
+        currency: 'USDC',
+        buyerAddress: 'buyer-address',
+      })
+      .expect(201);
+    await request(app.getHttpServer())
+      .post('/escrow')
+      .set('Authorization', 'Bearer vendor-address')
+      .send({
+        itemName: 'Leather bag',
+        itemRef: 'bag-001',
+        amount: 120,
+        currency: 'USDC',
+        buyerAddress: 'buyer-address',
+      })
+      .expect(201);
+    await request(app.getHttpServer())
+      .post('/escrow')
+      .set('Authorization', 'Bearer other-vendor')
+      .send({
+        itemName: 'Sneakers',
+        itemRef: 'sneaker-001',
+        amount: 150,
+        currency: 'USDC',
+        buyerAddress: 'buyer-address',
+      })
+      .expect(201);
+
+    const response = await request(app.getHttpServer())
+      .get('/vendor/escrows')
+      .set('Authorization', 'Bearer vendor-address')
+      .query({
+        state: 'FUNDED',
+        sort: 'amount',
+        order: 'desc',
+        page: 1,
+        limit: 2,
+      })
+      .expect(200);
+
+    expect(response.body).toEqual(
+      expect.objectContaining({
+        total: 2,
+        page: 1,
+        limit: 2,
+      }),
+    );
+    expect(response.body.data).toHaveLength(2);
+    expect(response.body.data[0].amount).toBeGreaterThanOrEqual(
+      response.body.data[1].amount,
+    );
+    expect(response.body.data.every((item: any) => item.id !== undefined)).toBe(
+      true,
+    );
   });
 });

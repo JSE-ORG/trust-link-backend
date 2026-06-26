@@ -6,7 +6,7 @@
  * Covered endpoints:
  *   POST  /vendor/profile
  *   GET   /vendor/profile
- *   PUT   /vendor/profile
+ *   PUT   /vendor/profile  (upsert — idempotent)
  *   PATCH /vendor/profile
  */
 import { INestApplication, ValidationPipe } from '@nestjs/common';
@@ -25,8 +25,9 @@ describe('Vendor profile CRUD (issue #292)', () => {
 
   const validProfile = {
     businessName: 'Acme Goods',
-    contactEmail: 'contact@acme.example',
-    contactPhone: '+1-555-0100',
+    email: 'contact@acme.example',
+    phone: '+1-555-0100',
+    description: 'Quality vintage goods',
   };
 
   beforeEach(async () => {
@@ -59,32 +60,27 @@ describe('Vendor profile CRUD (issue #292)', () => {
 
       expect(res.body).toEqual(
         expect.objectContaining({
-          id: expect.any(String),
-          vendorAddress: VENDOR,
+          address: VENDOR,
           businessName: 'Acme Goods',
-          contactEmail: 'contact@acme.example',
-          contactPhone: '+1-555-0100',
+          email: 'contact@acme.example',
+          phone: '+1-555-0100',
         }),
       );
     });
 
-    it('returns 400 when required fields are missing', async () => {
-      const res = await request(app.getHttpServer())
-        .post('/vendor/profile')
-        .set('Authorization', AUTH)
-        .send({ businessName: 'No Email' })
-        .expect(400);
-
-      expect(res.body.message).toEqual(
-        expect.arrayContaining([expect.stringContaining('contactEmail')]),
-      );
-    });
-
-    it('returns 400 for invalid email format', async () => {
+    it('returns 400 when businessName is missing', async () => {
       await request(app.getHttpServer())
         .post('/vendor/profile')
         .set('Authorization', AUTH)
-        .send({ businessName: 'Bad Email Co', contactEmail: 'not-an-email' })
+        .send({ email: 'no-name@example.com' })
+        .expect(400);
+    });
+
+    it('returns 400 for an invalid email format', async () => {
+      await request(app.getHttpServer())
+        .post('/vendor/profile')
+        .set('Authorization', AUTH)
+        .send({ businessName: 'Bad Email Co', email: 'not-an-email' })
         .expect(400);
     });
 
@@ -98,7 +94,7 @@ describe('Vendor profile CRUD (issue #292)', () => {
       await request(app.getHttpServer())
         .post('/vendor/profile')
         .set('Authorization', AUTH)
-        .send({ businessName: 'Dupe', contactEmail: 'dupe@example.com' })
+        .send({ businessName: 'Dupe', email: 'dupe@example.com' })
         .expect(409);
     });
 
@@ -127,8 +123,9 @@ describe('Vendor profile CRUD (issue #292)', () => {
 
       expect(res.body).toEqual(
         expect.objectContaining({
-          vendorAddress: VENDOR,
+          address: VENDOR,
           businessName: 'Acme Goods',
+          email: 'contact@acme.example',
         }),
       );
     });
@@ -141,14 +138,13 @@ describe('Vendor profile CRUD (issue #292)', () => {
     });
 
     it('isolates profiles — vendor A cannot see vendor B profile via GET', async () => {
-      // Create vendor B profile
       await request(app.getHttpServer())
         .post('/vendor/profile')
         .set('Authorization', `Bearer ${OTHER_VENDOR}`)
-        .send({ businessName: 'Other Co', contactEmail: 'other@example.com' })
+        .send({ businessName: 'Other Co', email: 'other@example.com' })
         .expect(201);
 
-      // Vendor A has no profile
+      // Vendor A has no profile — should get 404
       await request(app.getHttpServer())
         .get('/vendor/profile')
         .set('Authorization', AUTH)
@@ -156,10 +152,21 @@ describe('Vendor profile CRUD (issue #292)', () => {
     });
   });
 
-  // ── PUT /vendor/profile ──────────────────────────────────────────────────
+  // ── PUT /vendor/profile (upsert) ─────────────────────────────────────────
 
   describe('PUT /vendor/profile', () => {
-    it('replaces the profile and returns the updated record', async () => {
+    it('creates the profile when it does not exist (upsert)', async () => {
+      const res = await request(app.getHttpServer())
+        .put('/vendor/profile')
+        .set('Authorization', AUTH)
+        .send({ businessName: 'New Co', email: 'new@example.com' })
+        .expect(200);
+
+      expect(res.body.businessName).toBe('New Co');
+      expect(res.body.address).toBe(VENDOR);
+    });
+
+    it('replaces an existing profile with the new values', async () => {
       await request(app.getHttpServer())
         .post('/vendor/profile')
         .set('Authorization', AUTH)
@@ -171,22 +178,12 @@ describe('Vendor profile CRUD (issue #292)', () => {
         .set('Authorization', AUTH)
         .send({
           businessName: 'Acme Wholesale',
-          contactEmail: 'wholesale@acme.example',
+          email: 'wholesale@acme.example',
         })
         .expect(200);
 
       expect(res.body.businessName).toBe('Acme Wholesale');
-      expect(res.body.contactEmail).toBe('wholesale@acme.example');
-      // Phone cleared on full replacement when not provided
-      expect(res.body.contactPhone).toBeNull();
-    });
-
-    it('returns 404 when no profile exists', async () => {
-      await request(app.getHttpServer())
-        .put('/vendor/profile')
-        .set('Authorization', AUTH)
-        .send(validProfile)
-        .expect(404);
+      expect(res.body.email).toBe('wholesale@acme.example');
     });
   });
 
@@ -208,7 +205,7 @@ describe('Vendor profile CRUD (issue #292)', () => {
 
       expect(res.body.businessName).toBe('Acme Updated');
       // Original email preserved
-      expect(res.body.contactEmail).toBe('contact@acme.example');
+      expect(res.body.email).toBe('contact@acme.example');
     });
 
     it('returns 404 when no profile exists', async () => {

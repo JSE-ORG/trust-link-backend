@@ -54,4 +54,18 @@ describe('ContractService.submitAutoRelease (issue #19)', () => {
     );
     expect(server.submitTransaction).toHaveBeenCalledTimes(2);
   });
+
+  it('records delivery with a contract transaction', async () => {
+    server.submitTransaction.mockResolvedValue({ hash: 'delivery-hash' });
+
+    await expect(service.recordDelivery('escrow-2')).resolves.toBe(
+      'delivery-hash',
+    );
+    expect(server.submitTransaction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operation: 'recordDelivery',
+        escrowId: 'escrow-2',
+      }),
+    );
+  });
 });

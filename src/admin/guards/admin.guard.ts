@@ -5,18 +5,34 @@ import {
   Injectable,
 } from '@nestjs/common';
 import { AuthUser } from '../../auth/auth-user';
+import { ConfigService } from '../../config/config.service';
 
 interface RequestWithUser {
   user?: AuthUser;
 }
 
-const ADMIN_ADDRESS = process.env.ADMIN_ADDRESS ?? 'admin-address';
-
 @Injectable()
 export class AdminGuard implements CanActivate {
+  constructor(private readonly configService: ConfigService) {}
+
   canActivate(context: ExecutionContext): boolean {
     const request = context.switchToHttp().getRequest<RequestWithUser>();
-    if (request.user?.address !== ADMIN_ADDRESS) {
+    const adminAddress = this.configService.get('ADMIN_ADDRESS');
+
+    if (!request.user) {
+      throw new ForbiddenException('Admin role required');
+    }
+
+    const isAdminRole = request.user.role === 'admin';
+    const isAdminAddress = Boolean(
+      adminAddress && request.user.address === adminAddress,
+    );
+
+    if (!isAdminRole && !isAdminAddress) {
+      throw new ForbiddenException('Admin role required');
+    }
+
+    if (adminAddress && !isAdminAddress) {
       throw new ForbiddenException('Admin access required');
     }
     return true;

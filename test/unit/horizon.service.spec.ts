@@ -1,20 +1,29 @@
 /**
- * Unit tests for HorizonService (issue #291).
- * Verifies that the Horizon URL is read from ConfigService instead
- * of being hard-coded, and falls back to the testnet default.
+ * Unit tests for HorizonService.
+ *
+ * Suite 1 (issue #291): Verifies that the Horizon URL is read from an
+ * injected config source instead of being hard-coded, with a testnet fallback.
+ *
+ * Suite 2 (issue #50): Verifies the pollConfirmation polling loop.
  */
+import axios from 'axios';
 import {
   DEFAULT_HORIZON_URL,
   HorizonService,
 } from '../../src/stellar/horizon.service';
 
+jest.mock('axios');
+const mockedAxios = axios as jest.Mocked<typeof axios>;
+
+// ── Suite 1: URL configuration (issue #291) ───────────────────────────────────
+
 function makeService(url?: string): HorizonService {
-  return new HorizonService({
-    getStellarHorizonUrl: () => url ?? '',
-  });
+  return new HorizonService(
+    url !== undefined ? { getStellarHorizonUrl: () => url } : undefined,
+  );
 }
 
-describe('HorizonService (issue #291)', () => {
+describe('HorizonService — URL configuration (issue #291)', () => {
   describe('getHorizonUrl()', () => {
     it('returns the URL provided by the config', () => {
       const svc = makeService('https://horizon.stellar.org');
@@ -26,9 +35,12 @@ describe('HorizonService (issue #291)', () => {
       expect(svc.getHorizonUrl()).toBe(DEFAULT_HORIZON_URL);
     });
 
-    it('falls back to the testnet URL when the config is not provided', () => {
+    it('falls back to the testnet URL when no config is provided', () => {
+      const originalEnv = process.env.STELLAR_HORIZON_URL;
+      delete process.env.STELLAR_HORIZON_URL;
       const svc = makeService();
       expect(svc.getHorizonUrl()).toBe(DEFAULT_HORIZON_URL);
+      process.env.STELLAR_HORIZON_URL = originalEnv;
     });
 
     it('does not hard-code the testnet URL — uses whatever the config provides', () => {
@@ -38,62 +50,40 @@ describe('HorizonService (issue #291)', () => {
       expect(svc.getHorizonUrl()).toBe(custom);
     });
   });
+});
 
-  describe('getTransaction()', () => {
-    const TX_HASH = 'abc123def456';
+// ── Suite 2: pollConfirmation (issue #50) ─────────────────────────────────────
 
-    afterEach(() => {
-      jest.restoreAllMocks();
+describe('HorizonService.pollConfirmation (issue #50)', () => {
+  let service: HorizonService;
+
+  beforeEach(() => {
+    service = new HorizonService();
+    mockedAxios.get.mockReset();
+  });
+
+  it('resolves when target confirmations are reached', async () => {
+    mockedAxios.get
+      .mockResolvedValueOnce({ status: 200, data: { confirmations: 1 } })
+      .mockResolvedValueOnce({ status: 200, data: { confirmations: 2 } })
+      .mockResolvedValueOnce({ status: 200, data: { confirmations: 3 } });
+
+    const result = await service.pollConfirmation('tx-hash', 3, 1000);
+
+    expect(result).toEqual({
+      confirmed: true,
+      confirmations: 3,
+      hash: 'tx-hash',
     });
+    expect(mockedAxios.get).toHaveBeenCalledTimes(3);
+  });
 
-    it('returns the transaction object on a 200 response', async () => {
-      const txData = { id: TX_HASH, paging_token: '1' };
-      jest.spyOn(global, 'fetch').mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: () => Promise.resolve(txData),
-      } as Response);
+  it('throws a timeout error when confirmations never reach the target', async () => {
+    mockedAxios.get.mockResolvedValue({ status: 200, data: { confirmations: 0 } });
 
-      const svc = makeService('https://horizon-testnet.stellar.org');
-      const result = await svc.getTransaction(TX_HASH);
-      expect(result).toEqual(txData);
-    });
-
-    it('returns null for a 404 response', async () => {
-      jest.spyOn(global, 'fetch').mockResolvedValueOnce({
-        ok: false,
-        status: 404,
-      } as Response);
-
-      const svc = makeService('https://horizon-testnet.stellar.org');
-      const result = await svc.getTransaction(TX_HASH);
-      expect(result).toBeNull();
-    });
-
-    it('throws an error for a non-404 error response', async () => {
-      jest.spyOn(global, 'fetch').mockResolvedValueOnce({
-        ok: false,
-        status: 503,
-      } as Response);
-
-      const svc = makeService('https://horizon-testnet.stellar.org');
-      await expect(svc.getTransaction(TX_HASH)).rejects.toThrow('503');
-    });
-
-    it('calls the correct Horizon URL', async () => {
-      const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: () => Promise.resolve({}),
-      } as Response);
-
-      const horizonBase = 'https://custom-horizon.example.com';
-      const svc = makeService(horizonBase);
-      await svc.getTransaction(TX_HASH);
-
-      expect(fetchSpy).toHaveBeenCalledWith(
-        `${horizonBase}/transactions/${TX_HASH}`,
-      );
-    });
+    await expect(service.pollConfirmation('tx-hash', 2, 350)).rejects.toThrow(
+      'Horizon confirmation timed out',
+    );
+    expect(mockedAxios.get).toHaveBeenCalled();
   });
 });

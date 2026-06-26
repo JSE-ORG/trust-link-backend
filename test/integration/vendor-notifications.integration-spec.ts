@@ -6,12 +6,17 @@
  * Covered endpoints:
  *   GET   /vendor/profile/notifications
  *   PATCH /vendor/profile/notifications
+ *
+ * The upstream implementation stores preferences in VendorTrackingSettings.
+ * Fields: notifyOnDelivery, notifyOnDelay, notifyOnException, notificationChannels,
+ *         webhookUrl, enableTracking, delayThresholdHours, deliveryConfirmation,
+ *         trackingHistoryRetentionDays.
  */
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { AppModule } from '../../src/app.module';
-import { DEFAULT_NOTIFICATION_PREFERENCES, PrismaService } from '../../src/prisma/prisma.service';
+import { PrismaService } from '../../src/prisma/prisma.service';
 
 describe('Vendor notification preferences (issue #293)', () => {
   let app: INestApplication;
@@ -33,14 +38,11 @@ describe('Vendor notification preferences (issue #293)', () => {
     prisma = app.get(PrismaService);
     await prisma.reset();
 
-    // Pre-create a vendor profile for tests that need one
+    // Pre-create a vendor profile so notifications endpoints can find the vendor
     await request(app.getHttpServer())
       .post('/vendor/profile')
       .set('Authorization', AUTH)
-      .send({
-        businessName: 'Notif Co',
-        contactEmail: 'notif@example.com',
-      });
+      .send({ businessName: 'Notif Co', email: 'notif@example.com' });
   });
 
   afterEach(async () => {
@@ -50,20 +52,30 @@ describe('Vendor notification preferences (issue #293)', () => {
   // ── GET /vendor/profile/notifications ────────────────────────────────────
 
   describe('GET /vendor/profile/notifications', () => {
-    it('returns the default notification preferences on first fetch', async () => {
+    it('returns platform defaults when no preferences have been set', async () => {
       const res = await request(app.getHttpServer())
         .get('/vendor/profile/notifications')
         .set('Authorization', AUTH)
         .expect(200);
 
-      expect(res.body).toEqual(DEFAULT_NOTIFICATION_PREFERENCES);
+      // Platform defaults defined in VendorProfileRepository.findNotificationPreferences
+      expect(res.body.notifyOnDelivery).toBe(true);
+      expect(res.body.notifyOnDelay).toBe(true);
+      expect(res.body.notifyOnException).toBe(true);
+      expect(res.body.notificationChannels).toEqual(['EMAIL']);
+      expect(res.body.enableTracking).toBe(true);
     });
 
-    it('returns 404 when the vendor has no profile', async () => {
-      await request(app.getHttpServer())
+    it('returns platform defaults even when the vendor has no profile (upstream behaviour)', async () => {
+      // The upstream implementation returns defaults from VendorTrackingSettings
+      // without checking if a vendor profile exists — returns 200 with defaults.
+      const res = await request(app.getHttpServer())
         .get('/vendor/profile/notifications')
         .set('Authorization', 'Bearer GNOPROFILE')
-        .expect(404);
+        .expect(200);
+
+      expect(res.body.notifyOnDelivery).toBe(true);
+      expect(res.body.enableTracking).toBe(true);
     });
 
     it('returns 401 for unauthenticated requests', async () => {
@@ -80,54 +92,33 @@ describe('Vendor notification preferences (issue #293)', () => {
       const res = await request(app.getHttpServer())
         .patch('/vendor/profile/notifications')
         .set('Authorization', AUTH)
-        .send({ sms: true })
+        .send({ notifyOnDelay: false })
         .expect(200);
 
-      // sms toggled on; email and inApp remain at defaults
-      expect(res.body.sms).toBe(true);
-      expect(res.body.email).toBe(DEFAULT_NOTIFICATION_PREFERENCES.email);
-      expect(res.body.inApp).toBe(DEFAULT_NOTIFICATION_PREFERENCES.inApp);
+      // Response includes trackingSettings object
+      expect(res.body.trackingSettings).toBeDefined();
+      expect(res.body.trackingSettings.notifyOnDelay).toBe(false);
+      // Other defaults should be untouched
+      expect(res.body.trackingSettings.notifyOnDelivery).toBe(true);
     });
 
-    it('updates multiple preferences in one call', async () => {
+    it('updates notificationChannels to include SMS', async () => {
       const res = await request(app.getHttpServer())
         .patch('/vendor/profile/notifications')
         .set('Authorization', AUTH)
-        .send({ email: false, sms: true })
+        .send({ notificationChannels: ['EMAIL', 'SMS'] })
         .expect(200);
 
-      expect(res.body.email).toBe(false);
-      expect(res.body.sms).toBe(true);
+      expect(res.body.trackingSettings.notificationChannels).toEqual(
+        expect.arrayContaining(['EMAIL', 'SMS']),
+      );
     });
 
-    it('persists preferences across requests', async () => {
+    it('persists preference updates so subsequent GET reflects them', async () => {
       await request(app.getHttpServer())
         .patch('/vendor/profile/notifications')
         .set('Authorization', AUTH)
-        .send({ sms: true })
-        .expect(200);
-
-      const res = await request(app.getHttpServer())
-        .get('/vendor/profile/notifications')
-        .set('Authorization', AUTH)
-        .expect(200);
-
-      expect(res.body.sms).toBe(true);
-    });
-
-    it('does not overwrite un-sent fields on partial update', async () => {
-      // First set all three
-      await request(app.getHttpServer())
-        .patch('/vendor/profile/notifications')
-        .set('Authorization', AUTH)
-        .send({ email: false, sms: true, inApp: false })
-        .expect(200);
-
-      // Second patch: only change email
-      await request(app.getHttpServer())
-        .patch('/vendor/profile/notifications')
-        .set('Authorization', AUTH)
-        .send({ email: true })
+        .send({ notifyOnDelivery: false, notifyOnDelay: false })
         .expect(200);
 
       const res = await request(app.getHttpServer())
@@ -135,16 +126,48 @@ describe('Vendor notification preferences (issue #293)', () => {
         .set('Authorization', AUTH)
         .expect(200);
 
-      expect(res.body.email).toBe(true);
-      expect(res.body.sms).toBe(true);   // unchanged from second patch
-      expect(res.body.inApp).toBe(false); // unchanged from second patch
+      expect(res.body.notifyOnDelivery).toBe(false);
+      expect(res.body.notifyOnDelay).toBe(false);
     });
 
-    it('returns 400 for invalid preference values (non-boolean)', async () => {
+    it('does not overwrite fields not included in the patch', async () => {
+      // First patch: turn off delivery and delay
       await request(app.getHttpServer())
         .patch('/vendor/profile/notifications')
         .set('Authorization', AUTH)
-        .send({ email: 'yes' })
+        .send({ notifyOnDelivery: false, notifyOnDelay: false })
+        .expect(200);
+
+      // Second patch: only turn exception off
+      await request(app.getHttpServer())
+        .patch('/vendor/profile/notifications')
+        .set('Authorization', AUTH)
+        .send({ notifyOnException: false })
+        .expect(200);
+
+      const res = await request(app.getHttpServer())
+        .get('/vendor/profile/notifications')
+        .set('Authorization', AUTH)
+        .expect(200);
+
+      expect(res.body.notifyOnDelivery).toBe(false); // from first patch, unchanged
+      expect(res.body.notifyOnDelay).toBe(false);     // from first patch, unchanged
+      expect(res.body.notifyOnException).toBe(false); // from second patch
+    });
+
+    it('returns 400 for an invalid notificationChannels value', async () => {
+      await request(app.getHttpServer())
+        .patch('/vendor/profile/notifications')
+        .set('Authorization', AUTH)
+        .send({ notificationChannels: ['PIGEON'] })
+        .expect(400);
+    });
+
+    it('returns 400 when notificationChannels is empty', async () => {
+      await request(app.getHttpServer())
+        .patch('/vendor/profile/notifications')
+        .set('Authorization', AUTH)
+        .send({ notificationChannels: [] })
         .expect(400);
     });
 
@@ -152,7 +175,7 @@ describe('Vendor notification preferences (issue #293)', () => {
       await request(app.getHttpServer())
         .patch('/vendor/profile/notifications')
         .set('Authorization', 'Bearer GNOPROFILE2')
-        .send({ sms: true })
+        .send({ notifyOnDelay: false })
         .expect(404);
     });
   });

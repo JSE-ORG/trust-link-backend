@@ -2,6 +2,8 @@
   <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
 </p>
 
+[![Lint](https://github.com/JSE-ORG/trust-link-backend/actions/workflows/lint.yml/badge.svg)](https://github.com/JSE-ORG/trust-link-backend/actions/workflows/lint.yml)
+
 [circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
 [circleci-url]: https://circleci.com/gh/nestjs/nest
 
@@ -23,7 +25,20 @@
 
 ## Description
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+Trust-Link Backend — NestJS escrow API for Stellar blockchain payments.
+
+## Documentation
+
+| Document | Description |
+|----------|-------------|
+| [ARCHITECTURE.md](./ARCHITECTURE.md) | System design and module overview |
+| [CHANGELOG.md](./CHANGELOG.md) | Version history (semver) |
+| [SECURITY.md](./SECURITY.md) | Security policy and vulnerability disclosure |
+| [DEPLOYMENT.md](./DEPLOYMENT.md) | Production deployment, migration order, and validation milestones |
+| [docs/QUERY_PERFORMANCE.md](./docs/QUERY_PERFORMANCE.md) | EXPLAIN ANALYZE query-performance workflow and optimized indexes |
+| [docs/TRACING.md](./docs/TRACING.md) | OpenTelemetry distributed tracing |
+| [docs/INCIDENT_RESPONSE_RUNBOOK.md](./docs/INCIDENT_RESPONSE_RUNBOOK.md) | Incident response and recovery procedures |
+| [.env.example](./.env.example) | Environment variable reference |
 
 ## Project setup
 
