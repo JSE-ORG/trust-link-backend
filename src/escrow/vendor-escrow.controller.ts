@@ -15,6 +15,8 @@ export class VendorEscrowController {
   @ApiOperation({ summary: 'List all escrows for the authenticated vendor' })
   @ApiResponse({ status: 200, description: 'Paginated list of vendor escrows returned.' })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
+  @ApiResponse({ status: 429, description: 'Too many requests.' })
+  @ApiResponse({ status: 500, description: 'Internal server error.' })
   @UseGuards(JwtGuard)
   @Get('escrows')
   async getEscrows(

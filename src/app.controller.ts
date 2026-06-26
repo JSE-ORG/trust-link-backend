@@ -5,6 +5,7 @@ import {
   HttpStatus,
   Res,
 } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { AppService } from './app.service';
 import { getAppVersion } from './common/version';
@@ -35,6 +36,7 @@ const HORIZON_URLS: Record<'TESTNET' | 'MAINNET', string> = {
 
 const HORIZON_TIMEOUT_MS = 150;
 
+@ApiTags('Health')
 @Controller()
 export class AppController {
   constructor(
@@ -44,11 +46,16 @@ export class AppController {
     private readonly cacheService: CacheService,
   ) {}
 
+  @ApiOperation({ summary: 'Root endpoint — welcome message' })
+  @ApiResponse({ status: 200, description: 'Service welcome message.' })
   @Get()
   getHello(): string {
     return this.appService.getHello();
   }
 
+  @ApiOperation({ summary: 'Service health check — database, Horizon, and Redis' })
+  @ApiResponse({ status: 200, description: 'All components healthy.' })
+  @ApiResponse({ status: 503, description: 'One or more components are down.' })
   @Get('health')
   async getHealth(@Res() res: Response): Promise<Response<HealthBody>> {
     const start = Date.now();
@@ -79,6 +86,8 @@ export class AppController {
       .json(body);
   }
 
+  @ApiOperation({ summary: 'Get current application version and environment' })
+  @ApiResponse({ status: 200, description: 'Version information returned.' })
   @Get('version')
   @HttpCode(HttpStatus.OK)
   getVersion() {
