@@ -8,6 +8,7 @@ import {
   ArrayMaxSize,
 } from 'class-validator';
 import { Transform } from 'class-transformer';
+import { ApiPropertyOptional } from '@nestjs/swagger';
 
 enum NotificationChannel {
   EMAIL = 'EMAIL',
@@ -15,18 +16,36 @@ enum NotificationChannel {
 }
 
 export class UpdateNotificationPreferencesDto {
+  @ApiPropertyOptional({
+    description: 'Notify vendor when shipment is delivered.',
+    example: true,
+  })
   @IsOptional()
   @IsBoolean()
   notifyOnDelivery?: boolean;
 
+  @ApiPropertyOptional({
+    description: 'Notify vendor when shipment is delayed.',
+    example: false,
+  })
   @IsOptional()
   @IsBoolean()
   notifyOnDelay?: boolean;
 
+  @ApiPropertyOptional({
+    description: 'Notify vendor when a shipment exception occurs.',
+    example: true,
+  })
   @IsOptional()
   @IsBoolean()
   notifyOnException?: boolean;
 
+  @ApiPropertyOptional({
+    description: 'Notification channels to use. Allowed: EMAIL, SMS.',
+    enum: NotificationChannel,
+    isArray: true,
+    example: ['EMAIL'],
+  })
   @IsOptional()
   @IsArray()
   @ArrayMinSize(1, {
@@ -44,11 +63,19 @@ export class UpdateNotificationPreferencesDto {
   )
   notificationChannels?: string[];
 
+  @ApiPropertyOptional({
+    description: 'Webhook URL to POST events to.',
+    example: 'https://vendor.example.com/webhooks/trustlink',
+  })
   @IsOptional()
   @IsString()
   @Transform(({ value }) => value?.trim())
   webhookUrl?: string;
 
+  @ApiPropertyOptional({
+    description: 'Secret used to sign webhook payloads (HMAC-SHA256).',
+    example: 'whsec_abc123',
+  })
   @IsOptional()
   @IsString()
   @Transform(({ value }) => value?.trim())
