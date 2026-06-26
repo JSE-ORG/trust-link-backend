@@ -521,6 +521,13 @@ export class PrismaService implements OnModuleDestroy {
       this.disputes.set(where.id, updated);
       return Promise.resolve({ ...updated });
     },
+    findFirst: ({
+      where,
+    }: {
+      where?: Partial<Pick<DisputeRecord, 'escrowId' | 'status'>>;
+    } = {}): Promise<DisputeRecord | null> => {
+      return this.dispute.findMany({ where }).then((records) => records[0] ?? null);
+    },
     deleteMany: (): Promise<{ count: number }> => {
       const count = this.disputes.size;
       this.disputes.clear();
