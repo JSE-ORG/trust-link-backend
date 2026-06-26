@@ -417,6 +417,24 @@ export class PrismaService implements OnModuleDestroy {
       }
       return Promise.resolve({ ...updated });
     },
+    findFirst: ({
+      where,
+    }: {
+      where?: Partial<
+        Pick<
+          EscrowRecord,
+          | 'vendorAddress'
+          | 'buyerAddress'
+          | 'state'
+          | 'itemRef'
+          | 'disputeId'
+        >
+      >;
+    } = {}): Promise<EscrowRecord | null> => {
+      return (
+        this.escrow.findMany({ where }) as Promise<EscrowRecord[]>
+      ).then((records) => records[0] ?? null);
+    },
     deleteMany: (): Promise<{ count: number }> => {
       const count = this.escrows.size;
       this.escrows.clear();
