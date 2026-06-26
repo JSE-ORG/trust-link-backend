@@ -175,4 +175,23 @@ async function bootstrap() {
   );
 }
 
-void bootstrap();
+bootstrap().catch((err: unknown) => {
+  console.error(
+    JSON.stringify({
+      msg: 'server.bootstrap.failed',
+      error: err instanceof Error ? err.message : String(err),
+      stack: err instanceof Error ? err.stack : undefined,
+    }),
+  );
+  process.exit(1);
+});
+
+process.on('SIGTERM', () => {
+  console.info(JSON.stringify({ msg: 'server.shutdown', signal: 'SIGTERM' }));
+  process.exit(0);
+});
+
+process.on('SIGINT', () => {
+  console.info(JSON.stringify({ msg: 'server.shutdown', signal: 'SIGINT' }));
+  process.exit(0);
+});
