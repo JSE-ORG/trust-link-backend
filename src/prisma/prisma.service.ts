@@ -1,5 +1,42 @@
 import { Injectable, OnModuleDestroy } from '@nestjs/common';
 
+// ── Vendor profile types ──────────────────────────────────────────────────────
+
+export interface NotificationPreferences {
+  email: boolean;
+  sms: boolean;
+  inApp: boolean;
+}
+
+export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences = {
+  email: true,
+  sms: false,
+  inApp: true,
+};
+
+export interface VendorProfile {
+  id: string;
+  vendorAddress: string;
+  businessName: string;
+  contactEmail: string;
+  contactPhone: string | null;
+  notificationPreferences: NotificationPreferences;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+type VendorProfileCreateInput = Omit<VendorProfile, 'id' | 'notificationPreferences' | 'createdAt' | 'updatedAt'> & {
+  notificationPreferences?: Partial<NotificationPreferences>;
+};
+
+type VendorProfileUpdateInput = Partial<
+  Pick<VendorProfile, 'businessName' | 'contactEmail' | 'contactPhone'>
+> & {
+  notificationPreferences?: Partial<NotificationPreferences>;
+};
+
+// ── Escrow types ──────────────────────────────────────────────────────────────
+
 export type EscrowState =
   | 'FUNDED'
   | 'SHIPPED'
@@ -49,6 +86,7 @@ type EscrowUpdateInput = Partial<
 
 interface EscrowWhereInput {
   state?: EscrowState;
+  vendorAddress?: string;
   shippedAt?: { lte: Date };
 }
 
@@ -56,8 +94,10 @@ interface EscrowWhereInput {
 export class PrismaService implements OnModuleDestroy {
   private escrows = new Map<string, EscrowRecord>();
   private notifications = new Map<string, NotificationRecord>();
+  private vendorProfiles = new Map<string, VendorProfile>();
   private escrowId = 1;
   private notificationId = 1;
+  private vendorProfileId = 1;
 
   escrow = {
     create: ({ data }: { data: EscrowCreateInput }): Promise<EscrowRecord> => {
@@ -90,6 +130,9 @@ export class PrismaService implements OnModuleDestroy {
       let results = [...this.escrows.values()];
       if (where?.state) {
         results = results.filter((e) => e.state === where.state);
+      }
+      if (where?.vendorAddress) {
+        results = results.filter((e) => e.vendorAddress === where.vendorAddress);
       }
       if (where?.shippedAt?.lte) {
         const lte = where.shippedAt.lte;
@@ -149,11 +192,85 @@ export class PrismaService implements OnModuleDestroy {
     },
   };
 
+  vendorProfile = {
+    create: ({ data }: { data: VendorProfileCreateInput }): Promise<VendorProfile> => {
+      // Reject duplicate vendorAddress
+      for (const v of this.vendorProfiles.values()) {
+        if (v.vendorAddress === data.vendorAddress) {
+          const err = new Error('Unique constraint failed: vendorAddress') as Error & { code: string };
+          err.code = 'P2002';
+          throw err;
+        }
+      }
+      const now = new Date();
+      const profile: VendorProfile = {
+        ...data,
+        id: String(this.vendorProfileId++),
+        notificationPreferences: {
+          ...DEFAULT_NOTIFICATION_PREFERENCES,
+          ...(data.notificationPreferences ?? {}),
+        },
+        contactPhone: data.contactPhone ?? null,
+        createdAt: now,
+        updatedAt: now,
+      };
+      this.vendorProfiles.set(profile.id, profile);
+      return Promise.resolve({ ...profile, notificationPreferences: { ...profile.notificationPreferences } });
+    },
+
+    findUnique: ({ where }: { where: { vendorAddress?: string; id?: string } }): Promise<VendorProfile | null> => {
+      let found: VendorProfile | undefined;
+      if (where.vendorAddress !== undefined) {
+        found = [...this.vendorProfiles.values()].find(v => v.vendorAddress === where.vendorAddress);
+      } else if (where.id !== undefined) {
+        found = this.vendorProfiles.get(where.id);
+      }
+      return Promise.resolve(found ? { ...found, notificationPreferences: { ...found.notificationPreferences } } : null);
+    },
+
+    update: ({ where, data }: { where: { vendorAddress?: string; id?: string }; data: VendorProfileUpdateInput }): Promise<VendorProfile> => {
+      let existing: VendorProfile | undefined;
+      if (where.vendorAddress !== undefined) {
+        existing = [...this.vendorProfiles.values()].find(v => v.vendorAddress === where.vendorAddress);
+      } else if (where.id !== undefined) {
+        existing = this.vendorProfiles.get(where.id);
+      }
+      if (!existing) throw new Error('VendorProfile not found');
+      // Strip undefined values so optional DTO fields don't overwrite existing data
+      const safeData = Object.fromEntries(
+        Object.entries(data).filter(([, v]) => v !== undefined),
+      ) as VendorProfileUpdateInput;
+      const safePrefs = data.notificationPreferences
+        ? Object.fromEntries(
+            Object.entries(data.notificationPreferences).filter(([, v]) => v !== undefined),
+          ) as Partial<NotificationPreferences>
+        : undefined;
+      const updated: VendorProfile = {
+        ...existing,
+        ...safeData,
+        notificationPreferences: safePrefs
+          ? { ...existing.notificationPreferences, ...safePrefs }
+          : existing.notificationPreferences,
+        updatedAt: new Date(),
+      };
+      this.vendorProfiles.set(existing.id, updated);
+      return Promise.resolve({ ...updated, notificationPreferences: { ...updated.notificationPreferences } });
+    },
+
+    deleteMany: (): Promise<{ count: number }> => {
+      const count = this.vendorProfiles.size;
+      this.vendorProfiles.clear();
+      return Promise.resolve({ count });
+    },
+  };
+
   async reset(): Promise<void> {
     await this.notification.deleteMany();
     await this.escrow.deleteMany();
+    await this.vendorProfile.deleteMany();
     this.escrowId = 1;
     this.notificationId = 1;
+    this.vendorProfileId = 1;
   }
 
   async onModuleDestroy(): Promise<void> {

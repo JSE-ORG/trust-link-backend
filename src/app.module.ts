@@ -6,9 +6,10 @@ import { DisputeModule } from './admin/dispute/dispute.module';
 import { EscrowModule } from './escrow/escrow.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { StellarModule } from './stellar/stellar.module';
+import { VendorModule } from './vendor/vendor.module';
 
 @Module({
-  imports: [PrismaModule, EscrowModule, StellarModule, Sep10Module, DisputeModule],
+  imports: [PrismaModule, EscrowModule, StellarModule, Sep10Module, DisputeModule, VendorModule],
   controllers: [AppController],
   providers: [AppService],
 })
