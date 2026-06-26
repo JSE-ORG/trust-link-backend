@@ -38,6 +38,8 @@ When the NestJS application is running, you can use the following endpoints:
 
 #### Start a Stress Test
 
+These stress-test endpoints are admin-only. They require a valid bearer JWT and an admin role. Unauthenticated requests receive 401 and non-admin JWTs receive 403.
+
 ```bash
 POST /stress-test
 Content-Type: application/json
