@@ -45,11 +45,9 @@ export class EscrowRepository {
     vendorAddress: string,
     itemRef: string,
   ): Promise<EscrowRecord | null> {
-    return this.prisma.escrow
-      .findMany({
-        where: { vendorAddress, itemRef },
-      })
-      .then((results) => results[0] ?? null);
+    return this.prisma.escrow.findFirst({
+      where: { vendorAddress, itemRef },
+    });
   }
 
   /**
