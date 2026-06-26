@@ -88,6 +88,7 @@ model Dispute {
   escrow       Escrow        @relation(fields: [escrowId], references: [id], onDelete: Cascade)
 
   @@index([status])
+  @@index([resolvedAt])
   @@index([escrowId])
 }
 
