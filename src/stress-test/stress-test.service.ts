@@ -314,16 +314,16 @@ export class StressTestService {
 
   private logAlerts(alerts: Alert[]): void {
     if (alerts.length === 0) {
-      this.logger.log('✅ No performance alerts generated');
+      this.logger.log('[OK] No performance alerts generated');
       return;
     }
 
-    this.logger.warn(`⚠️  Generated ${alerts.length} performance alerts:`);
+    this.logger.warn(`[WARN] Generated ${alerts.length} performance alerts:`);
 
     for (const alert of alerts) {
-      const emoji = alert.severity === 'CRITICAL' ? '🚨' : '⚠️';
+      const prefix = alert.severity === 'CRITICAL' ? '[CRIT]' : '[WARN]';
       this.logger.warn(
-        `${emoji} [${alert.type}] ${alert.message} (Value: ${alert.value.toFixed(2)}, Threshold: ${alert.threshold})`,
+        `${prefix} [${alert.type}] ${alert.message} (Value: ${alert.value.toFixed(2)}, Threshold: ${alert.threshold})`,
       );
     }
   }
