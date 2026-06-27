@@ -39,28 +39,49 @@ export class AutoReleaseWorker implements OnModuleInit, OnApplicationShutdown {
   }
 
   async run(referenceTime = new Date()): Promise<void> {
-    const eligible =
-      await this.escrowRepository.findAutoReleaseEligible(referenceTime);
+    try {
+      const eligible =
+        await this.escrowRepository.findAutoReleaseEligible(referenceTime);
 
-    for (const escrow of eligible) {
-      const dispute = await this.disputeRepository.findByEscrow(escrow.id);
-      if (dispute) {
-        continue;
-      }
+      for (const escrow of eligible) {
+        try {
+          const dispute = await this.disputeRepository.findByEscrow(escrow.id);
+          if (dispute) {
+            continue;
+          }
 
-      if (escrow.state === 'COMPLETED' || escrow.autoReleaseTxHash) {
-        continue;
-      }
+          if (escrow.state === 'COMPLETED' || escrow.autoReleaseTxHash) {
+            continue;
+          }
 
-      try {
-        const txHash = await this.contractService.submitAutoRelease(escrow.id);
-        await this.escrowRepository.markAutoReleaseCompleted(escrow.id, txHash);
-      } catch (error) {
-        this.logger.error(
-          `Auto release failed for escrow ${escrow.id}`,
-          error instanceof Error ? error.stack : undefined,
-        );
+          const txHash = await this.contractService.submitAutoRelease(
+            escrow.id,
+          );
+          await this.escrowRepository.markAutoReleaseCompleted(
+            escrow.id,
+            txHash,
+          );
+        } catch (error) {
+          this.logger.error(
+            JSON.stringify({
+              msg: 'auto_release.escrow_failed',
+              escrowId: escrow.id,
+              eventType: 'auto_release',
+              error: error instanceof Error ? error.message : String(error),
+            }),
+            error instanceof Error ? error.stack : undefined,
+          );
+        }
       }
+    } catch (error) {
+      this.logger.error(
+        JSON.stringify({
+          msg: 'auto_release.worker_failed',
+          eventType: 'auto_release',
+          error: error instanceof Error ? error.message : String(error),
+        }),
+        error instanceof Error ? error.stack : undefined,
+      );
     }
   }
 }

@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/unbound-method */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import { Test } from '@nestjs/testing';
 import { DisputeRepository } from '../../src/dispute/dispute.repository';
 import { EscrowRepository } from '../../src/escrow/escrow.repository';
@@ -99,5 +101,21 @@ describe('AutoReleaseWorker (issue #10)', () => {
     await worker.run();
 
     expect(contractService.submitAutoRelease).not.toHaveBeenCalled();
+  });
+
+  it('catches top-level worker failures so interval handlers do not reject', async () => {
+    escrowRepository.findAutoReleaseEligible.mockRejectedValue(
+      new Error('database unavailable'),
+    );
+    const loggerSpy = jest
+      .spyOn((worker as any).logger, 'error')
+      .mockImplementation();
+
+    await expect(worker.run()).resolves.toBeUndefined();
+
+    expect(loggerSpy).toHaveBeenCalledWith(
+      expect.stringContaining('auto_release.worker_failed'),
+      expect.any(String),
+    );
   });
 });

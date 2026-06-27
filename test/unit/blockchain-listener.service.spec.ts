@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import { Test } from '@nestjs/testing';
 import {
   Address,
@@ -193,6 +195,32 @@ describe('BlockchainListenerService — Soroban event parsing (issue #49)', () =
         { value: 'also-bad', topics: ['bad'] },
       ]);
       expect(parsed).toEqual([]);
+    });
+
+    it('catches unexpected handler failures and continues the batch', () => {
+      const good = {
+        topics: [toXdrBase64(sym('transfer'))],
+        value: toXdrBase64(nativeToScVal(1n, { type: 'i128' })),
+      };
+      const loggerSpy = jest
+        .spyOn((service as any).logger, 'error')
+        .mockImplementation();
+      const originalParse = service.parseEvent.bind(service);
+      jest
+        .spyOn(service, 'parseEvent')
+        .mockImplementationOnce(() => {
+          throw new Error('unexpected parser failure');
+        })
+        .mockImplementationOnce((raw) => originalParse(raw));
+
+      const parsed = service.parseEvents([{ type: 'contract' }, good]);
+
+      expect(parsed).toHaveLength(1);
+      expect(parsed[0].name).toBe('transfer');
+      expect(loggerSpy).toHaveBeenCalledWith(
+        expect.stringContaining('blockchain.event.handler_failed'),
+        expect.any(String),
+      );
     });
   });
 
