@@ -198,11 +198,18 @@ export class Sep10Service {
     return { token, refreshToken };
   }
 
+  private getJwtSecret(): string {
+    const secret = this.configService.get<string>('SEP10_JWT_SECRET');
+    if (!secret) {
+      throw new Error(
+        'Configuration error: SEP10_JWT_SECRET is not set. Refusing to sign with a fallback secret.',
+      );
+    }
+    return secret;
+  }
+
   private hashToken(token: string): string {
-    return createHmac(
-      'sha256',
-      this.configService.get('SEP10_JWT_SECRET') || 'secret',
-    )
+    return createHmac('sha256', this.getJwtSecret())
       .update(token)
       .digest('hex');
   }
@@ -233,10 +240,7 @@ export class Sep10Service {
       JSON.stringify({ alg: 'HS256', typ: 'JWT' }),
     ).toString('base64url');
     const body = Buffer.from(JSON.stringify(payload)).toString('base64url');
-    const sig = createHmac(
-      'sha256',
-      this.configService.get('SEP10_JWT_SECRET') || 'secret',
-    )
+    const sig = createHmac('sha256', this.getJwtSecret())
       .update(`${header}.${body}`)
       .digest('base64url');
     return `${header}.${body}.${sig}`;
