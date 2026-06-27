@@ -77,6 +77,26 @@ Never run application instances from a new build against an old schema when the 
 - Queue dashboard and logs show no failed background jobs.
 - Error rate and p95 latency remain stable for at least one canary window.
 
+## Automated DB Migration Workflow
+
+The `.github/workflows/db-migrate.yml` workflow applies Prisma migrations automatically.
+
+**Triggers:**
+- Runs on every push to `main`
+- Runs on pull requests (status check)
+- Supports manual dispatch with a `dry_run` option via the GitHub Actions UI
+
+**Dry run (preview without applying):**
+1. Go to Actions → Database Migrations → Run workflow
+2. Set `dry_run` to `true`
+3. The workflow runs `prisma migrate status` to show pending migrations without applying them
+
+**Migration status check:**
+After every run (apply or dry run), `prisma migrate status` is executed so the log confirms which migrations were applied and the schema is in sync.
+
+**Running migrations before integration / E2E tests:**
+The `test.yml` workflow already runs `npx prisma migrate deploy` before executing tests. The dedicated `db-migrate.yml` workflow handles production deployments and previews independently.
+
 ## Rollback
 
 1. Stop the rollout and keep the canary isolated.
@@ -84,4 +104,21 @@ Never run application instances from a new build against an old schema when the 
 3. Restore the database from the pre-release backup when migrations are not backward-compatible.
 4. Re-run health, auth, escrow, admin, and webhook validation.
 5. Document the failing milestone before reopening rollout.
+
+**Migration rollback procedure:**
+
+Prisma does not support automatic down migrations. To roll back a schema change:
+
+```bash
+# 1. Restore from the pre-release database backup
+pg_restore -U trustlink -d trustlink_prod backup_pre_release.dump
+
+# 2. Revert to the previous application image and restart
+# 3. Verify the application connects and passes health checks
+
+# To mark a failed migration as rolled back in Prisma's migration table:
+npx prisma migrate resolve --rolled-back <migration_name>
+```
+
+Always take a labelled database snapshot before applying migrations to a shared environment.
 
