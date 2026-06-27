@@ -57,6 +57,8 @@ model Escrow {
   @@index([state, trackingId])
   @@index([state, createdAt])
   @@index([state, deliveredAt])
+  @@index([state, deliveredAt, autoReleaseSubmittedAt])
+  @@index([state, deliveredAt, autoReleaseTxHash])
 }
 
 /// Append-only audit log of escrow state transitions (issues #71/#72).
