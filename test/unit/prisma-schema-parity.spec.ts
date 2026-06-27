@@ -128,4 +128,18 @@ describe('PrismaService in-memory parity with Prisma schema (#236)', () => {
       expect(profile[field as keyof typeof profile]).toBeDefined();
     }
   });
+
+  it('vendor tracking settings contain every required VendorTrackingSettings column', async () => {
+    const required = requiredScalarFields(schema, 'VendorTrackingSettings');
+    const settings = await prisma.vendorTrackingSettings.upsert({
+      where: { vendorAddress: 'vendor-1' },
+      create: { vendorAddress: 'vendor-1' },
+      update: {},
+    });
+
+    for (const field of required) {
+      expect(settings[field as keyof typeof settings]).toBeDefined();
+    }
+  });
 });
+

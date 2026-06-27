@@ -73,6 +73,8 @@ export interface DisputeRecord {
   updatedAt: Date;
 }
 
+export type NotificationStatus = 'PENDING' | 'SENT' | 'FAILED';
+
 export interface NotificationRecord {
   id: string;
   escrowId: string;
@@ -80,11 +82,44 @@ export interface NotificationRecord {
   channel: NotificationChannel;
   recipientAddress: string;
   message: string;
-  providerMessageId: string | null;
-  attemptCount: number;
-  lastResponseCode: number | null;
+  status: NotificationStatus;
+  retryCount: number;
+  sentAt: Date | null;
+  failedAt: Date | null;
+  lastError: string | null;
+  providerMessageId?: string | null;
+  attemptCount?: number;
+  lastResponseCode?: number | null;
   createdAt: Date;
+  updatedAt: Date;
 }
+
+export interface VendorTrackingSettingsRecord {
+  id: string;
+  vendorAddress: string;
+  enableTracking: boolean;
+  trackingProvider: string | null;
+  trackingApiKey: string | null;
+  autoUpdateTracking: boolean;
+  trackingUpdateInterval: number;
+  notifyOnDelivery: boolean;
+  notifyOnDelay: boolean;
+  notifyOnException: boolean;
+  delayThresholdHours: number;
+  deliveryConfirmation: boolean;
+  requireSignature: boolean;
+  insuranceRequired: boolean;
+  insuranceValue: number | null;
+  customTrackingRules: any;
+  webhookUrl: string | null;
+  webhookSecret: string | null;
+  notificationChannels: string[];
+  trackingHistoryRetentionDays: number;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+
 
 export interface ProcessedWebhookEventRecord {
   operationId: string;
@@ -264,7 +299,7 @@ export class PrismaService implements OnModuleDestroy {
   private vendorProfiles = new Map<string, VendorProfileRecord>();
   private vendorTrackingSettingsStore = new Map<
     string,
-    Record<string, unknown>
+    VendorTrackingSettingsRecord
   >();
   private webhookEvents = new Map<string, ProcessedWebhookEventRecord>();
   private refreshTokens = new Map<string, RefreshTokenRecord>();
@@ -579,15 +614,44 @@ export class PrismaService implements OnModuleDestroy {
     create: ({
       data,
     }: {
-      data: Omit<NotificationRecord, 'id' | 'createdAt'>;
+      data: any;
     }): Promise<NotificationRecord> => {
+      const now = new Date();
       const notification: NotificationRecord = {
+        status: data.status ?? 'PENDING',
+        retryCount: data.retryCount ?? 0,
+        sentAt: data.sentAt ?? null,
+        failedAt: data.failedAt ?? null,
+        lastError: data.lastError ?? null,
+        providerMessageId: data.providerMessageId ?? null,
+        attemptCount: data.attemptCount ?? 0,
+        lastResponseCode: data.lastResponseCode ?? null,
         ...data,
-        id: String(this.notificationId++),
-        createdAt: new Date(),
+        id: data.id ?? String(this.notificationId++),
+        createdAt: now,
+        updatedAt: now,
       };
       this.notifications.set(notification.id, notification);
       return Promise.resolve({ ...notification });
+    },
+    update: ({
+      where,
+      data,
+    }: {
+      where: { id: string };
+      data: any;
+    }): Promise<NotificationRecord> => {
+      const existing = this.notifications.get(where.id);
+      if (!existing) {
+        return Promise.reject(new Error(`Notification with id ${where.id} not found`));
+      }
+      const updated: NotificationRecord = {
+        ...existing,
+        ...data,
+        updatedAt: new Date(),
+      };
+      this.notifications.set(where.id, updated);
+      return Promise.resolve({ ...updated });
     },
     findMany: (): Promise<NotificationRecord[]> =>
       Promise.resolve(
@@ -601,6 +665,7 @@ export class PrismaService implements OnModuleDestroy {
       return Promise.resolve({ count });
     },
   };
+
 
   processedWebhookEvent = {
     findUnique: ({
@@ -898,7 +963,7 @@ export class PrismaService implements OnModuleDestroy {
     }: {
       where: { vendorAddress: string };
       select?: { notificationChannels?: boolean };
-    }): Promise<Record<string, unknown> | null> => {
+    }): Promise<any | null> => {
       const settings = this.vendorTrackingSettingsStore.get(
         where.vendorAddress,
       );
@@ -908,7 +973,7 @@ export class PrismaService implements OnModuleDestroy {
 
       if (select?.notificationChannels) {
         return Promise.resolve({
-          notificationChannels: (settings as any).notificationChannels || [],
+          notificationChannels: settings.notificationChannels || [],
         });
       }
 
@@ -920,19 +985,47 @@ export class PrismaService implements OnModuleDestroy {
       update,
     }: {
       where: { vendorAddress: string };
-      create: Record<string, unknown>;
-      update: Record<string, unknown>;
-    }): Promise<Record<string, unknown>> => {
+      create: any;
+      update: any;
+    }): Promise<any> => {
       const existing = this.vendorTrackingSettingsStore.get(
         where.vendorAddress,
       );
+      const now = new Date();
       if (existing) {
-        const updated = { ...existing, ...update, updatedAt: new Date() };
+        const updated = {
+          ...existing,
+          ...update,
+          updatedAt: now,
+        };
         this.vendorTrackingSettingsStore.set(where.vendorAddress, updated);
         return Promise.resolve({ ...updated });
       }
-      const now = new Date();
-      const created = { ...create, createdAt: now, updatedAt: now };
+      const created = {
+        id: create.id ?? `settings-${where.vendorAddress}`,
+        vendorAddress: where.vendorAddress,
+        enableTracking: create.enableTracking ?? true,
+        trackingProvider: create.trackingProvider ?? null,
+        trackingApiKey: create.trackingApiKey ?? null,
+        autoUpdateTracking: create.autoUpdateTracking ?? false,
+        trackingUpdateInterval: create.trackingUpdateInterval ?? 3600,
+        notifyOnDelivery: create.notifyOnDelivery ?? true,
+        notifyOnDelay: create.notifyOnDelay ?? true,
+        notifyOnException: create.notifyOnException ?? true,
+        delayThresholdHours: create.delayThresholdHours ?? 24,
+        deliveryConfirmation: create.deliveryConfirmation ?? true,
+        requireSignature: create.requireSignature ?? false,
+        insuranceRequired: create.insuranceRequired ?? false,
+        insuranceValue: create.insuranceValue ?? null,
+        customTrackingRules: create.customTrackingRules ?? null,
+        webhookUrl: create.webhookUrl ?? null,
+        webhookSecret: create.webhookSecret ?? null,
+        notificationChannels: create.notificationChannels ?? ['EMAIL'],
+        trackingHistoryRetentionDays: create.trackingHistoryRetentionDays ?? 90,
+        createdAt: now,
+        updatedAt: now,
+        ...create,
+      };
       this.vendorTrackingSettingsStore.set(where.vendorAddress, created);
       return Promise.resolve({ ...created });
     },

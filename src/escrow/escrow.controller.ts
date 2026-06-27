@@ -11,6 +11,8 @@ import {
   HttpCode,
   HttpStatus,
   Query,
+  Headers,
+  BadRequestException,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -62,8 +64,15 @@ export class EscrowController {
   @HttpCode(HttpStatus.CREATED)
   @UseGuards(JwtGuard)
   @Throttle({ public: { limit: 10, ttl: 60000 } })
-  createEscrow(@Body() dto: CreateEscrowDto, @CurrentUser() user: AuthUser) {
-    return this.escrowService.createEscrow(dto, user.address);
+  createEscrow(
+    @Body() dto: CreateEscrowDto,
+    @CurrentUser() user: AuthUser,
+    @Headers('idempotency-key') idempotencyKey?: string,
+  ) {
+    if (!idempotencyKey) {
+      throw new BadRequestException('Idempotency-Key header required');
+    }
+    return this.escrowService.createIdempotent(idempotencyKey, dto, user.address);
   }
 
   /**

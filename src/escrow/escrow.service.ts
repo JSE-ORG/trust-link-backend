@@ -156,6 +156,30 @@ export class EscrowService {
     };
   }
 
+  /** Wrapper for createEscrow that ensures idempotency via Redis caching. */
+  async createIdempotent(
+    idempotencyKey: string,
+    dto: CreateEscrowDto,
+    vendorAddress: string,
+  ): Promise<EscrowWithPaymentUrl> {
+    const cacheKey = `idempotency:${idempotencyKey}`;
+    if (this.cacheService) {
+      const cached = await this.cacheService.get<EscrowWithPaymentUrl>(cacheKey);
+      if (cached) {
+        return cached;
+      }
+    }
+
+    const result = await this.createEscrow(dto, vendorAddress);
+
+    if (this.cacheService) {
+      // Cache for 24 hours (86400 seconds)
+      await this.cacheService.set(cacheKey, result, 86400);
+    }
+
+    return result;
+  }
+
   /** Loads an escrow by ID or raises a typed not-found error. */
   async findById(id: string): Promise<EscrowRecord> {
     try {
