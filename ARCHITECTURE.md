@@ -285,13 +285,83 @@ Horizon ──POST /webhooks/stellar──► StellarWebhookController
 
 ## Authentication
 
-SEP-10 (Stellar Ecosystem Proposal) is used for wallet-native authentication:
+### SEP-10 Auth Flow
 
-1. Client calls `GET /auth` with its Stellar public key.
-2. Server returns a signed challenge transaction.
-3. Client signs with its private key and submits to `POST /auth`.
-4. Server verifies the signature and issues a JWT (`SEP10_JWT_SECRET`, HS256).
-5. Protected endpoints use `@UseGuards(JwtGuard)` + `@CurrentUser()` to extract the verified Stellar address.
+SEP-10 (Stellar Ecosystem Proposal 10) provides wallet-native authentication: the client proves ownership of a Stellar private key by signing a server-generated challenge transaction rather than submitting a password.
+
+#### Challenge Request
+
+```
+Client                                Server (Sep10Controller)
+  │                                        │
+  │── POST /auth/challenge ──────────────► │
+  │   { publicKey: "G..." }                │
+  │                                        │  1. WebAuth.buildChallengeTx()
+  │                                        │     (serverKeypair signs the tx)
+  │                                        │  2. Hash tx → nonce
+  │                                        │  3. prisma.nonce.create()
+  │                                        │     { nonce, walletAddress,
+  │                                        │       challenge (XDR), used=false,
+  │                                        │       expiresAt = now + 900s }
+  │◄── { transaction: "<XDR>",  ──────────│
+  │      network_passphrase }              │
+```
+
+#### Verification and JWT Issuance
+
+```
+Client                                Server (Sep10Service)
+  │                                        │
+  │  (client signs the XDR with its        │
+  │   Stellar private key)                 │
+  │                                        │
+  │── POST /auth ──────────────────────── ►│
+  │   { transaction: "<signed XDR>" }      │
+  │                                        │  1. WebAuth.readChallengeTx()
+  │                                        │     → extracts clientAccountID
+  │                                        │  2. Hash tx → look up nonce record
+  │                                        │  3. Reject if: not found | used
+  │                                        │     | expired
+  │                                        │  4. WebAuth.verifyChallengeTxSigners()
+  │                                        │     confirms client signature
+  │                                        │  5. nonce.update({ used: true })
+  │                                        │  6. issueJwt(sub=clientAccountID)
+  │                                        │     HS256, exp=now+3600s
+  │                                        │     role="admin" if sub===ADMIN_ADDRESS
+  │                                        │  7. Generate 32-byte refresh token,
+  │                                        │     store HMAC-SHA256 hash in DB
+  │◄── { token, refreshToken } ───────────│
+```
+
+#### Refresh Token Rotation
+
+```
+Client                                Server (Sep10Service)
+  │                                        │
+  │── POST /auth/refresh ────────────────►│
+  │   { refreshToken: "<hex>" }            │
+  │                                        │  1. Hash token → look up in DB
+  │                                        │  2. If revoked → revokeTokenFamily()
+  │                                        │     (revoke ALL tokens for userId)
+  │                                        │     → 401 Refresh token reuse detected
+  │                                        │  3. If expired → 401
+  │                                        │  4. Mark old token revoked=true
+  │                                        │  5. Generate new token pair,
+  │                                        │     parentTokenId = old token id
+  │◄── { token, refreshToken } ───────────│
+```
+
+#### Security Considerations
+
+| Threat | Mitigation |
+|---|---|
+| Nonce reuse | Each challenge nonce is stored with `used=false`; set to `true` after one successful verify. Replaying the same signed XDR is rejected. |
+| Expired challenges | `expiresAt` stored with the nonce (default 900 s). Server rejects if `now > expiresAt`. |
+| Refresh token theft | Rotation: each use issues a new token and revokes the old one. If a stolen token is replayed, the `revoked=true` check triggers full session revocation via `revokeTokenFamily()`. |
+| Token family escalation | `parentTokenId` links child tokens to their parent so the entire chain can be revoked on reuse detection. |
+| Privilege escalation | JWT `role: "admin"` is only embedded when `sub === ADMIN_ADDRESS` (set via env var, not user-supplied). |
+
+Protected endpoints use `@UseGuards(JwtGuard)` + `@CurrentUser()` to extract the verified Stellar address from the JWT.
 
 ---
 
