@@ -1,6 +1,7 @@
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import { ContractCallFailedException } from './contract-call-failed.exception';
 import { STELLAR_SERVER } from './stellar.tokens';
+import { DEFAULT_AUTO_RELEASE_MAX_RETRIES } from './contract.constants';
 
 interface StellarServer {
   submitTransaction(transaction: Record<string, unknown>): Promise<{
@@ -41,7 +42,10 @@ export class ContractService {
   }
 
   /** Submits an auto-release transaction, retrying sequence errors up to the limit. */
-  async submitAutoRelease(escrowId: string, maxRetries = 2): Promise<string> {
+  async submitAutoRelease(
+    escrowId: string,
+    maxRetries = DEFAULT_AUTO_RELEASE_MAX_RETRIES,
+  ): Promise<string> {
     if (!this.server) {
       throw new ContractCallFailedException('Stellar server is not configured');
     }

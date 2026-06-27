@@ -1,7 +1,7 @@
 import { Type } from 'class-transformer';
-import { IsIn, IsInt, IsOptional, Max, Min } from 'class-validator';
+import { IsEnum, IsIn, IsInt, IsOptional, Max, Min } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import type { EscrowState } from '../../prisma/prisma.service';
+import { EscrowStateEnum } from '../../common/enums/escrow-state.enum';
 
 /**
  * Query parameters for GET /vendor/escrows. Supports filtering by state,
@@ -11,32 +11,14 @@ import type { EscrowState } from '../../prisma/prisma.service';
 export class VendorEscrowsQueryDto {
   @ApiPropertyOptional({
     description: 'Filter escrows by lifecycle state.',
-    enum: [
-      'CREATED',
-      'FUNDED',
-      'SHIPPED',
-      'DELIVERED',
-      'RELEASED',
-      'COMPLETED',
-      'DISPUTED',
-      'REFUNDED',
-      'CANCELLED',
-    ],
-    example: 'SHIPPED',
+    enum: EscrowStateEnum,
+    example: EscrowStateEnum.SHIPPED,
   })
   @IsOptional()
-  @IsIn([
-    'CREATED',
-    'FUNDED',
-    'SHIPPED',
-    'DELIVERED',
-    'RELEASED',
-    'COMPLETED',
-    'DISPUTED',
-    'REFUNDED',
-    'CANCELLED',
-  ])
-  state?: EscrowState;
+  @IsEnum(EscrowStateEnum, {
+    message: `state must be one of: ${Object.values(EscrowStateEnum).join(', ')}`,
+  })
+  state?: EscrowStateEnum;
 
   @ApiPropertyOptional({
     description: 'Field to sort the results by.',

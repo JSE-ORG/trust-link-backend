@@ -9,6 +9,12 @@ import {
 } from '@stellar/stellar-sdk';
 import { ConfigService } from '../../config/config.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import { MILLISECONDS_PER_SECOND } from '../../common/constants/time.constants';
+import {
+  CHALLENGE_TIMEOUT_SECONDS,
+  JWT_EXPIRY_SECONDS,
+  REFRESH_TOKEN_TTL_DEFAULT,
+} from './sep10.constants';
 
 @Injectable()
 export class Sep10Service {
@@ -41,7 +47,10 @@ export class Sep10Service {
   }
 
   /** Builds and stores a SEP-10 challenge transaction for a wallet account. */
-  async buildChallenge(accountId: string, timeout = 300): Promise<string> {
+  async buildChallenge(
+    accountId: string,
+    timeout = CHALLENGE_TIMEOUT_SECONDS,
+  ): Promise<string> {
     const challengeTx = WebAuth.buildChallengeTx(
       this.serverKeypair,
       accountId,
@@ -54,7 +63,9 @@ export class Sep10Service {
     const tx = TransactionBuilder.fromXDR(challengeTx, this.networkPassphrase);
     const txHash = tx.hash().toString('hex');
 
-    const expiresAt = new Date(Date.now() + timeout * 1000);
+    const expiresAt = new Date(
+      Date.now() + timeout * MILLISECONDS_PER_SECOND,
+    );
 
     await this.prisma.nonce.create({
       data: {
@@ -195,8 +206,11 @@ export class Sep10Service {
     const refreshToken = randomBytes(32).toString('hex');
     const tokenHash = this.hashToken(refreshToken);
     const ttlSeconds =
-      this.configService.get<number>('REFRESH_TOKEN_TTL') || 604800; // 7 days default
-    const expiresAt = new Date(Date.now() + ttlSeconds * 1000);
+      this.configService.get<number>('REFRESH_TOKEN_TTL') ||
+      REFRESH_TOKEN_TTL_DEFAULT;
+    const expiresAt = new Date(
+      Date.now() + ttlSeconds * MILLISECONDS_PER_SECOND,
+    );
 
     await this.prisma.refreshToken.create({
       data: {
@@ -231,14 +245,14 @@ export class Sep10Service {
   }
 
   private issueJwt(sub: string): string {
-    const now = Math.floor(Date.now() / 1000);
+    const now = Math.floor(Date.now() / MILLISECONDS_PER_SECOND);
     const adminAddress = this.configService.get('ADMIN_ADDRESS');
     const payload: {
       sub: string;
       iat: number;
       exp: number;
       role?: 'admin';
-    } = { sub, iat: now, exp: now + 3600 };
+    } = { sub, iat: now, exp: now + JWT_EXPIRY_SECONDS };
     if (adminAddress && sub === adminAddress) {
       payload.role = 'admin';
     }

@@ -23,7 +23,12 @@ export type DisputeState = 'OPEN' | 'UNDER_REVIEW' | 'RESOLVED';
 export interface EscrowRecord {
   id: string;
   itemName: string;
-  itemRef?: string;
+  // Required in the Prisma schema (`itemRef String`). Was previously optional
+  // here, masking the schema constraint (issue #236).
+  itemRef: string;
+  // The Prisma schema types this as `Decimal @db.Decimal(18, 8)`. The in-memory
+  // store uses `number` as a stand-in since the test harness has no Decimal
+  // runtime; production code must treat it as Prisma `Decimal` (issue #236).
   amount: number;
   currency: string;
   buyerAddress: string;
@@ -57,8 +62,11 @@ export interface DisputeRecord {
   id: string;
   escrowId: string;
   reason: string;
-  description?: string;
-  evidenceUrls?: string[];
+  // Required in the Prisma schema with a default (`description String @default("")`
+  // and `evidenceUrls String[] @default([])`). Modelled as required here so the
+  // in-memory store matches the schema's non-nullable columns (issue #236).
+  description: string;
+  evidenceUrls: string[];
   status: DisputeState;
   resolvedAt: Date | null;
   createdAt: Date;
@@ -294,6 +302,7 @@ export class PrismaService implements OnModuleDestroy {
       const escrow: EscrowRecord = {
         ...data,
         id: data.id ?? String(this.escrowId++),
+        itemRef: data.itemRef ?? '',
         state: data.state ?? 'FUNDED',
         trackingId: data.trackingId ?? null,
         shippedAt: data.shippedAt ?? null,
@@ -482,6 +491,7 @@ export class PrismaService implements OnModuleDestroy {
       const dispute: DisputeRecord = {
         ...data,
         id: data.id ?? String(this.disputeId++),
+        description: data.description ?? '',
         status: data.status ?? 'OPEN',
         evidenceUrls: data.evidenceUrls ?? [],
         resolvedAt: data.resolvedAt ?? null,

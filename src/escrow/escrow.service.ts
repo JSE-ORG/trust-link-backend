@@ -22,6 +22,7 @@ import { S3PresignService } from '../common/services/s3-presign.service';
 import { EscrowRepository } from './escrow.repository';
 import { UpdateBuyerContactDto } from './dto/update-buyer-contact.dto';
 import { encryptContact } from '../common/sanitization/contact-encryption.util';
+import { EventsResult } from './escrow.types';
 
 export type EscrowWithPaymentUrl = EscrowRecord & {
   paymentUrl: string;
@@ -176,9 +177,7 @@ export class EscrowService {
   }
 
   /** Returns chronological event history for an escrow; empty array if not found. */
-  async getEvents(
-    id: string,
-  ): Promise<Array<{ event: string; occurredAt: Date }>> {
+  async getEvents(id: string): Promise<EventsResult> {
     return this.escrowRepository.findEvents(id);
   }
 
