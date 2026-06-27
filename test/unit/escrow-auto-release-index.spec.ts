@@ -77,7 +77,12 @@ describe('EscrowRepository – auto-release index query (issue #310)', () => {
   });
 
   it('excludes non-SHIPPED escrows regardless of deliveredAt (state predicate)', async () => {
-    for (const state of ['FUNDED', 'DELIVERED', 'COMPLETED', 'DISPUTED'] as const) {
+    for (const state of [
+      'FUNDED',
+      'DELIVERED',
+      'COMPLETED',
+      'DISPUTED',
+    ] as const) {
       await prisma.escrow.create({
         data: {
           itemName: `Item-${state}`,
