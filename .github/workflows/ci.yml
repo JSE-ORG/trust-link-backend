@@ -20,6 +20,16 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Cache TypeScript build output
+        uses: actions/cache@v4
+        with:
+          path: |
+            dist
+            tsconfig.build.tsbuildinfo
+          key: ts-build-${{ runner.os }}-${{ hashFiles('tsconfig.build.json', 'src/**/*.ts') }}
+          restore-keys: |
+            ts-build-${{ runner.os }}-
+
       - name: Run tests with coverage
         run: npm run test:cov
 
