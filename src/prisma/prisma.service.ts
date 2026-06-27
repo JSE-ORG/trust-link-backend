@@ -1,5 +1,24 @@
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 
+// AES-256-GCM ciphertext produced by contact-encryption.util: iv:authTag:ciphertext
+// IV = 12 bytes (24 hex), tag = 16 bytes (32 hex), ciphertext = 1+ hex chars.
+const ENCRYPTED_CONTACT_RE = /^[0-9a-f]{24}:[0-9a-f]{32}:[0-9a-f]+$/i;
+
+/**
+ * Guards against plaintext writes to buyer PII fields.
+ * Throws at the repository layer if a non-null value doesn't match the
+ * expected AES-256-GCM ciphertext format produced by encryptContact().
+ */
+function assertEncryptedContact(field: string, value: string | null | undefined): void {
+  if (value == null) return;
+  if (!ENCRYPTED_CONTACT_RE.test(value)) {
+    throw new Error(
+      `Security violation: ${field} must be encrypted before persistence. ` +
+      `Use encryptContact() from contact-encryption.util before writing to the database.`,
+    );
+  }
+}
+
 export type EscrowState =
   | 'CREATED'
   | 'FUNDED'
@@ -333,6 +352,8 @@ export class PrismaService implements OnModuleDestroy {
 
   escrow = {
     create: ({ data }: { data: EscrowCreateInput }): Promise<EscrowRecord> => {
+      assertEncryptedContact('buyerContactEmail', data.buyerContactEmail);
+      assertEncryptedContact('buyerContactPhone', data.buyerContactPhone);
       const now = new Date();
       const escrow: EscrowRecord = {
         ...data,
@@ -480,6 +501,8 @@ export class PrismaService implements OnModuleDestroy {
       where: { id: string };
       data: EscrowUpdateInput;
     }): Promise<EscrowRecord> => {
+      assertEncryptedContact('buyerContactEmail', data.buyerContactEmail);
+      assertEncryptedContact('buyerContactPhone', data.buyerContactPhone);
       const existing = this.escrows.get(where.id);
       if (!existing) {
         throw new Error(`Escrow ${where.id} not found`);

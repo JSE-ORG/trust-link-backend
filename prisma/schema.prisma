@@ -53,7 +53,7 @@ model Escrow {
   @@index([vendorAddress])
   @@index([buyerAddress])
   @@index([vendorAddress, state])
-  @@index([vendorAddress, itemRef])
+  @@unique([vendorAddress, itemRef])
   @@index([state, trackingId])
   @@index([state, createdAt])
   @@index([state, deliveredAt])
