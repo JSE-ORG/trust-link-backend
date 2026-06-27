@@ -323,6 +323,9 @@ export class PrismaService implements OnModuleDestroy {
     findMany: ({
       where,
       select,
+      orderBy,
+      skip,
+      take,
     }: {
       where?: Partial<
         Pick<
@@ -342,6 +345,9 @@ export class PrismaService implements OnModuleDestroy {
         createdAt?: { gte: Date; lte: Date };
       };
       select?: Partial<Record<keyof EscrowRecord, boolean>>;
+      orderBy?: Partial<Record<keyof EscrowRecord, 'asc' | 'desc'>>;
+      skip?: number;
+      take?: number;
     } = {}): Promise<EscrowRecord[] | Partial<EscrowRecord>[]> => {
       let escrows = [...this.escrows.values()].filter((escrow) => {
         if (!where) {
@@ -384,6 +390,29 @@ export class PrismaService implements OnModuleDestroy {
         escrows = escrows.filter((e) => e.state !== 'CANCELLED');
       }
 
+      if (orderBy) {
+        const [field, dir] = Object.entries(orderBy)[0] as [
+          keyof EscrowRecord,
+          'asc' | 'desc',
+        ];
+        escrows = [...escrows].sort((a, b) => {
+          const aVal = a[field];
+          const bVal = b[field];
+          if (typeof aVal === 'number' && typeof bVal === 'number') {
+            return dir === 'asc' ? aVal - bVal : bVal - aVal;
+          }
+          if (aVal instanceof Date && bVal instanceof Date) {
+            return dir === 'asc'
+              ? aVal.getTime() - bVal.getTime()
+              : bVal.getTime() - aVal.getTime();
+          }
+          return 0;
+        });
+      }
+
+      if (skip !== undefined) escrows = escrows.slice(skip);
+      if (take !== undefined) escrows = escrows.slice(0, take);
+
       if (select) {
         return Promise.resolve(
           escrows.map((escrow) => {
@@ -417,6 +446,24 @@ export class PrismaService implements OnModuleDestroy {
         this.recordEscrowEvent(where.id, existing.state, data.state);
       }
       return Promise.resolve({ ...updated });
+    },
+    findFirst: ({
+      where,
+    }: {
+      where?: Partial<
+        Pick<
+          EscrowRecord,
+          | 'vendorAddress'
+          | 'buyerAddress'
+          | 'state'
+          | 'itemRef'
+          | 'disputeId'
+        >
+      >;
+    } = {}): Promise<EscrowRecord | null> => {
+      return (
+        this.escrow.findMany({ where }) as Promise<EscrowRecord[]>
+      ).then((records) => records[0] ?? null);
     },
     deleteMany: (): Promise<{ count: number }> => {
       const count = this.escrows.size;
@@ -503,6 +550,13 @@ export class PrismaService implements OnModuleDestroy {
       const updated = { ...existing, ...data, updatedAt: new Date() };
       this.disputes.set(where.id, updated);
       return Promise.resolve({ ...updated });
+    },
+    findFirst: ({
+      where,
+    }: {
+      where?: Partial<Pick<DisputeRecord, 'escrowId' | 'status'>>;
+    } = {}): Promise<DisputeRecord | null> => {
+      return this.dispute.findMany({ where }).then((records) => records[0] ?? null);
     },
     deleteMany: (): Promise<{ count: number }> => {
       const count = this.disputes.size;

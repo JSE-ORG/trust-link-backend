@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { Injectable, Optional } from '@nestjs/common';
 import { CacheService } from '../cache/cache.service';
 import {
@@ -29,7 +30,7 @@ export class EscrowRepository {
   create(dto: CreateEscrowDto, vendorAddress: string): Promise<EscrowRecord> {
     return this.prisma.escrow.create({
       data: {
-        id: crypto.randomUUID(),
+        id: randomUUID(),
         ...dto,
         vendorAddress,
       },
@@ -44,11 +45,9 @@ export class EscrowRepository {
     vendorAddress: string,
     itemRef: string,
   ): Promise<EscrowRecord | null> {
-    return this.prisma.escrow
-      .findMany({
-        where: { vendorAddress, itemRef },
-      })
-      .then((results) => results[0] ?? null);
+    return this.prisma.escrow.findFirst({
+      where: { vendorAddress, itemRef },
+    });
   }
 
   /**
@@ -98,7 +97,7 @@ export class EscrowRepository {
    * Returns a paginated, sorted slice of escrows for the given vendor.
    * Sorts by date or amount; returns the total count before slicing.
    */
-  findVendorEscrows(
+  async findVendorEscrows(
     vendorAddress: string,
     state: string | undefined,
     sort: 'date' | 'amount',
@@ -106,24 +105,16 @@ export class EscrowRepository {
     page: number,
     limit: number,
   ): Promise<{ data: EscrowRecord[]; total: number }> {
-    return this.prisma.escrow
-      .findMany({
-        where: { vendorAddress, state: state as any },
-      })
-      .then((records) => {
-        const sorted = records.sort((a, b) => {
-          const primary =
-            sort === 'amount'
-              ? a.amount - b.amount
-              : a.createdAt.getTime() - b.createdAt.getTime();
-          return order === 'asc' ? primary : -primary;
-        });
+    const where = { vendorAddress, state: state as any };
+    const orderBy = sort === 'amount' ? { amount: order } : { createdAt: order };
+    const skip = (page - 1) * limit;
 
-        const total = sorted.length;
-        const start = (page - 1) * limit;
-        const data = sorted.slice(start, start + limit);
-        return { data, total };
-      });
+    const [data, all] = await Promise.all([
+      this.prisma.escrow.findMany({ where, orderBy, skip, take: limit }) as Promise<EscrowRecord[]>,
+      this.prisma.escrow.findMany({ where }) as Promise<EscrowRecord[]>,
+    ]);
+
+    return { data, total: all.length };
   }
 
   /**
