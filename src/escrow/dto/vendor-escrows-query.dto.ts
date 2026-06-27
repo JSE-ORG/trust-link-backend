@@ -12,11 +12,13 @@ export class VendorEscrowsQueryDto {
   @ApiPropertyOptional({
     description: 'Filter escrows by lifecycle state.',
     enum: [
+      'CREATED',
       'FUNDED',
       'SHIPPED',
       'DELIVERED',
       'RELEASED',
       'COMPLETED',
+      'DISPUTED',
       'REFUNDED',
       'CANCELLED',
     ],
@@ -24,11 +26,13 @@ export class VendorEscrowsQueryDto {
   })
   @IsOptional()
   @IsIn([
+    'CREATED',
     'FUNDED',
     'SHIPPED',
     'DELIVERED',
     'RELEASED',
     'COMPLETED',
+    'DISPUTED',
     'REFUNDED',
     'CANCELLED',
   ])

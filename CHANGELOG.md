@@ -7,16 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [1.1.0] - 2026-06-27
+
 ### Added
 
-- OpenTelemetry distributed tracing with OTLP export, database spans, and workflow-level context propagation ([#79](https://github.com/truestlink/trust-link-backend/issues/79))
-- Security policy with vulnerability disclosure procedures ([#90](https://github.com/truestlink/trust-link-backend/issues/90))
-- Incident response runbook for backup restoration and container recovery ([#97](https://github.com/truestlink/trust-link-backend/issues/97))
+- OpenTelemetry distributed tracing with OTLP export, database spans, and workflow-level context propagation ([#79](https://github.com/JSE-ORG/trust-link-backend/issues/79))
+- Security policy with vulnerability disclosure procedures ([#90](https://github.com/JSE-ORG/trust-link-backend/issues/90))
+- Incident response runbook for backup restoration and container recovery ([#97](https://github.com/JSE-ORG/trust-link-backend/issues/97))
 - Jaeger all-in-one service in Docker Compose for local trace visualization
+- `HorizonService` for direct Stellar Horizon API interactions (#341)
+- Vendor profile CRUD endpoints with notification preference management (#341)
+- Vendor analytics chart data endpoint (#341)
+- Database-backed cursor persistence for event replay worker (#339)
+- Persistent Dead-Letter Queue (DLQ) with retry and purge admin endpoints (#339)
+- Real BullMQ dashboard at `/admin/queue` (#339)
+- Integration tests for auto-release collision detection and webhook HMAC verification (#352)
+- E2E tests for auto-release, DLQ, escrow cancellation, and dispute resolution (#340)
+- Concurrent auto-release collision detection tests (#348)
+- Unit tests for `AdminGuard`, `CacheService`, `GlobalExceptionFilter`, and `VendorProfileService` (#346)
+- Throttler/rate-limit unit tests (#344)
+- Bootstrap error handling and graceful `SIGTERM`/`SIGINT` shutdown (#355)
+- Nonce cleanup service to prune expired SEP-10 challenges (#359)
+- Enhanced health check endpoint with per-dependency error details (#359)
+- Cross-vendor access control enforcement on escrow endpoints (#359)
+- `CREATED` and `DISPUTED` states added to `VendorEscrowsQueryDto` filter (#250)
 
 ### Changed
 
 - `GET /health` and `GET /version` now report the semver from `package.json`
+- `findAutoReleaseEligible` no longer double-subtracts time — the caller (`AutoReleaseService`) owns the 7-day cutoff calculation (#249)
+- `NODE_ENV` in default `.env` changed from `test` to `development` so workers and rate limits initialise correctly during local development (#248)
+- Strict Content-Security-Policy extended to allow required Stellar origin headers (#334)
+- Dead code removed and log noise reduced across services (#354)
+
+### Fixed
+
+- JWT secret minimum-length validation now enforced at startup
+- `AdminGuard` correctly rejects non-admin Stellar addresses
+- Stellar webhook HMAC signature verification hardened
+- `crypto` import corrected to use Node's built-in `node:crypto` module
+- Error handling improved across auto-release, tracking, and notification flows
+
+### Security
+
+- Auth and webhook security headers hardened (#333)
+- Strict CSP blocks non-Stellar origins in production (#334)
 
 ---
 
@@ -68,8 +105,8 @@ First stable release of the Trust-Link escrow backend.
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| **1.1.0** | 2026-06-27 | Tracing, persistent DLQ, BullMQ dashboard, HorizonService, vendor analytics, bug fixes |
 | **1.0.0** | 2026-05-29 | Initial stable release — escrow, SEP-10 auth, webhooks, admin, Docker |
-| **Unreleased** | — | Distributed tracing, security policy, incident runbook |
 
 ### Semantic Versioning Guide
 
@@ -79,5 +116,6 @@ First stable release of the Trust-Link escrow backend.
 | **MINOR** (1.X.0) | New features, backward-compatible |
 | **PATCH** (1.0.X) | Bug fixes and security patches |
 
-[Unreleased]: https://github.com/truestlink/trust-link-backend/compare/v1.0.0...HEAD
-[1.0.0]: https://github.com/truestlink/trust-link-backend/releases/tag/v1.0.0
+[Unreleased]: https://github.com/JSE-ORG/trust-link-backend/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/JSE-ORG/trust-link-backend/compare/v1.0.0...v1.1.0
+[1.0.0]: https://github.com/JSE-ORG/trust-link-backend/releases/tag/v1.0.0

@@ -239,16 +239,15 @@ export class EscrowRepository {
   }
 
   /**
-   * Returns SHIPPED escrows whose deliveredAt is older than 48 hours and
-   * have no open dispute or existing auto-release transaction.
+   * Returns SHIPPED escrows whose deliveredAt is at or before the given
+   * referenceTime and have no open dispute or existing auto-release transaction.
+   * The caller (AutoReleaseService) is responsible for computing the cutoff.
    */
   findAutoReleaseEligible(referenceTime = new Date()): Promise<EscrowRecord[]> {
-    const threshold = new Date(referenceTime.getTime() - 48 * 60 * 60 * 1000);
-
     return this.prisma.escrow.findMany({
       where: {
         state: 'SHIPPED',
-        deliveredAt: { lte: threshold },
+        deliveredAt: { lte: referenceTime },
         disputeId: null,
         autoReleaseTxHash: null,
         autoReleaseSubmittedAt: null,
