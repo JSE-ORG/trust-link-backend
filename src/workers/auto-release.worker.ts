@@ -42,25 +42,63 @@ export class AutoReleaseWorker implements OnModuleInit, OnApplicationShutdown {
     const eligible =
       await this.escrowRepository.findAutoReleaseEligible(referenceTime);
 
+    if (eligible.length === 0) {
+      return;
+    }
+
+    let successCount = 0;
+    let failureCount = 0;
+    const failures: Array<{ escrowId: string; error: string }> = [];
+
+    this.logger.log(
+      `Processing batch of ${eligible.length} eligible escrow(s) for auto-release`,
+    );
+
     for (const escrow of eligible) {
-      const dispute = await this.disputeRepository.findByEscrow(escrow.id);
-      if (dispute) {
-        continue;
-      }
-
-      if (escrow.state === 'COMPLETED' || escrow.autoReleaseTxHash) {
-        continue;
-      }
-
       try {
+        const dispute = await this.disputeRepository.findByEscrow(escrow.id);
+        if (dispute) {
+          this.logger.debug(
+            `Skipping escrow ${escrow.id} — active dispute found`,
+          );
+          continue;
+        }
+
+        if (escrow.state === 'COMPLETED' || escrow.autoReleaseTxHash) {
+          this.logger.debug(
+            `Skipping escrow ${escrow.id} — already completed or released`,
+          );
+          continue;
+        }
+
         const txHash = await this.contractService.submitAutoRelease(escrow.id);
         await this.escrowRepository.markAutoReleaseCompleted(escrow.id, txHash);
+        successCount++;
+        this.logger.log(
+          `Auto-release succeeded for escrow ${escrow.id} (tx: ${txHash})`,
+        );
       } catch (error) {
+        failureCount++;
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        failures.push({ escrowId: escrow.id, error: errorMessage });
+
         this.logger.error(
-          `Auto release failed for escrow ${escrow.id}`,
+          `Auto-release failed for escrow ${escrow.id}: ${errorMessage}`,
           error instanceof Error ? error.stack : undefined,
         );
       }
+    }
+
+    // Summary log for batch processing
+    this.logger.log(
+      `Batch complete: ${successCount} succeeded, ${failureCount} failed out of ${eligible.length} total`,
+    );
+
+    if (failures.length > 0) {
+      this.logger.warn(
+        `Failed escrows: ${failures.map((f) => `${f.escrowId} (${f.error})`).join(', ')}`,
+      );
     }
   }
 }
