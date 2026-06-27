@@ -427,6 +427,8 @@ export class EscrowService {
         trackingId.trim(),
       );
 
+      await this.cacheService?.del(`tracking:${trackingId.trim()}`);
+
       this.notificationsService.notifyShipped(shipped).catch((error) => {
         this.logger.error(
           `Failed to send shipped notification for escrow ${shipped.id}`,
