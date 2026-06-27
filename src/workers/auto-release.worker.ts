@@ -83,5 +83,16 @@ export class AutoReleaseWorker implements OnModuleInit, OnApplicationShutdown {
         error instanceof Error ? error.stack : undefined,
       );
     }
+
+    // Summary log for batch processing
+    this.logger.log(
+      `Batch complete: ${successCount} succeeded, ${failureCount} failed out of ${eligible.length} total`,
+    );
+
+    if (failures.length > 0) {
+      this.logger.warn(
+        `Failed escrows: ${failures.map((f) => `${f.escrowId} (${f.error})`).join(', ')}`,
+      );
+    }
   }
 }
