@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsIn, IsInt, IsOptional, Min } from 'class-validator';
+import { IsIn, IsInt, IsOptional, Max, Min } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import type { EscrowState } from '../../prisma/prisma.service';
 
@@ -69,6 +69,7 @@ export class VendorEscrowsQueryDto {
   @ApiPropertyOptional({
     description: 'Number of escrows to return per page.',
     minimum: 1,
+    maximum: 100,
     default: 20,
     example: 20,
   })
@@ -76,5 +77,6 @@ export class VendorEscrowsQueryDto {
   @IsOptional()
   @IsInt()
   @Min(1)
+  @Max(100)
   limit?: number = 20;
 }

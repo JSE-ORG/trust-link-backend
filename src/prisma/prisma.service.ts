@@ -71,6 +71,7 @@ export interface NotificationRecord {
   type: NotificationType;
   channel: NotificationChannel;
   recipientAddress: string;
+  message: string;
   providerMessageId: string | null;
   attemptCount: number;
   lastResponseCode: number | null;
