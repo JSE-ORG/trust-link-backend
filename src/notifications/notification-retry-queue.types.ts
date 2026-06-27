@@ -22,6 +22,8 @@ export interface NotificationRetryJobData {
     recipientAddress: string;
     /** Optional correlation id so cross-service log lines stitch together. */
     requestId?: string;
+    /** Optional database record id for tracking. */
+    notificationId?: string;
 }
 
 /**

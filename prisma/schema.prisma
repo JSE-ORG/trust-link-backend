@@ -94,18 +94,32 @@ model Dispute {
   @@index([escrowId])
 }
 
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
 model Notification {
-  id               String   @id @default(uuid())
+  id               String             @id @default(uuid())
   escrowId         String
   type             String
   channel          String
   recipientAddress String
   message          String
-  createdAt        DateTime @default(now())
-  escrow           Escrow   @relation(fields: [escrowId], references: [id], onDelete: Cascade)
+  status           NotificationStatus @default(PENDING)
+  retryCount       Int                @default(0)
+  sentAt           DateTime?
+  failedAt         DateTime?
+  lastError        String?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  escrow           Escrow             @relation(fields: [escrowId], references: [id], onDelete: Cascade)
 
   @@index([escrowId])
+  @@index([status, createdAt])
 }
+
 
 model VendorProfile {
   address          String                  @id
