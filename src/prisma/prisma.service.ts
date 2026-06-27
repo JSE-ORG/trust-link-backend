@@ -110,7 +110,7 @@ export interface VendorTrackingSettingsRecord {
   requireSignature: boolean;
   insuranceRequired: boolean;
   insuranceValue: number | null;
-  customTrackingRules: any;
+  customTrackingRules: Record<string, unknown> | null;
   webhookUrl: string | null;
   webhookSecret: string | null;
   notificationChannels: string[];
@@ -245,6 +245,37 @@ type DisputeUpdateInput = Partial<
     DisputeRecord,
     'status' | 'resolvedAt' | 'reason' | 'escrowId' | 'evidenceUrls'
   >
+>;
+
+type NotificationCreateInput = Pick<
+  NotificationRecord,
+  'escrowId' | 'type' | 'channel' | 'recipientAddress' | 'message'
+> &
+  Partial<
+    Pick<
+      NotificationRecord,
+      | 'id'
+      | 'status'
+      | 'retryCount'
+      | 'sentAt'
+      | 'failedAt'
+      | 'lastError'
+      | 'providerMessageId'
+      | 'attemptCount'
+      | 'lastResponseCode'
+    >
+  >;
+
+type NotificationUpdateInput = Partial<
+  Omit<NotificationRecord, 'id' | 'createdAt' | 'updatedAt'>
+>;
+
+type VendorTrackingSettingsCreateInput = Partial<
+  Omit<VendorTrackingSettingsRecord, 'id' | 'createdAt' | 'updatedAt'>
+>;
+
+type VendorTrackingSettingsUpdateInput = Partial<
+  Omit<VendorTrackingSettingsRecord, 'id' | 'vendorAddress' | 'createdAt' | 'updatedAt'>
 >;
 
 @Injectable()
@@ -614,7 +645,7 @@ export class PrismaService implements OnModuleDestroy {
     create: ({
       data,
     }: {
-      data: any;
+      data: NotificationCreateInput;
     }): Promise<NotificationRecord> => {
       const now = new Date();
       const notification: NotificationRecord = {
@@ -639,7 +670,7 @@ export class PrismaService implements OnModuleDestroy {
       data,
     }: {
       where: { id: string };
-      data: any;
+      data: NotificationUpdateInput;
     }): Promise<NotificationRecord> => {
       const existing = this.notifications.get(where.id);
       if (!existing) {
@@ -985,9 +1016,9 @@ export class PrismaService implements OnModuleDestroy {
       update,
     }: {
       where: { vendorAddress: string };
-      create: any;
-      update: any;
-    }): Promise<any> => {
+      create: VendorTrackingSettingsCreateInput;
+      update: VendorTrackingSettingsUpdateInput;
+    }): Promise<VendorTrackingSettingsRecord> => {
       const existing = this.vendorTrackingSettingsStore.get(
         where.vendorAddress,
       );

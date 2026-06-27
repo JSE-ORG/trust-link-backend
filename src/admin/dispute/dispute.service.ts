@@ -3,7 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { EscrowRecord, PrismaService } from '../../prisma/prisma.service';
+import { DisputeRecord, DisputeState, EscrowRecord, PrismaService } from '../../prisma/prisma.service';
 import { EscrowRepository } from '../../escrow/escrow.repository';
 import { ContractService } from '../../stellar/contract.service';
 
@@ -19,11 +19,11 @@ export class DisputeService {
     status?: string;
     page?: number;
     limit?: number;
-  }): Promise<{ data: any[]; total: number; page: number; limit: number }> {
+  }): Promise<{ data: DisputeRecord[]; total: number; page: number; limit: number }> {
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
     const allDisputes = await this.prisma.dispute.findMany({
-      where: query.status ? { status: query.status as any } : undefined,
+      where: query.status ? { status: query.status as DisputeState } : undefined,
     });
 
     const total = allDisputes.length;
