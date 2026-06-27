@@ -55,7 +55,7 @@ import { ConfigService } from './config.service';
         GIT_SHA: Joi.string().optional(),
       }),
       validationOptions: {
-        abortEarly: true,
+        abortEarly: false,
         allowUnknown: true,
       },
     }),

@@ -50,6 +50,7 @@ const ALL_KNOWN_KEYS = [
 
 async function buildService(
   env: Record<string, string>,
+  options: { abortEarly?: boolean } = {},
 ): Promise<ConfigService> {
   // Save and wipe all known keys so tests are fully isolated
   const saved: Record<string, string | undefined> = {};
@@ -67,6 +68,10 @@ async function buildService(
         NestConfigModule.forRoot({
           ignoreEnvFile: true,
           validationSchema,
+          validationOptions: {
+            abortEarly: options.abortEarly ?? false,
+            allowUnknown: true,
+          },
         }),
       ],
       providers: [ConfigService],
@@ -124,5 +129,37 @@ describe('ConfigService', () => {
     expect(service.isTest()).toBe(true);
     expect(service.isDevelopment()).toBe(false);
     expect(service.isProduction()).toBe(false);
+  });
+
+  describe('Joi abortEarly: false (#261)', () => {
+    it('reports every missing required env var in a single error message', async () => {
+      // Intentionally pass no required vars — DATABASE_URL, SEP10_JWT_SECRET,
+      // and ADMIN_ADDRESS should all surface in the same validation error.
+      let captured: Error | undefined;
+      try {
+        await buildService({});
+      } catch (err) {
+        captured = err as Error;
+      }
+
+      expect(captured).toBeDefined();
+      const message = captured!.message;
+      expect(message).toMatch(/DATABASE_URL/);
+      expect(message).toMatch(/SEP10_JWT_SECRET/);
+      expect(message).toMatch(/ADMIN_ADDRESS/);
+    });
+
+    it('stops at the first error when abortEarly is true (regression guard)', async () => {
+      let captured: Error | undefined;
+      try {
+        await buildService({}, { abortEarly: true });
+      } catch (err) {
+        captured = err as Error;
+      }
+
+      expect(captured).toBeDefined();
+      const matches = captured!.message.match(/is required/g) ?? [];
+      expect(matches.length).toBe(1);
+    });
   });
 });
