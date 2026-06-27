@@ -12,6 +12,12 @@ import { Transform } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
 import { IsStellarAddress } from '../../common/validators/stellar-address.validator';
 
+/**
+ * Request body for creating a new escrow. The vendor supplies the item
+ * details, amount, currency and the buyer's Stellar address. A new
+ * escrow record is created in the FUNDED state and a payment URL is
+ * returned so the buyer can complete the Stellar transaction.
+ */
 export class CreateEscrowDto {
   @ApiProperty({
     description: 'Human-readable name of the item being escrowed.',

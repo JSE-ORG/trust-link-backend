@@ -52,48 +52,62 @@ export class StellarWebhookService {
     signature: string | undefined,
     dto: StellarWebhookDto,
   ): Promise<{ received: boolean; skipped?: boolean; reason?: string }> {
-    this.verifySignature(rawBody, signature);
-
-    // --- Idempotency check (DB-backed, survives restarts) --------------------
-    const duplicate = this.prisma
-      ? await this.prisma.processedWebhookEvent.findUnique({
-          where: { operationId: dto.id },
-        })
-      : this.processedIds.has(dto.id);
-    if (duplicate) {
-      this.logger.log(
-        JSON.stringify({
-          msg: 'stellar.webhook.duplicate',
-          operationId: dto.id,
-        }),
-      );
-      return { received: true, skipped: true, reason: 'duplicate' };
-    }
-
-    // Persist before processing so concurrent Horizon retries are blocked.
-    if (this.prisma) {
-      await this.prisma.processedWebhookEvent.create({
-        data: { operationId: dto.id },
-      });
-    } else {
-      this.processedIds.add(dto.id);
-    }
-
     try {
-      await this.processEvent(dto);
-    } catch (err) {
-      // Roll back the cursor so the event can be retried on the next delivery.
+      this.verifySignature(rawBody, signature);
+
+      // --- Idempotency check (DB-backed, survives restarts) ------------------
+      const duplicate = this.prisma
+        ? await this.prisma.processedWebhookEvent.findUnique({
+            where: { operationId: dto.id },
+          })
+        : this.processedIds.has(dto.id);
+      if (duplicate) {
+        this.logger.log(
+          JSON.stringify({
+            msg: 'stellar.webhook.duplicate',
+            operationId: dto.id,
+          }),
+        );
+        return { received: true, skipped: true, reason: 'duplicate' };
+      }
+
+      // Persist before processing so concurrent Horizon retries are blocked.
       if (this.prisma) {
-        await this.prisma.processedWebhookEvent.delete({
-          where: { operationId: dto.id },
+        await this.prisma.processedWebhookEvent.create({
+          data: { operationId: dto.id },
         });
       } else {
-        this.processedIds.delete(dto.id);
+        this.processedIds.add(dto.id);
       }
+
+      try {
+        await this.processEvent(dto);
+      } catch (err) {
+        // Roll back the cursor so the event can be retried on the next delivery.
+        if (this.prisma) {
+          await this.prisma.processedWebhookEvent.delete({
+            where: { operationId: dto.id },
+          });
+        } else {
+          this.processedIds.delete(dto.id);
+        }
+        throw err;
+      }
+
+      return { received: true };
+    } catch (err) {
+      this.logger.error(
+        JSON.stringify({
+          msg: 'stellar.webhook.processing_failed',
+          eventType: dto.type,
+          operationId: dto.id,
+          txHash: dto.transaction_hash,
+          error: err instanceof Error ? err.message : String(err),
+        }),
+        err instanceof Error ? err.stack : undefined,
+      );
       throw err;
     }
-
-    return { received: true };
   }
 
   /**
@@ -119,6 +133,16 @@ export class StellarWebhookService {
       await this.processEvent(dto);
     } catch (err) {
       this.processedIds.delete(dto.id);
+      this.logger.error(
+        JSON.stringify({
+          msg: 'stellar.replay.processing_failed',
+          eventType: dto.type,
+          operationId: dto.id,
+          txHash: dto.transaction_hash,
+          error: err instanceof Error ? err.message : String(err),
+        }),
+        err instanceof Error ? err.stack : undefined,
+      );
       throw err;
     }
 

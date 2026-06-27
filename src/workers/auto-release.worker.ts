@@ -39,55 +39,49 @@ export class AutoReleaseWorker implements OnModuleInit, OnApplicationShutdown {
   }
 
   async run(referenceTime = new Date()): Promise<void> {
-    const eligible =
-      await this.escrowRepository.findAutoReleaseEligible(referenceTime);
+    try {
+      const eligible =
+        await this.escrowRepository.findAutoReleaseEligible(referenceTime);
 
-    if (eligible.length === 0) {
-      return;
-    }
+      for (const escrow of eligible) {
+        try {
+          const dispute = await this.disputeRepository.findByEscrow(escrow.id);
+          if (dispute) {
+            continue;
+          }
 
-    let successCount = 0;
-    let failureCount = 0;
-    const failures: Array<{ escrowId: string; error: string }> = [];
+          if (escrow.state === 'COMPLETED' || escrow.autoReleaseTxHash) {
+            continue;
+          }
 
-    this.logger.log(
-      `Processing batch of ${eligible.length} eligible escrow(s) for auto-release`,
-    );
-
-    for (const escrow of eligible) {
-      try {
-        const dispute = await this.disputeRepository.findByEscrow(escrow.id);
-        if (dispute) {
-          this.logger.debug(
-            `Skipping escrow ${escrow.id} — active dispute found`,
+          const txHash = await this.contractService.submitAutoRelease(
+            escrow.id,
           );
-          continue;
-        }
-
-        if (escrow.state === 'COMPLETED' || escrow.autoReleaseTxHash) {
-          this.logger.debug(
-            `Skipping escrow ${escrow.id} — already completed or released`,
+          await this.escrowRepository.markAutoReleaseCompleted(
+            escrow.id,
+            txHash,
           );
-          continue;
+        } catch (error) {
+          this.logger.error(
+            JSON.stringify({
+              msg: 'auto_release.escrow_failed',
+              escrowId: escrow.id,
+              eventType: 'auto_release',
+              error: error instanceof Error ? error.message : String(error),
+            }),
+            error instanceof Error ? error.stack : undefined,
+          );
         }
-
-        const txHash = await this.contractService.submitAutoRelease(escrow.id);
-        await this.escrowRepository.markAutoReleaseCompleted(escrow.id, txHash);
-        successCount++;
-        this.logger.log(
-          `Auto-release succeeded for escrow ${escrow.id} (tx: ${txHash})`,
-        );
-      } catch (error) {
-        failureCount++;
-        const errorMessage =
-          error instanceof Error ? error.message : String(error);
-        failures.push({ escrowId: escrow.id, error: errorMessage });
-
-        this.logger.error(
-          `Auto-release failed for escrow ${escrow.id}: ${errorMessage}`,
-          error instanceof Error ? error.stack : undefined,
-        );
       }
+    } catch (error) {
+      this.logger.error(
+        JSON.stringify({
+          msg: 'auto_release.worker_failed',
+          eventType: 'auto_release',
+          error: error instanceof Error ? error.message : String(error),
+        }),
+        error instanceof Error ? error.stack : undefined,
+      );
     }
 
     // Summary log for batch processing

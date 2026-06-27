@@ -27,7 +27,7 @@ import { StellarModule } from './stellar/stellar.module';
 import { VendorModule } from './vendor/vendor.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 import { StressTestModule } from './stress-test/stress-test.module';
-import { CacheService } from './common/cache.service';
+
 import { DlqModule } from './dlq/dlq.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { WorkersModule } from './workers/workers.module';
@@ -90,7 +90,6 @@ import { WorkersModule } from './workers/workers.module';
   controllers: [AppController],
   providers: [
     AppService,
-    CacheService,
     {
       provide: APP_FILTER,
       useClass: GlobalExceptionFilter,

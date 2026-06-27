@@ -8,6 +8,11 @@ import {
 import { Transform } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
+/**
+ * Request body for creating or upserting a vendor profile. Contains the
+ * business name and optional contact details. Used by both POST /vendor/profile
+ * and PUT /vendor/profile endpoints.
+ */
 export class CreateVendorProfileDto {
   @ApiProperty({
     description: 'Registered business or trading name of the vendor.',

@@ -4,7 +4,7 @@ import { Test } from '@nestjs/testing';
 import { EscrowService } from '../../src/escrow/escrow.service';
 import { EscrowRepository } from '../../src/escrow/escrow.repository';
 import { LogisticsService } from '../../src/logistics/logistics.service';
-import { CacheService } from '../../src/common/cache.service';
+import { CacheService } from '../../src/cache/cache.service';
 import { NotificationsService } from '../../src/notifications/notifications.service';
 import { EscrowRecord } from '../../src/prisma/prisma.service';
 import { S3PresignService } from '../../src/common/services/s3-presign.service';

@@ -2,6 +2,11 @@ import { IsString, MaxLength, MinLength, Matches } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
 
+/**
+ * Request body for marking an escrow as shipped. The vendor provides a
+ * carrier tracking ID which must be at least 3 characters and contain
+ * only letters, numbers, hyphens and underscores.
+ */
 export class UpdateShipmentDto {
   @ApiProperty({
     description:

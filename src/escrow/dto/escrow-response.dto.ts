@@ -1,6 +1,11 @@
 import { ApiProperty } from '@nestjs/swagger';
 import type { EscrowState } from '../../prisma/prisma.service';
 
+/**
+ * Public projection of an escrow record returned by GET /escrow/:id.
+ * Sensitive fields (buyerAddress, vendorAddress, buyerContactEmail,
+ * buyerContactPhone) are deliberately excluded to prevent data leakage.
+ */
 export class EscrowResponseDto {
   @ApiProperty({
     description: 'Unique escrow identifier (UUID).',

@@ -8,6 +8,11 @@ import {
 import { Transform } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
+/**
+ * Request body for partially updating an existing vendor profile. All
+ * fields are optional — only provided fields are updated. Used by
+ * PATCH /vendor/profile.
+ */
 export class UpdateVendorProfileDto {
   @ApiPropertyOptional({
     description: 'Updated registered business or trading name of the vendor.',

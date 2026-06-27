@@ -15,9 +15,14 @@ enum NotificationChannel {
   SMS = 'SMS',
 }
 
+/**
+ * Request body for updating vendor notification preferences. Controls
+ * which events trigger notifications, which delivery channels are used,
+ * and optional webhook configuration for real-time updates.
+ */
 export class UpdateNotificationPreferencesDto {
   @ApiPropertyOptional({
-    description: 'Notify vendor when shipment is delivered.',
+    description: 'Whether to send notifications when a delivery is completed.',
     example: true,
   })
   @IsOptional()
@@ -25,15 +30,15 @@ export class UpdateNotificationPreferencesDto {
   notifyOnDelivery?: boolean;
 
   @ApiPropertyOptional({
-    description: 'Notify vendor when shipment is delayed.',
-    example: false,
+    description: 'Whether to send notifications when a shipment is delayed.',
+    example: true,
   })
   @IsOptional()
   @IsBoolean()
   notifyOnDelay?: boolean;
 
   @ApiPropertyOptional({
-    description: 'Notify vendor when a shipment exception occurs.',
+    description: 'Whether to send notifications when an exception occurs.',
     example: true,
   })
   @IsOptional()
@@ -41,10 +46,10 @@ export class UpdateNotificationPreferencesDto {
   notifyOnException?: boolean;
 
   @ApiPropertyOptional({
-    description: 'Notification channels to use. Allowed: EMAIL, SMS.',
-    enum: NotificationChannel,
+    description: 'Preferred notification channels. At least one required, maximum two.',
+    enum: [NotificationChannel],
     isArray: true,
-    example: ['EMAIL'],
+    example: ['EMAIL', 'SMS'],
   })
   @IsOptional()
   @IsArray()
@@ -64,8 +69,8 @@ export class UpdateNotificationPreferencesDto {
   notificationChannels?: string[];
 
   @ApiPropertyOptional({
-    description: 'Webhook URL to POST events to.',
-    example: 'https://vendor.example.com/webhooks/trustlink',
+    description: 'Webhook URL for receiving real-time delivery event notifications.',
+    example: 'https://example.com/webhook',
   })
   @IsOptional()
   @IsString()
@@ -73,8 +78,7 @@ export class UpdateNotificationPreferencesDto {
   webhookUrl?: string;
 
   @ApiPropertyOptional({
-    description: 'Secret used to sign webhook payloads (HMAC-SHA256).',
-    example: 'whsec_abc123',
+    description: 'Secret key for signing webhook payloads to verify authenticity.',
   })
   @IsOptional()
   @IsString()

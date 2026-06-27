@@ -1,5 +1,10 @@
 import { ApiProperty } from '@nestjs/swagger';
 
+/**
+ * Response shape for GET /admin/stats containing platform-wide
+ * aggregate statistics. Includes escrow counts by state, volume
+ * metrics, vendor/buyer counts, and dispute information.
+ */
 export class AdminStatsDto {
   @ApiProperty({
     description: 'Total number of escrows ever created.',

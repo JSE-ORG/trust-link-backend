@@ -12,6 +12,17 @@ import { VendorEscrowsQueryDto } from './dto/vendor-escrows-query.dto';
 export class VendorEscrowController {
   constructor(private readonly escrowService: EscrowService) {}
 
+  /**
+   * Returns a paginated list of escrows for the authenticated vendor.
+   * Supports filtering by state, sorting by date or amount, and
+   * pagination with configurable page size.
+   *
+   * @param query - Query parameters for filtering, sorting and pagination
+   * @param user - Authenticated vendor
+   * @returns Paginated escrow summary list with total count
+   * @throws UnauthorizedException if Bearer token is missing or invalid
+   * @authentication Requires valid SEP-10 JWT (vendor)
+   */
   @ApiOperation({ summary: 'List all escrows for the authenticated vendor' })
   @ApiResponse({ status: 200, description: 'Paginated list of vendor escrows returned.' })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })

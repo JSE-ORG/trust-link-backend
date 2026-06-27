@@ -8,6 +8,9 @@ import {
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
+/**
+ * Categories of dispute reasons supported by the platform.
+ */
 export enum DisputeReasonCategory {
   ITEM_NOT_AS_DESCRIBED = 'ITEM_NOT_AS_DESCRIBED',
   ITEM_NOT_RECEIVED = 'ITEM_NOT_RECEIVED',
@@ -16,6 +19,12 @@ export enum DisputeReasonCategory {
   OTHER = 'OTHER',
 }
 
+/**
+ * Request body for opening a dispute against an escrow. The buyer
+ * selects a reason category, provides a detailed description (minimum
+ * 20 characters), and may attach evidence URLs pointing to supporting
+ * files such as photos or receipts.
+ */
 export class OpenDisputeDto {
   @ApiProperty({
     description: 'Category that best describes the reason for the dispute.',

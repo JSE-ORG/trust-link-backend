@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/unbound-method */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import { BadRequestException, UnauthorizedException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import * as crypto from 'crypto';
@@ -184,6 +186,24 @@ describe('StellarWebhookService (issue #76)', () => {
 
     await expect(service.handleEvent(raw, undefined, dto)).rejects.toThrow(
       BadRequestException,
+    );
+  });
+
+  it('logs webhook processing failures with event context before rethrowing', async () => {
+    configService.get.mockReturnValue(undefined);
+    const dto = makeDto({ id: 'op-fail', to: undefined });
+    const raw = Buffer.from(JSON.stringify(dto));
+    const loggerSpy = jest
+      .spyOn((service as any).logger, 'error')
+      .mockImplementation();
+
+    await expect(service.handleEvent(raw, undefined, dto)).rejects.toThrow(
+      BadRequestException,
+    );
+
+    expect(loggerSpy).toHaveBeenCalledWith(
+      expect.stringContaining('stellar.webhook.processing_failed'),
+      expect.any(String),
     );
   });
 

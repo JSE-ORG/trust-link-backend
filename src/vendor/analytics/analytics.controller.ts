@@ -28,9 +28,14 @@ export class AnalyticsController {
   constructor(private readonly analyticsService: AnalyticsService) {}
 
   /**
-   * GET /vendor/analytics
    * Returns overall transaction statistics for the authenticated vendor.
-   * Includes volumes, conversion metrics, and channel preferences.
+   * Includes volume totals, conversion metrics, dispute rates, and
+   * notification channel preferences.
+   *
+   * @param user - Authenticated vendor
+   * @returns Transaction statistics and channel metrics
+   * @throws UnauthorizedException if Bearer token is missing or invalid
+   * @authentication Requires valid SEP-10 JWT (vendor)
    */
   @ApiOperation({ summary: 'Get overall transaction statistics for the authenticated vendor' })
   @ApiResponse({ status: 200, description: 'Vendor transaction statistics returned.' })
@@ -46,11 +51,14 @@ export class AnalyticsController {
   }
 
   /**
-   * GET /vendor/analytics/chart
-   * Returns daily transaction volume data for the authenticated vendor.
-   * Query Parameters:
-   *   - days: number of days to retrieve (default: 30, max: 365)
-   *   - timezone: timezone for date grouping (default: UTC)
+   * Returns daily transaction volume data for chart rendering.
+   *
+   * @param daysParam - Number of days to retrieve (default 30, max 365)
+   * @param timezoneParam - Timezone for date grouping (default UTC)
+   * @param user - Authenticated vendor
+   * @returns Daily volume data with summary totals
+   * @throws UnauthorizedException if Bearer token is missing or invalid
+   * @authentication Requires valid SEP-10 JWT (vendor)
    */
   @ApiOperation({ summary: 'Get daily transaction volume chart data for the authenticated vendor' })
   @ApiQuery({ name: 'days', required: false, description: 'Number of days of data to retrieve (max 365).', example: 30 })

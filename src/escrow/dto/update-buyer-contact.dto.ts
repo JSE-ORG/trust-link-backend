@@ -7,6 +7,11 @@ import {
   ValidateIf,
 } from 'class-validator';
 
+/**
+ * Request body for submitting buyer contact information. At least one
+ * of email or phone must be provided. Values are encrypted with
+ * AES-256-GCM before storage and are never returned in any response.
+ */
 export class UpdateBuyerContactDto {
   @ApiPropertyOptional({
     description: 'Buyer email address for shipping and delivery notifications.',

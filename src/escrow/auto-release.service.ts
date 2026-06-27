@@ -1,9 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ContractService } from '../stellar/contract.service';
 import { EscrowRepository } from './escrow.repository';
-
-/** Number of days after delivery before an escrow qualifies for auto-release. */
-const AUTO_RELEASE_DAYS = 7;
+import { AUTO_RELEASE_DAYS } from './escrow.constants';
+import { MILLISECONDS_PER_DAY } from '../common/constants/time.constants';
 
 @Injectable()
 export class AutoReleaseService {
@@ -16,9 +15,7 @@ export class AutoReleaseService {
 
   /** Scans eligible delivered escrows and submits guarded auto-release transactions. */
   async run(): Promise<void> {
-    const cutoff = new Date(
-      Date.now() - AUTO_RELEASE_DAYS * 24 * 60 * 60 * 1000,
-    );
+    const cutoff = new Date(Date.now() - AUTO_RELEASE_DAYS * MILLISECONDS_PER_DAY);
 
     const eligible =
       await this.escrowRepository.findAutoReleaseEligible(cutoff);

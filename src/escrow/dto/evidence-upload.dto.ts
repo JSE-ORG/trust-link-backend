@@ -1,5 +1,10 @@
 import { ApiProperty } from '@nestjs/swagger';
 
+/**
+ * Response containing a pre-signed upload URL for evidence files.
+ * The caller uploads directly to cloud storage using the uploadUrl,
+ * and the publicUrl can be stored as an evidence reference.
+ */
 export class EvidenceUploadResponseDto {
   @ApiProperty({
     description: 'Pre-signed URL for uploading evidence to cloud storage.',
