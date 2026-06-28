@@ -57,7 +57,8 @@ describe('Logistics Webhook Delivery Update E2E (issue #61)', () => {
     });
 
     jest.spyOn(logisticsService, 'getStatus').mockResolvedValue({
-      status: 'DELIVERED',
+      status: 'DELIVERED' as const,
+      events: [],
     });
 
     await worker.run();
@@ -106,9 +107,9 @@ describe('Logistics Webhook Delivery Update E2E (issue #61)', () => {
       .spyOn(logisticsService, 'getStatus')
       .mockImplementation(async (trackingId: string) => {
         if (trackingId === 'TRK-DELIVERED-001') {
-          return { status: 'DELIVERED' };
+          return { status: 'DELIVERED' as const, events: [] };
         }
-        return { status: 'IN_TRANSIT' };
+        return { status: 'IN_TRANSIT' as const, events: [] };
       });
 
     await worker.run();
@@ -188,7 +189,8 @@ describe('Logistics Webhook Delivery Update E2E (issue #61)', () => {
     });
 
     jest.spyOn(logisticsService, 'getStatus').mockResolvedValue({
-      status: 'DELIVERED',
+      status: 'DELIVERED' as const,
+      events: [],
     });
 
     const beforeUpdate = await prisma.escrow.findUnique({

@@ -121,7 +121,7 @@ describe('PrismaService in-memory parity with Prisma schema (#236)', () => {
   it('vendor profile records contain every required VendorProfile column', async () => {
     const required = requiredScalarFields(schema, 'VendorProfile');
     const profile = await prisma.vendorProfile.create({
-      data: { address: 'vendor-1', businessName: 'Acme' },
+      data: { address: 'vendor-1', businessName: 'Acme', description: '', email: '', phone: '' },
     });
 
     for (const field of required) {

@@ -3,7 +3,6 @@ import { PrismaService } from '../prisma/prisma.service';
 import {
   EnqueueFailedTransactionInput,
   FailedTransactionRecord,
-  FailedTransactionStatus,
   ListFailedTransactionsQuery,
   ReplayFn,
 } from './dlq.types';
@@ -29,7 +28,7 @@ export class DlqService {
         operation: input.operation,
         escrowId: input.escrowId ?? null,
         errorMessage: input.errorMessage,
-        ledgerFeedback: input.ledgerFeedback ?? undefined,
+        ledgerFeedback: input.ledgerFeedback ?? null,
         attempts: input.attempts ?? 1,
         status: 'PENDING_REVIEW',
       },
@@ -76,7 +75,7 @@ export class DlqService {
     let txHash: string;
     try {
       txHash = await replay(record);
-    } catch (err) {
+    } catch (err: unknown) {
       await this.prisma.failedTransaction.update({
         where: { id },
         data: {
@@ -125,20 +124,9 @@ export class DlqService {
     return this.get(id);
   }
 
-  private toRecord(row: Record<string, unknown>): FailedTransactionRecord {
-    return {
-      id: row.id as string,
-      operation: row.operation as string,
-      escrowId: (row.escrowId as string) ?? null,
-      errorMessage: row.errorMessage as string,
-      ledgerFeedback: (row.ledgerFeedback as Record<string, unknown>) ?? null,
-      attempts: row.attempts as number,
-      status: row.status as FailedTransactionStatus,
-      createdAt: row.createdAt as Date,
-      updatedAt: row.updatedAt as Date,
-      reviewedAt: (row.reviewedAt as Date) ?? null,
-      replayedAt: (row.replayedAt as Date) ?? null,
-      lastReplayTxHash: (row.lastReplayTxHash as string) ?? null,
-    };
+  private toRecord(
+    row: import('../prisma/prisma.service').FailedTransactionRecord,
+  ): FailedTransactionRecord {
+    return row as unknown as FailedTransactionRecord;
   }
 }

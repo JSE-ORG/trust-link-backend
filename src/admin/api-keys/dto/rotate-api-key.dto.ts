@@ -13,5 +13,5 @@ export class RotateApiKeyDto {
   })
   @IsString()
   @IsNotEmpty()
-  key: string;
+  key!: string;
 }
