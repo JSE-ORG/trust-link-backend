@@ -334,13 +334,13 @@ describe('validateTabOrder()', () => {
 
 describe('createFocusTrap() with Mock Driver', () => {
   let mockDriver: FocusDriver;
-  let focusableElements: any[];
-  let activeElement: any;
-  let eventListeners: Record<string, ((e: any) => void)[]>;
+  let focusableElements: Element[];
+  let activeElement: Element | null;
+  let eventListeners: Record<string, ((e: Event) => void)[]>;
 
   beforeEach(() => {
-    focusableElements = [{ id: 'btn1' }, { id: 'btn2' }, { id: 'btn3' }];
-    activeElement = { id: 'outside' };
+    focusableElements = [{ id: 'btn1' }, { id: 'btn2' }, { id: 'btn3' }] as unknown as Element[];
+    activeElement = { id: 'outside' } as unknown as Element;
     eventListeners = {};
 
     mockDriver = {
@@ -379,7 +379,7 @@ describe('createFocusTrap() with Mock Driver', () => {
 
   it('restores focus on deactivation', () => {
     const trap = createFocusTrap(mockDriver);
-    const outside = { id: 'outside' };
+    const outside = { id: 'outside' } as unknown as Element;
     activeElement = outside;
 
     trap.activate();
@@ -395,7 +395,7 @@ describe('createFocusTrap() with Mock Driver', () => {
     activeElement = focusableElements[2]; // Last element
 
     const tabHandler = eventListeners['keydown'][0];
-    const event = { key: 'Tab', shiftKey: false };
+    const event = { key: 'Tab', shiftKey: false } as unknown as Event;
 
     tabHandler(event);
 
@@ -409,7 +409,7 @@ describe('createFocusTrap() with Mock Driver', () => {
     activeElement = focusableElements[0]; // First element
 
     const tabHandler = eventListeners['keydown'][0];
-    const event = { key: 'Tab', shiftKey: true };
+    const event = { key: 'Tab', shiftKey: true } as unknown as Event;
 
     tabHandler(event);
 
@@ -422,7 +422,7 @@ describe('createFocusTrap() with Mock Driver', () => {
     trap.activate();
 
     const handler = eventListeners['keydown'][0];
-    handler({ key: 'Escape' });
+    handler({ key: 'Escape' } as unknown as Event);
 
     expect(trap.isActive()).toBe(false);
   });
@@ -433,7 +433,7 @@ describe('createFocusTrap() with Mock Driver', () => {
     trap.activate();
 
     const handler = eventListeners['keydown'][0];
-    handler({ key: 'Escape' });
+    handler({ key: 'Escape' } as unknown as Event);
 
     expect(onEscape).toHaveBeenCalled();
   });
