@@ -34,8 +34,68 @@ Set all required variables before running migrations or starting the service:
 - `TWILIO_AUTH_TOKEN`
 - `OTEL_ENABLED`
 - `OTEL_EXPORTER_OTLP_ENDPOINT`
+- `CREDENTIAL_ENCRYPTION_KEY` (64-character hex string for logistics API key encryption)
 
 Keep secrets in the deployment platform secret manager. Do not bake them into images, workflow files, or migration scripts.
+
+## Docker Compose Production Deployment
+
+The `docker-compose.yml` includes a production profile optimized for production deployments. To use the production profile:
+
+### Prerequisites
+
+1. Create a `.env` file with production secrets:
+   ```bash
+   SEP10_JWT_SECRET=your-production-jwt-secret-at-least-32-chars
+   ADMIN_ADDRESS=your-admin-stellar-address
+   POSTGRES_PASSWORD=your-secure-postgres-password
+   CREDENTIAL_ENCRYPTION_KEY=64-character-hex-string-for-encryption
+   OTEL_ENABLED=false
+   OTEL_EXPORTER_OTLP_ENDPOINT=
+   ```
+
+2. Ensure the `CREDENTIAL_ENCRYPTION_KEY` is exactly 64 hex characters (32 bytes). Generate one with:
+   ```bash
+   node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+   ```
+
+### Starting Production Services
+
+```bash
+# Start with production profile
+docker-compose --profile production up -d
+
+# View logs
+docker-compose --profile production logs -f
+
+# Stop services
+docker-compose --profile production down
+```
+
+### Production Profile Features
+
+- **Restart Policy**: `restart: always` for automatic recovery
+- **Resource Limits**: CPU and memory limits for each service
+- **Logging**: JSON-file driver with log rotation (10MB max, 3 files)
+- **Health Checks**: All services include health checks with proper dependency ordering
+- **No Development Mounts**: Source code volume mounts removed for security
+- **Non-root User**: Application runs as `nestjs` user (UID 1001)
+
+### Service Health Checks
+
+- **PostgreSQL**: Uses `pg_isready` to verify database connectivity
+- **Redis**: Uses `redis-cli ping` to verify Redis is responding
+- **Application**: Uses `/health` endpoint to verify all dependencies are healthy
+
+The application service waits for both PostgreSQL and Redis to be healthy before starting, preventing crash-loops due to unavailable dependencies.
+
+### Resource Limits
+
+Production services have the following resource limits:
+
+- **app-prod**: 1 CPU, 1GB memory (reserve: 0.5 CPU, 512MB)
+- **db-prod**: 1 CPU, 1GB memory (reserve: 0.5 CPU, 512MB)
+- **redis-prod**: 0.5 CPU, 512MB memory (reserve: 0.25 CPU, 256MB)
 
 ## Migration Order
 

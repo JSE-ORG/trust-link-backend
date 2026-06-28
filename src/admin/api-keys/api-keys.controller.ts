@@ -11,6 +11,7 @@ import { JwtGuard } from '../../auth/guards/jwt.guard';
 import { AdminGuard } from '../guards/admin.guard';
 import { LogisticsService } from '../../logistics/logistics.service';
 import { RotateApiKeyDto } from './dto/rotate-api-key.dto';
+import { reencryptCredential } from '../../common/sanitization/credential-encryption.util';
 
 @ApiTags('Admin')
 @ApiBearerAuth()
@@ -27,7 +28,20 @@ export class ApiKeysController {
   @Patch('logistics')
   @HttpCode(HttpStatus.OK)
   rotateLogisticsKey(@Body() dto: RotateApiKeyDto) {
-    this.logisticsService.setApiKey(dto.key);
-    return { message: 'Logistics API key updated' };
+    const currentEncryptedKey = this.logisticsService.getEncryptedApiKey();
+    let newEncryptedKey: string;
+
+    if (currentEncryptedKey) {
+      // Re-encrypt with current key (key rotation)
+      newEncryptedKey = reencryptCredential(currentEncryptedKey);
+    } else {
+      // This is a new key being set (first time)
+      // The setApiKey method will encrypt it
+      this.logisticsService.setApiKey(dto.key);
+      newEncryptedKey = this.logisticsService.getEncryptedApiKey()!;
+    }
+
+    this.logisticsService.setEncryptedApiKey(newEncryptedKey);
+    return { message: 'Logistics API key updated and encrypted' };
   }
 }
