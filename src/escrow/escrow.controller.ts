@@ -86,7 +86,7 @@ export class EscrowController {
   @Post('evidence-upload')
   @HttpCode(HttpStatus.CREATED)
   @UseGuards(JwtGuard)
-  @Throttle('evidence-upload')
+  @Throttle({ 'evidence-upload': { limit: 10, ttl: 60000 } })
   evidenceUpload(
     @Query('fileName') fileName: string,
     @CurrentUser() user: AuthUser,

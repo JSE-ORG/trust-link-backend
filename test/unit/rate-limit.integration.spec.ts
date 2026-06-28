@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
-import * as request from 'supertest';
+import request from 'supertest';
 import { ThrottlerModule, ThrottlerGuard, Throttle } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import { Controller, Get } from '@nestjs/common';

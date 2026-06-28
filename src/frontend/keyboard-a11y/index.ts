@@ -7,7 +7,6 @@
 
 export {
   FOCUSABLE_SELECTOR,
-  getFocusableElements,
   createFocusTrap,
 } from './focus-trap.util';
 export type { FocusTrap } from './focus-trap.util';

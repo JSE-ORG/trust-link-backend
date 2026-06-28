@@ -6,12 +6,12 @@
  * functional in a real browser.
  */
 export interface FocusDriver {
-  getFocusableElements: () => any[];
-  getActiveElement: () => any;
-  focusElement: (el: any) => void;
-  preventDefault: (event: any) => void;
-  addEventListener: (name: string, handler: (e: any) => void) => void;
-  removeEventListener: (name: string, handler: (e: any) => void) => void;
+  getFocusableElements: () => Element[];
+  getActiveElement: () => Element | null;
+  focusElement: (el: Element) => void;
+  preventDefault: (event: Event) => void;
+  addEventListener: (name: string, handler: (e: Event) => void) => void;
+  removeEventListener: (name: string, handler: (e: Event) => void) => void;
 }
 
 /** CSS selector matching all natively focusable / tabbable elements. */
@@ -31,8 +31,8 @@ export const FOCUSABLE_SELECTOR = [
 export const createDomDriver = (container: Element): FocusDriver => ({
   getFocusableElements: () => Array.from(container.querySelectorAll(FOCUSABLE_SELECTOR)),
   getActiveElement: () => document.activeElement,
-  focusElement: (el: HTMLElement) => el.focus(),
-  preventDefault: (e: any) => e.preventDefault(),
+  focusElement: (el: Element) => (el as HTMLElement).focus(),
+  preventDefault: (e: Event) => e.preventDefault(),
   addEventListener: (name, handler) => container.addEventListener(name, handler),
   removeEventListener: (name, handler) => container.removeEventListener(name, handler),
 });
@@ -61,16 +61,17 @@ export function createFocusTrap(
   onEscape?: () => void,
 ): FocusTrap {
   let active = false;
-  let previouslyFocused: any = null;
+  let previouslyFocused: Element | null = null;
 
-  function handleKeyDown(event: any) {
-    if (event.key === 'Escape') {
+  function handleKeyDown(event: Event) {
+    const key = (event as KeyboardEvent).key;
+    if (key === 'Escape') {
       deactivate();
       onEscape?.();
       return;
     }
 
-    if (event.key !== 'Tab') return;
+    if (key !== 'Tab') return;
 
     const focusable = driver.getFocusableElements();
     if (focusable.length === 0) return;
@@ -78,7 +79,7 @@ export function createFocusTrap(
     const first = focusable[0];
     const last = focusable[focusable.length - 1];
 
-    if (event.shiftKey) {
+    if ((event as KeyboardEvent).shiftKey) {
       if (driver.getActiveElement() === first) {
         driver.preventDefault(event);
         driver.focusElement(last);

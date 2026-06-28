@@ -35,7 +35,7 @@ export class Sep10Service {
   }
 
   /** Removes expired nonces from the database every 24 hours. */
-  @Cron(CronExpression.EVERY_24_HOURS)
+  @Cron('0 0 * * *')
   async cleanupExpiredNonces(): Promise<void> {
     const now = new Date();
     const result = await this.prisma.nonce.deleteMany({

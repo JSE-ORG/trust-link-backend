@@ -27,13 +27,13 @@ export class AnalyticsService {
     startDate.setDate(startDate.getDate() - days);
 
     // Use raw SQL for database-level aggregation with proper timezone handling
-    const aggregationResult = await this.prisma.$queryRaw<Array<{
+    const aggregationResult = await this.prisma.$queryRaw<{
       date: string;
       totalVolume: number;
       transactionCount: number;
       completedCount: number;
       disputedCount: number;
-    }>>`
+    }>`
       SELECT 
         DATE("createdAt" AT TIME ZONE ${timezone})::date as date,
         COALESCE(SUM("amount"), 0) as "totalVolume",
@@ -53,11 +53,11 @@ export class AnalyticsService {
     const dailyMap = new Map<string, DailyVolumeData>();
 
     for (const row of aggregationResult) {
-      const dateKey = (row as any).date;
-      const totalVolume = Number((row as any).totalVolume);
-      const transactionCount = Number((row as any).transactionCount);
-      const completedCount = Number((row as any).completedCount);
-      const disputedCount = Number((row as any).disputedCount);
+      const dateKey = row.date;
+      const totalVolume = Number(row.totalVolume);
+      const transactionCount = Number(row.transactionCount);
+      const completedCount = Number(row.completedCount);
+      const disputedCount = Number(row.disputedCount);
 
       dailyMap.set(dateKey, {
         date: dateKey,
@@ -181,7 +181,7 @@ export class AnalyticsService {
 
     for (const escrow of escrows) {
       const amount = Number(escrow.amount);
-      const state = (escrow as any).state;
+      const state = escrow.state;
       stats.totalVolume += amount;
 
       if (activeStates.includes(state)) {
@@ -221,7 +221,7 @@ export class AnalyticsService {
         },
       });
 
-    const notificationChannels = (trackingSettings as any)?.notificationChannels as string[] || [];
+    const notificationChannels = (trackingSettings?.notificationChannels ?? []) as unknown as string[];
 
     const channels: ChannelMetrics = {
       email: {

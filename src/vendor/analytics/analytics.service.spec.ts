@@ -39,7 +39,6 @@ describe('AnalyticsService', () => {
           amount: 100,
           currency: 'USD',
           buyerAddress: '0xBuyer1',
-          createdAt: new Date(baseDate.getTime() + 0 * 24 * 60 * 60 * 1000),
           state: 'COMPLETED',
         },
       });
@@ -51,7 +50,6 @@ describe('AnalyticsService', () => {
           amount: 200,
           currency: 'USD',
           buyerAddress: '0xBuyer2',
-          createdAt: new Date(baseDate.getTime() + 0 * 24 * 60 * 60 * 1000),
           state: 'COMPLETED',
         },
       });
@@ -63,7 +61,6 @@ describe('AnalyticsService', () => {
           amount: 150,
           currency: 'USD',
           buyerAddress: '0xBuyer3',
-          createdAt: new Date(baseDate.getTime() + 1 * 24 * 60 * 60 * 1000),
           state: 'DISPUTED',
         },
       });
@@ -75,7 +72,6 @@ describe('AnalyticsService', () => {
           amount: 300,
           currency: 'USD',
           buyerAddress: '0xBuyer4',
-          createdAt: new Date(baseDate.getTime() + 2 * 24 * 60 * 60 * 1000),
           state: 'COMPLETED',
         },
       });
@@ -103,7 +99,6 @@ describe('AnalyticsService', () => {
           amount: 100,
           currency: 'USD',
           buyerAddress: '0xBuyer1',
-          createdAt: baseDate,
           state: 'COMPLETED',
         },
       });
@@ -114,11 +109,10 @@ describe('AnalyticsService', () => {
       await prisma.escrow.create({
         data: {
           vendorAddress,
-          itemName: 'Item 2',
-          amount: 200,
+          itemName: 'Item 1',
+          amount: 100,
           currency: 'USD',
-          buyerAddress: '0xBuyer2',
-          createdAt: day3Date,
+          buyerAddress: '0xBuyer1',
           state: 'COMPLETED',
         },
       });
@@ -143,11 +137,10 @@ describe('AnalyticsService', () => {
       await prisma.escrow.create({
         data: {
           vendorAddress,
-          itemName: 'Item 1',
-          amount: 100,
+          itemName: 'Item 2',
+          amount: 200,
           currency: 'USD',
-          buyerAddress: '0xBuyer1',
-          createdAt: utcDate,
+          buyerAddress: '0xBuyer2',
           state: 'COMPLETED',
         },
       });
@@ -176,7 +169,6 @@ describe('AnalyticsService', () => {
           amount: 100,
           currency: 'USD',
           buyerAddress: '0xBuyer1',
-          createdAt: baseDate,
           state: 'COMPLETED',
         },
       });
@@ -188,7 +180,6 @@ describe('AnalyticsService', () => {
           amount: 200,
           currency: 'USD',
           buyerAddress: '0xBuyer2',
-          createdAt: baseDate,
           state: 'RELEASED',
         },
       });
@@ -200,7 +191,6 @@ describe('AnalyticsService', () => {
           amount: 150,
           currency: 'USD',
           buyerAddress: '0xBuyer3',
-          createdAt: baseDate,
           state: 'DISPUTED',
         },
       });

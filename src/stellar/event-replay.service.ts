@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import axios from 'axios';
 import { ConfigService } from '../config/config.service';
+import { StellarWebhookDto } from '../webhooks/dto/stellar-webhook.dto';
 import { StellarWebhookService } from '../webhooks/stellar-webhook.service';
 import { CursorService } from './cursor.service';
 
@@ -32,14 +33,14 @@ export class EventReplayService implements OnModuleInit {
 
       for (const rec of records) {
         // Map operation to webhook DTO minimal shape
-        const dto: any = {
+        const dto = {
           id: String(rec.id),
-          type: rec.type,
-          to: rec.to,
-          amount: rec.amount,
-          asset_code: rec.asset_code,
-          transaction_hash: rec.transaction_hash,
-        };
+          type: rec.type as string,
+          to: rec.to as string | undefined,
+          amount: rec.amount as string | undefined,
+          asset_code: rec.asset_code as string | undefined,
+          transaction_hash: rec.transaction_hash as string,
+        } as StellarWebhookDto;
 
         try {
           await this.webhookService.processOperationDto(dto);

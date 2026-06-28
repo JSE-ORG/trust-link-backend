@@ -87,6 +87,7 @@ describe('Admin DLQ Operations (issue #297)', () => {
         operation: overrides?.operation ?? 'submitAutoRelease',
         escrowId: overrides?.escrowId ?? null,
         errorMessage: overrides?.errorMessage ?? 'Stellar network timeout',
+        ledgerFeedback: null,
         status: 'PENDING_REVIEW',
         attempts: 1,
       },

@@ -111,13 +111,13 @@ export class EscrowRepository {
     page: number,
     limit: number,
   ): Promise<VendorEscrowsResult> {
-    const where = { vendorAddress, state: state as any };
+    const where = state ? { vendorAddress, state: state as EscrowState } : { vendorAddress };
     const orderBy = sort === 'amount' ? { amount: order } : { createdAt: order };
     const skip = (page - 1) * limit;
 
     const [data, all] = await Promise.all([
-      this.prisma.escrow.findMany({ where, orderBy, skip, take: limit }) as Promise<EscrowRecord[]>,
-      this.prisma.escrow.findMany({ where }) as Promise<EscrowRecord[]>,
+      this.prisma.escrow.findMany({ where, orderBy, skip, take: limit }),
+      this.prisma.escrow.findMany({ where }),
     ]);
 
     return { data, total: all.length };

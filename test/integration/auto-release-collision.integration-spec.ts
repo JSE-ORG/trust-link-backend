@@ -56,7 +56,7 @@ describe('Auto-release collision detection (issue #277)', () => {
 
   afterEach(async () => {
     jest.restoreAllMocks();
-    await prisma.$disconnect();
+    await prisma.reset();
   });
 
   // ── markAutoReleaseSubmitting optimistic locking ──────────────────────────

@@ -112,12 +112,12 @@ export class NotificationsService {
     escrow: EscrowRecord,
   ): Promise<void> {
     const resolvedEmail = this.tryDecrypt(
-      (escrow as any).buyerContactEmail ?? null,
+      escrow.buyerContactEmail ?? null,
       escrow.id,
       'email',
     );
     const resolvedPhone = this.tryDecrypt(
-      (escrow as any).buyerContactPhone ?? null,
+      escrow.buyerContactPhone ?? null,
       escrow.id,
       'phone',
     );

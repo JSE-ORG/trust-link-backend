@@ -20,7 +20,7 @@ import { NotificationsService } from '../../src/notifications/notifications.serv
 import { EscrowRepository } from '../../src/escrow/escrow.repository';
 import { S3PresignService } from '../../src/common/services/s3-presign.service';
 import { ContractService } from '../../src/stellar/contract.service';
-import { CacheService } from '../../src/common/cache.service';
+import { CacheService } from '../../src/cache/cache.service';
 
 describe('Cross-vendor escrow access (issue #272)', () => {
   let app: INestApplication;
