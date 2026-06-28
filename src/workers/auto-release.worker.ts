@@ -10,6 +10,10 @@ import { ContractService } from '../stellar/contract.service';
 
 const EVERY_5_MINUTES = 5 * 60 * 1000;
 
+// Stellar address of the auto-release signing account. Must be set in production.
+const AUTO_RELEASE_SOURCE =
+  process.env.AUTO_RELEASE_SOURCE_ADDRESS ?? 'GAUTORELEASE000000000000000000000000000000000000000000000';
+
 @Injectable()
 export class AutoReleaseWorker implements OnModuleInit, OnApplicationShutdown {
   private readonly logger = new Logger(AutoReleaseWorker.name);
@@ -56,6 +60,7 @@ export class AutoReleaseWorker implements OnModuleInit, OnApplicationShutdown {
 
           const txHash = await this.contractService.submitAutoRelease(
             escrow.id,
+            AUTO_RELEASE_SOURCE,
           );
           await this.escrowRepository.markAutoReleaseCompleted(
             escrow.id,

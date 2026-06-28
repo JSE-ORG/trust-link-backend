@@ -44,6 +44,8 @@ export class EscrowRepository {
   /**
    * Finds the first escrow matching both vendorAddress and itemRef,
    * used to detect duplicate submissions for the same item reference.
+   * Uses findFirst (LIMIT 1) rather than findMany so only one row is
+   * loaded; orderBy makes the result deterministic when duplicates exist.
    */
   findByVendorAndItem(
     vendorAddress: string,
@@ -51,6 +53,7 @@ export class EscrowRepository {
   ): Promise<EscrowRecord | null> {
     return this.prisma.escrow.findFirst({
       where: { vendorAddress, itemRef },
+      orderBy: { createdAt: 'asc' },
     });
   }
 
@@ -67,14 +70,40 @@ export class EscrowRepository {
     return record;
   }
 
-  /** Returns all escrows belonging to the given vendor address. */
-  findByVendor(vendorAddress: string): Promise<EscrowRecord[]> {
-    return this.prisma.escrow.findMany({ where: { vendorAddress } });
+  /**
+   * Returns a cursor-paginated slice of escrows for the given vendor,
+   * ordered newest-first. Pass `cursor` (an escrow ID) to get the page
+   * after that record; omit it for the first page.
+   */
+  findByVendor(
+    vendorAddress: string,
+    cursor?: string,
+    take = 20,
+  ): Promise<EscrowRecord[]> {
+    return this.prisma.escrow.findMany({
+      where: { vendorAddress },
+      orderBy: { createdAt: 'desc' },
+      take,
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+    });
   }
 
-  /** Returns all escrows belonging to the given buyer address. */
-  findByBuyer(buyerAddress: string): Promise<EscrowRecord[]> {
-    return this.prisma.escrow.findMany({ where: { buyerAddress } });
+  /**
+   * Returns a cursor-paginated slice of escrows for the given buyer,
+   * ordered newest-first. Pass `cursor` (an escrow ID) to get the page
+   * after that record; omit it for the first page.
+   */
+  findByBuyer(
+    buyerAddress: string,
+    cursor?: string,
+    take = 20,
+  ): Promise<EscrowRecord[]> {
+    return this.prisma.escrow.findMany({
+      where: { buyerAddress },
+      orderBy: { createdAt: 'desc' },
+      take,
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+    });
   }
 
   /** Updates the escrow state and invalidates its cache entry. */
