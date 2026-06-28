@@ -22,10 +22,7 @@ import {
   type ElementDescriptor,
 } from './tab-order.util';
 
-import {
-  createFocusTrap,
-  type FocusDriver,
-} from './focus-trap.util';
+import { createFocusTrap, type FocusDriver } from './focus-trap.util';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Focus Ring Validation
@@ -205,7 +202,9 @@ describe('getA11yIssues()', () => {
     const issues = getA11yIssues([badDiv]);
     const errors = issues.filter((i) => i.severity === 'error');
     expect(errors.length).toBeGreaterThanOrEqual(1);
-    expect(errors.some((e) => e.message.includes('not keyboard-reachable'))).toBe(true);
+    expect(
+      errors.some((e) => e.message.includes('not keyboard-reachable')),
+    ).toBe(true);
   });
 
   it('flags a <div> with onClick but no role as an ERROR', () => {
@@ -248,7 +247,9 @@ describe('getA11yIssues()', () => {
     };
     const issues = getA11yIssues([highTabIndex]);
     const warnings = issues.filter((i) => i.severity === 'warning');
-    expect(warnings.some((w) => w.message.includes('natural DOM order'))).toBe(true);
+    expect(warnings.some((w) => w.message.includes('natural DOM order'))).toBe(
+      true,
+    );
   });
 
   it('warns about disabled elements that are still tabbable', () => {
@@ -346,7 +347,9 @@ describe('createFocusTrap() with Mock Driver', () => {
     mockDriver = {
       getFocusableElements: jest.fn(() => focusableElements),
       getActiveElement: jest.fn(() => activeElement),
-      focusElement: jest.fn((el) => { activeElement = el; }),
+      focusElement: jest.fn((el) => {
+        activeElement = el;
+      }),
       preventDefault: jest.fn(),
       addEventListener: jest.fn((name, handler) => {
         if (!eventListeners[name]) eventListeners[name] = [];
@@ -354,7 +357,9 @@ describe('createFocusTrap() with Mock Driver', () => {
       }),
       removeEventListener: jest.fn((name, handler) => {
         if (eventListeners[name]) {
-          eventListeners[name] = eventListeners[name].filter(h => h !== handler);
+          eventListeners[name] = eventListeners[name].filter(
+            (h) => h !== handler,
+          );
         }
       }),
     };

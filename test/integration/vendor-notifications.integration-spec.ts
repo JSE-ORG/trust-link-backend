@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 /**
  * Integration tests for vendor notification preference endpoints (issue #293).
  *
@@ -151,7 +149,7 @@ describe('Vendor notification preferences (issue #293)', () => {
         .expect(200);
 
       expect(res.body.notifyOnDelivery).toBe(false); // from first patch, unchanged
-      expect(res.body.notifyOnDelay).toBe(false);     // from first patch, unchanged
+      expect(res.body.notifyOnDelay).toBe(false); // from first patch, unchanged
       expect(res.body.notifyOnException).toBe(false); // from second patch
     });
 

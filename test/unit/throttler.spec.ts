@@ -19,9 +19,7 @@ describe('ThrottlerGuard configuration', () => {
   it('auth throttler has correct default ttl and limit', async () => {
     const moduleRef = await Test.createTestingModule({
       imports: [
-        ThrottlerModule.forRoot([
-          { name: 'auth', ttl: 60000, limit: 10 },
-        ]),
+        ThrottlerModule.forRoot([{ name: 'auth', ttl: 60000, limit: 10 }]),
       ],
       providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
     }).compile();
@@ -35,9 +33,7 @@ describe('ThrottlerGuard configuration', () => {
   it('public throttler has correct default ttl and limit', async () => {
     const moduleRef = await Test.createTestingModule({
       imports: [
-        ThrottlerModule.forRoot([
-          { name: 'public', ttl: 60000, limit: 60 },
-        ]),
+        ThrottlerModule.forRoot([{ name: 'public', ttl: 60000, limit: 60 }]),
       ],
       providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
     }).compile();

@@ -1,10 +1,11 @@
-/* eslint-disable @typescript-eslint/unbound-method */
 import { ExecutionContext, ForbiddenException } from '@nestjs/common';
 import { AdminGuard } from '../../src/admin/guards/admin.guard';
 import { ConfigService } from '../../src/config/config.service';
 
-const ADMIN_ADDRESS = 'GADMIN000000000000000000000000000000000000000000000000000';
-const OTHER_ADDRESS = 'GOTHER000000000000000000000000000000000000000000000000000';
+const ADMIN_ADDRESS =
+  'GADMIN000000000000000000000000000000000000000000000000000';
+const OTHER_ADDRESS =
+  'GOTHER000000000000000000000000000000000000000000000000000';
 
 function makeContext(user: unknown): ExecutionContext {
   return {
@@ -14,7 +15,9 @@ function makeContext(user: unknown): ExecutionContext {
   } as unknown as ExecutionContext;
 }
 
-function makeConfigService(adminAddress: string | undefined): jest.Mocked<ConfigService> {
+function makeConfigService(
+  adminAddress: string | undefined,
+): jest.Mocked<ConfigService> {
   return {
     get: jest.fn().mockReturnValue(adminAddress),
   } as unknown as jest.Mocked<ConfigService>;
@@ -103,7 +106,9 @@ describe('AdminGuard (issue #284)', () => {
         caught = e as ForbiddenException;
       }
       expect(caught).toBeInstanceOf(ForbiddenException);
-      expect((caught!.getResponse() as any).message).toBe('Admin role required');
+      expect((caught!.getResponse() as any).message).toBe(
+        'Admin role required',
+      );
     });
 
     it('reports "Admin access required" for admin-role user with wrong address', () => {
@@ -116,7 +121,9 @@ describe('AdminGuard (issue #284)', () => {
         caught = e as ForbiddenException;
       }
       expect(caught).toBeInstanceOf(ForbiddenException);
-      expect((caught!.getResponse() as any).message).toBe('Admin access required');
+      expect((caught!.getResponse() as any).message).toBe(
+        'Admin access required',
+      );
     });
   });
 });

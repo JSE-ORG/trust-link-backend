@@ -1,7 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-argument */
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
-/* eslint-disable @typescript-eslint/no-unsafe-call */
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
@@ -9,6 +5,7 @@ import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { ContractService } from '../src/stellar/contract.service';
 import { NotificationsService } from '../src/notifications/notifications.service';
+import { ConfigService } from '../src/config/config.service';
 
 const VENDOR_ADDRESS =
   'GA36PERSXWPBG7HYKNBVT5PFLTOFYO4Q3CWGJZTYH5GU5OLTKHW7SJHE';
@@ -38,9 +35,7 @@ describe('Admin Dispute Resolution Flow E2E (issue #299)', () => {
     prisma = app.get(PrismaService);
     contractService = app.get(ContractService);
     notificationsService = app.get(NotificationsService);
-    const configService = app.get(
-      require('../src/config/config.service').ConfigService,
-    );
+    const configService = app.get(ConfigService);
     adminAddress = configService.get('ADMIN_ADDRESS');
 
     await prisma.reset();
@@ -50,16 +45,16 @@ describe('Admin Dispute Resolution Flow E2E (issue #299)', () => {
       .mockResolvedValue('tx-hash-dispute-resolved');
     jest
       .spyOn(notificationsService, 'notifyDisputed')
-      .mockResolvedValue(undefined as any);
+      .mockResolvedValue(undefined);
     jest
       .spyOn(notificationsService, 'notifyDisputedAdmin')
-      .mockResolvedValue(undefined as any);
+      .mockResolvedValue(undefined);
     jest
       .spyOn(notificationsService, 'notifyCompleted')
-      .mockResolvedValue(undefined as any);
+      .mockResolvedValue(undefined);
     jest
       .spyOn(notificationsService, 'notifyRefunded')
-      .mockResolvedValue(undefined as any);
+      .mockResolvedValue(undefined);
   });
 
   afterEach(async () => {

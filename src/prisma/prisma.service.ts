@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy, Optional } from '@nestjs/common';
 
 // AES-256-GCM ciphertext produced by contact-encryption.util: iv:authTag:ciphertext
 // IV = 12 bytes (24 hex), tag = 16 bytes (32 hex), ciphertext = 1+ hex chars.
@@ -138,8 +138,6 @@ export interface VendorTrackingSettingsRecord {
   updatedAt: Date;
 }
 
-
-
 export interface ProcessedWebhookEventRecord {
   operationId: string;
   processedAt: Date;
@@ -220,6 +218,7 @@ type EscrowCreateInput = Omit<
   autoReleaseTxHash?: string | null;
   disputeId?: string | null;
   cancelledAt?: Date | null;
+  createdAt?: Date;
 };
 
 type DisputeCreateInput = Omit<
@@ -290,11 +289,14 @@ type NotificationUpdateInput = Partial<
 >;
 
 type VendorTrackingSettingsCreateInput = Partial<
-  Omit<VendorTrackingSettingsRecord, 'id' | 'createdAt' | 'updatedAt'>
+  Omit<VendorTrackingSettingsRecord, 'createdAt' | 'updatedAt'>
 >;
 
 type VendorTrackingSettingsUpdateInput = Partial<
-  Omit<VendorTrackingSettingsRecord, 'id' | 'vendorAddress' | 'createdAt' | 'updatedAt'>
+  Omit<
+    VendorTrackingSettingsRecord,
+    'id' | 'vendorAddress' | 'createdAt' | 'updatedAt'
+  >
 >;
 
 @Injectable()
@@ -302,12 +304,15 @@ export class PrismaService implements OnModuleDestroy {
   // databaseUrl is accepted so the module can pass the pool-tuned URL from
   // ConfigService. The in-memory store does not use it, but a real PrismaClient
   // replacement should forward it to `new PrismaClient({ datasources: { db: { url } } })`.
-  constructor(readonly databaseUrl?: string) {
+  constructor(@Optional() readonly databaseUrl?: string) {
     // Issue #316: apply statement_timeout to prevent long-running queries
     if (databaseUrl) {
       try {
         const url = new URL(databaseUrl);
-        url.searchParams.set('statement_timeout', process.env.QUERY_TIMEOUT_MS ?? '30000');
+        url.searchParams.set(
+          'statement_timeout',
+          process.env.QUERY_TIMEOUT_MS ?? '30000',
+        );
         url.searchParams.set('connect_timeout', '10');
         this.effectiveDatabaseUrl = url.toString();
       } catch {
@@ -319,8 +324,10 @@ export class PrismaService implements OnModuleDestroy {
   readonly effectiveDatabaseUrl?: string;
 
   // Issue #315: slow query logging middleware
-  private readonly slowQueryThresholdMs =
-    parseInt(process.env.SLOW_QUERY_THRESHOLD_MS ?? '500', 10);
+  private readonly slowQueryThresholdMs = parseInt(
+    process.env.SLOW_QUERY_THRESHOLD_MS ?? '500',
+    10,
+  );
 
   private readonly logger = new Logger('PrismaService');
 
@@ -337,7 +344,7 @@ export class PrismaService implements OnModuleDestroy {
     if (duration > this.slowQueryThresholdMs) {
       this.logger.warn(
         `Slow query: ${model ?? 'unknown'}.${action} took ${duration}ms ` +
-        `(threshold: ${this.slowQueryThresholdMs}ms)`,
+          `(threshold: ${this.slowQueryThresholdMs}ms)`,
       );
     }
     return result;
@@ -401,7 +408,7 @@ export class PrismaService implements OnModuleDestroy {
         cancelledAt: data.cancelledAt ?? null,
         buyerContactEmail: data.buyerContactEmail ?? null,
         buyerContactPhone: data.buyerContactPhone ?? null,
-        createdAt: now,
+        createdAt: data.createdAt ?? now,
         updatedAt: now,
       };
       this.escrows.set(escrow.id, escrow);
@@ -551,17 +558,13 @@ export class PrismaService implements OnModuleDestroy {
       where?: Partial<
         Pick<
           EscrowRecord,
-          | 'vendorAddress'
-          | 'buyerAddress'
-          | 'state'
-          | 'itemRef'
-          | 'disputeId'
+          'vendorAddress' | 'buyerAddress' | 'state' | 'itemRef' | 'disputeId'
         >
       >;
     } = {}): Promise<EscrowRecord | null> => {
-      return (
-        this.escrow.findMany({ where }) as Promise<EscrowRecord[]>
-      ).then((records) => records[0] ?? null);
+      return (this.escrow.findMany({ where }) as Promise<EscrowRecord[]>).then(
+        (records) => records[0] ?? null,
+      );
     },
     deleteMany: (): Promise<{ count: number }> => {
       const count = this.escrows.size;
@@ -613,6 +616,20 @@ export class PrismaService implements OnModuleDestroy {
       const dispute = this.disputes.get(where.id);
       return Promise.resolve(dispute ? { ...dispute } : null);
     },
+    findFirst: ({
+      where,
+    }: {
+      where?: Partial<Pick<DisputeRecord, 'escrowId' | 'status'>>;
+    } = {}): Promise<DisputeRecord | null> => {
+      const found = [...this.disputes.values()].find((dispute) => {
+        if (!where) return true;
+        return Object.entries(where).every(([key, value]) => {
+          if (value === undefined) return true;
+          return dispute[key as keyof DisputeRecord] === value;
+        });
+      });
+      return Promise.resolve(found ? { ...found } : null);
+    },
     findMany: ({
       where,
     }: {
@@ -655,7 +672,9 @@ export class PrismaService implements OnModuleDestroy {
     }: {
       where?: Partial<Pick<DisputeRecord, 'escrowId' | 'status'>>;
     } = {}): Promise<DisputeRecord | null> => {
-      return this.dispute.findMany({ where }).then((records) => records[0] ?? null);
+      return this.dispute
+        .findMany({ where })
+        .then((records) => records[0] ?? null);
     },
     deleteMany: (): Promise<{ count: number }> => {
       const count = this.disputes.size;
@@ -697,7 +716,9 @@ export class PrismaService implements OnModuleDestroy {
     }): Promise<NotificationRecord> => {
       const existing = this.notifications.get(where.id);
       if (!existing) {
-        return Promise.reject(new Error(`Notification with id ${where.id} not found`));
+        return Promise.reject(
+          new Error(`Notification with id ${where.id} not found`),
+        );
       }
       const updated: NotificationRecord = {
         ...existing,
@@ -719,7 +740,6 @@ export class PrismaService implements OnModuleDestroy {
       return Promise.resolve({ count });
     },
   };
-
 
   processedWebhookEvent = {
     findUnique: ({
@@ -1017,7 +1037,7 @@ export class PrismaService implements OnModuleDestroy {
     }: {
       where: { vendorAddress: string };
       select?: { notificationChannels?: boolean };
-    }): Promise<any | null> => {
+    }): Promise<VendorTrackingSettingsRecord | null> => {
       const settings = this.vendorTrackingSettingsStore.get(
         where.vendorAddress,
       );
@@ -1089,12 +1109,10 @@ export class PrismaService implements OnModuleDestroy {
    * Mock implementation of Prisma's $queryRaw for testing.
    * Supports basic aggregation queries for the analytics service.
    */
-  async $queryRaw<T = unknown>(
+  $queryRaw<T = unknown>(
     query: TemplateStringsArray,
     ...values: unknown[]
   ): Promise<T[]> {
-    const queryString = query.join('?');
-
     // SQL template order: ${timezone}, ${vendorAddress}, ${startDate}, ${endDate}, ${timezone}
     const timezone = (values[0] as string) || 'UTC';
     const vendorAddress = values[1] as string;
@@ -1296,7 +1314,7 @@ export class PrismaService implements OnModuleDestroy {
         ...existing,
         ...data,
         updatedAt: new Date(),
-      } as FailedTransactionRecord;
+      };
       this.failedTransactionStore.set(where.id, updated);
       return Promise.resolve({ ...updated });
     },

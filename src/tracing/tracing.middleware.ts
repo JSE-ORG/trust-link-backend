@@ -23,7 +23,10 @@ export class TracingMiddleware implements NestMiddleware {
 
       if (span) {
         span.setAttribute('trustlink.workflow', workflow);
-        span.setAttribute('http.route', req.route?.path ?? req.originalUrl);
+        span.setAttribute(
+          'http.route',
+          (req.route as { path?: string } | undefined)?.path ?? req.originalUrl,
+        );
         if (req.headers['x-request-id']) {
           span.setAttribute(
             'trustlink.request_id',

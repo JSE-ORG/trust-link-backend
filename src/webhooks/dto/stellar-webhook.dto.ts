@@ -65,7 +65,8 @@ export class StellarWebhookDto {
   asset_code?: string;
 
   @ApiPropertyOptional({
-    description: 'Any additional event fields Horizon includes, captured verbatim.',
+    description:
+      'Any additional event fields Horizon includes, captured verbatim.',
     type: 'object',
     additionalProperties: true,
     example: { ledger: 51234567, paging_token: '220267715074457601' },

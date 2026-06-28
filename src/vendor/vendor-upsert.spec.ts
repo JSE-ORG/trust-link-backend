@@ -33,9 +33,12 @@ describe('VendorProfileService.upsertProfile', () => {
   });
 
   it('creates a new profile when one does not exist', async () => {
-    const dto: CreateVendorProfileDto = { businessName: 'Acme Ltd', email: 'acme@example.com' };
+    const dto: CreateVendorProfileDto = {
+      businessName: 'Acme Ltd',
+      email: 'acme@example.com',
+    };
     const profile = makeProfile();
-    repo.upsert.mockResolvedValue(profile as never);
+    repo.upsert.mockResolvedValue(profile);
 
     const result = await service.upsertProfile(ADDRESS, dto);
 
@@ -44,9 +47,15 @@ describe('VendorProfileService.upsertProfile', () => {
   });
 
   it('updates an existing profile idempotently', async () => {
-    const dto: CreateVendorProfileDto = { businessName: 'Acme Renamed', email: 'new@example.com' };
-    const updated = makeProfile({ businessName: 'Acme Renamed', email: 'new@example.com' });
-    repo.upsert.mockResolvedValue(updated as never);
+    const dto: CreateVendorProfileDto = {
+      businessName: 'Acme Renamed',
+      email: 'new@example.com',
+    };
+    const updated = makeProfile({
+      businessName: 'Acme Renamed',
+      email: 'new@example.com',
+    });
+    repo.upsert.mockResolvedValue(updated);
 
     const result = await service.upsertProfile(ADDRESS, dto);
 

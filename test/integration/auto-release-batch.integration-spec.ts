@@ -1,6 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-argument */
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import { Test, TestingModule } from '@nestjs/testing';
 import { PrismaService } from '../../src/prisma/prisma.service';
 import { EscrowRepository } from '../../src/escrow/escrow.repository';
@@ -54,7 +51,8 @@ describe('Auto-release batch processing with partial failures', () => {
     prisma = moduleRef.get(PrismaService);
     escrowRepository = moduleRef.get(EscrowRepository);
     disputeRepository = moduleRef.get(DisputeRepository);
-    contractService = moduleRef.get<jest.Mocked<ContractService>>(ContractService);
+    contractService =
+      moduleRef.get<jest.Mocked<ContractService>>(ContractService);
     worker = moduleRef.get(AutoReleaseWorker);
 
     await prisma.reset();
@@ -226,9 +224,7 @@ describe('Auto-release batch processing with partial failures', () => {
 
       // Check final states
       const results = await Promise.all(
-        escrows.map((e) =>
-          prisma.escrow.findUnique({ where: { id: e.id } }),
-        ),
+        escrows.map((e) => prisma.escrow.findUnique({ where: { id: e.id } })),
       );
 
       expect(results[0]!.state).toBe('RELEASED');
@@ -364,9 +360,7 @@ describe('Auto-release batch processing with partial failures', () => {
 
       // All should remain in SHIPPED state
       const results = await Promise.all(
-        escrows.map((e) =>
-          prisma.escrow.findUnique({ where: { id: e.id } }),
-        ),
+        escrows.map((e) => prisma.escrow.findUnique({ where: { id: e.id } })),
       );
 
       results.forEach((result) => {
@@ -469,7 +463,7 @@ describe('Auto-release batch processing with partial failures', () => {
       await worker.run();
 
       // Verify first attempt failed
-      let afterFirst = await prisma.escrow.findUnique({
+      const afterFirst = await prisma.escrow.findUnique({
         where: { id: escrow.id },
       });
       expect(afterFirst!.state).toBe('SHIPPED');
@@ -481,7 +475,7 @@ describe('Auto-release batch processing with partial failures', () => {
       await worker.run();
 
       // Verify retry succeeded
-      let afterSecond = await prisma.escrow.findUnique({
+      const afterSecond = await prisma.escrow.findUnique({
         where: { id: escrow.id },
       });
       expect(afterSecond!.state).toBe('RELEASED');

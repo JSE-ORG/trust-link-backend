@@ -1,5 +1,5 @@
 import { Injectable, UnauthorizedException, Logger } from '@nestjs/common';
-import { Cron, CronExpression } from '@nestjs/schedule';
+import { Cron } from '@nestjs/schedule';
 import { createHmac, randomBytes } from 'crypto';
 import {
   Keypair,
@@ -35,7 +35,7 @@ export class Sep10Service {
   }
 
   /** Removes expired nonces from the database every 24 hours. */
-  @Cron(CronExpression.EVERY_24_HOURS)
+  @Cron('0 0 * * *')
   async cleanupExpiredNonces(): Promise<void> {
     const now = new Date();
     const result = await this.prisma.nonce.deleteMany({
@@ -63,9 +63,7 @@ export class Sep10Service {
     const tx = TransactionBuilder.fromXDR(challengeTx, this.networkPassphrase);
     const txHash = tx.hash().toString('hex');
 
-    const expiresAt = new Date(
-      Date.now() + timeout * MILLISECONDS_PER_SECOND,
-    );
+    const expiresAt = new Date(Date.now() + timeout * MILLISECONDS_PER_SECOND);
 
     await this.prisma.nonce.create({
       data: {

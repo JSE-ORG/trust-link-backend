@@ -28,17 +28,25 @@ export class EventReplayService implements OnModuleInit {
 
       const url = `${horizon}/operations?order=asc&limit=200${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`;
       this.logger.log(`EventReplay fetching operations from ${url}`);
-      const res = await axios.get(url, { timeout: 15000 });
+      const res = await axios.get<{
+        _embedded?: { records: Record<string, unknown>[] };
+      }>(url, { timeout: 15000 });
       const records = res.data._embedded?.records ?? [];
 
       for (const rec of records) {
         const dto: StellarWebhookDto = {
-          id: String(rec.id),
-          type: String(rec.type),
-          transaction_hash: String(rec.transaction_hash ?? ''),
-          to: rec.to,
-          amount: rec.amount,
-          asset_code: rec.asset_code,
+          id: typeof rec['id'] === 'string' ? rec['id'] : '',
+          type: typeof rec['type'] === 'string' ? rec['type'] : '',
+          transaction_hash:
+            typeof rec['transaction_hash'] === 'string'
+              ? rec['transaction_hash']
+              : '',
+          to: typeof rec['to'] === 'string' ? rec['to'] : undefined,
+          amount: typeof rec['amount'] === 'string' ? rec['amount'] : undefined,
+          asset_code:
+            typeof rec['asset_code'] === 'string'
+              ? rec['asset_code']
+              : undefined,
         };
 
         try {
@@ -51,7 +59,7 @@ export class EventReplayService implements OnModuleInit {
       // Persist cursor atomically after processing all records
       if (records.length > 0) {
         const lastRec = records[records.length - 1];
-        const newCursor = String(lastRec.paging_token || lastRec.id);
+        const newCursor = String(lastRec['paging_token'] ?? lastRec['id']);
         await this.cursorService.set(newCursor);
       }
 

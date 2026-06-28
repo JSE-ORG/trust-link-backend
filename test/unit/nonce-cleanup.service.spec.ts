@@ -34,7 +34,8 @@ describe('NonceCleanupService', () => {
       await prisma.nonce.create({
         data: {
           nonce: 'expired-nonce-1',
-          walletAddress: 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
+          walletAddress:
+            'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
           challenge: 'challenge-1',
           used: false,
           expiresAt: new Date(now.getTime() - 1000),
@@ -44,7 +45,8 @@ describe('NonceCleanupService', () => {
       await prisma.nonce.create({
         data: {
           nonce: 'expired-nonce-2',
-          walletAddress: 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
+          walletAddress:
+            'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
           challenge: 'challenge-2',
           used: false,
           expiresAt: new Date(now.getTime() - 2000),
@@ -66,7 +68,8 @@ describe('NonceCleanupService', () => {
       await prisma.nonce.create({
         data: {
           nonce: 'active-nonce',
-          walletAddress: 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
+          walletAddress:
+            'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
           challenge: 'challenge-active',
           used: false,
           expiresAt: new Date(now.getTime() + 60000),
@@ -88,7 +91,8 @@ describe('NonceCleanupService', () => {
       await prisma.nonce.create({
         data: {
           nonce: 'expired-nonce',
-          walletAddress: 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
+          walletAddress:
+            'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
           challenge: 'challenge-expired',
           used: false,
           expiresAt: new Date(now.getTime() - 1000),
@@ -98,7 +102,8 @@ describe('NonceCleanupService', () => {
       await prisma.nonce.create({
         data: {
           nonce: 'active-nonce',
-          walletAddress: 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
+          walletAddress:
+            'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
           challenge: 'challenge-active',
           used: false,
           expiresAt: new Date(now.getTime() + 60000),

@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
-
 /**
  * Cross-vendor escrow access — integration test.
  *
@@ -8,6 +6,7 @@
  * - Non-owner requests return 403 Forbidden
  * - Admin users can bypass ownership checks
  */
+import crypto from 'node:crypto';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
@@ -246,7 +245,6 @@ describe('Cross-vendor escrow access (issue #272)', () => {
 });
 
 function createJwtToken(address: string, role?: string): string {
-  const crypto = require('crypto');
   const header = Buffer.from(
     JSON.stringify({ alg: 'HS256', typ: 'JWT' }),
   ).toString('base64url');

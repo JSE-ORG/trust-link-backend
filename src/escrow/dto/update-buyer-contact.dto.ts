@@ -22,8 +22,7 @@ export class UpdateBuyerContactDto {
   email?: string;
 
   @ApiPropertyOptional({
-    description:
-      'Buyer phone number in E.164 format for SMS notifications.',
+    description: 'Buyer phone number in E.164 format for SMS notifications.',
     example: '+2348012345678',
   })
   @IsOptional()

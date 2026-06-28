@@ -9,7 +9,12 @@ import {
   Put,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { AuthUser } from '../auth/auth-user';
 import { JwtGuard } from '../auth/guards/jwt.guard';
@@ -112,7 +117,10 @@ export class VendorProfileController {
    * @authentication Requires valid SEP-10 JWT (vendor)
    */
   @ApiOperation({ summary: 'Get vendor notification preferences' })
-  @ApiResponse({ status: 200, description: 'Notification preferences returned.' })
+  @ApiResponse({
+    status: 200,
+    description: 'Notification preferences returned.',
+  })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   @Get('notifications')
   getNotifications(@CurrentUser() user: AuthUser) {
@@ -130,7 +138,10 @@ export class VendorProfileController {
    * @authentication Requires valid SEP-10 JWT (vendor)
    */
   @ApiOperation({ summary: 'Update vendor notification preferences' })
-  @ApiResponse({ status: 200, description: 'Notification preferences updated.' })
+  @ApiResponse({
+    status: 200,
+    description: 'Notification preferences updated.',
+  })
   @ApiResponse({ status: 400, description: 'Invalid preferences payload.' })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   @Patch('notifications')

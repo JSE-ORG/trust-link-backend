@@ -76,13 +76,17 @@ describe('NotificationsService (#288) — email dispatch', () => {
   });
 
   it('dispatches email via SendGrid and records EMAIL notification', async () => {
-    const mockSend = jest.fn().mockResolvedValue([{ statusCode: 202, headers: { 'x-message-id': 'msg-abc' } }]);
+    const mockSend = jest
+      .fn()
+      .mockResolvedValue([
+        { statusCode: 202, headers: { 'x-message-id': 'msg-abc' } },
+      ]);
     const sendGrid = { send: mockSend };
-    const service = new NotificationsService(prisma, sendGrid as any);
+    const service = new NotificationsService(prisma, sendGrid);
 
     await service.notifyFunded(baseEscrow);
 
-    expect(mockSend).toHaveBeenCalledOnce();
+    expect(mockSend).toHaveBeenCalledTimes(1);
     expect(mockSend).toHaveBeenCalledWith(
       expect.objectContaining({ to: baseEscrow.vendorAddress }),
     );
@@ -97,11 +101,11 @@ describe('NotificationsService (#288) — email dispatch', () => {
   it('dispatches SMS via Twilio and records SMS notification', async () => {
     const mockCreate = jest.fn().mockResolvedValue({ sid: 'SM123' });
     const twilio = { messages: { create: mockCreate } };
-    const service = new NotificationsService(prisma, undefined, twilio as any);
+    const service = new NotificationsService(prisma, undefined, twilio);
 
     await service.notifyShipped(baseEscrow);
 
-    expect(mockCreate).toHaveBeenCalledOnce();
+    expect(mockCreate).toHaveBeenCalledTimes(1);
     expect(mockCreate).toHaveBeenCalledWith(
       expect.objectContaining({ to: baseEscrow.buyerAddress }),
     );
@@ -151,12 +155,16 @@ describe('NotificationsService (#288) — email dispatch', () => {
   it('retries on provider failure and records attemptCount > 1', async () => {
     const mockSend = jest
       .fn()
-      .mockRejectedValueOnce(Object.assign(new Error('rate limit'), { code: 429 }))
-      .mockRejectedValueOnce(Object.assign(new Error('rate limit'), { code: 429 }))
+      .mockRejectedValueOnce(
+        Object.assign(new Error('rate limit'), { code: 429 }),
+      )
+      .mockRejectedValueOnce(
+        Object.assign(new Error('rate limit'), { code: 429 }),
+      )
       .mockResolvedValue([{ statusCode: 202, headers: {} }]);
 
     const sendGrid = { send: mockSend };
-    const service = new NotificationsService(prisma, sendGrid as any);
+    const service = new NotificationsService(prisma, sendGrid);
 
     // Spy on sleep so retries don't actually delay the test
     jest.spyOn(service as any, 'sleep').mockResolvedValue(undefined);
@@ -173,10 +181,12 @@ describe('NotificationsService (#288) — email dispatch', () => {
   it('records lastResponseCode from provider error on all-failed retries', async () => {
     const mockSend = jest
       .fn()
-      .mockRejectedValue(Object.assign(new Error('server error'), { code: 500 }));
+      .mockRejectedValue(
+        Object.assign(new Error('server error'), { code: 500 }),
+      );
 
     const sendGrid = { send: mockSend };
-    const service = new NotificationsService(prisma, sendGrid as any);
+    const service = new NotificationsService(prisma, sendGrid);
 
     jest.spyOn(service as any, 'sleep').mockResolvedValue(undefined);
 

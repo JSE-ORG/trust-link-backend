@@ -16,10 +16,19 @@ describe('DisputeRepository', () => {
   describe('findByEscrow()', () => {
     it('returns the dispute linked to the given escrow', async () => {
       const escrow = await escrowRepo.create(
-        { itemName: 'Widget', itemRef: 'REF-1', amount: 100, currency: 'USDC', buyerAddress: 'buyer' },
+        {
+          itemName: 'Widget',
+          itemRef: 'REF-1',
+          amount: 100,
+          currency: 'USDC',
+          buyerAddress: 'buyer',
+        },
         'vendor',
       );
-      await disputeRepo.create({ escrowId: escrow.id, reason: 'Item not received' });
+      await disputeRepo.create({
+        escrowId: escrow.id,
+        reason: 'Item not received',
+      });
 
       const found = await disputeRepo.findByEscrow(escrow.id);
 
@@ -35,7 +44,13 @@ describe('DisputeRepository', () => {
 
     it('uses the unique constraint — returns only one dispute per escrow', async () => {
       const escrow = await escrowRepo.create(
-        { itemName: 'Widget', itemRef: 'REF-2', amount: 50, currency: 'USDC', buyerAddress: 'buyer' },
+        {
+          itemName: 'Widget',
+          itemRef: 'REF-2',
+          amount: 50,
+          currency: 'USDC',
+          buyerAddress: 'buyer',
+        },
         'vendor',
       );
       await disputeRepo.create({ escrowId: escrow.id, reason: 'Wrong item' });

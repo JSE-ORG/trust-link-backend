@@ -5,8 +5,6 @@ import {
   MinLength,
   MaxLength,
   Matches,
-  Max,
-  Min,
 } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
@@ -28,7 +26,7 @@ export class CreateEscrowDto {
   @IsString()
   @MinLength(3, { message: 'Item name must be at least 3 characters long' })
   @MaxLength(100, { message: 'Item name must not exceed 100 characters' })
-  @Transform(({ value }) => value?.trim())
+  @Transform(({ value }: { value: string }) => value?.trim())
   itemName!: string;
 
   @ApiProperty({
@@ -61,7 +59,7 @@ export class CreateEscrowDto {
   @Matches(/^[A-Z0-9]+$/, {
     message: 'Currency must contain only uppercase letters and numbers',
   })
-  @Transform(({ value }) => value?.toUpperCase().trim())
+  @Transform(({ value }: { value: string }) => value?.toUpperCase().trim())
   currency!: string;
 
   @ApiProperty({
@@ -70,6 +68,6 @@ export class CreateEscrowDto {
   })
   @IsString()
   @IsStellarAddress()
-  @Transform(({ value }) => value?.trim())
+  @Transform(({ value }: { value: string }) => value?.trim())
   buyerAddress!: string;
 }

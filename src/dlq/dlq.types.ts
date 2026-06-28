@@ -45,6 +45,4 @@ export interface ListFailedTransactionsQuery {
  * success; throwing surfaces as a replay failure that bumps `attempts` and
  * keeps the record `PENDING_REVIEW`.
  */
-export type ReplayFn = (
-  record: FailedTransactionRecord,
-) => Promise<string>;
+export type ReplayFn = (record: FailedTransactionRecord) => Promise<string>;

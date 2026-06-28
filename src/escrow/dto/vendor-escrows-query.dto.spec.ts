@@ -44,7 +44,9 @@ describe('VendorEscrowsQueryDto pagination validation (#241)', () => {
   it('rejects limit > 100', async () => {
     const errs = await errors({ limit: '101' });
     expect(errs.length).toBeGreaterThan(0);
-    expect(errs.some((e) => /max/i.test(e) || /greater than/i.test(e))).toBe(true);
+    expect(errs.some((e) => /max/i.test(e) || /greater than/i.test(e))).toBe(
+      true,
+    );
   });
 
   it('accepts limit=100 (boundary)', async () => {

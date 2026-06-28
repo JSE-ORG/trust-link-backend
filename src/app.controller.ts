@@ -76,7 +76,9 @@ export class AppController {
    * @returns Health status with component-level details, version, and timing
    * @authentication None (public endpoint)
    */
-  @ApiOperation({ summary: 'Service health check — database, Horizon, and Redis' })
+  @ApiOperation({
+    summary: 'Service health check — database, Horizon, and Redis',
+  })
   @ApiResponse({ status: 200, description: 'All components healthy.' })
   @ApiResponse({ status: 503, description: 'One or more components are down.' })
   @Get('health')
@@ -98,11 +100,12 @@ export class AppController {
       })),
     ]);
 
-    const redisStatus: OptionalComponentStatus = 'rawStatus' in redisResult && redisResult.rawStatus === 'disabled'
-      ? 'disabled'
-      : redisResult.status === 'ok'
-        ? 'ok'
-        : 'down';
+    const redisStatus: OptionalComponentStatus =
+      'rawStatus' in redisResult && redisResult.rawStatus === 'disabled'
+        ? 'disabled'
+        : redisResult.status === 'ok'
+          ? 'ok'
+          : 'down';
 
     // Redis is optional: a 'disabled' or 'down' Redis is reported but does not
     // flip the overall status to unhealthy (graceful fallback — issue #31).
@@ -163,7 +166,8 @@ export class AppController {
       await this.prismaService.escrow.findMany({});
       return { status: 'ok' };
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Database connection failed';
+      const message =
+        err instanceof Error ? err.message : 'Database connection failed';
       this.logger.error(`Database health check failed: ${message}`);
       return { status: 'down', error: message };
     }
@@ -193,7 +197,8 @@ export class AppController {
       this.logger.error(`Horizon health check failed: ${error}`);
       return { status: 'down', error };
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Horizon connection failed';
+      const message =
+        err instanceof Error ? err.message : 'Horizon connection failed';
       this.logger.error(`Horizon health check failed: ${message}`);
       return { status: 'down', error: message };
     } finally {
@@ -201,12 +206,17 @@ export class AppController {
     }
   }
 
-  private async checkRedis(): Promise<ComponentHealth & { rawStatus?: string }> {
+  private async checkRedis(): Promise<
+    ComponentHealth & { rawStatus?: string }
+  > {
     const result = await this.cacheService.ping();
     if (result === 'ok') {
       return { status: 'ok' };
     }
-    const error = result === 'disabled' ? 'Redis not configured' : 'Redis connection failed';
+    const error =
+      result === 'disabled'
+        ? 'Redis not configured'
+        : 'Redis connection failed';
     return { status: 'down', error, rawStatus: result };
   }
 }

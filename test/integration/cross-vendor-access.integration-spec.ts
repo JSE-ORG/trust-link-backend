@@ -1,4 +1,8 @@
-import { INestApplication, ValidationPipe, ExecutionContext } from '@nestjs/common';
+import {
+  INestApplication,
+  ValidationPipe,
+  ExecutionContext,
+} from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { EscrowController } from '../../src/escrow/escrow.controller';
@@ -12,8 +16,10 @@ describe('Cross-Vendor Escrow Access (issue #272)', () => {
   let app: INestApplication;
   let escrowService: jest.Mocked<EscrowService>;
 
-  const vendorAAddress = 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5';
-  const vendorBAddress = 'GCZHXL5F4MTPVHLKQ62S7GQLI6IMTMYXJQWA762E3ROJ5HKMMN576V5F';
+  const vendorAAddress =
+    'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5';
+  const vendorBAddress =
+    'GCZHXL5F4MTPVHLKQ62S7GQLI6IMTMYXJQWA762E3ROJ5HKMMN576V5F';
   const adminAddress = 'GADMINADDRESS123456789012345678901234567890123456';
   const escrowId = '00000000-0000-0000-0000-000000000001';
 
@@ -43,9 +49,15 @@ describe('Cross-Vendor Escrow Access (issue #272)', () => {
   beforeAll(async () => {
     escrowService = {
       findById: jest.fn().mockResolvedValue(mockEscrow),
-      handleShipment: jest.fn().mockResolvedValue({ ...mockEscrow, state: 'SHIPPED' as const }),
-      cancelEscrow: jest.fn().mockResolvedValue({ ...mockEscrow, state: 'CANCELLED' as const }),
-      cancelPendingEscrow: jest.fn().mockResolvedValue({ ...mockEscrow, state: 'CANCELLED' as const }),
+      handleShipment: jest
+        .fn()
+        .mockResolvedValue({ ...mockEscrow, state: 'SHIPPED' as const }),
+      cancelEscrow: jest
+        .fn()
+        .mockResolvedValue({ ...mockEscrow, state: 'CANCELLED' as const }),
+      cancelPendingEscrow: jest
+        .fn()
+        .mockResolvedValue({ ...mockEscrow, state: 'CANCELLED' as const }),
     } as unknown as jest.Mocked<EscrowService>;
 
     const mockBuyerDisputeService = {
@@ -81,7 +93,9 @@ describe('Cross-Vendor Escrow Access (issue #272)', () => {
       .compile();
 
     app = moduleFixture.createNestApplication();
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true }),
+    );
     await app.init();
   });
 
@@ -104,9 +118,11 @@ describe('Cross-Vendor Escrow Access (issue #272)', () => {
     });
 
     it('returns 403 when cross-vendor tries to ship', async () => {
-      escrowService.handleShipment.mockImplementationOnce(
-        () => { throw new ForbiddenException('Only the escrow vendor or admin can ship this order'); },
-      );
+      escrowService.handleShipment.mockImplementationOnce(() => {
+        throw new ForbiddenException(
+          'Only the escrow vendor or admin can ship this order',
+        );
+      });
 
       await request(app.getHttpServer())
         .patch(`/escrow/${escrowId}/ship`)
@@ -143,9 +159,11 @@ describe('Cross-Vendor Escrow Access (issue #272)', () => {
     });
 
     it('returns 403 when cross-vendor tries to cancel', async () => {
-      escrowService.cancelEscrow.mockImplementationOnce(
-        () => { throw new ForbiddenException('Only the vendor, buyer, or admin can cancel this escrow'); },
-      );
+      escrowService.cancelEscrow.mockImplementationOnce(() => {
+        throw new ForbiddenException(
+          'Only the vendor, buyer, or admin can cancel this escrow',
+        );
+      });
 
       await request(app.getHttpServer())
         .patch(`/escrow/${escrowId}/cancel`)
@@ -180,9 +198,11 @@ describe('Cross-Vendor Escrow Access (issue #272)', () => {
     });
 
     it('returns 403 when cross-vendor tries to delete', async () => {
-      escrowService.cancelPendingEscrow.mockImplementationOnce(
-        () => { throw new ForbiddenException('Only the vendor, buyer, or admin can cancel this escrow'); },
-      );
+      escrowService.cancelPendingEscrow.mockImplementationOnce(() => {
+        throw new ForbiddenException(
+          'Only the vendor, buyer, or admin can cancel this escrow',
+        );
+      });
 
       await request(app.getHttpServer())
         .delete(`/escrow/${escrowId}`)
