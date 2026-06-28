@@ -1,0 +1,3 @@
+-- AlterEnum
+ALTER TYPE "DisputeStatus" ADD VALUE 'CANCELLED';
+ALTER TYPE "DisputeStatus" ADD VALUE 'ABANDONED';

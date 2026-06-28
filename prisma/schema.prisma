@@ -22,6 +22,8 @@ enum DisputeStatus {
   OPEN
   UNDER_REVIEW
   RESOLVED
+  CANCELLED
+  ABANDONED
 }
 
 model Escrow {

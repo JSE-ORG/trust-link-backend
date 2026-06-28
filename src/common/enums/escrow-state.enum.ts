@@ -26,4 +26,6 @@ export enum DisputeStatusEnum {
   OPEN = 'OPEN',
   UNDER_REVIEW = 'UNDER_REVIEW',
   RESOLVED = 'RESOLVED',
+  CANCELLED = 'CANCELLED',
+  ABANDONED = 'ABANDONED',
 }
