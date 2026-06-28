@@ -20,9 +20,7 @@ export class OptionalJwtGuard implements CanActivate {
     try {
       return this.inner.canActivate(context);
     } catch {
-      const req = context
-        .switchToHttp()
-        .getRequest<RequestWithUser>();
+      const req = context.switchToHttp().getRequest<RequestWithUser>();
       req.user = undefined;
       return true;
     }

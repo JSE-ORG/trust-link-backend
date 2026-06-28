@@ -8,8 +8,10 @@ describe('POST /escrow/:id/dispute integration (issue #51)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
 
-  const vendorAddress = 'GB3LCRCZEETCBYV4PEIPV2PD2R3AJMC6S2OOBMV5MA6WCOKEMN3XA3K3';
-  const buyerAddress = 'GDAMQCBXJI72A6R4QOTF6BJTXVLE5P7G2RT7ADADDB4UKMILJ3YF77F2';
+  const vendorAddress =
+    'GB3LCRCZEETCBYV4PEIPV2PD2R3AJMC6S2OOBMV5MA6WCOKEMN3XA3K3';
+  const buyerAddress =
+    'GDAMQCBXJI72A6R4QOTF6BJTXVLE5P7G2RT7ADADDB4UKMILJ3YF77F2';
   const nonExistentUuid = '00000000-0000-4000-8000-000000000099';
 
   const escrowUuid = '00000000-0000-4000-8000-000000000010';
@@ -20,7 +22,9 @@ describe('POST /escrow/:id/dispute integration (issue #51)', () => {
     }).compile();
 
     app = moduleFixture.createNestApplication();
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true }),
+    );
     await app.init();
     prisma = app.get(PrismaService);
   });
@@ -65,7 +69,9 @@ describe('POST /escrow/:id/dispute integration (issue #51)', () => {
     );
     expect(res.body.id).toBeDefined();
 
-    const dbDispute = await prisma.dispute.findUnique({ where: { id: res.body.id } });
+    const dbDispute = await prisma.dispute.findUnique({
+      where: { id: res.body.id },
+    });
     expect(dbDispute).not.toBeNull();
     expect(dbDispute!.escrowId).toBe(escrowUuid);
   });

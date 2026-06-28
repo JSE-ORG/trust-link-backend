@@ -115,7 +115,10 @@
       "clover",
       "json-summary"
     ],
-    "testEnvironment": "node"
+    "testEnvironment": "node",
+    "setupFiles": [
+      "<rootDir>/test/setup-env.ts"
+    ]
   },
   "prisma": {
     "seed": "ts-node prisma/seed.ts"

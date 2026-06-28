@@ -22,7 +22,13 @@ export class AdminStatsDto {
     description: 'Count of escrows grouped by their current state.',
     type: 'object',
     additionalProperties: { type: 'number' },
-    example: { FUNDED: 42, SHIPPED: 18, DELIVERED: 9, COMPLETED: 1200, REFUNDED: 18 },
+    example: {
+      FUNDED: 42,
+      SHIPPED: 18,
+      DELIVERED: 9,
+      COMPLETED: 1200,
+      REFUNDED: 18,
+    },
   })
   escrowsByState!: Record<string, number>;
 

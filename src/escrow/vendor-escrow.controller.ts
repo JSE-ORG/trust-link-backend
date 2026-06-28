@@ -1,5 +1,10 @@
 import { Controller, Get, Query, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { AuthUser } from '../auth/auth-user';
 import { JwtGuard } from '../auth/guards/jwt.guard';
@@ -24,7 +29,10 @@ export class VendorEscrowController {
    * @authentication Requires valid SEP-10 JWT (vendor)
    */
   @ApiOperation({ summary: 'List all escrows for the authenticated vendor' })
-  @ApiResponse({ status: 200, description: 'Paginated list of vendor escrows returned.' })
+  @ApiResponse({
+    status: 200,
+    description: 'Paginated list of vendor escrows returned.',
+  })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   @ApiResponse({ status: 429, description: 'Too many requests.' })
   @ApiResponse({ status: 500, description: 'Internal server error.' })

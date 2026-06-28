@@ -76,7 +76,8 @@ export class StressTestService {
       result.status = 'FAILED';
       result.endTime = Date.now();
       result.duration = result.endTime - result.startTime;
-      this.logger.error(`Stress test failed: ${error.message}`, error.stack);
+      const err = error instanceof Error ? error : new Error(String(error));
+      this.logger.error(`Stress test failed: ${err.message}`, err.stack);
     }
 
     this.activeTests.delete(testId);
@@ -163,13 +164,16 @@ export class StressTestService {
         });
       } catch (error) {
         const responseTime = Date.now() - startTime;
-
+        const axiosErr = error as {
+          response?: { status?: number };
+          message?: string;
+        };
         metrics.push({
           timestamp: startTime,
           responseTime,
-          statusCode: error.response?.status || 0,
+          statusCode: axiosErr.response?.status || 0,
           success: false,
-          error: error.message,
+          error: axiosErr.message,
         });
       }
     }
@@ -298,7 +302,7 @@ export class StressTestService {
               1000
             : 0,
         0,
-      ) || result.profileResults.reduce((sum, p) => sum + 60, 0);
+      ) || result.profileResults.reduce((sum) => sum + 60, 0);
 
     result.overallMetrics = {
       totalRequests,

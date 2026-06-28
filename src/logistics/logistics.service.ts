@@ -53,8 +53,8 @@ export class LogisticsService {
     const status: LogisticsStatus = normalizedId.includes('DELIVERED')
       ? 'DELIVERED'
       : normalizedId.includes('PENDING')
-      ? 'PENDING'
-      : 'IN_TRANSIT';
+        ? 'PENDING'
+        : 'IN_TRANSIT';
 
     const estimatedDelivery = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000);
     const events: TrackingEvent[] = [

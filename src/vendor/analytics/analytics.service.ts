@@ -24,16 +24,19 @@ export class AnalyticsService {
   ): Promise<ChartDataResponse> {
     const endDate = new Date();
     const startDate = new Date();
-    startDate.setDate(startDate.getDate() - days);
+    startDate.setDate(startDate.getDate() - days + 1);
+    startDate.setUTCHours(0, 0, 0, 0);
 
     // Use raw SQL for database-level aggregation with proper timezone handling
-    const aggregationResult = await this.prisma.$queryRaw<Array<{
-      date: string;
-      totalVolume: number;
-      transactionCount: number;
-      completedCount: number;
-      disputedCount: number;
-    }>>`
+    const aggregationResult = await this.prisma.$queryRaw<
+      Array<{
+        date: string;
+        totalVolume: number;
+        transactionCount: number;
+        completedCount: number;
+        disputedCount: number;
+      }>
+    >`
       SELECT 
         DATE("createdAt" AT TIME ZONE ${timezone})::date as date,
         COALESCE(SUM("amount"), 0) as "totalVolume",
@@ -52,12 +55,20 @@ export class AnalyticsService {
     // Convert aggregation results to DailyVolumeData format
     const dailyMap = new Map<string, DailyVolumeData>();
 
+    type AggRow = {
+      date: string;
+      totalVolume: number | string;
+      transactionCount: number | string;
+      completedCount: number | string;
+      disputedCount: number | string;
+    };
     for (const row of aggregationResult) {
-      const dateKey = (row as any).date;
-      const totalVolume = Number((row as any).totalVolume);
-      const transactionCount = Number((row as any).transactionCount);
-      const completedCount = Number((row as any).completedCount);
-      const disputedCount = Number((row as any).disputedCount);
+      const r = row as AggRow;
+      const dateKey = r.date;
+      const totalVolume = Number(r.totalVolume);
+      const transactionCount = Number(r.transactionCount);
+      const completedCount = Number(r.completedCount);
+      const disputedCount = Number(r.disputedCount);
 
       dailyMap.set(dateKey, {
         date: dateKey,
@@ -65,12 +76,18 @@ export class AnalyticsService {
         transactionCount,
         completedCount,
         disputedCount,
-        averageTransactionValue: transactionCount > 0 ? totalVolume / transactionCount : 0,
+        averageTransactionValue:
+          transactionCount > 0 ? totalVolume / transactionCount : 0,
       });
     }
 
     // Fill gaps for days with zero transactions
-    const filledData = this.fillDateGaps(dailyMap, startDate, endDate, timezone);
+    const filledData = this.fillDateGaps(
+      dailyMap,
+      startDate,
+      endDate,
+      timezone,
+    );
 
     // Sort by date ascending
     const sortedData = filledData.sort((a, b) => a.date.localeCompare(b.date));
@@ -181,7 +198,7 @@ export class AnalyticsService {
 
     for (const escrow of escrows) {
       const amount = Number(escrow.amount);
-      const state = (escrow as any).state;
+      const state = (escrow as { state: string }).state;
       stats.totalVolume += amount;
 
       if (activeStates.includes(state)) {
@@ -221,7 +238,9 @@ export class AnalyticsService {
         },
       });
 
-    const notificationChannels = (trackingSettings as any)?.notificationChannels as string[] || [];
+    const notificationChannels =
+      ((trackingSettings as Record<string, unknown>)
+        ?.notificationChannels as string[]) || [];
 
     const channels: ChannelMetrics = {
       email: {

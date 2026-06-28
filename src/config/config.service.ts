@@ -125,7 +125,10 @@ export class ConfigService {
    * features degrade gracefully when the resulting URL is unreachable.
    */
   getRedisUrl(): string {
-    return this.nestConfigService.get('REDIS_URL', { infer: true }) ?? 'redis://localhost:6379';
+    return (
+      this.nestConfigService.get('REDIS_URL', { infer: true }) ??
+      'redis://localhost:6379'
+    );
   }
 
   /** Returns true when NODE_ENV is development. */

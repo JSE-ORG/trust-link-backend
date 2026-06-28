@@ -1,6 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-argument */
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
@@ -218,13 +215,13 @@ describe('GET /health integration (issue #55)', () => {
     });
 
     it('returns HTTP 503 when Horizon responds with a non-2xx status', async () => {
-      mockFetch.mockResolvedValueOnce({ ok: false } as Response);
+      mockFetch.mockResolvedValueOnce({ ok: false });
 
       await request(app.getHttpServer()).get('/health').expect(503);
     });
 
     it('sets horizon: "down" when Horizon responds non-2xx', async () => {
-      mockFetch.mockResolvedValueOnce({ ok: false } as Response);
+      mockFetch.mockResolvedValueOnce({ ok: false });
 
       const { body } = await request(app.getHttpServer())
         .get('/health')

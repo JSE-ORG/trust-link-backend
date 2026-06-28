@@ -61,7 +61,8 @@ export class EscrowResponseDto {
   trackingId!: string | null;
 
   @ApiProperty({
-    description: 'Timestamp the item was marked shipped, or null if not yet shipped.',
+    description:
+      'Timestamp the item was marked shipped, or null if not yet shipped.',
     type: String,
     format: 'date-time',
     nullable: true,
