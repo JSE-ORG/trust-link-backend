@@ -37,7 +37,7 @@ describe('GET /health integration (issue #55)', () => {
   let cachePingMock: jest.Mock;
 
   beforeEach(async () => {
-    mockFetch.mockResolvedValue({ ok: true } as Response);
+    mockFetch.mockResolvedValue({ ok: true });
     cachePingMock = jest.fn().mockResolvedValue('ok');
 
     prisma = new PrismaService();
@@ -106,8 +106,14 @@ describe('GET /health integration (issue #55)', () => {
         .expect(200);
 
       const allowedKeys = new Set([
-        'status', 'db', 'horizon', 'redis', 'timestamp',
-        'environment', 'version', 'durationMs',
+        'status',
+        'db',
+        'horizon',
+        'redis',
+        'timestamp',
+        'environment',
+        'version',
+        'durationMs',
       ]);
       const unexpected = Object.keys(body).filter((k) => !allowedKeys.has(k));
       expect(unexpected).toHaveLength(0);

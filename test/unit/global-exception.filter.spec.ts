@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/unbound-method */
 /**
  * Unit tests for GlobalExceptionFilter (src/common/filters/global-exception.filter.ts — issue #286).
  */
@@ -28,11 +27,17 @@ function buildResponse(): MockResponse {
     json: jest.fn(),
   };
   res.status.mockReturnValue(res);
-  res.json.mockImplementation((b) => { res.body = b; });
+  res.json.mockImplementation((b) => {
+    res.body = b;
+  });
   return res;
 }
 
-function buildHost(res: MockResponse, url = '/test', requestId?: string): ArgumentsHost {
+function buildHost(
+  res: MockResponse,
+  url = '/test',
+  requestId?: string,
+): ArgumentsHost {
   const req = {
     url,
     requestId,
@@ -48,7 +53,9 @@ function buildHost(res: MockResponse, url = '/test', requestId?: string): Argume
   } as unknown as ArgumentsHost;
 }
 
-function buildConfigService(env: 'development' | 'production' | 'test' = 'test'): jest.Mocked<ConfigService> {
+function buildConfigService(
+  env: 'development' | 'production' | 'test' = 'test',
+): jest.Mocked<ConfigService> {
   return {
     isDevelopment: jest.fn().mockReturnValue(env === 'development'),
     isProduction: jest.fn().mockReturnValue(env === 'production'),
@@ -174,7 +181,9 @@ describe('GlobalExceptionFilter (issue #286)', () => {
     });
 
     it('hides internal details in production', () => {
-      const prodFilter = new GlobalExceptionFilter(buildConfigService('production'));
+      const prodFilter = new GlobalExceptionFilter(
+        buildConfigService('production'),
+      );
       const prodRes = buildResponse();
       const prodHost = buildHost(prodRes);
       prodFilter.catch(new Error('secret detail'), prodHost);

@@ -46,7 +46,8 @@ export class UpdateNotificationPreferencesDto {
   notifyOnException?: boolean;
 
   @ApiPropertyOptional({
-    description: 'Preferred notification channels. At least one required, maximum two.',
+    description:
+      'Preferred notification channels. At least one required, maximum two.',
     enum: [NotificationChannel],
     isArray: true,
     example: ['EMAIL', 'SMS'],
@@ -69,7 +70,8 @@ export class UpdateNotificationPreferencesDto {
   notificationChannels?: string[];
 
   @ApiPropertyOptional({
-    description: 'Webhook URL for receiving real-time delivery event notifications.',
+    description:
+      'Webhook URL for receiving real-time delivery event notifications.',
     example: 'https://example.com/webhook',
   })
   @IsOptional()
@@ -78,7 +80,8 @@ export class UpdateNotificationPreferencesDto {
   webhookUrl?: string;
 
   @ApiPropertyOptional({
-    description: 'Secret key for signing webhook payloads to verify authenticity.',
+    description:
+      'Secret key for signing webhook payloads to verify authenticity.',
   })
   @IsOptional()
   @IsString()

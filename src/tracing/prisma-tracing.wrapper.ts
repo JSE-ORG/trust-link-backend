@@ -62,11 +62,8 @@ function wrapModelDelegate(
     }
 
     wrapped[method] = (...args: unknown[]) =>
-      tracing.withDbSpan(
-        modelName,
-        method,
-        () =>
-          (fn as (...a: unknown[]) => unknown).apply(model, args) as unknown,
+      tracing.withDbSpan(modelName, method, () =>
+        (fn as (...a: unknown[]) => unknown).apply(model, args),
       );
   }
 

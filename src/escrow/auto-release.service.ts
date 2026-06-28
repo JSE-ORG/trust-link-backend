@@ -15,7 +15,9 @@ export class AutoReleaseService {
 
   /** Scans eligible delivered escrows and submits guarded auto-release transactions. */
   async run(): Promise<void> {
-    const cutoff = new Date(Date.now() - AUTO_RELEASE_DAYS * MILLISECONDS_PER_DAY);
+    const cutoff = new Date(
+      Date.now() - AUTO_RELEASE_DAYS * MILLISECONDS_PER_DAY,
+    );
 
     const eligible =
       await this.escrowRepository.findAutoReleaseEligible(cutoff);

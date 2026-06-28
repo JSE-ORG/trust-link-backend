@@ -63,7 +63,11 @@ export class EscrowRepository {
     if (cached) return cached;
     const record = await this.prisma.escrow.findUnique({ where: { id } });
     if (record)
-      await this.cache?.set(this.cacheKey(id), record, ESCROW_CACHE_TTL_SECONDS);
+      await this.cache?.set(
+        this.cacheKey(id),
+        record,
+        ESCROW_CACHE_TTL_SECONDS,
+      );
     return record;
   }
 
@@ -111,12 +115,18 @@ export class EscrowRepository {
     page: number,
     limit: number,
   ): Promise<VendorEscrowsResult> {
-    const where = { vendorAddress, state: state as any };
-    const orderBy = sort === 'amount' ? { amount: order } : { createdAt: order };
+    const where = { vendorAddress, state: state as EscrowState | undefined };
+    const orderBy =
+      sort === 'amount' ? { amount: order } : { createdAt: order };
     const skip = (page - 1) * limit;
 
     const [data, all] = await Promise.all([
-      this.prisma.escrow.findMany({ where, orderBy, skip, take: limit }) as Promise<EscrowRecord[]>,
+      this.prisma.escrow.findMany({
+        where,
+        orderBy,
+        skip,
+        take: limit,
+      }) as Promise<EscrowRecord[]>,
       this.prisma.escrow.findMany({ where }) as Promise<EscrowRecord[]>,
     ]);
 
@@ -245,10 +255,11 @@ export class EscrowRepository {
   findAutoReleaseEligible(
     referenceTime = new Date(),
   ): Promise<AutoReleaseEligibleResult> {
+    const cutoff = new Date(referenceTime.getTime() - 48 * 60 * 60 * 1000);
     return this.prisma.escrow.findMany({
       where: {
         state: 'SHIPPED',
-        deliveredAt: { lte: referenceTime },
+        deliveredAt: { lte: cutoff },
         disputeId: null,
         autoReleaseTxHash: null,
         autoReleaseSubmittedAt: null,

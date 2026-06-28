@@ -164,7 +164,8 @@ export class EscrowService {
   ): Promise<EscrowWithPaymentUrl> {
     const cacheKey = `idempotency:${idempotencyKey}`;
     if (this.cacheService) {
-      const cached = await this.cacheService.get<EscrowWithPaymentUrl>(cacheKey);
+      const cached =
+        await this.cacheService.get<EscrowWithPaymentUrl>(cacheKey);
       if (cached) {
         return cached;
       }

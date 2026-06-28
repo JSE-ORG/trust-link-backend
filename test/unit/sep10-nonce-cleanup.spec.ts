@@ -45,7 +45,8 @@ describe('Sep10Service nonce cleanup (issue #274)', () => {
     await prisma.nonce.create({
       data: {
         nonce: 'expired-nonce-1',
-        walletAddress: 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
+        walletAddress:
+          'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
         challenge: 'challenge-xdr-1',
         used: false,
         expiresAt: pastDate,
@@ -55,7 +56,8 @@ describe('Sep10Service nonce cleanup (issue #274)', () => {
     await prisma.nonce.create({
       data: {
         nonce: 'expired-nonce-2',
-        walletAddress: 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
+        walletAddress:
+          'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
         challenge: 'challenge-xdr-2',
         used: true,
         expiresAt: pastDate,
@@ -65,7 +67,8 @@ describe('Sep10Service nonce cleanup (issue #274)', () => {
     await prisma.nonce.create({
       data: {
         nonce: 'active-nonce',
-        walletAddress: 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
+        walletAddress:
+          'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
         challenge: 'challenge-xdr-3',
         used: false,
         expiresAt: futureDate,
@@ -98,7 +101,8 @@ describe('Sep10Service nonce cleanup (issue #274)', () => {
     await prisma.nonce.create({
       data: {
         nonce: 'active-nonce-1',
-        walletAddress: 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
+        walletAddress:
+          'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
         challenge: 'challenge-xdr-1',
         used: false,
         expiresAt: futureDate,
@@ -108,7 +112,8 @@ describe('Sep10Service nonce cleanup (issue #274)', () => {
     await prisma.nonce.create({
       data: {
         nonce: 'active-nonce-2',
-        walletAddress: 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
+        walletAddress:
+          'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
         challenge: 'challenge-xdr-2',
         used: false,
         expiresAt: futureDate,

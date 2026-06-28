@@ -39,8 +39,15 @@ export class AutoReleaseWorker implements OnModuleInit, OnApplicationShutdown {
   }
 
   async run(referenceTime = new Date()): Promise<void> {
+    let eligible: Awaited<
+      ReturnType<typeof this.escrowRepository.findAutoReleaseEligible>
+    > = [];
+    let successCount = 0;
+    let failureCount = 0;
+    const failures: { escrowId: string; error: string }[] = [];
+
     try {
-      const eligible =
+      eligible =
         await this.escrowRepository.findAutoReleaseEligible(referenceTime);
 
       for (const escrow of eligible) {
@@ -61,7 +68,13 @@ export class AutoReleaseWorker implements OnModuleInit, OnApplicationShutdown {
             escrow.id,
             txHash,
           );
+          successCount++;
         } catch (error) {
+          failureCount++;
+          failures.push({
+            escrowId: escrow.id,
+            error: error instanceof Error ? error.message : String(error),
+          });
           this.logger.error(
             JSON.stringify({
               msg: 'auto_release.escrow_failed',

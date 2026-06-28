@@ -1,4 +1,7 @@
-import { SECONDS_PER_DAY, SECONDS_PER_HOUR } from '../../common/constants/time.constants';
+import {
+  SECONDS_PER_DAY,
+  SECONDS_PER_HOUR,
+} from '../../common/constants/time.constants';
 
 /**
  * SEP-10 authentication constants (issue #238). Replaces magic numbers

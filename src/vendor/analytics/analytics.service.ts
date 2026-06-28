@@ -1,5 +1,8 @@
 import { Injectable } from '@nestjs/common';
-import { PrismaService } from '../../prisma/prisma.service';
+import {
+  PrismaService,
+  VendorTrackingSettingsRecord,
+} from '../../prisma/prisma.service';
 import { ChartDataResponse, DailyVolumeData } from './analytics.dto';
 import {
   AnalyticsStatsResponse,
@@ -231,16 +234,14 @@ export class AnalyticsService {
 
     // Fetch vendor tracking settings for channel preferences
     const trackingSettings =
-      await this.prisma.vendorTrackingSettings.findUnique({
+      (await this.prisma.vendorTrackingSettings.findUnique({
         where: { vendorAddress },
         select: {
           notificationChannels: true,
         },
-      });
+      })) as Pick<VendorTrackingSettingsRecord, 'notificationChannels'> | null;
 
-    const notificationChannels =
-      ((trackingSettings as Record<string, unknown>)
-        ?.notificationChannels as string[]) || [];
+    const notificationChannels = trackingSettings?.notificationChannels ?? [];
 
     const channels: ChannelMetrics = {
       email: {

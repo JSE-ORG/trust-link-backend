@@ -1,11 +1,4 @@
-import {
-  Controller,
-  Get,
-  Param,
-  Post,
-  Query,
-  UseGuards,
-} from '@nestjs/common';
+import { Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { JwtGuard } from '../auth/guards/jwt.guard';
 import { AdminGuard } from '../admin/guards/admin.guard';
 import { DlqService } from './dlq.service';

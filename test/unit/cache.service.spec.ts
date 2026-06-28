@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/unbound-method */
 /**
  * Unit tests for CacheService (src/common/cache.service.ts — issue #285).
  *
@@ -11,7 +10,7 @@
 jest.mock('ioredis');
 
 import Redis from 'ioredis';
-import { CacheService } from '../../src/common/cache.service';
+import { CacheService } from '../../src/cache/cache.service';
 
 const MockRedis = Redis as jest.MockedClass<typeof Redis>;
 
@@ -24,6 +23,7 @@ function buildRedisMock() {
     ping: jest.fn(),
     quit: jest.fn(),
     on: jest.fn(),
+    connect: jest.fn().mockResolvedValue(undefined),
   };
   MockRedis.mockImplementation(() => instance as unknown as Redis);
   return instance;
@@ -140,7 +140,7 @@ describe('CacheService (issue #285) — in-memory fallback mode', () => {
     it('returns null for a key whose TTL has elapsed', async () => {
       jest.useFakeTimers();
       await service.set('expiring', 'value', 1); // 1-second TTL
-      jest.advanceTimersByTime(1001);             // advance past TTL
+      jest.advanceTimersByTime(1001); // advance past TTL
       const result = await service.get('expiring');
       expect(result).toBeNull();
       jest.useRealTimers();
