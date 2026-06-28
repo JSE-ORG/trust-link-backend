@@ -94,10 +94,7 @@ describe('Auto-Release Worker — concurrent collision detection (issues #302/#3
     jest
       .spyOn(contractService, 'submitAutoRelease')
       .mockImplementation(
-        () =>
-          new Promise((resolve) =>
-            setTimeout(() => resolve(TX_HASH), 10),
-          ),
+        () => new Promise((resolve) => setTimeout(() => resolve(TX_HASH), 10)),
       );
 
     const escrow = await createEligibleEscrow('001');
@@ -122,9 +119,7 @@ describe('Auto-Release Worker — concurrent collision detection (issues #302/#3
   it('does not double-process an escrow when the second run starts after the first has already committed', async () => {
     const TX_HASH = 'tx-hash-sequential-002';
 
-    jest
-      .spyOn(contractService, 'submitAutoRelease')
-      .mockResolvedValue(TX_HASH);
+    jest.spyOn(contractService, 'submitAutoRelease').mockResolvedValue(TX_HASH);
 
     const escrow = await createEligibleEscrow('002');
 
@@ -190,8 +185,12 @@ describe('Auto-Release Worker — concurrent collision detection (issues #302/#3
     // Total across both workers must equal the number of distinct escrows.
     expect(contractService.submitAutoRelease).toHaveBeenCalledTimes(2);
 
-    const afterA = await prisma.escrow.findUnique({ where: { id: escrowA.id } });
-    const afterB = await prisma.escrow.findUnique({ where: { id: escrowB.id } });
+    const afterA = await prisma.escrow.findUnique({
+      where: { id: escrowA.id },
+    });
+    const afterB = await prisma.escrow.findUnique({
+      where: { id: escrowB.id },
+    });
 
     // Each escrow must be in a terminal auto-release state.
     expect(afterA!.autoReleaseTxHash).not.toBeNull();

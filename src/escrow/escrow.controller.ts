@@ -11,6 +11,8 @@ import {
   HttpCode,
   HttpStatus,
   Query,
+  Headers,
+  BadRequestException,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -62,8 +64,19 @@ export class EscrowController {
   @HttpCode(HttpStatus.CREATED)
   @UseGuards(JwtGuard)
   @Throttle({ public: { limit: 10, ttl: 60000 } })
-  createEscrow(@Body() dto: CreateEscrowDto, @CurrentUser() user: AuthUser) {
-    return this.escrowService.createEscrow(dto, user.address);
+  createEscrow(
+    @Body() dto: CreateEscrowDto,
+    @CurrentUser() user: AuthUser,
+    @Headers('idempotency-key') idempotencyKey?: string,
+  ) {
+    if (!idempotencyKey) {
+      throw new BadRequestException('Idempotency-Key header required');
+    }
+    return this.escrowService.createIdempotent(
+      idempotencyKey,
+      dto,
+      user.address,
+    );
   }
 
   /**
@@ -76,8 +89,14 @@ export class EscrowController {
    * @authentication Requires valid SEP-10 JWT
    * @rateLimit evidence-upload throttler (default 10 per 60 seconds)
    */
-  @ApiOperation({ summary: 'Generate a pre-signed URL for evidence file upload' })
-  @ApiQuery({ name: 'fileName', description: 'Original file name for the evidence being uploaded.', example: 'damage-photo.jpg' })
+  @ApiOperation({
+    summary: 'Generate a pre-signed URL for evidence file upload',
+  })
+  @ApiQuery({
+    name: 'fileName',
+    description: 'Original file name for the evidence being uploaded.',
+    example: 'damage-photo.jpg',
+  })
   @ApiResponse({ status: 201, description: 'Pre-signed upload URL generated.' })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   @ApiResponse({ status: 429, description: 'Too many requests.' })
@@ -138,9 +157,14 @@ export class EscrowController {
    * @returns Tracking status with events, estimated delivery, and carrier info
    * @throws NotFoundException if tracking info is not available or escrow not found
    */
-  @ApiOperation({ summary: 'Get carrier tracking information for an escrow shipment' })
+  @ApiOperation({
+    summary: 'Get carrier tracking information for an escrow shipment',
+  })
   @ApiResponse({ status: 200, description: 'Tracking information returned.' })
-  @ApiResponse({ status: 404, description: 'Escrow not found or not yet shipped.' })
+  @ApiResponse({
+    status: 404,
+    description: 'Escrow not found or not yet shipped.',
+  })
   @ApiResponse({ status: 429, description: 'Too many requests.' })
   @ApiResponse({ status: 500, description: 'Internal server error.' })
   @Get(':id/tracking')
@@ -201,7 +225,10 @@ export class EscrowController {
   @ApiResponse({ status: 200, description: 'Escrow marked as shipped.' })
   @ApiResponse({ status: 400, description: 'Validation error.' })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
-  @ApiResponse({ status: 403, description: 'Forbidden — not the escrow vendor.' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden — not the escrow vendor.',
+  })
   @ApiResponse({ status: 404, description: 'Escrow not found.' })
   @ApiResponse({ status: 429, description: 'Too many requests.' })
   @ApiResponse({ status: 500, description: 'Internal server error.' })
@@ -238,7 +265,10 @@ export class EscrowController {
   @ApiOperation({ summary: 'Cancel an active escrow transaction' })
   @ApiResponse({ status: 200, description: 'Escrow cancelled.' })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
-  @ApiResponse({ status: 403, description: 'Forbidden — not the escrow vendor or buyer.' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden — not the escrow vendor or buyer.',
+  })
   @ApiResponse({ status: 404, description: 'Escrow not found.' })
   @ApiResponse({ status: 429, description: 'Too many requests.' })
   @ApiResponse({ status: 500, description: 'Internal server error.' })
@@ -251,7 +281,11 @@ export class EscrowController {
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: AuthUser,
   ) {
-    return this.escrowService.cancelEscrow(id, user.address, user.role === 'admin');
+    return this.escrowService.cancelEscrow(
+      id,
+      user.address,
+      user.role === 'admin',
+    );
   }
 
   /**
@@ -271,7 +305,10 @@ export class EscrowController {
   @ApiOperation({ summary: 'Delete a pending (unfunded) escrow transaction' })
   @ApiResponse({ status: 200, description: 'Pending escrow deleted.' })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
-  @ApiResponse({ status: 403, description: 'Forbidden — not the escrow vendor or buyer.' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden — not the escrow vendor or buyer.',
+  })
   @ApiResponse({ status: 404, description: 'Escrow not found.' })
   @ApiResponse({ status: 429, description: 'Too many requests.' })
   @ApiResponse({ status: 500, description: 'Internal server error.' })

@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/unbound-method */
 import { Logger } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { AutoReleaseService } from '../../src/escrow/auto-release.service';

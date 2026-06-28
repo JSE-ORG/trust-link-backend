@@ -1,6 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-argument */
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import { Test, TestingModule } from '@nestjs/testing';
 import { PrismaService } from '../../src/prisma/prisma.service';
 import { EscrowRepository } from '../../src/escrow/escrow.repository';
@@ -48,7 +45,8 @@ describe('Auto-release collision detection (issue #277)', () => {
 
     prisma = moduleRef.get(PrismaService);
     escrowRepository = moduleRef.get(EscrowRepository);
-    contractService = moduleRef.get<jest.Mocked<ContractService>>(ContractService);
+    contractService =
+      moduleRef.get<jest.Mocked<ContractService>>(ContractService);
     service = moduleRef.get(AutoReleaseService);
 
     await prisma.reset();
@@ -117,9 +115,8 @@ describe('Auto-release collision detection (issue #277)', () => {
     });
 
     it('returns null for a non-existent escrow', async () => {
-      const result = await escrowRepository.markAutoReleaseSubmitting(
-        'non-existent-id',
-      );
+      const result =
+        await escrowRepository.markAutoReleaseSubmitting('non-existent-id');
       expect(result).toBeNull();
     });
 
@@ -182,9 +179,7 @@ describe('Auto-release collision detection (issue #277)', () => {
 
       // Only one submission should have occurred
       expect(contractService.submitAutoRelease).toHaveBeenCalledTimes(1);
-      expect(contractService.submitAutoRelease).toHaveBeenCalledWith(
-        escrow.id,
-      );
+      expect(contractService.submitAutoRelease).toHaveBeenCalledWith(escrow.id);
 
       // Escrow state should be consistent
       const after = await prisma.escrow.findUnique({

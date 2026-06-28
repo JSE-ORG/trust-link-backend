@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
-
 /**
  * SEP-10 nonce cleanup — integration test.
  *
@@ -67,7 +65,8 @@ describe('Nonce cleanup integration (issue #274)', () => {
     await prisma.nonce.create({
       data: {
         nonce: 'expired-1',
-        walletAddress: 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
+        walletAddress:
+          'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
         challenge: 'challenge-xdr-expired-1',
         used: false,
         expiresAt: pastDate,
@@ -77,7 +76,8 @@ describe('Nonce cleanup integration (issue #274)', () => {
     await prisma.nonce.create({
       data: {
         nonce: 'expired-2',
-        walletAddress: 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
+        walletAddress:
+          'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
         challenge: 'challenge-xdr-expired-2',
         used: true,
         expiresAt: pastDate,
@@ -87,7 +87,8 @@ describe('Nonce cleanup integration (issue #274)', () => {
     await prisma.nonce.create({
       data: {
         nonce: 'active-1',
-        walletAddress: 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
+        walletAddress:
+          'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
         challenge: 'challenge-xdr-active-1',
         used: false,
         expiresAt: futureDate,
@@ -96,9 +97,15 @@ describe('Nonce cleanup integration (issue #274)', () => {
 
     await sep10Service.cleanupExpiredNonces();
 
-    const expired1 = await prisma.nonce.findUnique({ where: { nonce: 'expired-1' } });
-    const expired2 = await prisma.nonce.findUnique({ where: { nonce: 'expired-2' } });
-    const active1 = await prisma.nonce.findUnique({ where: { nonce: 'active-1' } });
+    const expired1 = await prisma.nonce.findUnique({
+      where: { nonce: 'expired-1' },
+    });
+    const expired2 = await prisma.nonce.findUnique({
+      where: { nonce: 'expired-2' },
+    });
+    const active1 = await prisma.nonce.findUnique({
+      where: { nonce: 'active-1' },
+    });
 
     expect(expired1).toBeNull();
     expect(expired2).toBeNull();
@@ -116,7 +123,8 @@ describe('Nonce cleanup integration (issue #274)', () => {
     await prisma.nonce.create({
       data: {
         nonce: 'expires-now',
-        walletAddress: 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
+        walletAddress:
+          'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
         challenge: 'challenge-xdr-expires-now',
         used: false,
         expiresAt: now,
@@ -125,7 +133,9 @@ describe('Nonce cleanup integration (issue #274)', () => {
 
     await sep10Service.cleanupExpiredNonces();
 
-    const nonce = await prisma.nonce.findUnique({ where: { nonce: 'expires-now' } });
+    const nonce = await prisma.nonce.findUnique({
+      where: { nonce: 'expires-now' },
+    });
     expect(nonce).not.toBeNull();
   });
 });

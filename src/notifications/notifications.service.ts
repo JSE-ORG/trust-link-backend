@@ -111,13 +111,17 @@ export class NotificationsService {
     type: NotificationType,
     escrow: EscrowRecord,
   ): Promise<void> {
+    const escrowData = escrow as EscrowRecord & {
+      buyerContactEmail?: string | null;
+      buyerContactPhone?: string | null;
+    };
     const resolvedEmail = this.tryDecrypt(
-      escrow.buyerContactEmail ?? null,
+      escrowData.buyerContactEmail ?? null,
       escrow.id,
       'email',
     );
     const resolvedPhone = this.tryDecrypt(
-      escrow.buyerContactPhone ?? null,
+      escrowData.buyerContactPhone ?? null,
       escrow.id,
       'phone',
     );

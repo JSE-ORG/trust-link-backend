@@ -37,8 +37,13 @@ export class AnalyticsController {
    * @throws UnauthorizedException if Bearer token is missing or invalid
    * @authentication Requires valid SEP-10 JWT (vendor)
    */
-  @ApiOperation({ summary: 'Get overall transaction statistics for the authenticated vendor' })
-  @ApiResponse({ status: 200, description: 'Vendor transaction statistics returned.' })
+  @ApiOperation({
+    summary: 'Get overall transaction statistics for the authenticated vendor',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Vendor transaction statistics returned.',
+  })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   @ApiResponse({ status: 429, description: 'Too many requests.' })
   @ApiResponse({ status: 500, description: 'Internal server error.' })
@@ -60,10 +65,26 @@ export class AnalyticsController {
    * @throws UnauthorizedException if Bearer token is missing or invalid
    * @authentication Requires valid SEP-10 JWT (vendor)
    */
-  @ApiOperation({ summary: 'Get daily transaction volume chart data for the authenticated vendor' })
-  @ApiQuery({ name: 'days', required: false, description: 'Number of days of data to retrieve (max 365).', example: 30 })
-  @ApiQuery({ name: 'timezone', required: false, description: 'IANA timezone for date grouping.', example: 'UTC' })
-  @ApiResponse({ status: 200, description: 'Daily volume chart data returned.' })
+  @ApiOperation({
+    summary:
+      'Get daily transaction volume chart data for the authenticated vendor',
+  })
+  @ApiQuery({
+    name: 'days',
+    required: false,
+    description: 'Number of days of data to retrieve (max 365).',
+    example: 30,
+  })
+  @ApiQuery({
+    name: 'timezone',
+    required: false,
+    description: 'IANA timezone for date grouping.',
+    example: 'UTC',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Daily volume chart data returned.',
+  })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   @ApiResponse({ status: 429, description: 'Too many requests.' })
   @ApiResponse({ status: 500, description: 'Internal server error.' })
@@ -88,6 +109,10 @@ export class AnalyticsController {
       timezone = timezoneParam;
     }
 
-    return this.analyticsService.getDailyVolumeChart(user!.address, days, timezone);
+    return this.analyticsService.getDailyVolumeChart(
+      user!.address,
+      days,
+      timezone,
+    );
   }
 }

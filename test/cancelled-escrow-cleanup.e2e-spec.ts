@@ -1,6 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-argument */
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
@@ -120,9 +117,7 @@ describe('Cancelled escrow state cleanup E2E (issue #300)', () => {
         .get(`/escrow/${escrowId}/events`)
         .expect(200);
 
-      const eventNames = eventsRes.body.map(
-        (e: { event: string }) => e.event,
-      );
+      const eventNames = eventsRes.body.map((e: { event: string }) => e.event);
       expect(eventNames).toContain('CREATED');
       expect(eventNames).toContain('CANCELLED');
     });
@@ -214,9 +209,7 @@ describe('Cancelled escrow state cleanup E2E (issue #300)', () => {
         .get(`/escrow/${escrowId}/events`)
         .expect(200);
 
-      const eventNames = eventsRes.body.map(
-        (e: { event: string }) => e.event,
-      );
+      const eventNames = eventsRes.body.map((e: { event: string }) => e.event);
       expect(eventNames).toContain('CREATED');
       expect(eventNames).toContain('CANCELLED');
     });

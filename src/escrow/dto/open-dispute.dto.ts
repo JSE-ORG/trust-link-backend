@@ -45,7 +45,8 @@ export class OpenDisputeDto {
   description!: string;
 
   @ApiPropertyOptional({
-    description: 'Optional list of URLs pointing to supporting evidence (photos, receipts).',
+    description:
+      'Optional list of URLs pointing to supporting evidence (photos, receipts).',
     type: [String],
     example: [
       'https://evidence.trustlink.io/disputes/abc/photo-1.jpg',

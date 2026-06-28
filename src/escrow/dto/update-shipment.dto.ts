@@ -22,6 +22,6 @@ export class UpdateShipmentDto {
     message:
       'Tracking ID can only contain letters, numbers, hyphens, and underscores',
   })
-  @Transform(({ value }) => value?.trim())
+  @Transform(({ value }: { value: string }) => value?.trim())
   trackingId!: string;
 }

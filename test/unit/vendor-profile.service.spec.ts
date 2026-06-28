@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/unbound-method */
 /**
  * Unit tests for VendorProfileService (src/vendor/vendor-profile.service.ts — issue #287).
  *
@@ -17,15 +16,18 @@ import { UpdateVendorProfileDto } from '../../src/vendor/dto/update-vendor-profi
 
 // ── fixture factory ────────────────────────────────────────────────────────
 
-const VENDOR_ADDRESS = 'GVENDOR00000000000000000000000000000000000000000000000000';
+const VENDOR_ADDRESS =
+  'GVENDOR00000000000000000000000000000000000000000000000000';
 
-function makeProfile(overrides: Partial<{
-  address: string;
-  businessName: string;
-  email: string | null;
-  phone: string | null;
-  description: string | null;
-}> = {}) {
+function makeProfile(
+  overrides: Partial<{
+    address: string;
+    businessName: string;
+    email: string | null;
+    phone: string | null;
+    description: string | null;
+  }> = {},
+) {
   return {
     id: 'profile-1',
     address: VENDOR_ADDRESS,
@@ -82,7 +84,7 @@ describe('VendorProfileService (issue #287)', () => {
     it('creates and returns a profile when none exists', async () => {
       const profile = makeProfile();
       repository.findByAddress.mockResolvedValue(null);
-      repository.create.mockResolvedValue(profile as any);
+      repository.create.mockResolvedValue(profile);
 
       const result = await service.createProfile(VENDOR_ADDRESS, createDto);
 
@@ -92,7 +94,7 @@ describe('VendorProfileService (issue #287)', () => {
     });
 
     it('throws ConflictException when a profile already exists (duplicate)', async () => {
-      repository.findByAddress.mockResolvedValue(makeProfile() as any);
+      repository.findByAddress.mockResolvedValue(makeProfile());
 
       await expect(
         service.createProfile(VENDOR_ADDRESS, createDto),
@@ -116,7 +118,7 @@ describe('VendorProfileService (issue #287)', () => {
   describe('getProfile()', () => {
     it('returns the profile when it exists', async () => {
       const profile = makeProfile();
-      repository.findByAddress.mockResolvedValue(profile as any);
+      repository.findByAddress.mockResolvedValue(profile);
 
       const result = await service.getProfile(VENDOR_ADDRESS);
       expect(result).toEqual(profile);
@@ -135,7 +137,9 @@ describe('VendorProfileService (issue #287)', () => {
       repository.findByAddress.mockResolvedValue(null);
 
       await expect(
-        service.getProfile('GUNKNOWN0000000000000000000000000000000000000000000000'),
+        service.getProfile(
+          'GUNKNOWN0000000000000000000000000000000000000000000000',
+        ),
       ).rejects.toThrow('Vendor profile not found');
     });
   });
@@ -146,8 +150,8 @@ describe('VendorProfileService (issue #287)', () => {
     it('applies a partial update when the profile exists', async () => {
       const existing = makeProfile();
       const updated = makeProfile({ businessName: 'Acme Electronics' });
-      repository.findByAddress.mockResolvedValue(existing as any);
-      repository.update.mockResolvedValue(updated as any);
+      repository.findByAddress.mockResolvedValue(existing);
+      repository.update.mockResolvedValue(updated);
 
       const result = await service.updateProfile(VENDOR_ADDRESS, updateDto);
 
@@ -166,9 +170,9 @@ describe('VendorProfileService (issue #287)', () => {
     });
 
     it('throws BadRequestException when the update DTO has no fields', async () => {
-      await expect(
-        service.updateProfile(VENDOR_ADDRESS, {}),
-      ).rejects.toThrow(BadRequestException);
+      await expect(service.updateProfile(VENDOR_ADDRESS, {})).rejects.toThrow(
+        BadRequestException,
+      );
 
       expect(repository.findByAddress).not.toHaveBeenCalled();
       expect(repository.update).not.toHaveBeenCalled();
@@ -191,7 +195,7 @@ describe('VendorProfileService (issue #287)', () => {
   describe('upsertProfile()', () => {
     it('creates the profile when it does not exist', async () => {
       const profile = makeProfile();
-      repository.upsert.mockResolvedValue(profile as any);
+      repository.upsert.mockResolvedValue(profile);
 
       const result = await service.upsertProfile(VENDOR_ADDRESS, createDto);
 
@@ -201,7 +205,7 @@ describe('VendorProfileService (issue #287)', () => {
 
     it('updates the profile when it already exists', async () => {
       const updated = makeProfile({ businessName: 'Updated Name' });
-      repository.upsert.mockResolvedValue(updated as any);
+      repository.upsert.mockResolvedValue(updated);
 
       const result = await service.upsertProfile(VENDOR_ADDRESS, {
         ...createDto,

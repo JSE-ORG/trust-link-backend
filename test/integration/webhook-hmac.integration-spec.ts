@@ -1,6 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-argument */
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
@@ -80,9 +77,7 @@ describe('Webhook HMAC signature rejection (issue #276)', () => {
         .send(payload)
         .expect(200);
 
-      expect(res.body).toEqual(
-        expect.objectContaining({ received: true }),
-      );
+      expect(res.body).toEqual(expect.objectContaining({ received: true }));
     });
   });
 
@@ -90,12 +85,18 @@ describe('Webhook HMAC signature rejection (issue #276)', () => {
 
   describe('tampered payload', () => {
     it('rejects a request where the body was modified after signing', async () => {
-      const originalPayload = makePayload({ id: 'op-tamper-001', amount: '50.00' });
+      const originalPayload = makePayload({
+        id: 'op-tamper-001',
+        amount: '50.00',
+      });
       const originalBody = Buffer.from(JSON.stringify(originalPayload), 'utf8');
       const sig = sign(originalBody, WEBHOOK_SECRET);
 
       // Tamper with the amount in the actual request body
-      const tamperedPayload = makePayload({ id: 'op-tamper-001', amount: '9999.00' });
+      const tamperedPayload = makePayload({
+        id: 'op-tamper-001',
+        amount: '9999.00',
+      });
 
       const res = await request(app.getHttpServer())
         .post('/webhooks/stellar')
@@ -135,9 +136,7 @@ describe('Webhook HMAC signature rejection (issue #276)', () => {
         .send(payload)
         .expect(401);
 
-      expect(res.body.message).toBe(
-        'Missing X-Stellar-Signature header',
-      );
+      expect(res.body.message).toBe('Missing X-Stellar-Signature header');
     });
 
     it('rejects a request with an empty signature header', async () => {
@@ -150,9 +149,7 @@ describe('Webhook HMAC signature rejection (issue #276)', () => {
         .send(payload)
         .expect(401);
 
-      expect(res.body.message).toBe(
-        'Missing X-Stellar-Signature header',
-      );
+      expect(res.body.message).toBe('Missing X-Stellar-Signature header');
     });
   });
 

@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/unbound-method */
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import { Test } from '@nestjs/testing';
 import { DisputeRepository } from '../../src/dispute/dispute.repository';
 import { EscrowRepository } from '../../src/escrow/escrow.repository';

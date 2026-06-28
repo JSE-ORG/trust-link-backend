@@ -20,6 +20,51 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Run npm audit
+        run: npm audit --audit-level=moderate
+        continue-on-error: false
+
+      - name: Generate audit report
+        if: always()
+        run: npm audit --json > audit-report.json || true
+
+      - name: Upload audit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-audit-report
+          path: audit-report.json
+
+      - name: Install license-checker
+        run: npm install -g license-checker
+
+      - name: Check license compliance
+        run: |
+          npx license-checker --production --failOn "GPL-2.0;GPL-3.0;AGPL-3.0;SSPL-1.0;EUPL-1.1;OSL-3.0;CPAL-1.0;CPL-1.0;EPL-1.0;EPL-2.0;CDDL-1.0;CDDL-1.1;MPL-2.0" --summary
+          echo "License compliance check passed"
+
+      - name: Generate license report
+        if: always()
+        run: |
+          npx license-checker --production --json --out license-report.json || true
+
+      - name: Upload license report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: license-report
+          path: license-report.json
+
+      - name: Cache TypeScript build output
+        uses: actions/cache@v4
+        with:
+          path: |
+            dist
+            tsconfig.build.tsbuildinfo
+          key: ts-build-${{ runner.os }}-${{ hashFiles('tsconfig.build.json', 'src/**/*.ts') }}
+          restore-keys: |
+            ts-build-${{ runner.os }}-
+
       - name: Run tests with coverage
         run: npm run test:cov
 

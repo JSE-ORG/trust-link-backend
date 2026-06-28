@@ -24,7 +24,7 @@ export class UpdateVendorProfileDto {
   @IsString()
   @MinLength(2, { message: 'Business name must be at least 2 characters long' })
   @MaxLength(100, { message: 'Business name must not exceed 100 characters' })
-  @Transform(({ value }) => value?.trim())
+  @Transform(({ value }: { value: string }) => value?.trim())
   businessName?: string;
 
   @ApiPropertyOptional({
@@ -49,7 +49,8 @@ export class UpdateVendorProfileDto {
   @ApiPropertyOptional({
     description: 'Updated short description of the vendor.',
     maxLength: 500,
-    example: 'Authorized reseller of consumer electronics and camera equipment.',
+    example:
+      'Authorized reseller of consumer electronics and camera equipment.',
   })
   @IsOptional()
   @IsString()

@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { PrismaService } from '../../prisma/prisma.service';
+import { EscrowRecord, PrismaService } from '../../prisma/prisma.service';
 import { AdminStatsDto } from './dto/admin-stats.dto';
 
 @Injectable()
@@ -14,15 +14,19 @@ export class AdminStatsService {
     ]);
 
     const totalEscrows = allEscrows.length;
-    const totalVolume = allEscrows.reduce((sum, e) => sum + e.amount, 0);
+    const escrows = allEscrows as EscrowRecord[];
+    const totalVolume = escrows.reduce<number>(
+      (sum, e) => sum + Number(e.amount),
+      0,
+    );
 
     const escrowsByState: Record<string, number> = {};
-    for (const e of allEscrows) {
+    for (const e of escrows) {
       escrowsByState[e.state] = (escrowsByState[e.state] ?? 0) + 1;
     }
 
-    const uniqueVendors = new Set(allEscrows.map((e) => e.vendorAddress)).size;
-    const uniqueBuyers = new Set(allEscrows.map((e) => e.buyerAddress)).size;
+    const uniqueVendors = new Set(escrows.map((e) => e.vendorAddress)).size;
+    const uniqueBuyers = new Set(escrows.map((e) => e.buyerAddress)).size;
 
     const totalDisputes = allDisputes.length;
     const openDisputes = allDisputes.filter(

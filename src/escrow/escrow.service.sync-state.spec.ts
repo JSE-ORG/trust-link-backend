@@ -97,7 +97,7 @@ describe('EscrowService.syncStateFromChain', () => {
   describe('EscrowFunded', () => {
     it('transitions CREATED → FUNDED and sends notification', async () => {
       const escrow = makeEscrow({ state: 'FUNDED' });
-      repo.findById.mockResolvedValue(makeEscrow({ state: 'CREATED' as any }));
+      repo.findById.mockResolvedValue(makeEscrow({ state: 'CREATED' }));
       repo.updateState.mockResolvedValue(escrow);
 
       const result = await service.syncStateFromChain(

@@ -49,7 +49,9 @@ describe('truncateAddress()', () => {
 
   it('supports custom startLen and endLen', () => {
     const result = truncateAddress(FULL_ADDRESS, 8, 6);
-    expect(result).toBe(`${FULL_ADDRESS.slice(0, 8)}…${FULL_ADDRESS.slice(-6)}`);
+    expect(result).toBe(
+      `${FULL_ADDRESS.slice(0, 8)}…${FULL_ADDRESS.slice(-6)}`,
+    );
   });
 
   it('returns the original string when shorter than startLen + endLen + 1', () => {
@@ -131,9 +133,7 @@ describe('getExplorerUrl()', () => {
   it('always starts with https://stellar.expert', () => {
     const networks: StellarNetwork[] = ['MAINNET', 'TESTNET'];
     for (const n of networks) {
-      expect(getExplorerUrl(CONTRACT, n)).toMatch(
-        /^https:\/\/stellar\.expert/,
-      );
+      expect(getExplorerUrl(CONTRACT, n)).toMatch(/^https:\/\/stellar\.expert/);
     }
   });
 

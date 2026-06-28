@@ -28,19 +28,26 @@ export class EventReplayService implements OnModuleInit {
 
       const url = `${horizon}/operations?order=asc&limit=200${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`;
       this.logger.log(`EventReplay fetching operations from ${url}`);
-      const res = await axios.get(url, { timeout: 15000 });
+      const res = await axios.get<{
+        _embedded?: { records: Record<string, unknown>[] };
+      }>(url, { timeout: 15000 });
       const records = res.data._embedded?.records ?? [];
 
       for (const rec of records) {
-        // Map operation to webhook DTO minimal shape
-        const dto = {
-          id: String(rec.id),
-          type: rec.type as string,
-          to: rec.to as string | undefined,
-          amount: rec.amount as string | undefined,
-          asset_code: rec.asset_code as string | undefined,
-          transaction_hash: rec.transaction_hash as string,
-        } as StellarWebhookDto;
+        const dto: StellarWebhookDto = {
+          id: typeof rec['id'] === 'string' ? rec['id'] : '',
+          type: typeof rec['type'] === 'string' ? rec['type'] : '',
+          transaction_hash:
+            typeof rec['transaction_hash'] === 'string'
+              ? rec['transaction_hash']
+              : '',
+          to: typeof rec['to'] === 'string' ? rec['to'] : undefined,
+          amount: typeof rec['amount'] === 'string' ? rec['amount'] : undefined,
+          asset_code:
+            typeof rec['asset_code'] === 'string'
+              ? rec['asset_code']
+              : undefined,
+        };
 
         try {
           await this.webhookService.processOperationDto(dto);
@@ -52,7 +59,7 @@ export class EventReplayService implements OnModuleInit {
       // Persist cursor atomically after processing all records
       if (records.length > 0) {
         const lastRec = records[records.length - 1];
-        const newCursor = String(lastRec.paging_token || lastRec.id);
+        const newCursor = String(lastRec['paging_token'] ?? lastRec['id']);
         await this.cursorService.set(newCursor);
       }
 

@@ -156,6 +156,31 @@ export class EscrowService {
     };
   }
 
+  /** Wrapper for createEscrow that ensures idempotency via Redis caching. */
+  async createIdempotent(
+    idempotencyKey: string,
+    dto: CreateEscrowDto,
+    vendorAddress: string,
+  ): Promise<EscrowWithPaymentUrl> {
+    const cacheKey = `idempotency:${idempotencyKey}`;
+    if (this.cacheService) {
+      const cached =
+        await this.cacheService.get<EscrowWithPaymentUrl>(cacheKey);
+      if (cached) {
+        return cached;
+      }
+    }
+
+    const result = await this.createEscrow(dto, vendorAddress);
+
+    if (this.cacheService) {
+      // Cache for 24 hours (86400 seconds)
+      await this.cacheService.set(cacheKey, result, 86400);
+    }
+
+    return result;
+  }
+
   /** Loads an escrow by ID or raises a typed not-found error. */
   async findById(id: string): Promise<EscrowRecord> {
     try {
@@ -195,7 +220,9 @@ export class EscrowService {
   async getEscrowForViewer(
     id: string,
     callerAddress?: string,
-  ): Promise<EscrowResponseDto & { viewer?: { isBuyer: boolean; isVendor: boolean } }> {
+  ): Promise<
+    EscrowResponseDto & { viewer?: { isBuyer: boolean; isVendor: boolean } }
+  > {
     const escrow = await this.findById(id);
     const base = this.toPublicEscrow(escrow);
     if (!callerAddress) return base;
@@ -580,16 +607,15 @@ export class EscrowService {
 
       case 'DisputeResolved': {
         if (this.prisma) {
-          const disputeList = await this.prisma.dispute.findMany({
+          const dispute = await this.prisma.dispute.findFirst({
             where: { escrowId },
           });
-          const firstDispute = disputeList[0];
-          if (firstDispute?.status === 'RESOLVED') {
+          if (dispute?.status === 'RESOLVED') {
             return { skipped: true, reason: 'dispute_already_resolved' };
           }
-          if (firstDispute) {
+          if (dispute) {
             await this.prisma.dispute.update({
-              where: { id: firstDispute.id },
+              where: { id: dispute.id },
               data: { status: 'RESOLVED', resolvedAt: new Date() },
             });
           }

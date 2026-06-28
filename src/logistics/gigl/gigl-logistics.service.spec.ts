@@ -209,9 +209,7 @@ describe('GiglLogisticsService', () => {
     });
 
     it('returns an empty events array when the GIGL response carries no events', async () => {
-      client.fetchTracking.mockResolvedValue(
-        makeGiglResponse({ events: [] }),
-      );
+      client.fetchTracking.mockResolvedValue(makeGiglResponse({ events: [] }));
 
       const details = await service.getTrackingDetails('TRK-001');
 
@@ -245,7 +243,10 @@ describe('GiglLogisticsService', () => {
     });
 
     it('propagates GiglNetworkError on connection timeout (ECONNABORTED)', async () => {
-      const error = new GiglNetworkError('TRK-TIMEOUT', 'request timed out (ECONNABORTED)');
+      const error = new GiglNetworkError(
+        'TRK-TIMEOUT',
+        'request timed out (ECONNABORTED)',
+      );
       client.fetchTracking.mockRejectedValue(error);
 
       await expect(service.getStatus('TRK-TIMEOUT')).rejects.toThrow(
@@ -257,7 +258,10 @@ describe('GiglLogisticsService', () => {
     });
 
     it('propagates GiglNetworkError on connection refused', async () => {
-      const error = new GiglNetworkError('TRK-CONN', 'connect ECONNREFUSED 127.0.0.1:443');
+      const error = new GiglNetworkError(
+        'TRK-CONN',
+        'connect ECONNREFUSED 127.0.0.1:443',
+      );
       client.fetchTracking.mockRejectedValue(error);
 
       await expect(service.getStatus('TRK-CONN')).rejects.toThrow(
@@ -296,15 +300,18 @@ describe('GiglLogisticsService', () => {
     });
 
     it('propagates GiglNetworkError from getTrackingDetails on timeout', async () => {
-      const error = new GiglNetworkError('TRK-TIMEOUT', 'request timed out (ETIMEDOUT)');
+      const error = new GiglNetworkError(
+        'TRK-TIMEOUT',
+        'request timed out (ETIMEDOUT)',
+      );
       client.fetchTracking.mockRejectedValue(error);
 
       await expect(service.getTrackingDetails('TRK-TIMEOUT')).rejects.toThrow(
         GiglNetworkError,
       );
-      await expect(
-        service.getTrackingDetails('TRK-TIMEOUT'),
-      ).rejects.toThrow(/ETIMEDOUT/);
+      await expect(service.getTrackingDetails('TRK-TIMEOUT')).rejects.toThrow(
+        /ETIMEDOUT/,
+      );
     });
 
     it('propagates GiglProviderError from getTrackingDetails on HTTP 500', async () => {

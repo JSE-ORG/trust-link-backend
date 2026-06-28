@@ -115,18 +115,16 @@ export class VendorProfileRepository {
     });
 
     return {
-      notifyOnDelivery: (settings?.notifyOnDelivery as boolean) ?? true,
-      notifyOnDelay: (settings?.notifyOnDelay as boolean) ?? true,
-      notifyOnException: (settings?.notifyOnException as boolean) ?? true,
-      notificationChannels: (settings?.notificationChannels as string[]) ?? [
-        'EMAIL',
-      ],
-      webhookUrl: (settings?.webhookUrl as string | null) ?? null,
-      enableTracking: (settings?.enableTracking as boolean) ?? true,
-      delayThresholdHours: (settings?.delayThresholdHours as number) ?? 24,
-      deliveryConfirmation: (settings?.deliveryConfirmation as boolean) ?? true,
+      notifyOnDelivery: settings?.notifyOnDelivery ?? true,
+      notifyOnDelay: settings?.notifyOnDelay ?? true,
+      notifyOnException: settings?.notifyOnException ?? true,
+      notificationChannels: settings?.notificationChannels ?? ['EMAIL'],
+      webhookUrl: settings?.webhookUrl ?? null,
+      enableTracking: settings?.enableTracking ?? true,
+      delayThresholdHours: settings?.delayThresholdHours ?? 24,
+      deliveryConfirmation: settings?.deliveryConfirmation ?? true,
       trackingHistoryRetentionDays:
-        (settings?.trackingHistoryRetentionDays as number) ?? 90,
+        settings?.trackingHistoryRetentionDays ?? 90,
     };
   }
 }

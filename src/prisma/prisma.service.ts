@@ -1,4 +1,23 @@
-import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy, Optional } from '@nestjs/common';
+
+// AES-256-GCM ciphertext produced by contact-encryption.util: iv:authTag:ciphertext
+// IV = 12 bytes (24 hex), tag = 16 bytes (32 hex), ciphertext = 1+ hex chars.
+const ENCRYPTED_CONTACT_RE = /^[0-9a-f]{24}:[0-9a-f]{32}:[0-9a-f]+$/i;
+
+/**
+ * Guards against plaintext writes to buyer PII fields.
+ * Throws at the repository layer if a non-null value doesn't match the
+ * expected AES-256-GCM ciphertext format produced by encryptContact().
+ */
+function assertEncryptedContact(field: string, value: string | null | undefined): void {
+  if (value == null) return;
+  if (!ENCRYPTED_CONTACT_RE.test(value)) {
+    throw new Error(
+      `Security violation: ${field} must be encrypted before persistence. ` +
+      `Use encryptContact() from contact-encryption.util before writing to the database.`,
+    );
+  }
+}
 
 export type EscrowState =
   | 'CREATED'
@@ -18,7 +37,7 @@ export type NotificationType =
   | 'DISPUTED'
   | 'COMPLETED'
   | 'REFUNDED';
-export type DisputeState = 'OPEN' | 'UNDER_REVIEW' | 'RESOLVED';
+export type DisputeState = 'OPEN' | 'UNDER_REVIEW' | 'RESOLVED' | 'CANCELLED' | 'ABANDONED';
 
 export interface EscrowRecord {
   id: string;
@@ -73,6 +92,8 @@ export interface DisputeRecord {
   updatedAt: Date;
 }
 
+export type NotificationStatus = 'PENDING' | 'SENT' | 'FAILED';
+
 export interface NotificationRecord {
   id: string;
   escrowId: string;
@@ -80,10 +101,41 @@ export interface NotificationRecord {
   channel: NotificationChannel;
   recipientAddress: string;
   message: string;
-  providerMessageId: string | null;
-  attemptCount: number;
-  lastResponseCode: number | null;
+  status: NotificationStatus;
+  retryCount: number;
+  sentAt: Date | null;
+  failedAt: Date | null;
+  lastError: string | null;
+  providerMessageId?: string | null;
+  attemptCount?: number;
+  lastResponseCode?: number | null;
   createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface VendorTrackingSettingsRecord {
+  id: string;
+  vendorAddress: string;
+  enableTracking: boolean;
+  trackingProvider: string | null;
+  trackingApiKey: string | null;
+  autoUpdateTracking: boolean;
+  trackingUpdateInterval: number;
+  notifyOnDelivery: boolean;
+  notifyOnDelay: boolean;
+  notifyOnException: boolean;
+  delayThresholdHours: number;
+  deliveryConfirmation: boolean;
+  requireSignature: boolean;
+  insuranceRequired: boolean;
+  insuranceValue: number | null;
+  customTrackingRules: Record<string, unknown> | null;
+  webhookUrl: string | null;
+  webhookSecret: string | null;
+  notificationChannels: string[];
+  trackingHistoryRetentionDays: number;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 export interface ProcessedWebhookEventRecord {
@@ -173,6 +225,7 @@ export type EscrowCreateInput = Omit<
   autoReleaseTxHash?: string | null;
   disputeId?: string | null;
   cancelledAt?: Date | null;
+  createdAt?: Date;
 };
 
 type DisputeCreateInput = Omit<
@@ -225,17 +278,54 @@ type DisputeUpdateInput = Partial<
   >
 >;
 
+type NotificationCreateInput = Pick<
+  NotificationRecord,
+  'escrowId' | 'type' | 'channel' | 'recipientAddress' | 'message'
+> &
+  Partial<
+    Pick<
+      NotificationRecord,
+      | 'id'
+      | 'status'
+      | 'retryCount'
+      | 'sentAt'
+      | 'failedAt'
+      | 'lastError'
+      | 'providerMessageId'
+      | 'attemptCount'
+      | 'lastResponseCode'
+    >
+  >;
+
+type NotificationUpdateInput = Partial<
+  Omit<NotificationRecord, 'id' | 'createdAt' | 'updatedAt'>
+>;
+
+type VendorTrackingSettingsCreateInput = Partial<
+  Omit<VendorTrackingSettingsRecord, 'createdAt' | 'updatedAt'>
+>;
+
+type VendorTrackingSettingsUpdateInput = Partial<
+  Omit<
+    VendorTrackingSettingsRecord,
+    'id' | 'vendorAddress' | 'createdAt' | 'updatedAt'
+  >
+>;
+
 @Injectable()
 export class PrismaService implements OnModuleDestroy {
   // databaseUrl is accepted so the module can pass the pool-tuned URL from
   // ConfigService. The in-memory store does not use it, but a real PrismaClient
   // replacement should forward it to `new PrismaClient({ datasources: { db: { url } } })`.
-  constructor(readonly databaseUrl?: string) {
+  constructor(@Optional() readonly databaseUrl?: string) {
     // Issue #316: apply statement_timeout to prevent long-running queries
     if (databaseUrl) {
       try {
         const url = new URL(databaseUrl);
-        url.searchParams.set('statement_timeout', process.env.QUERY_TIMEOUT_MS ?? '30000');
+        url.searchParams.set(
+          'statement_timeout',
+          process.env.QUERY_TIMEOUT_MS ?? '30000',
+        );
         url.searchParams.set('connect_timeout', '10');
         this.effectiveDatabaseUrl = url.toString();
       } catch {
@@ -247,8 +337,10 @@ export class PrismaService implements OnModuleDestroy {
   readonly effectiveDatabaseUrl?: string;
 
   // Issue #315: slow query logging middleware
-  private readonly slowQueryThresholdMs =
-    parseInt(process.env.SLOW_QUERY_THRESHOLD_MS ?? '500', 10);
+  private readonly slowQueryThresholdMs = parseInt(
+    process.env.SLOW_QUERY_THRESHOLD_MS ?? '500',
+    10,
+  );
 
   private readonly logger = new Logger('PrismaService');
 
@@ -265,7 +357,7 @@ export class PrismaService implements OnModuleDestroy {
     if (duration > this.slowQueryThresholdMs) {
       this.logger.warn(
         `Slow query: ${model ?? 'unknown'}.${action} took ${duration}ms ` +
-        `(threshold: ${this.slowQueryThresholdMs}ms)`,
+          `(threshold: ${this.slowQueryThresholdMs}ms)`,
       );
     }
     return result;
@@ -277,7 +369,7 @@ export class PrismaService implements OnModuleDestroy {
   private vendorProfiles = new Map<string, VendorProfileRecord>();
   private vendorTrackingSettingsStore = new Map<
     string,
-    Record<string, unknown>
+    VendorTrackingSettingsRecord
   >();
   private webhookEvents = new Map<string, ProcessedWebhookEventRecord>();
   private refreshTokens = new Map<string, RefreshTokenRecord>();
@@ -311,6 +403,8 @@ export class PrismaService implements OnModuleDestroy {
 
   escrow = {
     create: ({ data }: { data: EscrowCreateInput }): Promise<EscrowRecord> => {
+      assertEncryptedContact('buyerContactEmail', data.buyerContactEmail);
+      assertEncryptedContact('buyerContactPhone', data.buyerContactPhone);
       const now = new Date();
       const escrow: EscrowRecord = {
         ...data,
@@ -327,7 +421,7 @@ export class PrismaService implements OnModuleDestroy {
         cancelledAt: data.cancelledAt ?? null,
         buyerContactEmail: data.buyerContactEmail ?? null,
         buyerContactPhone: data.buyerContactPhone ?? null,
-        createdAt: now,
+        createdAt: data.createdAt ?? now,
         updatedAt: now,
       };
       this.escrows.set(escrow.id, escrow);
@@ -458,6 +552,8 @@ export class PrismaService implements OnModuleDestroy {
       where: { id: string };
       data: EscrowUpdateInput;
     }): Promise<EscrowRecord> => {
+      assertEncryptedContact('buyerContactEmail', data.buyerContactEmail);
+      assertEncryptedContact('buyerContactPhone', data.buyerContactPhone);
       const existing = this.escrows.get(where.id);
       if (!existing) {
         throw new Error(`Escrow ${where.id} not found`);
@@ -475,17 +571,13 @@ export class PrismaService implements OnModuleDestroy {
       where?: Partial<
         Pick<
           EscrowRecord,
-          | 'vendorAddress'
-          | 'buyerAddress'
-          | 'state'
-          | 'itemRef'
-          | 'disputeId'
+          'vendorAddress' | 'buyerAddress' | 'state' | 'itemRef' | 'disputeId'
         >
       >;
     } = {}): Promise<EscrowRecord | null> => {
-      return this.escrow
-        .findMany({ where })
-        .then((records) => records[0] ?? null);
+      return (this.escrow.findMany({ where }) as Promise<EscrowRecord[]>).then(
+        (records) => records[0] ?? null,
+      );
     },
     deleteMany: (): Promise<{ count: number }> => {
       const count = this.escrows.size;
@@ -537,6 +629,20 @@ export class PrismaService implements OnModuleDestroy {
       const dispute = this.disputes.get(where.id);
       return Promise.resolve(dispute ? { ...dispute } : null);
     },
+    findFirst: ({
+      where,
+    }: {
+      where?: Partial<Pick<DisputeRecord, 'escrowId' | 'status'>>;
+    } = {}): Promise<DisputeRecord | null> => {
+      const found = [...this.disputes.values()].find((dispute) => {
+        if (!where) return true;
+        return Object.entries(where).every(([key, value]) => {
+          if (value === undefined) return true;
+          return dispute[key as keyof DisputeRecord] === value;
+        });
+      });
+      return Promise.resolve(found ? { ...found } : null);
+    },
     findMany: ({
       where,
     }: {
@@ -579,7 +685,9 @@ export class PrismaService implements OnModuleDestroy {
     }: {
       where?: Partial<Pick<DisputeRecord, 'escrowId' | 'status'>>;
     } = {}): Promise<DisputeRecord | null> => {
-      return this.dispute.findMany({ where }).then((records) => records[0] ?? null);
+      return this.dispute
+        .findMany({ where })
+        .then((records) => records[0] ?? null);
     },
     deleteMany: (): Promise<{ count: number }> => {
       const count = this.disputes.size;
@@ -592,15 +700,46 @@ export class PrismaService implements OnModuleDestroy {
     create: ({
       data,
     }: {
-      data: Omit<NotificationRecord, 'id' | 'createdAt'>;
+      data: NotificationCreateInput;
     }): Promise<NotificationRecord> => {
+      const now = new Date();
       const notification: NotificationRecord = {
+        status: data.status ?? 'PENDING',
+        retryCount: data.retryCount ?? 0,
+        sentAt: data.sentAt ?? null,
+        failedAt: data.failedAt ?? null,
+        lastError: data.lastError ?? null,
+        providerMessageId: data.providerMessageId ?? null,
+        attemptCount: data.attemptCount ?? 0,
+        lastResponseCode: data.lastResponseCode ?? null,
         ...data,
-        id: String(this.notificationId++),
-        createdAt: new Date(),
+        id: data.id ?? String(this.notificationId++),
+        createdAt: now,
+        updatedAt: now,
       };
       this.notifications.set(notification.id, notification);
       return Promise.resolve({ ...notification });
+    },
+    update: ({
+      where,
+      data,
+    }: {
+      where: { id: string };
+      data: NotificationUpdateInput;
+    }): Promise<NotificationRecord> => {
+      const existing = this.notifications.get(where.id);
+      if (!existing) {
+        return Promise.reject(
+          new Error(`Notification with id ${where.id} not found`),
+        );
+      }
+      const updated: NotificationRecord = {
+        ...existing,
+        ...data,
+        updatedAt: new Date(),
+      };
+      this.notifications.set(where.id, updated);
+      return Promise.resolve({ ...updated });
     },
     findMany: (): Promise<NotificationRecord[]> =>
       Promise.resolve(
@@ -911,7 +1050,7 @@ export class PrismaService implements OnModuleDestroy {
     }: {
       where: { vendorAddress: string };
       select?: { notificationChannels?: boolean };
-    }): Promise<Record<string, unknown> | null> => {
+    }): Promise<VendorTrackingSettingsRecord | null> => {
       const settings = this.vendorTrackingSettingsStore.get(
         where.vendorAddress,
       );
@@ -921,7 +1060,7 @@ export class PrismaService implements OnModuleDestroy {
 
       if (select?.notificationChannels) {
         return Promise.resolve({
-          notificationChannels: (settings as Record<string, unknown>).notificationChannels || [],
+          notificationChannels: settings.notificationChannels || [],
         });
       }
 
@@ -933,19 +1072,47 @@ export class PrismaService implements OnModuleDestroy {
       update,
     }: {
       where: { vendorAddress: string };
-      create: Record<string, unknown>;
-      update: Record<string, unknown>;
-    }): Promise<Record<string, unknown>> => {
+      create: VendorTrackingSettingsCreateInput;
+      update: VendorTrackingSettingsUpdateInput;
+    }): Promise<VendorTrackingSettingsRecord> => {
       const existing = this.vendorTrackingSettingsStore.get(
         where.vendorAddress,
       );
+      const now = new Date();
       if (existing) {
-        const updated = { ...existing, ...update, updatedAt: new Date() };
+        const updated = {
+          ...existing,
+          ...update,
+          updatedAt: now,
+        };
         this.vendorTrackingSettingsStore.set(where.vendorAddress, updated);
         return Promise.resolve({ ...updated });
       }
-      const now = new Date();
-      const created = { ...create, createdAt: now, updatedAt: now };
+      const created = {
+        id: create.id ?? `settings-${where.vendorAddress}`,
+        vendorAddress: where.vendorAddress,
+        enableTracking: create.enableTracking ?? true,
+        trackingProvider: create.trackingProvider ?? null,
+        trackingApiKey: create.trackingApiKey ?? null,
+        autoUpdateTracking: create.autoUpdateTracking ?? false,
+        trackingUpdateInterval: create.trackingUpdateInterval ?? 3600,
+        notifyOnDelivery: create.notifyOnDelivery ?? true,
+        notifyOnDelay: create.notifyOnDelay ?? true,
+        notifyOnException: create.notifyOnException ?? true,
+        delayThresholdHours: create.delayThresholdHours ?? 24,
+        deliveryConfirmation: create.deliveryConfirmation ?? true,
+        requireSignature: create.requireSignature ?? false,
+        insuranceRequired: create.insuranceRequired ?? false,
+        insuranceValue: create.insuranceValue ?? null,
+        customTrackingRules: create.customTrackingRules ?? null,
+        webhookUrl: create.webhookUrl ?? null,
+        webhookSecret: create.webhookSecret ?? null,
+        notificationChannels: create.notificationChannels ?? ['EMAIL'],
+        trackingHistoryRetentionDays: create.trackingHistoryRetentionDays ?? 90,
+        createdAt: now,
+        updatedAt: now,
+        ...create,
+      };
       this.vendorTrackingSettingsStore.set(where.vendorAddress, created);
       return Promise.resolve({ ...created });
     },
@@ -955,12 +1122,10 @@ export class PrismaService implements OnModuleDestroy {
    * Mock implementation of Prisma's $queryRaw for testing.
    * Supports basic aggregation queries for the analytics service.
    */
-  async $queryRaw<T = unknown>(
+  $queryRaw<T = unknown>(
     query: TemplateStringsArray,
     ...values: unknown[]
   ): Promise<T[]> {
-    const queryString = query.join('?');
-
     // SQL template order: ${timezone}, ${vendorAddress}, ${startDate}, ${endDate}, ${timezone}
     const timezone = (values[0] as string) || 'UTC';
     const vendorAddress = values[1] as string;

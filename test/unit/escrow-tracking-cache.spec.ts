@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/unbound-method */
 /**
  * Unit tests for GET /escrow/:id/tracking Redis caching behaviour (issue #308).
  *
@@ -9,7 +8,11 @@
  * - Cache invalidation: tracking cache key is deleted when a shipment is marked
  * - Cache hit returned when logistics API is unreachable (fallback)
  */
-import { NotFoundException, ForbiddenException, ConflictException } from '@nestjs/common';
+import {
+  NotFoundException,
+  ForbiddenException,
+  ConflictException,
+} from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { EscrowService } from '../../src/escrow/escrow.service';
 import { EscrowRepository } from '../../src/escrow/escrow.repository';
@@ -89,7 +92,12 @@ describe('EscrowService tracking cache (issue #308)', () => {
 
   describe('getTracking — cache behaviour', () => {
     it('returns cached data without calling the logistics API on a cache hit', async () => {
-      const cached = { status: 'DELIVERED', estimatedDelivery: undefined, carrier: 'FedEx', events: [] };
+      const cached = {
+        status: 'DELIVERED',
+        estimatedDelivery: undefined,
+        carrier: 'FedEx',
+        events: [],
+      };
       repository.findById.mockResolvedValue(makeEscrow());
       cacheService.get.mockResolvedValue(cached);
 
@@ -102,7 +110,9 @@ describe('EscrowService tracking cache (issue #308)', () => {
     it('stores the logistics response in the cache with a 60-second TTL on a cache miss', async () => {
       repository.findById.mockResolvedValue(makeEscrow());
       cacheService.get.mockResolvedValue(null);
-      logisticsService.getStatus.mockResolvedValue({ status: 'IN_TRANSIT' } as any);
+      logisticsService.getStatus.mockResolvedValue({
+        status: 'IN_TRANSIT',
+      } as any);
 
       await service.getTracking(ESCROW_ID);
 
@@ -118,11 +128,18 @@ describe('EscrowService tracking cache (issue #308)', () => {
       cacheService.get.mockResolvedValue(null);
       logisticsService.getStatus.mockRejectedValue(new Error('timeout'));
 
-      await expect(service.getTracking(ESCROW_ID)).rejects.toThrow(NotFoundException);
+      await expect(service.getTracking(ESCROW_ID)).rejects.toThrow(
+        NotFoundException,
+      );
     });
 
     it('returns stale cached data when logistics API is unreachable', async () => {
-      const stale = { status: 'IN_TRANSIT', estimatedDelivery: undefined, carrier: 'DHL', events: [] };
+      const stale = {
+        status: 'IN_TRANSIT',
+        estimatedDelivery: undefined,
+        carrier: 'DHL',
+        events: [],
+      };
       repository.findById.mockResolvedValue(makeEscrow());
       cacheService.get.mockResolvedValue(stale);
       logisticsService.getStatus.mockRejectedValue(new Error('timeout'));
@@ -136,7 +153,9 @@ describe('EscrowService tracking cache (issue #308)', () => {
     it('uses the tracking ID as the cache key', async () => {
       repository.findById.mockResolvedValue(makeEscrow());
       cacheService.get.mockResolvedValue(null);
-      logisticsService.getStatus.mockResolvedValue({ status: 'PENDING' } as any);
+      logisticsService.getStatus.mockResolvedValue({
+        status: 'PENDING',
+      } as any);
 
       await service.getTracking(ESCROW_ID);
 
@@ -147,7 +166,10 @@ describe('EscrowService tracking cache (issue #308)', () => {
   describe('cache invalidation on tracking status update', () => {
     it('deletes the tracking cache entry when a shipment is marked (handleShipment)', async () => {
       const fundedEscrow = makeEscrow({ state: 'FUNDED', trackingId: null });
-      const shippedEscrow = makeEscrow({ state: 'SHIPPED', trackingId: TRACKING_ID });
+      const shippedEscrow = makeEscrow({
+        state: 'SHIPPED',
+        trackingId: TRACKING_ID,
+      });
 
       repository.findById.mockResolvedValue(fundedEscrow);
       repository.markShipped.mockResolvedValue(shippedEscrow);
@@ -161,7 +183,10 @@ describe('EscrowService tracking cache (issue #308)', () => {
     it('invalidates the correct tracking key (trimmed tracking ID)', async () => {
       const paddedId = `  ${TRACKING_ID}  `;
       const fundedEscrow = makeEscrow({ state: 'FUNDED', trackingId: null });
-      const shippedEscrow = makeEscrow({ state: 'SHIPPED', trackingId: TRACKING_ID });
+      const shippedEscrow = makeEscrow({
+        state: 'SHIPPED',
+        trackingId: TRACKING_ID,
+      });
 
       repository.findById.mockResolvedValue(fundedEscrow);
       repository.markShipped.mockResolvedValue(shippedEscrow);

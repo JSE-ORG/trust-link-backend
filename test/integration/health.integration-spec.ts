@@ -1,6 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-argument */
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
@@ -40,7 +37,7 @@ describe('GET /health integration (issue #55)', () => {
   let cachePingMock: jest.Mock;
 
   beforeEach(async () => {
-    mockFetch.mockResolvedValue({ ok: true } as Response);
+    mockFetch.mockResolvedValue({ ok: true });
     cachePingMock = jest.fn().mockResolvedValue('ok');
 
     prisma = new PrismaService();
@@ -109,8 +106,14 @@ describe('GET /health integration (issue #55)', () => {
         .expect(200);
 
       const allowedKeys = new Set([
-        'status', 'db', 'horizon', 'redis', 'timestamp',
-        'environment', 'version', 'durationMs',
+        'status',
+        'db',
+        'horizon',
+        'redis',
+        'timestamp',
+        'environment',
+        'version',
+        'durationMs',
       ]);
       const unexpected = Object.keys(body).filter((k) => !allowedKeys.has(k));
       expect(unexpected).toHaveLength(0);
@@ -218,13 +221,13 @@ describe('GET /health integration (issue #55)', () => {
     });
 
     it('returns HTTP 503 when Horizon responds with a non-2xx status', async () => {
-      mockFetch.mockResolvedValueOnce({ ok: false } as Response);
+      mockFetch.mockResolvedValueOnce({ ok: false });
 
       await request(app.getHttpServer()).get('/health').expect(503);
     });
 
     it('sets horizon: "down" when Horizon responds non-2xx', async () => {
-      mockFetch.mockResolvedValueOnce({ ok: false } as Response);
+      mockFetch.mockResolvedValueOnce({ ok: false });
 
       const { body } = await request(app.getHttpServer())
         .get('/health')

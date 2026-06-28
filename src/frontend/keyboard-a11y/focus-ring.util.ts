@@ -77,8 +77,7 @@ export function validateFocusRing(styles: FocusStyles): FocusRingValidation {
 
   // Outline is suppressed — check for a visible replacement
   const hasBoxShadow =
-    !!styles.boxShadow &&
-    styles.boxShadow.trim().toLowerCase() !== 'none';
+    !!styles.boxShadow && styles.boxShadow.trim().toLowerCase() !== 'none';
 
   const hasBorder =
     !!styles.border && styles.border.trim().toLowerCase() !== 'none';
@@ -89,8 +88,8 @@ export function validateFocusRing(styles: FocusStyles): FocusRingValidation {
   if (!hasBoxShadow && !hasBorder && !hasBorderColor) {
     issues.push(
       `outline is set to "${styles.outline}" without a visible replacement ` +
-      `(box-shadow, border, or border-color). This removes the focus indicator ` +
-      `for keyboard users.`,
+        `(box-shadow, border, or border-color). This removes the focus indicator ` +
+        `for keyboard users.`,
     );
   }
 

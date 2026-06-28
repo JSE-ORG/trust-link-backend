@@ -10,6 +10,10 @@ import { ContractService } from '../stellar/contract.service';
 
 const EVERY_5_MINUTES = 5 * 60 * 1000;
 
+// Stellar address of the auto-release signing account. Must be set in production.
+const AUTO_RELEASE_SOURCE =
+  process.env.AUTO_RELEASE_SOURCE_ADDRESS ?? 'GAUTORELEASE000000000000000000000000000000000000000000000';
+
 @Injectable()
 export class AutoReleaseWorker implements OnModuleInit, OnApplicationShutdown {
   private readonly logger = new Logger(AutoReleaseWorker.name);
@@ -39,8 +43,15 @@ export class AutoReleaseWorker implements OnModuleInit, OnApplicationShutdown {
   }
 
   async run(referenceTime = new Date()): Promise<void> {
+    let eligible: Awaited<
+      ReturnType<typeof this.escrowRepository.findAutoReleaseEligible>
+    > = [];
+    let successCount = 0;
+    let failureCount = 0;
+    const failures: { escrowId: string; error: string }[] = [];
+
     try {
-      const eligible =
+      eligible =
         await this.escrowRepository.findAutoReleaseEligible(referenceTime);
 
       for (const escrow of eligible) {
@@ -56,12 +67,19 @@ export class AutoReleaseWorker implements OnModuleInit, OnApplicationShutdown {
 
           const txHash = await this.contractService.submitAutoRelease(
             escrow.id,
+            AUTO_RELEASE_SOURCE,
           );
           await this.escrowRepository.markAutoReleaseCompleted(
             escrow.id,
             txHash,
           );
+          successCount++;
         } catch (error) {
+          failureCount++;
+          failures.push({
+            escrowId: escrow.id,
+            error: error instanceof Error ? error.message : String(error),
+          });
           this.logger.error(
             JSON.stringify({
               msg: 'auto_release.escrow_failed',
@@ -81,6 +99,17 @@ export class AutoReleaseWorker implements OnModuleInit, OnApplicationShutdown {
           error: error instanceof Error ? error.message : String(error),
         }),
         error instanceof Error ? error.stack : undefined,
+      );
+    }
+
+    // Summary log for batch processing
+    this.logger.log(
+      `Batch complete: ${successCount} succeeded, ${failureCount} failed out of ${eligible.length} total`,
+    );
+
+    if (failures.length > 0) {
+      this.logger.warn(
+        `Failed escrows: ${failures.map((f) => `${f.escrowId} (${f.error})`).join(', ')}`,
       );
     }
   }

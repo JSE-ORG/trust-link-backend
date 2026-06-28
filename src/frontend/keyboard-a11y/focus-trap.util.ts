@@ -64,14 +64,14 @@ export function createFocusTrap(
   let previouslyFocused: Element | null = null;
 
   function handleKeyDown(event: Event) {
-    const key = (event as KeyboardEvent).key;
-    if (key === 'Escape') {
+    const e = event as KeyboardEvent;
+    if (e.key === 'Escape') {
       deactivate();
       onEscape?.();
       return;
     }
 
-    if (key !== 'Tab') return;
+    if (e.key !== 'Tab') return;
 
     const focusable = driver.getFocusableElements();
     if (focusable.length === 0) return;
@@ -79,14 +79,14 @@ export function createFocusTrap(
     const first = focusable[0];
     const last = focusable[focusable.length - 1];
 
-    if ((event as KeyboardEvent).shiftKey) {
+    if (e.shiftKey) {
       if (driver.getActiveElement() === first) {
-        driver.preventDefault(event);
+        driver.preventDefault(e);
         driver.focusElement(last);
       }
     } else {
       if (driver.getActiveElement() === last) {
-        driver.preventDefault(event);
+        driver.preventDefault(e);
         driver.focusElement(first);
       }
     }

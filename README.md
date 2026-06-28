@@ -59,6 +59,25 @@ $ npm run start:dev
 $ npm run start:prod
 ```
 
+## Database scripts
+
+```bash
+# Apply all pending migrations (CI / production safe)
+$ npm run db:migrate
+
+# Populate the database with realistic test data (idempotent)
+$ npm run db:seed
+
+# Reset local database — drops, re-migrates, and re-seeds (development only)
+$ npm run db:reset
+
+# Regenerate Prisma client after schema changes
+$ npm run db:generate
+
+# Open Prisma Studio visual browser
+$ npm run db:studio
+```
+
 ## Run tests
 
 ```bash
