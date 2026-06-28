@@ -119,8 +119,6 @@ export interface VendorTrackingSettingsRecord {
   updatedAt: Date;
 }
 
-
-
 export interface ProcessedWebhookEventRecord {
   operationId: string;
   processedAt: Date;
@@ -272,11 +270,14 @@ type NotificationUpdateInput = Partial<
 >;
 
 type VendorTrackingSettingsCreateInput = Partial<
-  Omit<VendorTrackingSettingsRecord, 'id' | 'createdAt' | 'updatedAt'>
+  Omit<VendorTrackingSettingsRecord, 'createdAt' | 'updatedAt'>
 >;
 
 type VendorTrackingSettingsUpdateInput = Partial<
-  Omit<VendorTrackingSettingsRecord, 'id' | 'vendorAddress' | 'createdAt' | 'updatedAt'>
+  Omit<
+    VendorTrackingSettingsRecord,
+    'id' | 'vendorAddress' | 'createdAt' | 'updatedAt'
+  >
 >;
 
 @Injectable()
@@ -534,17 +535,13 @@ export class PrismaService implements OnModuleDestroy {
       where?: Partial<
         Pick<
           EscrowRecord,
-          | 'vendorAddress'
-          | 'buyerAddress'
-          | 'state'
-          | 'itemRef'
-          | 'disputeId'
+          'vendorAddress' | 'buyerAddress' | 'state' | 'itemRef' | 'disputeId'
         >
       >;
     } = {}): Promise<EscrowRecord | null> => {
-      return (
-        this.escrow.findMany({ where }) as Promise<EscrowRecord[]>
-      ).then((records) => records[0] ?? null);
+      return (this.escrow.findMany({ where }) as Promise<EscrowRecord[]>).then(
+        (records) => records[0] ?? null,
+      );
     },
     deleteMany: (): Promise<{ count: number }> => {
       const count = this.escrows.size;
@@ -652,7 +649,9 @@ export class PrismaService implements OnModuleDestroy {
     }: {
       where?: Partial<Pick<DisputeRecord, 'escrowId' | 'status'>>;
     } = {}): Promise<DisputeRecord | null> => {
-      return this.dispute.findMany({ where }).then((records) => records[0] ?? null);
+      return this.dispute
+        .findMany({ where })
+        .then((records) => records[0] ?? null);
     },
     deleteMany: (): Promise<{ count: number }> => {
       const count = this.disputes.size;
@@ -694,7 +693,9 @@ export class PrismaService implements OnModuleDestroy {
     }): Promise<NotificationRecord> => {
       const existing = this.notifications.get(where.id);
       if (!existing) {
-        return Promise.reject(new Error(`Notification with id ${where.id} not found`));
+        return Promise.reject(
+          new Error(`Notification with id ${where.id} not found`),
+        );
       }
       const updated: NotificationRecord = {
         ...existing,
@@ -716,7 +717,6 @@ export class PrismaService implements OnModuleDestroy {
       return Promise.resolve({ count });
     },
   };
-
 
   processedWebhookEvent = {
     findUnique: ({
@@ -1014,7 +1014,7 @@ export class PrismaService implements OnModuleDestroy {
     }: {
       where: { vendorAddress: string };
       select?: { notificationChannels?: boolean };
-    }): Promise<any | null> => {
+    }): Promise<VendorTrackingSettingsRecord | null> => {
       const settings = this.vendorTrackingSettingsStore.get(
         where.vendorAddress,
       );
