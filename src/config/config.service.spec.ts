@@ -27,6 +27,11 @@ const validationSchema = Joi.object({
   LOG_LEVEL: Joi.string()
     .valid('trace', 'debug', 'info', 'warn', 'error', 'fatal')
     .default('info'),
+  SENTRY_DSN: Joi.when('NODE_ENV', {
+    is: 'production',
+    then: Joi.string().uri().required(),
+    otherwise: Joi.string().uri().optional(),
+  }),
 });
 
 const VALID_ENV = {
@@ -46,6 +51,7 @@ const ALL_KNOWN_KEYS = [
   'SENDGRID_API_KEY',
   'TWILIO_ACCOUNT_SID',
   'TWILIO_AUTH_TOKEN',
+  'SENTRY_DSN',
 ];
 
 async function buildService(
@@ -124,5 +130,55 @@ describe('ConfigService', () => {
     expect(service.isTest()).toBe(true);
     expect(service.isDevelopment()).toBe(false);
     expect(service.isProduction()).toBe(false);
+  });
+
+  describe('SENTRY_DSN validation', () => {
+    it('allows empty/unset SENTRY_DSN in non-production environments', async () => {
+      const service = await buildService({
+        ...VALID_ENV,
+        NODE_ENV: 'development',
+      });
+      expect(service).toBeDefined();
+      expect(service.get('SENTRY_DSN')).toBeUndefined();
+    });
+
+    it('allows valid SENTRY_DSN in non-production environments', async () => {
+      const service = await buildService({
+        ...VALID_ENV,
+        NODE_ENV: 'development',
+        SENTRY_DSN: 'https://key@sentry.io/123456',
+      });
+      expect(service).toBeDefined();
+      expect(service.get('SENTRY_DSN')).toBe('https://key@sentry.io/123456');
+    });
+
+    it('requires valid SENTRY_DSN URI in production environment', async () => {
+      const service = await buildService({
+        ...VALID_ENV,
+        NODE_ENV: 'production',
+        SENTRY_DSN: 'https://key@sentry.io/123456',
+      });
+      expect(service).toBeDefined();
+      expect(service.get('SENTRY_DSN')).toBe('https://key@sentry.io/123456');
+    });
+
+    it('fails validation if SENTRY_DSN is invalid URI in development environment', async () => {
+      await expect(
+        buildService({
+          ...VALID_ENV,
+          NODE_ENV: 'development',
+          SENTRY_DSN: 'invalid-uri',
+        }),
+      ).rejects.toThrow();
+    });
+
+    it('fails validation if SENTRY_DSN is unset in production environment', async () => {
+      await expect(
+        buildService({
+          ...VALID_ENV,
+          NODE_ENV: 'production',
+        }),
+      ).rejects.toThrow();
+    });
   });
 });
