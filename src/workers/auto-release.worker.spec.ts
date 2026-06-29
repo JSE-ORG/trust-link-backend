@@ -146,13 +146,19 @@ describe('AutoReleaseWorker', () => {
         .mockRejectedValueOnce(new Error('Stellar RPC timeout'))
         .mockResolvedValueOnce('tx-hash-ok');
       escrowRepository.markAutoReleaseCompleted.mockResolvedValue(
-        makeEscrow({ id: 'escrow-ok', state: 'COMPLETED', autoReleaseTxHash: 'tx-hash-ok' }),
+        makeEscrow({
+          id: 'escrow-ok',
+          state: 'COMPLETED',
+          autoReleaseTxHash: 'tx-hash-ok',
+        }),
       );
 
       await worker.run();
 
       expect(contractService.submitAutoRelease).toHaveBeenCalledTimes(2);
-      expect(escrowRepository.markAutoReleaseCompleted).toHaveBeenCalledTimes(1);
+      expect(escrowRepository.markAutoReleaseCompleted).toHaveBeenCalledTimes(
+        1,
+      );
       expect(escrowRepository.markAutoReleaseCompleted).toHaveBeenCalledWith(
         'escrow-ok',
         'tx-hash-ok',
