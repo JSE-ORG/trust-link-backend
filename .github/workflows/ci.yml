@@ -56,7 +56,7 @@ jobs:
           path: license-report.json
 
       - name: Cache TypeScript build output
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             dist
