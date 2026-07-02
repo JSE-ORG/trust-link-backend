@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/unbound-method */
 import {
   ConflictException,
   ForbiddenException,
@@ -198,7 +197,7 @@ describe('PATCH /admin/dispute/:id/resolve (admin guard)', () => {
       .patch('/admin/dispute/escrow-1/resolve')
       .set(
         'Authorization',
-        'Bearer eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiJ2ZW5kb3ItYWRkcmVzcyIsInJvbGUiOiJ2ZW5kb3IifQ.signature',
+        'Bearer eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiJ2ZW5kb3ItYWRkcmVzcyIsInJvbGUiOiJ2ZW5kb3IifQ.tZDbS0v2ze8t-x6hZsE1Q1hP0odlamTWSFZlwjPNwXk',
       )
       .send({ resolution: 'RELEASE' })
       .expect(403);
@@ -209,7 +208,7 @@ describe('PATCH /admin/dispute/:id/resolve (admin guard)', () => {
       .patch('/admin/dispute/escrow-1/resolve')
       .set(
         'Authorization',
-        'Bearer eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiJhZG1pbi1hZGRyZXNzIiwicm9sZSI6ImFkbWluIn0.signature',
+        'Bearer eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiJhZG1pbi1hZGRyZXNzIiwicm9sZSI6ImFkbWluIn0.Q4EeLZuB3V0utXclLNM02bCZ_WyNHFaZukHcMTjHa6o',
       )
       .send({ resolution: 'RELEASE' })
       .expect(200);
@@ -226,7 +225,7 @@ describe('PATCH /admin/dispute/:id/resolve (admin guard)', () => {
       .patch('/admin/dispute/escrow-1/resolve')
       .set(
         'Authorization',
-        'Bearer eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiJhZG1pbi1hZGRyZXNzIiwicm9sZSI6ImFkbWluIn0.signature',
+        'Bearer eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiJhZG1pbi1hZGRyZXNzIiwicm9sZSI6ImFkbWluIn0.Q4EeLZuB3V0utXclLNM02bCZ_WyNHFaZukHcMTjHa6o',
       )
       .send({ resolution: 'RELEASE' })
       .expect(409);
@@ -240,7 +239,7 @@ describe('PATCH /admin/dispute/:id/resolve (admin guard)', () => {
       .patch('/admin/dispute/escrow-1/resolve')
       .set(
         'Authorization',
-        'Bearer eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiJ2ZW5kb3ItYWRkcmVzcyIsInJvbGUiOiJ2ZW5kb3IifQ.signature',
+        'Bearer eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiJ2ZW5kb3ItYWRkcmVzcyIsInJvbGUiOiJ2ZW5kb3IifQ.tZDbS0v2ze8t-x6hZsE1Q1hP0odlamTWSFZlwjPNwXk',
       )
       .send({ resolution: 'RELEASE' })
       .expect(403);

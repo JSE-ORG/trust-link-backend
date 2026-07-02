@@ -36,7 +36,7 @@ export class HorizonService {
 
     while (Date.now() - start < timeoutMs) {
       try {
-        const response = await axios.get(
+        const response = await axios.get<{ confirmations?: number }>(
           `${this.horizonUrl}/transactions/${encodeURIComponent(
             transactionHash,
           )}`,
@@ -54,7 +54,7 @@ export class HorizonService {
             hash: transactionHash,
           };
         }
-      } catch (error) {
+      } catch {
         if (Date.now() - start >= timeoutMs) {
           break;
         }

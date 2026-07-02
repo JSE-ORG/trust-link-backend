@@ -28,6 +28,14 @@ import { QueuesDashboardDto } from './queue-stats.dto';
 export class QueueDashboardController {
   constructor(private readonly dashboardService: QueueDashboardService) {}
 
+  /**
+   * Returns real-time job counts for all registered BullMQ queues.
+   *
+   * @returns Dashboard data with per-queue job counts and pause status
+   * @throws UnauthorizedException if Bearer token is missing or invalid
+   * @throws ForbiddenException if caller is not an admin
+   * @authentication Requires valid SEP-10 JWT (admin only)
+   */
   @Get()
   getDashboard(): Promise<QueuesDashboardDto> {
     return this.dashboardService.getDashboard();

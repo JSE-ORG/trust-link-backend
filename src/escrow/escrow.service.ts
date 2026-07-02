@@ -12,7 +12,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { EscrowRecord } from '../prisma/prisma.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { LogisticsService } from '../logistics/logistics.service';
-import { CacheService } from '../common/cache.service';
+import { CacheService } from '../cache/cache.service';
 import { ContractService } from '../stellar/contract.service';
 import { EscrowResponseDto } from './dto/escrow-response.dto';
 import { EscrowSummaryDto } from './dto/escrow-summary.dto';
@@ -22,6 +22,7 @@ import { S3PresignService } from '../common/services/s3-presign.service';
 import { EscrowRepository } from './escrow.repository';
 import { UpdateBuyerContactDto } from './dto/update-buyer-contact.dto';
 import { encryptContact } from '../common/sanitization/contact-encryption.util';
+import { EventsResult } from './escrow.types';
 
 export type EscrowWithPaymentUrl = EscrowRecord & {
   paymentUrl: string;
@@ -155,6 +156,31 @@ export class EscrowService {
     };
   }
 
+  /** Wrapper for createEscrow that ensures idempotency via Redis caching. */
+  async createIdempotent(
+    idempotencyKey: string,
+    dto: CreateEscrowDto,
+    vendorAddress: string,
+  ): Promise<EscrowWithPaymentUrl> {
+    const cacheKey = `idempotency:${idempotencyKey}`;
+    if (this.cacheService) {
+      const cached =
+        await this.cacheService.get<EscrowWithPaymentUrl>(cacheKey);
+      if (cached) {
+        return cached;
+      }
+    }
+
+    const result = await this.createEscrow(dto, vendorAddress);
+
+    if (this.cacheService) {
+      // Cache for 24 hours (86400 seconds)
+      await this.cacheService.set(cacheKey, result, 86400);
+    }
+
+    return result;
+  }
+
   /** Loads an escrow by ID or raises a typed not-found error. */
   async findById(id: string): Promise<EscrowRecord> {
     try {
@@ -176,9 +202,7 @@ export class EscrowService {
   }
 
   /** Returns chronological event history for an escrow; empty array if not found. */
-  async getEvents(
-    id: string,
-  ): Promise<Array<{ event: string; occurredAt: Date }>> {
+  async getEvents(id: string): Promise<EventsResult> {
     return this.escrowRepository.findEvents(id);
   }
 
@@ -196,7 +220,9 @@ export class EscrowService {
   async getEscrowForViewer(
     id: string,
     callerAddress?: string,
-  ): Promise<EscrowResponseDto & { viewer?: { isBuyer: boolean; isVendor: boolean } }> {
+  ): Promise<
+    EscrowResponseDto & { viewer?: { isBuyer: boolean; isVendor: boolean } }
+  > {
     const escrow = await this.findById(id);
     const base = this.toPublicEscrow(escrow);
     if (!callerAddress) return base;
@@ -305,19 +331,21 @@ export class EscrowService {
     };
   }
 
-  /** Cancels a funded escrow when requested by the buyer or vendor. */
+  /** Cancels a funded escrow when requested by the buyer, vendor, or admin. */
   async cancelEscrow(
     escrowId: string,
     callerAddress: string,
+    isAdmin = false,
   ): Promise<EscrowRecord> {
     const escrow = await this.findById(escrowId);
 
     if (
+      !isAdmin &&
       escrow.vendorAddress !== callerAddress &&
       escrow.buyerAddress !== callerAddress
     ) {
       throw new ForbiddenException(
-        'Only the vendor or buyer can cancel this escrow',
+        'Only the vendor, buyer, or admin can cancel this escrow',
       );
     }
 
@@ -334,15 +362,17 @@ export class EscrowService {
   async cancelPendingEscrow(
     escrowId: string,
     callerAddress: string,
+    isAdmin = false,
   ): Promise<EscrowRecord> {
     const escrow = await this.findById(escrowId);
 
     if (
+      !isAdmin &&
       escrow.vendorAddress !== callerAddress &&
       escrow.buyerAddress !== callerAddress
     ) {
       throw new ForbiddenException(
-        'Only the vendor or buyer can cancel this escrow',
+        'Only the vendor, buyer, or admin can cancel this escrow',
       );
     }
 
@@ -376,6 +406,7 @@ export class EscrowService {
     escrowId: string,
     vendorAddress: string,
     trackingId: string,
+    isAdmin = false,
   ): Promise<EscrowRecord> {
     try {
       if (!trackingId?.trim()) {
@@ -392,12 +423,12 @@ export class EscrowService {
 
       const escrow = await this.findById(escrowId);
 
-      if (escrow.vendorAddress !== vendorAddress) {
+      if (!isAdmin && escrow.vendorAddress !== vendorAddress) {
         this.logger.warn(
           `Unauthorized shipment attempt for escrow ${escrowId} by ${vendorAddress}`,
         );
         throw new ForbiddenException(
-          'Only the escrow vendor can ship this order',
+          'Only the escrow vendor or admin can ship this order',
         );
       }
 
@@ -421,6 +452,8 @@ export class EscrowService {
         escrow.id,
         trackingId.trim(),
       );
+
+      await this.cacheService?.del(`tracking:${trackingId.trim()}`);
 
       this.notificationsService.notifyShipped(shipped).catch((error) => {
         this.logger.error(
@@ -574,16 +607,15 @@ export class EscrowService {
 
       case 'DisputeResolved': {
         if (this.prisma) {
-          const disputeList = await this.prisma.dispute.findMany({
+          const dispute = await this.prisma.dispute.findFirst({
             where: { escrowId },
           });
-          const firstDispute = disputeList[0];
-          if (firstDispute?.status === 'RESOLVED') {
+          if (dispute?.status === 'RESOLVED') {
             return { skipped: true, reason: 'dispute_already_resolved' };
           }
-          if (firstDispute) {
+          if (dispute) {
             await this.prisma.dispute.update({
-              where: { id: firstDispute.id },
+              where: { id: dispute.id },
               data: { status: 'RESOLVED', resolvedAt: new Date() },
             });
           }

@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 /**
  * Integration tests for GET /vendor/analytics/chart (issue #290).
  *
@@ -112,9 +110,9 @@ describe('GET /vendor/analytics/chart (issue #290)', () => {
 
   it('groups escrows by UTC calendar day', async () => {
     // Two escrows on day T-10, one on day T-9
-    const day1 = daysAgo(10, 8);   // 8am UTC, 10 days ago
+    const day1 = daysAgo(10, 8); // 8am UTC, 10 days ago
     const day1b = daysAgo(10, 22); // 10pm UTC, same day
-    const day2 = daysAgo(9, 0);    // midnight UTC, 9 days ago (different day)
+    const day2 = daysAgo(9, 0); // midnight UTC, 9 days ago (different day)
     await seedEscrow(VENDOR, 200, day1);
     await seedEscrow(VENDOR, 75, day1b);
     await seedEscrow(VENDOR, 300, day2);
@@ -127,8 +125,12 @@ describe('GET /vendor/analytics/chart (issue #290)', () => {
     const date1str = day1.toLocaleDateString('en-CA', { timeZone: 'UTC' });
     const date2str = day2.toLocaleDateString('en-CA', { timeZone: 'UTC' });
 
-    const entry1 = res.body.data.find((d: { date: string }) => d.date === date1str);
-    const entry2 = res.body.data.find((d: { date: string }) => d.date === date2str);
+    const entry1 = res.body.data.find(
+      (d: { date: string }) => d.date === date1str,
+    );
+    const entry2 = res.body.data.find(
+      (d: { date: string }) => d.date === date2str,
+    );
 
     expect(entry1).toBeDefined();
     expect(entry1.totalVolume).toBe(275);

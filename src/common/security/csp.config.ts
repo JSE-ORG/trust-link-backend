@@ -15,7 +15,10 @@ const DEFAULT_HORIZON_URLS: Record<'TESTNET' | 'MAINNET', string> = {
 export function buildCspConnectSrc(config: CspConnectSourceConfig): string[] {
   const sources = new Set<string>([`'self'`]);
 
-  addOrigin(sources, config.stellarHorizonUrl ?? DEFAULT_HORIZON_URLS[config.stellarNetwork]);
+  addOrigin(
+    sources,
+    config.stellarHorizonUrl ?? DEFAULT_HORIZON_URLS[config.stellarNetwork],
+  );
   addOrigin(sources, config.sentryDsn);
   addOrigin(sources, config.otelExporterOtlpEndpoint);
   addOrigin(sources, config.logisticsApiBaseUrl);

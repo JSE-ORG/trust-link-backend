@@ -27,7 +27,7 @@ import { StellarModule } from './stellar/stellar.module';
 import { VendorModule } from './vendor/vendor.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 import { StressTestModule } from './stress-test/stress-test.module';
-import { CacheService } from './common/cache.service';
+
 import { DlqModule } from './dlq/dlq.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { WorkersModule } from './workers/workers.module';
@@ -71,18 +71,18 @@ import { WorkersModule } from './workers/workers.module';
       useFactory: (config: ConfigService) => [
         {
           name: 'auth',
-          ttl: config.get<number>('AUTH_CHALLENGE_WINDOW') || 60000,
-          limit: config.get<number>('AUTH_CHALLENGE_LIMIT') || 10,
+          ttl: Number(config.get('AUTH_CHALLENGE_WINDOW')) || 60000,
+          limit: Number(config.get('AUTH_CHALLENGE_LIMIT')) || 10,
         },
         {
           name: 'public',
-          ttl: config.get<number>('PUBLIC_WINDOW') || 60000,
-          limit: config.get<number>('PUBLIC_LIMIT') || 60,
+          ttl: Number(config.get('PUBLIC_WINDOW')) || 60000,
+          limit: Number(config.get('PUBLIC_LIMIT')) || 60,
         },
         {
           name: 'evidence-upload',
-          ttl: config.get<number>('EVIDENCE_UPLOAD_TTL') || 60000,
-          limit: config.get<number>('EVIDENCE_UPLOAD_LIMIT') || 10,
+          ttl: Number(config.get('EVIDENCE_UPLOAD_TTL')) || 60000,
+          limit: Number(config.get('EVIDENCE_UPLOAD_LIMIT')) || 10,
         },
       ],
     }),
@@ -90,7 +90,6 @@ import { WorkersModule } from './workers/workers.module';
   controllers: [AppController],
   providers: [
     AppService,
-    CacheService,
     {
       provide: APP_FILTER,
       useClass: GlobalExceptionFilter,

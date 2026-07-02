@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
-
 /**
  * SEP-10 authentication flow — end-to-end integration tests.
  *
@@ -54,7 +52,9 @@ describe('SEP-10 authentication (issue #23)', () => {
         update: jest.fn(async ({ where, data }: any) => {
           const record =
             mockNonces.get(where.id) ??
-            Array.from(mockNonces.values()).find((entry) => entry.id === where.id) ??
+            Array.from(mockNonces.values()).find(
+              (entry) => entry.id === where.id,
+            ) ??
             mockNonces.get(where.nonce) ??
             null;
           if (!record) return null;

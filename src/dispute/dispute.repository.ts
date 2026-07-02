@@ -27,11 +27,8 @@ export class DisputeRepository {
   }
 
   /** Returns the first dispute linked to the given escrow, or null if none exists. */
-  async findByEscrow(escrowId: string): Promise<DisputeRecord | null> {
-    const disputes = await this.prisma.dispute.findMany({
-      where: { escrowId },
-    });
-    return disputes[0] ?? null;
+  findByEscrow(escrowId: string): Promise<DisputeRecord | null> {
+    return this.prisma.dispute.findFirst({ where: { escrowId } });
   }
 
   /** Returns all disputes in OPEN or UNDER_REVIEW status. */

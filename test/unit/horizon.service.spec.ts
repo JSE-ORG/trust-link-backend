@@ -79,7 +79,10 @@ describe('HorizonService.pollConfirmation (issue #50)', () => {
   });
 
   it('throws a timeout error when confirmations never reach the target', async () => {
-    mockedAxios.get.mockResolvedValue({ status: 200, data: { confirmations: 0 } });
+    mockedAxios.get.mockResolvedValue({
+      status: 200,
+      data: { confirmations: 0 },
+    });
 
     await expect(service.pollConfirmation('tx-hash', 2, 350)).rejects.toThrow(
       'Horizon confirmation timed out',

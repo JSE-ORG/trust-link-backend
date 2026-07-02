@@ -5,7 +5,6 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { DisputeModule } from '../dispute/dispute.module';
 import { StellarModule } from '../stellar/stellar.module';
 import { S3PresignService } from '../common/services/s3-presign.service';
-import { CacheService } from '../common/cache.service';
 import { EscrowController } from './escrow.controller';
 import { VendorEscrowController } from './vendor-escrow.controller';
 import { EscrowRepository } from './escrow.repository';
@@ -26,7 +25,6 @@ import { BuyerDisputeService } from './buyer-dispute.service';
     BuyerDisputeService,
     S3PresignService,
     JwtGuard,
-    CacheService,
   ],
   exports: [EscrowService, EscrowRepository],
 })

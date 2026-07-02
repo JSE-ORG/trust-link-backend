@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/unbound-method */
 import {
   ConflictException,
   ForbiddenException,
@@ -125,7 +124,11 @@ describe('BuyerDisputeService.openDispute (issue #41)', () => {
       escrowRepository.findById.mockResolvedValue(shippedEscrow);
       disputeRepository.create.mockResolvedValue(createdDispute);
 
-      const result = await service.openDispute('escrow-abc', BUYER, openDisputeDto);
+      const result = await service.openDispute(
+        'escrow-abc',
+        BUYER,
+        openDisputeDto,
+      );
 
       expect(escrowRepository.findById).toHaveBeenCalledWith('escrow-abc');
       expect(disputeRepository.create).toHaveBeenCalledWith({
@@ -146,7 +149,9 @@ describe('BuyerDisputeService.openDispute (issue #41)', () => {
 
       await service.openDispute('escrow-abc', BUYER, openDisputeDto);
 
-      expect(notificationsService.notifyDisputed).toHaveBeenCalledWith(shippedEscrow);
+      expect(notificationsService.notifyDisputed).toHaveBeenCalledWith(
+        shippedEscrow,
+      );
       expect(notificationsService.notifyDisputedAdmin).toHaveBeenCalledWith(
         shippedEscrow,
         ADMIN,
@@ -157,7 +162,11 @@ describe('BuyerDisputeService.openDispute (issue #41)', () => {
       escrowRepository.findById.mockResolvedValue(shippedEscrow);
       disputeRepository.create.mockResolvedValue(createdDispute);
 
-      const result = await service.openDispute('escrow-abc', VENDOR, openDisputeDto);
+      const result = await service.openDispute(
+        'escrow-abc',
+        VENDOR,
+        openDisputeDto,
+      );
 
       expect(result.id).toBe('dispute-xyz');
     });
@@ -166,7 +175,11 @@ describe('BuyerDisputeService.openDispute (issue #41)', () => {
       escrowRepository.findById.mockResolvedValue(shippedEscrow);
       disputeRepository.create.mockResolvedValue(createdDispute);
 
-      const result = await service.openDispute('escrow-abc', ADMIN, openDisputeDto);
+      const result = await service.openDispute(
+        'escrow-abc',
+        ADMIN,
+        openDisputeDto,
+      );
 
       expect(result.id).toBe('dispute-xyz');
     });
@@ -177,19 +190,32 @@ describe('BuyerDisputeService.openDispute (issue #41)', () => {
       escrowRepository.findById.mockResolvedValue(shippedEscrow);
       disputeRepository.create.mockResolvedValue(createdDispute);
 
-      const result = await service.openDispute('escrow-abc', BUYER, openDisputeDto);
+      const result = await service.openDispute(
+        'escrow-abc',
+        BUYER,
+        openDisputeDto,
+      );
 
-      expect(s3PresignService.presignAll).toHaveBeenCalledWith(createdDispute.evidenceUrls);
+      expect(s3PresignService.presignAll).toHaveBeenCalledWith(
+        createdDispute.evidenceUrls,
+      );
       expect(result.evidenceUrls).toEqual(presigned);
     });
 
     it('handles missing optional evidenceUrls by defaulting to empty array', async () => {
       escrowRepository.findById.mockResolvedValue(shippedEscrow);
-      disputeRepository.create.mockResolvedValue({ ...createdDispute, evidenceUrls: [] });
+      disputeRepository.create.mockResolvedValue({
+        ...createdDispute,
+        evidenceUrls: [],
+      });
       s3PresignService.presignAll.mockReturnValue([]);
 
       const dtoWithoutEvidence = { ...openDisputeDto, evidenceUrls: undefined };
-      const result = await service.openDispute('escrow-abc', BUYER, dtoWithoutEvidence);
+      const result = await service.openDispute(
+        'escrow-abc',
+        BUYER,
+        dtoWithoutEvidence,
+      );
 
       expect(disputeRepository.create).toHaveBeenCalledWith(
         expect.objectContaining({ evidenceUrls: [] }),
@@ -210,7 +236,8 @@ describe('BuyerDisputeService.openDispute (issue #41)', () => {
     });
 
     it('throws ForbiddenException when caller is not a participant', async () => {
-      const outsider = 'GOUTSIDER7IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLF';
+      const outsider =
+        'GOUTSIDER7IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLF';
       escrowRepository.findById.mockResolvedValue(shippedEscrow);
 
       await expect(
@@ -221,7 +248,10 @@ describe('BuyerDisputeService.openDispute (issue #41)', () => {
     });
 
     it('throws ConflictException when escrow is already in DISPUTED state', async () => {
-      const disputedEscrow: EscrowRecord = { ...shippedEscrow, state: 'DISPUTED' };
+      const disputedEscrow: EscrowRecord = {
+        ...shippedEscrow,
+        state: 'DISPUTED',
+      };
       escrowRepository.findById.mockResolvedValue(disputedEscrow);
 
       await expect(

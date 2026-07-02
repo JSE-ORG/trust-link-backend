@@ -5,13 +5,17 @@ import {
   MinLength,
   MaxLength,
   Matches,
-  Max,
-  Min,
 } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
 import { IsStellarAddress } from '../../common/validators/stellar-address.validator';
 
+/**
+ * Request body for creating a new escrow. The vendor supplies the item
+ * details, amount, currency and the buyer's Stellar address. A new
+ * escrow record is created in the FUNDED state and a payment URL is
+ * returned so the buyer can complete the Stellar transaction.
+ */
 export class CreateEscrowDto {
   @ApiProperty({
     description: 'Human-readable name of the item being escrowed.',
@@ -22,7 +26,7 @@ export class CreateEscrowDto {
   @IsString()
   @MinLength(3, { message: 'Item name must be at least 3 characters long' })
   @MaxLength(100, { message: 'Item name must not exceed 100 characters' })
-  @Transform(({ value }) => value?.trim())
+  @Transform(({ value }: { value: string }) => value?.trim())
   itemName!: string;
 
   @ApiProperty({
@@ -55,7 +59,7 @@ export class CreateEscrowDto {
   @Matches(/^[A-Z0-9]+$/, {
     message: 'Currency must contain only uppercase letters and numbers',
   })
-  @Transform(({ value }) => value?.toUpperCase().trim())
+  @Transform(({ value }: { value: string }) => value?.toUpperCase().trim())
   currency!: string;
 
   @ApiProperty({
@@ -64,6 +68,6 @@ export class CreateEscrowDto {
   })
   @IsString()
   @IsStellarAddress()
-  @Transform(({ value }) => value?.trim())
+  @Transform(({ value }: { value: string }) => value?.trim())
   buyerAddress!: string;
 }

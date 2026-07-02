@@ -20,8 +20,5 @@ export {
 } from './focus-ring.util';
 export type { FocusStyles, FocusRingValidation } from './focus-ring.util';
 
-export {
-  getA11yIssues,
-  validateTabOrder,
-} from './tab-order.util';
+export { getA11yIssues, validateTabOrder } from './tab-order.util';
 export type { ElementDescriptor, A11yIssue } from './tab-order.util';
