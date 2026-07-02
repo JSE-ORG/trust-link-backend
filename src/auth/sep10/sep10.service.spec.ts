@@ -1,3 +1,5 @@
+/// <reference types="jest" />
+
 import { Test, TestingModule } from '@nestjs/testing';
 import { UnauthorizedException } from '@nestjs/common';
 import { Sep10Service } from './sep10.service';
@@ -9,6 +11,7 @@ import {
   TransactionBuilder,
   WebAuth,
 } from '@stellar/stellar-sdk';
+import { createHmac } from 'crypto';
 
 // Mock Stellar SDK
 jest.mock('@stellar/stellar-sdk', () => ({
@@ -56,7 +59,7 @@ describe('Sep10Service', () => {
 
     // Mock TransactionBuilder
     const mockTransactionBuilder = {
-      hash: jest.fn().mockReturnValue(Buffer.from(TEST_TX_HASH, 'hex')),
+      hash: jest.fn().mockReturnValue({ toString: () => TEST_TX_HASH }),
     };
 
     (TransactionBuilder as unknown as jest.Mock).mockImplementation(() => mockTransactionBuilder);
@@ -567,6 +570,108 @@ describe('Sep10Service', () => {
         Buffer.from(parts[1], 'base64url').toString('utf-8'),
       );
       expect(payload.role).toBe('admin');
+    });
+
+    it('should sign JWT using configured SEP10_JWT_SECRET', async () => {
+      const now = new Date();
+      const expiresAt = new Date(now.getTime() + 3600 * 1000);
+
+      const mockNonce = {
+        id: 'nonce-id-123',
+        nonce: TEST_TX_HASH,
+        walletAddress: TEST_ACCOUNT_ID,
+        challenge: TEST_CHALLENGE_XDR,
+        used: false,
+        expiresAt,
+        createdAt: now,
+      };
+
+      (prisma.nonce.findUnique as jest.Mock).mockResolvedValue(mockNonce);
+      (prisma.nonce.update as jest.Mock).mockResolvedValue({
+        ...mockNonce,
+        used: true,
+      });
+      (prisma.refreshToken.create as jest.Mock).mockResolvedValue({
+        id: 'refresh-token-id',
+        userId: TEST_ACCOUNT_ID,
+        tokenHash: 'hash-123',
+      });
+
+      const result = await service.verifyAndIssueToken(TEST_CHALLENGE_XDR);
+      const token = result.token;
+      const parts = token.split('.');
+      const header = parts[0];
+      const body = parts[1];
+
+      const secret = 'test-secret-key';
+      const expectedSig = createHmac('sha256', secret)
+        .update(`${header}.${body}`)
+        .digest('base64url');
+
+      expect(parts[2]).toBe(expectedSig);
+    });
+
+    it('should produce a different signature when secret changes', async () => {
+      const now = new Date();
+      const expiresAt = new Date(now.getTime() + 3600 * 1000);
+
+      const mockNonce = {
+        id: 'nonce-id-123',
+        nonce: TEST_TX_HASH,
+        walletAddress: TEST_ACCOUNT_ID,
+        challenge: TEST_CHALLENGE_XDR,
+        used: false,
+        expiresAt,
+        createdAt: now,
+      };
+
+      (prisma.nonce.findUnique as jest.Mock).mockResolvedValue(mockNonce);
+      (prisma.nonce.update as jest.Mock).mockResolvedValue({
+        ...mockNonce,
+        used: true,
+      });
+      (prisma.refreshToken.create as jest.Mock).mockResolvedValue({
+        id: 'refresh-token-id',
+        userId: TEST_ACCOUNT_ID,
+        tokenHash: 'hash-123',
+      });
+
+      const result = await service.verifyAndIssueToken(TEST_CHALLENGE_XDR);
+      const token = result.token;
+      const parts = token.split('.');
+      const header = parts[0];
+      const body = parts[1];
+
+      const differentSig = createHmac('sha256', 'different-secret')
+        .update(`${header}.${body}`)
+        .digest('base64url');
+
+      expect(parts[2]).not.toBe(differentSig);
+    });
+  });
+
+  describe('hashToken', () => {
+    it('should consistently hash the same token and change when secret changes', () => {
+      const token = 'some-random-refresh-token';
+
+      const first = (service as any).hashToken(token);
+      const second = (service as any).hashToken(token);
+
+      expect(first).toBe(second);
+
+      // Change secret returned by config and ensure hash changes
+      (configService.get as jest.Mock).mockImplementation((key: string) => {
+        const configMap: Record<string, any> = {
+          STELLAR_NETWORK: 'TESTNET',
+          SEP10_JWT_SECRET: 'another-secret',
+          REFRESH_TOKEN_TTL: REFRESH_TOKEN_TTL,
+          ADMIN_ADDRESS: null,
+        };
+        return configMap[key];
+      });
+
+      const third = (service as any).hashToken(token);
+      expect(third).not.toBe(first);
     });
   });
 
