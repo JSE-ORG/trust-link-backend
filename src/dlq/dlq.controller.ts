@@ -1,22 +1,12 @@
-import {
-  Body,
-  Controller,
-  Get,
-  Param,
-  Post,
-  Query,
-  UseGuards,
-} from '@nestjs/common';
+import { Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { JwtGuard } from '../auth/guards/jwt.guard';
 import { AdminGuard } from '../admin/guards/admin.guard';
 import { DlqService } from './dlq.service';
-import type { FailedTransactionStatus, ListFailedTransactionsQuery } from './dlq.types';
+import type {
+  FailedTransactionStatus,
+  ListFailedTransactionsQuery,
+} from './dlq.types';
 import { ContractService } from '../stellar/contract.service';
-
-interface ReplayBody {
-  /** Optional override for the operation the replay should run. */
-  operation?: string;
-}
 
 /**
  * Admin endpoints for reviewing and re-executing failed Stellar contract
@@ -54,8 +44,8 @@ export class DlqController {
    * hand. Either way the record is updated on the outcome.
    */
   @Post(':id/replay')
-  async replay(@Param('id') id: string, @Body() _body: ReplayBody = {}) {
-    const record = this.dlq.get(id);
+  async replay(@Param('id') id: string) {
+    const record = await this.dlq.get(id);
     return this.dlq.replay(record.id, async (r) => {
       if (r.operation === 'submitAutoRelease' && r.escrowId) {
         return this.contract.submitAutoRelease(r.escrowId);

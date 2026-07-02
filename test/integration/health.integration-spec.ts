@@ -1,6 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-argument */
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
@@ -8,6 +5,7 @@ import { AppController } from '../../src/app.controller';
 import { AppService } from '../../src/app.service';
 import { ConfigService } from '../../src/config/config.service';
 import { PrismaService } from '../../src/prisma/prisma.service';
+import { CacheService } from '../../src/cache/cache.service';
 
 const mockFetch = jest.fn();
 
@@ -36,8 +34,11 @@ describe('GET /health integration (issue #55)', () => {
     }),
   } as unknown as ConfigService;
 
+  let cachePingMock: jest.Mock;
+
   beforeEach(async () => {
-    mockFetch.mockResolvedValue({ ok: true } as Response);
+    mockFetch.mockResolvedValue({ ok: true });
+    cachePingMock = jest.fn().mockResolvedValue('ok');
 
     prisma = new PrismaService();
 
@@ -47,6 +48,7 @@ describe('GET /health integration (issue #55)', () => {
         AppService,
         { provide: ConfigService, useValue: mockConfigService },
         { provide: PrismaService, useValue: prisma },
+        { provide: CacheService, useValue: { ping: cachePingMock } },
       ],
     }).compile();
 
@@ -104,8 +106,14 @@ describe('GET /health integration (issue #55)', () => {
         .expect(200);
 
       const allowedKeys = new Set([
-        'status', 'db', 'horizon', 'timestamp',
-        'environment', 'version', 'durationMs',
+        'status',
+        'db',
+        'horizon',
+        'redis',
+        'timestamp',
+        'environment',
+        'version',
+        'durationMs',
       ]);
       const unexpected = Object.keys(body).filter((k) => !allowedKeys.has(k));
       expect(unexpected).toHaveLength(0);
@@ -213,13 +221,13 @@ describe('GET /health integration (issue #55)', () => {
     });
 
     it('returns HTTP 503 when Horizon responds with a non-2xx status', async () => {
-      mockFetch.mockResolvedValueOnce({ ok: false } as Response);
+      mockFetch.mockResolvedValueOnce({ ok: false });
 
       await request(app.getHttpServer()).get('/health').expect(503);
     });
 
     it('sets horizon: "down" when Horizon responds non-2xx', async () => {
-      mockFetch.mockResolvedValueOnce({ ok: false } as Response);
+      mockFetch.mockResolvedValueOnce({ ok: false });
 
       const { body } = await request(app.getHttpServer())
         .get('/health')
@@ -265,6 +273,66 @@ describe('GET /health integration (issue #55)', () => {
       expect(body.status).toBe('down');
       expect(body.db).toBe('down');
       expect(body.horizon).toBe('down');
+    });
+  });
+
+  // ─── Redis downtime ───────────────────────────────────────────────────────
+
+  describe('when Redis is down', () => {
+    it('returns HTTP 200 (Redis is optional — graceful fallback)', async () => {
+      cachePingMock.mockResolvedValue('down');
+
+      await request(app.getHttpServer()).get('/health').expect(200);
+    });
+
+    it('sets redis: "down" without making the service unhealthy', async () => {
+      cachePingMock.mockResolvedValue('down');
+
+      const { body } = await request(app.getHttpServer())
+        .get('/health')
+        .expect(200);
+
+      expect(body.status).toBe('ok');
+      expect(body.redis).toBe('down');
+    });
+
+    it('reports redis: "disabled" when Redis is not configured', async () => {
+      cachePingMock.mockResolvedValue('disabled');
+
+      const { body } = await request(app.getHttpServer())
+        .get('/health')
+        .expect(200);
+
+      expect(body.status).toBe('ok');
+      expect(body.redis).toBe('disabled');
+    });
+
+    it('handles Redis ping throwing an unexpected error gracefully', async () => {
+      cachePingMock.mockRejectedValue(new Error('Redis connection lost'));
+
+      const { body } = await request(app.getHttpServer())
+        .get('/health')
+        .expect(200);
+
+      expect(body.status).toBe('ok');
+      expect(body.redis).toBe('down');
+    });
+  });
+
+  // ─── All components healthy ───────────────────────────────────────────────
+
+  describe('when all dependencies including Redis are reachable', () => {
+    it('returns HTTP 200 with all statuses ok', async () => {
+      cachePingMock.mockResolvedValue('ok');
+
+      const { body } = await request(app.getHttpServer())
+        .get('/health')
+        .expect(200);
+
+      expect(body.status).toBe('ok');
+      expect(body.db).toBe('ok');
+      expect(body.horizon).toBe('ok');
+      expect(body.redis).toBe('ok');
     });
   });
 });

@@ -16,12 +16,14 @@ export type NotificationChannel = 'EMAIL' | 'SMS';
  * synchronous path uses today.
  */
 export interface NotificationRetryJobData {
-    channel: NotificationChannel;
-    type: NotificationType;
-    escrow: EscrowRecord;
-    recipientAddress: string;
-    /** Optional correlation id so cross-service log lines stitch together. */
-    requestId?: string;
+  channel: NotificationChannel;
+  type: NotificationType;
+  escrow: EscrowRecord;
+  recipientAddress: string;
+  /** Optional correlation id so cross-service log lines stitch together. */
+  requestId?: string;
+  /** Optional database record id for tracking. */
+  notificationId?: string;
 }
 
 /**
@@ -37,18 +39,18 @@ export interface NotificationRetryJobData {
  * the first), so `attempts: 5` means 1 immediate + 4 retries.
  */
 export interface NotificationRetryBackoff {
-    attempts: number;
-    /** Initial delay in ms. */
-    delay: number;
-    /** Optional cap so a high attempt count doesn't push the delay
-     *  past a sensible ceiling (default 5 minutes). */
-    maxDelayMs?: number;
+  attempts: number;
+  /** Initial delay in ms. */
+  delay: number;
+  /** Optional cap so a high attempt count doesn't push the delay
+   *  past a sensible ceiling (default 5 minutes). */
+  maxDelayMs?: number;
 }
 
 export const DEFAULT_BACKOFF: NotificationRetryBackoff = {
-    attempts: 5,
-    delay: 1_000,
-    maxDelayMs: 5 * 60 * 1_000,
+  attempts: 5,
+  delay: 1_000,
+  maxDelayMs: 5 * 60 * 1_000,
 };
 
 /**
@@ -60,15 +62,15 @@ export const DEFAULT_BACKOFF: NotificationRetryBackoff = {
  * dispatch is attempt 2, etc.).
  */
 export const computeBackoffDelay = (
-    attemptNumber: number,
-    backoff: NotificationRetryBackoff = DEFAULT_BACKOFF,
+  attemptNumber: number,
+  backoff: NotificationRetryBackoff = DEFAULT_BACKOFF,
 ): number => {
-    if (attemptNumber <= 1) return 0;
-    const raw = backoff.delay * Math.pow(2, attemptNumber - 2);
-    const capped = Math.min(raw, backoff.maxDelayMs ?? Number.POSITIVE_INFINITY);
-    // Add jitter ±25% to prevent thundering herd (#317)
-    const jitter = capped * 0.25 * (Math.random() * 2 - 1);
-    return Math.max(0, Math.round(capped + jitter));
+  if (attemptNumber <= 1) return 0;
+  const raw = backoff.delay * Math.pow(2, attemptNumber - 2);
+  const capped = Math.min(raw, backoff.maxDelayMs ?? Number.POSITIVE_INFINITY);
+  // Add jitter ±25% to prevent thundering herd (#317)
+  const jitter = capped * 0.25 * (Math.random() * 2 - 1);
+  return Math.max(0, Math.round(capped + jitter));
 };
 
 /**
@@ -77,12 +79,12 @@ export const computeBackoffDelay = (
  * Prisma surface can persist it directly.
  */
 export interface NotificationDeadLetterRecord {
-    channel: NotificationChannel;
-    type: NotificationType;
-    escrowId: string;
-    recipientAddress: string;
-    attemptsExhausted: number;
-    lastError: string;
-    failedAt: Date;
-    requestId?: string;
+  channel: NotificationChannel;
+  type: NotificationType;
+  escrowId: string;
+  recipientAddress: string;
+  attemptsExhausted: number;
+  lastError: string;
+  failedAt: Date;
+  requestId?: string;
 }

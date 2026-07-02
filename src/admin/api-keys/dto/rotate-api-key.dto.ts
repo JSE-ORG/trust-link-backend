@@ -1,6 +1,11 @@
 import { IsNotEmpty, IsString } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
+/**
+ * Request body for rotating a logistics provider API key. The admin
+ * supplies the new key value which immediately replaces the existing
+ * one for all subsequent logistics API calls.
+ */
 export class RotateApiKeyDto {
   @ApiProperty({
     description: 'The new API key value to rotate in.',

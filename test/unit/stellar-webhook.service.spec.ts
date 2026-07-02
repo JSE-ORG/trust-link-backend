@@ -187,6 +187,24 @@ describe('StellarWebhookService (issue #76)', () => {
     );
   });
 
+  it('logs webhook processing failures with event context before rethrowing', async () => {
+    configService.get.mockReturnValue(undefined);
+    const dto = makeDto({ id: 'op-fail', to: undefined });
+    const raw = Buffer.from(JSON.stringify(dto));
+    const loggerSpy = jest
+      .spyOn((service as any).logger, 'error')
+      .mockImplementation();
+
+    await expect(service.handleEvent(raw, undefined, dto)).rejects.toThrow(
+      BadRequestException,
+    );
+
+    expect(loggerSpy).toHaveBeenCalledWith(
+      expect.stringContaining('stellar.webhook.processing_failed'),
+      expect.any(String),
+    );
+  });
+
   it('silently ignores unhandled event types', async () => {
     configService.get.mockReturnValue(undefined);
     const dto = makeDto({ type: 'account_created', to: undefined });

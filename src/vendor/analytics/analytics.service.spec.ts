@@ -29,9 +29,10 @@ describe('AnalyticsService', () => {
       const vendorAddress = '0xVendor123';
       const days = 7;
 
-      // Create test escrows across multiple days
-      const baseDate = new Date('2024-01-01T00:00:00Z');
-      
+      // Create test escrows across multiple days (base = 4 days ago so all fit in the 7-day window)
+      const baseDate = new Date();
+      baseDate.setDate(baseDate.getDate() - 4);
+
       await prisma.escrow.create({
         data: {
           vendorAddress,
@@ -80,7 +81,11 @@ describe('AnalyticsService', () => {
         },
       });
 
-      const result = await service.getDailyVolumeChart(vendorAddress, days, 'UTC');
+      const result = await service.getDailyVolumeChart(
+        vendorAddress,
+        days,
+        'UTC',
+      );
 
       expect(result.data).toBeDefined();
       expect(result.data.length).toBeGreaterThan(0);
@@ -123,13 +128,17 @@ describe('AnalyticsService', () => {
         },
       });
 
-      const result = await service.getDailyVolumeChart(vendorAddress, days, 'UTC');
+      const result = await service.getDailyVolumeChart(
+        vendorAddress,
+        days,
+        'UTC',
+      );
 
       // Should have entries for all 5 days
       expect(result.data.length).toBe(5);
-      
+
       // Check that days with no transactions have zero values
-      const zeroDays = result.data.filter(d => d.transactionCount === 0);
+      const zeroDays = result.data.filter((d) => d.transactionCount === 0);
       expect(zeroDays.length).toBe(3);
     });
 
@@ -139,7 +148,7 @@ describe('AnalyticsService', () => {
 
       // Create escrow near midnight UTC
       const utcDate = new Date('2024-01-01T23:30:00Z');
-      
+
       await prisma.escrow.create({
         data: {
           vendorAddress,
@@ -153,11 +162,19 @@ describe('AnalyticsService', () => {
       });
 
       // Test with UTC timezone
-      const utcResult = await service.getDailyVolumeChart(vendorAddress, days, 'UTC');
+      const utcResult = await service.getDailyVolumeChart(
+        vendorAddress,
+        days,
+        'UTC',
+      );
       expect(utcResult.data).toBeDefined();
 
       // Test with different timezone (e.g., America/New_York)
-      const estResult = await service.getDailyVolumeChart(vendorAddress, days, 'America/New_York');
+      const estResult = await service.getDailyVolumeChart(
+        vendorAddress,
+        days,
+        'America/New_York',
+      );
       expect(estResult.data).toBeDefined();
     });
 
@@ -205,7 +222,11 @@ describe('AnalyticsService', () => {
         },
       });
 
-      const result = await service.getDailyVolumeChart(vendorAddress, days, 'UTC');
+      const result = await service.getDailyVolumeChart(
+        vendorAddress,
+        days,
+        'UTC',
+      );
 
       const dayData = result.data[0];
       expect(dayData.totalVolume).toBe(450);
@@ -219,7 +240,11 @@ describe('AnalyticsService', () => {
       const vendorAddress = '0xVendorXYZ';
       const days = 7;
 
-      const result = await service.getDailyVolumeChart(vendorAddress, days, 'UTC');
+      const result = await service.getDailyVolumeChart(
+        vendorAddress,
+        days,
+        'UTC',
+      );
 
       expect(result.data).toBeDefined();
       expect(result.data.length).toBe(7); // Should still have all days with zero values
@@ -253,7 +278,12 @@ describe('AnalyticsService', () => {
       const endDate = new Date('2024-01-05');
 
       // Access private method using bracket notation
-      const filledData = (service as any).fillDateGaps(dailyMap, startDate, endDate, 'UTC');
+      const filledData = (service as any).fillDateGaps(
+        dailyMap,
+        startDate,
+        endDate,
+        'UTC',
+      );
 
       expect(filledData.length).toBe(5);
       expect(filledData[0].date).toBe('2024-01-01');
@@ -274,7 +304,10 @@ describe('AnalyticsService', () => {
 
     it('should format date correctly in different timezone', () => {
       const date = new Date('2024-01-15T00:30:00Z');
-      const formatted = (service as any).formatDateInTimezone(date, 'America/New_York');
+      const formatted = (service as any).formatDateInTimezone(
+        date,
+        'America/New_York',
+      );
       expect(formatted).toBeDefined();
       expect(formatted).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     });

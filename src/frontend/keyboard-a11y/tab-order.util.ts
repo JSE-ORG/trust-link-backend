@@ -137,8 +137,7 @@ export function getA11yIssues(elements: ElementDescriptor[]): A11yIssue[] {
       issues.push({
         severity: 'warning',
         element: el.identifier,
-        message:
-          `Interactive element has no aria-label or aria-labelledby.`,
+        message: `Interactive element has no aria-label or aria-labelledby.`,
         fix: `Add aria-label="descriptive text" for screen reader users.`,
       });
     }

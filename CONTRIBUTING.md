@@ -482,6 +482,32 @@ New code must include tests. PRs that drop overall coverage by more than 2% will
 
 ---
 
+## Database Scripts
+
+| Script | Command | Description |
+|---|---|---|
+| Apply pending migrations | `npm run db:migrate` | Runs `prisma migrate deploy` — applies all pending migrations; safe for CI and production |
+| Create a new migration | `npx prisma migrate dev --name <name>` | Generates and applies a migration for local development |
+| Reset local database | `npm run db:reset` | Drops, recreates, re-migrates, and re-seeds the local database (development only — requires confirmation) |
+| Populate test data | `npm run db:seed` | Runs `scripts/db-seed.ts` to insert 3 vendor profiles, 10 escrows, 2 disputes, and 10 notifications idempotently |
+| Open Prisma Studio | `npm run db:studio` | Launches the visual database browser |
+| Regenerate Prisma client | `npm run db:generate` | Required after editing `prisma/schema.prisma` |
+
+### Typical local development flow
+
+```bash
+# First-time setup
+npm run db:migrate    # apply all migrations
+npm run db:seed       # populate with test data
+
+# After pulling schema changes
+npm run db:generate   # regenerate client
+npm run db:migrate    # apply new migrations
+
+# Start fresh (drops all data)
+npm run db:reset      # reset + seed in one step
+```
+
 ## Database Migrations
 
 If your change requires a schema update:
@@ -503,6 +529,19 @@ npx prisma generate
 - Migration names must be descriptive: `add-dispute-resolution-timestamp`, not `update1`
 - Destructive migrations (dropping columns or tables) must include a comment explaining data handling
 - If you're adding a non-nullable column, it must either have a `@default` value or include a migration that backfills existing rows
+
+## CI Caching Strategy
+
+The CI pipeline uses two levels of caching to reduce run times:
+
+| Cache | Key | What it stores |
+|---|---|---|
+| npm cache | `setup-node cache: 'npm'` | Downloaded npm packages (`~/.npm`) |
+| TypeScript build cache | `ts-build-<os>-<hash of tsconfig + src>` | Compiled output in `dist/` and `tsconfig.build.tsbuildinfo` |
+
+The TS build cache is invalidated whenever `tsconfig.build.json` or any `src/**/*.ts` file changes. On cache hit, `nest build` skips unchanged files and only recompiles what changed.
+
+`npm ci` is used instead of `npm install` in all CI steps for faster, deterministic installs from the lockfile.
 
 ---
 

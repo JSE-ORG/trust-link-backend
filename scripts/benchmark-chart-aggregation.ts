@@ -270,19 +270,19 @@ class ChartAggregationBenchmark {
     this.printBenchmarkResults(oldBenchmark, newBenchmark);
   }
 
-  private printBenchmarkResults(old: BenchmarkResult, new: BenchmarkResult): void {
-    const durationImprovement = ((old.duration - new.duration) / old.duration) * 100;
-    const memoryImprovement = ((old.memoryUsed - new.memoryUsed) / old.memoryUsed) * 100;
+  private printBenchmarkResults(oldResult: BenchmarkResult, newResult: BenchmarkResult): void {
+    const durationImprovement = ((oldResult.duration - newResult.duration) / oldResult.duration) * 100;
+    const memoryImprovement = ((oldResult.memoryUsed - newResult.memoryUsed) / oldResult.memoryUsed) * 100;
 
-    console.log(`\n${old.name}:`);
-    console.log(`  Duration: ${old.duration.toFixed(2)}ms`);
-    console.log(`  Memory Used: ${(old.memoryUsed / 1024 / 1024).toFixed(2)}MB`);
-    console.log(`  Records Processed: ${old.recordCount}`);
+    console.log(`\n${oldResult.name}:`);
+    console.log(`  Duration: ${oldResult.duration.toFixed(2)}ms`);
+    console.log(`  Memory Used: ${(oldResult.memoryUsed / 1024 / 1024).toFixed(2)}MB`);
+    console.log(`  Records Processed: ${oldResult.recordCount}`);
 
-    console.log(`\n${new.name}:`);
-    console.log(`  Duration: ${new.duration.toFixed(2)}ms`);
-    console.log(`  Memory Used: ${(new.memoryUsed / 1024 / 1024).toFixed(2)}MB`);
-    console.log(`  Records Processed: ${new.recordCount}`);
+    console.log(`\n${newResult.name}:`);
+    console.log(`  Duration: ${newResult.duration.toFixed(2)}ms`);
+    console.log(`  Memory Used: ${(newResult.memoryUsed / 1024 / 1024).toFixed(2)}MB`);
+    console.log(`  Records Processed: ${newResult.recordCount}`);
 
     console.log(`\nImprovement:`);
     console.log(`  Duration: ${durationImprovement > 0 ? '+' : ''}${durationImprovement.toFixed(2)}%`);

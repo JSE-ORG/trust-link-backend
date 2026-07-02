@@ -12,7 +12,7 @@
     "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/main",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
-    "lint:check": "eslint \"{src,apps,libs,test}/**/*.ts\"",
+    "lint:check": "eslint \"{src,apps,libs,test}/**/*.ts\" --cache --cache-location .eslintcache",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:integration": "jest --config ./test/jest-integration.json",
@@ -22,9 +22,10 @@
     "check-coverage": "node scripts/check_coverage.js",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
-    "db:migrate": "prisma migrate dev",
+    "db:migrate": "prisma migrate deploy",
     "db:studio": "prisma studio",
-    "db:reset": "prisma migrate reset",
+    "db:seed": "ts-node scripts/db-seed.ts",
+    "db:reset": "prisma migrate reset --force && npm run db:seed",
     "typecheck": "tsc --noEmit",
     "validate": "npm run typecheck && npm run lint:check && npm run test",
     "docker:build": "docker build -t trustlink-backend .",
@@ -114,7 +115,10 @@
       "clover",
       "json-summary"
     ],
-    "testEnvironment": "node"
+    "testEnvironment": "node",
+    "setupFiles": [
+      "<rootDir>/test/setup-env.ts"
+    ]
   },
   "prisma": {
     "seed": "ts-node prisma/seed.ts"

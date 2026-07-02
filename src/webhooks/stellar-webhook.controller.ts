@@ -18,6 +18,18 @@ import { StellarWebhookService } from './stellar-webhook.service';
 export class StellarWebhookController {
   constructor(private readonly webhookService: StellarWebhookService) {}
 
+  /**
+   * Receives and processes Stellar Horizon ledger event webhooks.
+   * Validates the HMAC signature and routes the event to the
+   * appropriate handler. Duplicate events are detected and skipped.
+   *
+   * @param req - Raw Express request with body buffer for signature verification
+   * @param signature - HMAC signature from x-stellar-signature header
+   * @param dto - Stellar webhook event payload
+   * @returns Processing result with received status and optional skip reason
+   * @throws BadRequestException if raw body is unavailable or payload is invalid
+   * @authentication None (HMAC signature verification instead)
+   */
   @ApiOperation({ summary: 'Receive Stellar Horizon ledger event webhook' })
   @ApiResponse({ status: 200, description: 'Webhook event processed.' })
   @ApiResponse({

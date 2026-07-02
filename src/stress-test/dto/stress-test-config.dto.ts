@@ -119,7 +119,8 @@ export class StressTestConfigDto {
   thresholds?: PerformanceThresholds;
 
   @ApiPropertyOptional({
-    description: 'Time in seconds to ramp up to the full concurrent user count.',
+    description:
+      'Time in seconds to ramp up to the full concurrent user count.',
     minimum: 1,
     example: 10,
   })

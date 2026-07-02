@@ -9,11 +9,14 @@ import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { ConfigService } from './config/config.service';
 import { JsonLoggerService } from './common/logger/json-logger.service';
+import { ErrorResponseDto } from './common/dto/error-response.dto';
 import { SanitizationPipe } from './common/pipes/sanitization.pipe';
 import { SentryInterceptor } from './common/interceptors/sentry.interceptor';
 import { buildCspConnectSrc } from './common/security/csp.config';
 
-async function bootstrap() {
+const bootstrapLogger = new JsonLoggerService('Bootstrap');
+
+async function bootstrap(): Promise<void> {
   const sentryDsn = process.env.SENTRY_DSN;
   if (sentryDsn) {
     Sentry.init({
@@ -35,10 +38,16 @@ async function bootstrap() {
   const configService = app.get(ConfigService);
   const connectSrc = buildCspConnectSrc({
     stellarNetwork: configService.get('STELLAR_NETWORK'),
-    stellarHorizonUrl: configService.get<string | undefined>('STELLAR_HORIZON_URL'),
+    stellarHorizonUrl: configService.get<string | undefined>(
+      'STELLAR_HORIZON_URL',
+    ),
     sentryDsn,
-    otelExporterOtlpEndpoint: configService.get<string | undefined>('OTEL_EXPORTER_OTLP_ENDPOINT'),
-    logisticsApiBaseUrl: configService.get<string | undefined>('LOGISTICS_API_BASE_URL'),
+    otelExporterOtlpEndpoint: configService.get<string | undefined>(
+      'OTEL_EXPORTER_OTLP_ENDPOINT',
+    ),
+    logisticsApiBaseUrl: configService.get<string | undefined>(
+      'LOGISTICS_API_BASE_URL',
+    ),
     extraConnectSrc: configService.get<string | undefined>('CSP_CONNECT_SRC'),
   });
 
@@ -154,7 +163,19 @@ async function bootstrap() {
     .setVersion('1.0')
     .addBearerAuth()
     .build();
-  const document = SwaggerModule.createDocument(app, swaggerConfig);
+  const document = SwaggerModule.createDocument(app, swaggerConfig, {
+    extraModels: [ErrorResponseDto],
+  });
+  document.components ??= {};
+  document.components.responses ??= {};
+  document.components.responses.StandardError = {
+    description: 'Standard error response',
+    content: {
+      'application/json': {
+        schema: { $ref: '#/components/schemas/ErrorResponseDto' },
+      },
+    },
+  };
   SwaggerModule.setup('api/docs', app, document);
 
   app.enableShutdownHooks();
@@ -175,4 +196,27 @@ async function bootstrap() {
   );
 }
 
-void bootstrap();
+bootstrap().catch((err: unknown) => {
+  bootstrapLogger.error(
+    JSON.stringify({
+      msg: 'server.bootstrap.failed',
+      error: err instanceof Error ? err.message : String(err),
+    }),
+    err instanceof Error ? err.stack : undefined,
+  );
+  process.exit(1);
+});
+
+process.on('SIGTERM', () => {
+  bootstrapLogger.log(
+    JSON.stringify({ msg: 'server.shutdown', signal: 'SIGTERM' }),
+  );
+  process.exit(0);
+});
+
+process.on('SIGINT', () => {
+  bootstrapLogger.log(
+    JSON.stringify({ msg: 'server.shutdown', signal: 'SIGINT' }),
+  );
+  process.exit(0);
+});

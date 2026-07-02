@@ -23,21 +23,22 @@
  */
 
 import {
-    Injectable,
-    Logger,
-    OnModuleDestroy,
-    OnModuleInit,
-    Optional,
+  Injectable,
+  Logger,
+  OnModuleDestroy,
+  OnModuleInit,
+  Optional,
 } from '@nestjs/common';
 import * as crypto from 'crypto';
 import type { ConnectionOptions } from 'bullmq';
 
+import { PrismaService } from '../prisma/prisma.service';
 import {
-    NotificationRetryJobData,
-    NotificationRetryBackoff,
-    NotificationDeadLetterRecord,
-    DEFAULT_BACKOFF,
-    computeBackoffDelay,
+  NotificationRetryJobData,
+  NotificationRetryBackoff,
+  NotificationDeadLetterRecord,
+  DEFAULT_BACKOFF,
+  computeBackoffDelay,
 } from './notification-retry-queue.types';
 
 /**
@@ -46,7 +47,7 @@ import {
  * `NotificationsService` can be reduced to this shape.
  */
 export interface NotificationChannelDispatcher {
-    dispatch(job: NotificationRetryJobData): Promise<void>;
+  dispatch(job: NotificationRetryJobData): Promise<void>;
 }
 
 /**
@@ -54,21 +55,21 @@ export interface NotificationChannelDispatcher {
  * landed on the DLQ.
  */
 export interface NotificationDeadLetterSink {
-    record(entry: NotificationDeadLetterRecord): Promise<void> | void;
+  record(entry: NotificationDeadLetterRecord): Promise<void> | void;
 }
 
 const QUEUE_NAME = 'notifications-retry';
 const DLQ_NAME = 'notifications-dlq';
 
 interface CommonOptions {
-    backoff?: NotificationRetryBackoff;
-    deadLetterSink?: NotificationDeadLetterSink;
-    /**
-     * Hook used by `enqueue` to schedule a delayed retry in the
-     * in-process backend. Exposed so tests can substitute fake timers
-     * without monkey-patching `setTimeout`.
-     */
-    scheduleDelayed?: (cb: () => void, ms: number) => void;
+  backoff?: NotificationRetryBackoff;
+  deadLetterSink?: NotificationDeadLetterSink;
+  /**
+   * Hook used by `enqueue` to schedule a delayed retry in the
+   * in-process backend. Exposed so tests can substitute fake timers
+   * without monkey-patching `setTimeout`.
+   */
+  scheduleDelayed?: (cb: () => void, ms: number) => void;
 }
 
 /**
@@ -78,214 +79,317 @@ interface CommonOptions {
  */
 @Injectable()
 export class NotificationRetryQueueService
-    implements OnModuleInit, OnModuleDestroy
+  implements OnModuleInit, OnModuleDestroy
 {
-    private readonly logger = new Logger(NotificationRetryQueueService.name);
-    private bullQueue: import('bullmq').Queue<NotificationRetryJobData> | null =
-        null;
-    private bullWorker: import('bullmq').Worker<NotificationRetryJobData> | null =
-        null;
-    private bullDlq: import('bullmq').Queue<NotificationDeadLetterRecord> | null =
-        null;
-    private readonly dispatchers: Record<
-        'EMAIL' | 'SMS',
-        NotificationChannelDispatcher | null
-    > = { EMAIL: null, SMS: null };
-    private readonly options: Required<Omit<CommonOptions, 'deadLetterSink' | 'scheduleDelayed'>> &
-        CommonOptions = {
-        backoff: DEFAULT_BACKOFF,
+  private readonly logger = new Logger(NotificationRetryQueueService.name);
+  private bullQueue: import('bullmq').Queue<NotificationRetryJobData> | null =
+    null;
+  private bullWorker: import('bullmq').Worker<NotificationRetryJobData> | null =
+    null;
+  private bullDlq: import('bullmq').Queue<NotificationDeadLetterRecord> | null =
+    null;
+  private readonly dispatchers: Record<
+    'EMAIL' | 'SMS',
+    NotificationChannelDispatcher | null
+  > = { EMAIL: null, SMS: null };
+  private readonly options: Required<
+    Omit<CommonOptions, 'deadLetterSink' | 'scheduleDelayed'>
+  > &
+    CommonOptions = {
+    backoff: DEFAULT_BACKOFF,
+  };
+
+  constructor(
+    @Optional() options?: CommonOptions,
+    @Optional() private readonly prisma?: PrismaService,
+  ) {
+    if (options?.backoff) this.options.backoff = options.backoff;
+    this.options.deadLetterSink = options?.deadLetterSink;
+    this.options.scheduleDelayed = options?.scheduleDelayed;
+  }
+
+  registerDispatcher(
+    channel: 'EMAIL' | 'SMS',
+    dispatcher: NotificationChannelDispatcher,
+  ): void {
+    this.dispatchers[channel] = dispatcher;
+  }
+
+  /**
+   * Enqueue a notification for delivery. When Redis is available
+   * the job is added to the BullMQ queue; otherwise it runs through
+   * the in-process retry runner.
+   */
+  async enqueue(job: NotificationRetryJobData): Promise<void> {
+    const enriched: NotificationRetryJobData = {
+      ...job,
+      requestId: job.requestId ?? crypto.randomUUID(),
     };
+    if (this.bullQueue) {
+      await this.bullQueue.add(`${job.channel}-${job.type}`, enriched, {
+        attempts: this.options.backoff.attempts,
+        backoff: {
+          type: 'exponential',
+          delay: this.options.backoff.delay,
+        },
+        removeOnComplete: 100,
+        removeOnFail: 100,
+      });
+      return;
+    }
+    await this.processInProcess(enriched);
+  }
 
-    constructor(
-        @Optional() options?: CommonOptions,
-    ) {
-        if (options?.backoff) this.options.backoff = options.backoff;
-        this.options.deadLetterSink = options?.deadLetterSink;
-        this.options.scheduleDelayed = options?.scheduleDelayed;
+  /**
+   * In-process retry runner that mirrors BullMQ's exponential
+   * backoff. Used in test + dev environments without Redis.
+   */
+  private async processInProcess(job: NotificationRetryJobData): Promise<void> {
+    const dispatcher = this.dispatchers[job.channel];
+    if (!dispatcher) {
+      this.logger.warn(
+        `No dispatcher registered for channel ${job.channel}; dropping job ${job.requestId}`,
+      );
+      return;
     }
 
-    registerDispatcher(
-        channel: 'EMAIL' | 'SMS',
-        dispatcher: NotificationChannelDispatcher,
-    ): void {
-        this.dispatchers[channel] = dispatcher;
-    }
-
-    /**
-     * Enqueue a notification for delivery. When Redis is available
-     * the job is added to the BullMQ queue; otherwise it runs through
-     * the in-process retry runner.
-     */
-    async enqueue(job: NotificationRetryJobData): Promise<void> {
-        const enriched: NotificationRetryJobData = {
-            ...job,
-            requestId: job.requestId ?? crypto.randomUUID(),
-        };
-        if (this.bullQueue) {
-            await this.bullQueue.add(`${job.channel}-${job.type}`, enriched, {
-                attempts: this.options.backoff.attempts,
-                backoff: {
-                    type: 'exponential',
-                    delay: this.options.backoff.delay,
-                },
-                removeOnComplete: 100,
-                removeOnFail: 100,
-            });
-            return;
-        }
-        await this.processInProcess(enriched);
-    }
-
-    /**
-     * In-process retry runner that mirrors BullMQ's exponential
-     * backoff. Used in test + dev environments without Redis.
-     */
-    private async processInProcess(
-        job: NotificationRetryJobData,
-    ): Promise<void> {
-        const dispatcher = this.dispatchers[job.channel];
-        if (!dispatcher) {
-            this.logger.warn(
-                `No dispatcher registered for channel ${job.channel}; dropping job ${job.requestId}`,
+    const { attempts } = this.options.backoff;
+    let lastError: unknown = null;
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+      try {
+        await dispatcher.dispatch(job);
+        if (job.notificationId && this.prisma) {
+          await this.prisma.notification
+            .update({
+              where: { id: job.notificationId },
+              data: {
+                status: 'SENT',
+                sentAt: new Date(),
+                retryCount: attempt - 1,
+              },
+            })
+            .catch((err) =>
+              this.logger.error(
+                'Failed to update notification status to SENT',
+                err,
+              ),
             );
-            return;
         }
-
-        const { attempts } = this.options.backoff;
-        let lastError: unknown = null;
-        for (let attempt = 1; attempt <= attempts; attempt++) {
-            try {
-                await dispatcher.dispatch(job);
-                return;
-            } catch (err) {
-                lastError = err;
-                if (attempt >= attempts) break;
-                const delay = computeBackoffDelay(attempt + 1, this.options.backoff);
-                this.logger.warn(
-                    `Retry attempt ${attempt}/${attempts} for ${job.type}/${job.channel} ` +
-                    `(requestId: ${job.requestId}) — next retry in ${delay}ms`,
-                );
-                await this.sleep(delay);
-            }
+        return;
+      } catch (err) {
+        lastError = err;
+        if (job.notificationId && this.prisma) {
+          await this.prisma.notification
+            .update({
+              where: { id: job.notificationId },
+              data: {
+                retryCount: attempt,
+                failedAt: new Date(),
+                lastError: err instanceof Error ? err.message : String(err),
+              },
+            })
+            .catch((dbErr) =>
+              this.logger.error(
+                'Failed to update notification status to FAILED/PENDING',
+                dbErr,
+              ),
+            );
         }
-        await this.recordDeadLetter(job, attempts, lastError);
-    }
-
-    private async recordDeadLetter(
-        job: NotificationRetryJobData,
-        attemptsExhausted: number,
-        lastError: unknown,
-    ): Promise<void> {
-        const entry: NotificationDeadLetterRecord = {
-            channel: job.channel,
-            type: job.type,
-            escrowId: job.escrow.id,
-            recipientAddress: job.recipientAddress,
-            attemptsExhausted,
-            lastError:
-                lastError instanceof Error
-                    ? lastError.message
-                    : String(lastError ?? 'unknown error'),
-            failedAt: new Date(),
-            requestId: job.requestId,
-        };
-        this.logger.error(
-            `Notification ${job.type}/${job.channel} for escrow ${job.escrow.id} ` +
-                `exhausted ${attemptsExhausted} attempts — moved to DLQ ` +
-                `(requestId: ${job.requestId})`,
+        if (attempt >= attempts) break;
+        const delay = computeBackoffDelay(attempt + 1, this.options.backoff);
+        this.logger.warn(
+          `Retry attempt ${attempt}/${attempts} for ${job.type}/${job.channel} ` +
+            `(requestId: ${job.requestId}) — next retry in ${delay}ms`,
         );
-        if (this.bullDlq) {
-            await this.bullDlq.add(`${job.channel}-${job.type}-dlq`, entry, {
-                removeOnComplete: false,
-                removeOnFail: false,
-            });
-        }
-        if (this.options.deadLetterSink) {
-            await this.options.deadLetterSink.record(entry);
-        }
+        await this.sleep(delay);
+      }
+    }
+    if (job.notificationId && this.prisma) {
+      await this.prisma.notification
+        .update({
+          where: { id: job.notificationId },
+          data: {
+            status: 'FAILED',
+          },
+        })
+        .catch((err) =>
+          this.logger.error(
+            'Failed to update notification status to FAILED',
+            err,
+          ),
+        );
+    }
+    await this.recordDeadLetter(job, attempts, lastError);
+  }
+
+  private async recordDeadLetter(
+    job: NotificationRetryJobData,
+    attemptsExhausted: number,
+    lastError: unknown,
+  ): Promise<void> {
+    const entry: NotificationDeadLetterRecord = {
+      channel: job.channel,
+      type: job.type,
+      escrowId: job.escrow.id,
+      recipientAddress: job.recipientAddress,
+      attemptsExhausted,
+      lastError:
+        lastError instanceof Error ? lastError.message : 'unknown error',
+      failedAt: new Date(),
+      requestId: job.requestId,
+    };
+    this.logger.error(
+      `Notification ${job.type}/${job.channel} for escrow ${job.escrow.id} ` +
+        `exhausted ${attemptsExhausted} attempts — moved to DLQ ` +
+        `(requestId: ${job.requestId})`,
+    );
+    if (this.bullDlq) {
+      await this.bullDlq.add(`${job.channel}-${job.type}-dlq`, entry, {
+        removeOnComplete: false,
+        removeOnFail: false,
+      });
+    }
+    if (this.options.deadLetterSink) {
+      await this.options.deadLetterSink.record(entry);
+    }
+  }
+
+  private sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => {
+      const scheduler =
+        this.options.scheduleDelayed ??
+        ((cb: () => void, t: number) => setTimeout(cb, t));
+      scheduler(resolve, ms);
+    });
+  }
+
+  async onModuleInit(): Promise<void> {
+    const url = process.env.REDIS_URL;
+    if (!url) {
+      this.logger.warn(
+        'REDIS_URL is not set; NotificationRetryQueueService is using the in-process retry runner. ' +
+          'Set REDIS_URL to enable BullMQ-backed persistence.',
+      );
+      return;
     }
 
-    private sleep(ms: number): Promise<void> {
-        return new Promise(resolve => {
-            const scheduler =
-                this.options.scheduleDelayed ??
-                ((cb: () => void, t: number) => setTimeout(cb, t));
-            scheduler(resolve, ms);
-        });
-    }
-
-    async onModuleInit(): Promise<void> {
-        const url = process.env.REDIS_URL;
-        if (!url) {
-            this.logger.warn(
-                'REDIS_URL is not set; NotificationRetryQueueService is using the in-process retry runner. ' +
-                    'Set REDIS_URL to enable BullMQ-backed persistence.',
+    try {
+      const { Queue, Worker } = await import('bullmq');
+      const connection: ConnectionOptions = {
+        url,
+      };
+      this.bullQueue = new Queue<NotificationRetryJobData>(QUEUE_NAME, {
+        connection,
+      });
+      this.bullDlq = new Queue<NotificationDeadLetterRecord>(DLQ_NAME, {
+        connection,
+      });
+      this.bullWorker = new Worker<NotificationRetryJobData>(
+        QUEUE_NAME,
+        async (job) => {
+          const dispatcher = this.dispatchers[job.data.channel];
+          if (!dispatcher) {
+            throw new Error(
+              `No dispatcher registered for channel ${job.data.channel}`,
             );
-            return;
-        }
-
-        try {
-            const { Queue, Worker } = await import('bullmq');
-            const connection: ConnectionOptions = { url } as unknown as ConnectionOptions;
-            this.bullQueue = new Queue<NotificationRetryJobData>(QUEUE_NAME, {
-                connection,
-            });
-            this.bullDlq = new Queue<NotificationDeadLetterRecord>(DLQ_NAME, {
-                connection,
-            });
-            this.bullWorker = new Worker<NotificationRetryJobData>(
-                QUEUE_NAME,
-                async job => {
-                    const dispatcher = this.dispatchers[job.data.channel];
-                    if (!dispatcher) {
-                        throw new Error(
-                            `No dispatcher registered for channel ${job.data.channel}`,
-                        );
-                    }
-                    await dispatcher.dispatch(job.data);
-                },
-                { connection },
-            );
-            this.bullWorker.on('failed', async (job, error) => {
-                if (
-                    !job ||
-                    job.attemptsMade < (job.opts.attempts ?? this.options.backoff.attempts)
-                ) {
-                    return;
-                }
-                await this.recordDeadLetter(
-                    job.data,
-                    job.attemptsMade,
-                    error,
+          }
+          try {
+            await dispatcher.dispatch(job.data);
+            if (job.data.notificationId && this.prisma) {
+              await this.prisma.notification
+                .update({
+                  where: { id: job.data.notificationId },
+                  data: {
+                    status: 'SENT',
+                    sentAt: new Date(),
+                    retryCount: job.attemptsMade,
+                  },
+                })
+                .catch((err) =>
+                  this.logger.error(
+                    'Failed to update notification status to SENT in worker',
+                    err,
+                  ),
                 );
-            });
-            this.logger.log(
-                `BullMQ retry queue connected (queue: ${QUEUE_NAME}, dlq: ${DLQ_NAME})`,
-            );
-        } catch (err) {
-            // Don't crash the Nest module on a misconfigured queue —
-            // fall back to in-process processing so the rest of the
-            // app stays up.
-            this.logger.error(
-                'Failed to connect BullMQ; falling back to in-process retry',
-                err instanceof Error ? err : new Error(String(err)),
-            );
-            this.bullQueue = null;
-            this.bullWorker = null;
-            this.bullDlq = null;
-        }
+            }
+          } catch (err) {
+            if (job.data.notificationId && this.prisma) {
+              await this.prisma.notification
+                .update({
+                  where: { id: job.data.notificationId },
+                  data: {
+                    retryCount: job.attemptsMade + 1,
+                    failedAt: new Date(),
+                    lastError: err instanceof Error ? err.message : String(err),
+                  },
+                })
+                .catch((dbErr) =>
+                  this.logger.error(
+                    'Failed to update notification status on error in worker',
+                    dbErr,
+                  ),
+                );
+            }
+            throw err;
+          }
+        },
+        { connection },
+      );
+      this.bullWorker.on('failed', (job, error) => {
+        void (async () => {
+          if (!job) return;
+          const attemptsAllowed =
+            job.opts.attempts ?? this.options.backoff.attempts;
+          if (job.attemptsMade < attemptsAllowed) {
+            return;
+          }
+          if (job.data.notificationId && this.prisma) {
+            await this.prisma.notification
+              .update({
+                where: { id: job.data.notificationId },
+                data: {
+                  status: 'FAILED',
+                },
+              })
+              .catch((err) =>
+                this.logger.error(
+                  'Failed to update notification status to FAILED in worker',
+                  err,
+                ),
+              );
+          }
+          await this.recordDeadLetter(job.data, job.attemptsMade, error);
+        })();
+      });
+      this.logger.log(
+        `BullMQ retry queue connected (queue: ${QUEUE_NAME}, dlq: ${DLQ_NAME})`,
+      );
+    } catch (err) {
+      // Don't crash the Nest module on a misconfigured queue —
+      // fall back to in-process processing so the rest of the
+      // app stays up.
+      this.logger.error(
+        'Failed to connect BullMQ; falling back to in-process retry',
+        err instanceof Error ? err : new Error(String(err)),
+      );
+      this.bullQueue = null;
+      this.bullWorker = null;
+      this.bullDlq = null;
     }
+  }
 
-    async onModuleDestroy(): Promise<void> {
-        await Promise.all([
-            this.bullWorker?.close(),
-            this.bullQueue?.close(),
-            this.bullDlq?.close(),
-        ]);
-    }
+  async onModuleDestroy(): Promise<void> {
+    await Promise.all([
+      this.bullWorker?.close(),
+      this.bullQueue?.close(),
+      this.bullDlq?.close(),
+    ]);
+  }
 
-    /** Test helper — exposes the dispatcher map. */
-    _getDispatchers(): Readonly<Record<'EMAIL' | 'SMS', NotificationChannelDispatcher | null>> {
-        return this.dispatchers;
-    }
+  /** Test helper — exposes the dispatcher map. */
+  _getDispatchers(): Readonly<
+    Record<'EMAIL' | 'SMS', NotificationChannelDispatcher | null>
+  > {
+    return this.dispatchers;
+  }
 }

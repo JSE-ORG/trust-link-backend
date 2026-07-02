@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/unbound-method */
 import { Logger } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { AutoReleaseService } from '../../src/escrow/auto-release.service';
@@ -63,6 +62,24 @@ describe('AutoReleaseService.run', () => {
 
   afterEach(() => {
     jest.restoreAllMocks();
+  });
+
+  it('passes a cutoff exactly 7 days before now to findAutoReleaseEligible', async () => {
+    const fakeNow = new Date('2026-06-27T12:00:00.000Z');
+    jest.useFakeTimers({ now: fakeNow });
+
+    repository.findAutoReleaseEligible.mockResolvedValue([]);
+
+    await service.run();
+
+    const expectedCutoff = new Date(
+      fakeNow.getTime() - 7 * 24 * 60 * 60 * 1000,
+    );
+    expect(repository.findAutoReleaseEligible).toHaveBeenCalledWith(
+      expectedCutoff,
+    );
+
+    jest.useRealTimers();
   });
 
   it('claims, submits, and marks released for each eligible escrow', async () => {

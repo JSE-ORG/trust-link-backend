@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { encryptCredential, decryptCredential } from '../common/sanitization/credential-encryption.util';
 
 export type LogisticsStatus = 'PENDING' | 'IN_TRANSIT' | 'DELIVERED';
 
@@ -24,14 +25,40 @@ export class LogisticsService {
    * Updates the logistics provider API key at runtime. The new key is picked
    * up immediately by all subsequent getStatus calls, including those from
    * background workers, without requiring a service restart.
+   * The key is encrypted before being stored in memory for security.
    */
   setApiKey(key: string): void {
-    this.apiKey = key;
+    const encryptedKey = encryptCredential(key);
+    this.apiKey = encryptedKey;
   }
 
-  /** Returns the currently configured logistics API key, or null if not set. */
+  /**
+   * Returns the decrypted logistics API key, or null if not set.
+   * The key is decrypted at runtime when needed for API calls.
+   */
   getApiKey(): string | null {
+    if (!this.apiKey) {
+      return null;
+    }
+    try {
+      return decryptCredential(this.apiKey);
+    } catch (error) {
+      throw new Error('Failed to decrypt logistics API key');
+    }
+  }
+
+  /**
+   * Returns the encrypted API key for storage in the database.
+   */
+  getEncryptedApiKey(): string | null {
     return this.apiKey;
+  }
+
+  /**
+   * Sets the API key from an already encrypted value (e.g., from database).
+   */
+  setEncryptedApiKey(encryptedKey: string): void {
+    this.apiKey = encryptedKey;
   }
 
   /** Fetches normalized shipment status from the configured logistics provider. */
@@ -53,8 +80,8 @@ export class LogisticsService {
     const status: LogisticsStatus = normalizedId.includes('DELIVERED')
       ? 'DELIVERED'
       : normalizedId.includes('PENDING')
-      ? 'PENDING'
-      : 'IN_TRANSIT';
+        ? 'PENDING'
+        : 'IN_TRANSIT';
 
     const estimatedDelivery = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000);
     const events: TrackingEvent[] = [

@@ -54,7 +54,10 @@ describe('TrackingPollWorker (issue #11)', () => {
         updatedAt: new Date(),
       },
     ]);
-    logisticsService.getStatus.mockResolvedValue({ status: 'DELIVERED' });
+    logisticsService.getStatus.mockResolvedValue({
+      status: 'DELIVERED',
+      events: [],
+    });
     contractService.recordDelivery.mockResolvedValue('record-hash');
 
     await worker.run();
@@ -90,5 +93,21 @@ describe('TrackingPollWorker (issue #11)', () => {
 
     await expect(worker.run()).resolves.toBeUndefined();
     expect(contractService.recordDelivery).not.toHaveBeenCalled();
+  });
+
+  it('catches top-level poll failures so interval handlers do not reject', async () => {
+    escrowRepository.findShippedWithTracking.mockRejectedValue(
+      new Error('database unavailable'),
+    );
+    const loggerSpy = jest
+      .spyOn((worker as any).logger, 'error')
+      .mockImplementation();
+
+    await expect(worker.run()).resolves.toBeUndefined();
+
+    expect(loggerSpy).toHaveBeenCalledWith(
+      expect.stringContaining('tracking_poll.worker_failed'),
+      expect.any(String),
+    );
   });
 });

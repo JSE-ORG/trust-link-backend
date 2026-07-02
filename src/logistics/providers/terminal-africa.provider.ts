@@ -75,7 +75,9 @@ function parseDate(value: unknown): Date | undefined {
   return undefined;
 }
 
-function getTrackingPayload(rawResponse: TerminalAfricaResponse): TerminalAfricaTrackingPayload | undefined {
+function getTrackingPayload(
+  rawResponse: TerminalAfricaResponse,
+): TerminalAfricaTrackingPayload | undefined {
   if (isObject(rawResponse.data) && isObject(rawResponse.data.tracking)) {
     return rawResponse.data.tracking;
   }
@@ -85,7 +87,8 @@ function getTrackingPayload(rawResponse: TerminalAfricaResponse): TerminalAfrica
   }
 
   if (isObject(rawResponse.data)) {
-    const { status, carrier, estimatedDelivery, statusRecords, records } = rawResponse.data;
+    const { status, carrier, estimatedDelivery, statusRecords, records } =
+      rawResponse.data;
     return { status, carrier, estimatedDelivery, statusRecords, records };
   }
 
@@ -99,10 +102,16 @@ export function parseTerminalAfricaTrackingDetails(
     throw new Error('Invalid Terminal Africa response');
   }
 
-  const statusCode = typeof rawResponse.status === 'number' ? rawResponse.status : undefined;
-  const code = typeof rawResponse.code === 'string' ? rawResponse.code : undefined;
-  const errorCode = typeof rawResponse.errorCode === 'string' ? rawResponse.errorCode : undefined;
-  const message = typeof rawResponse.message === 'string' ? rawResponse.message : '';
+  const statusCode =
+    typeof rawResponse.status === 'number' ? rawResponse.status : undefined;
+  const code =
+    typeof rawResponse.code === 'string' ? rawResponse.code : undefined;
+  const errorCode =
+    typeof rawResponse.errorCode === 'string'
+      ? rawResponse.errorCode
+      : undefined;
+  const message =
+    typeof rawResponse.message === 'string' ? rawResponse.message : '';
 
   const isRateLimited =
     statusCode === 429 ||
@@ -121,7 +130,8 @@ export function parseTerminalAfricaTrackingDetails(
     throw new TerminalAfricaPayloadMapError();
   }
 
-  const status = typeof payload.status === 'string' ? payload.status : undefined;
+  const status =
+    typeof payload.status === 'string' ? payload.status : undefined;
   if (!status) {
     throw new TerminalAfricaPayloadMapError(
       'Missing Terminal Africa status payload',
@@ -129,13 +139,14 @@ export function parseTerminalAfricaTrackingDetails(
   }
 
   const estimatedDelivery = parseDate(payload.estimatedDelivery);
-  const carrier = typeof payload.carrier === 'string' ? payload.carrier : undefined;
+  const carrier =
+    typeof payload.carrier === 'string' ? payload.carrier : undefined;
   const records =
     Array.isArray(payload.statusRecords) && payload.statusRecords.length > 0
       ? payload.statusRecords
       : Array.isArray(payload.records)
-      ? payload.records
-      : [];
+        ? payload.records
+        : [];
 
   const events = records.map((record) => {
     if (!isObject(record)) {
@@ -157,22 +168,22 @@ export function parseTerminalAfricaTrackingDetails(
       typeof record.status === 'string'
         ? record.status
         : typeof record['currentStatus'] === 'string'
-        ? record['currentStatus']
-        : 'UNKNOWN';
+          ? record['currentStatus']
+          : 'UNKNOWN';
 
     const location =
       typeof record.location === 'string'
         ? record.location
         : typeof record.city === 'string'
-        ? record.city
-        : undefined;
+          ? record.city
+          : undefined;
 
     const description =
       typeof record.description === 'string'
         ? record.description
         : typeof record.details === 'string'
-        ? record.details
-        : '';
+          ? record.details
+          : '';
 
     return {
       timestamp,

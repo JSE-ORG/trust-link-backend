@@ -133,10 +133,16 @@ describe('AppController', () => {
       await appController.getHealth(res);
 
       expect(res.statusCode).toBe(503);
-      expect(res.body).toMatchObject({
+      const body = res.body as Record<string, unknown>;
+      expect(body).toMatchObject({
         status: 'down',
         db: 'down',
         horizon: 'ok',
+      });
+      expect(body.details).toBeDefined();
+      expect((body.details as Record<string, unknown>).db).toEqual({
+        status: 'down',
+        error: 'connection refused',
       });
     });
 
@@ -149,10 +155,16 @@ describe('AppController', () => {
       await appController.getHealth(res);
 
       expect(res.statusCode).toBe(503);
-      expect(res.body).toMatchObject({
+      const body = res.body as Record<string, unknown>;
+      expect(body).toMatchObject({
         status: 'down',
         db: 'ok',
         horizon: 'down',
+      });
+      expect(body.details).toBeDefined();
+      expect((body.details as Record<string, unknown>).horizon).toEqual({
+        status: 'down',
+        error: 'network timeout',
       });
     });
 
@@ -165,9 +177,15 @@ describe('AppController', () => {
       await appController.getHealth(res);
 
       expect(res.statusCode).toBe(503);
-      expect(res.body).toMatchObject({
+      const body = res.body as Record<string, unknown>;
+      expect(body).toMatchObject({
         status: 'down',
         horizon: 'down',
+      });
+      expect(body.details).toBeDefined();
+      expect((body.details as Record<string, unknown>).horizon).toEqual({
+        status: 'down',
+        error: 'Horizon returned status 502',
       });
     });
   });

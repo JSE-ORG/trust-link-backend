@@ -8,6 +8,7 @@ on:
 jobs:
   lint:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -22,3 +23,5 @@ jobs:
 
       - name: Run ESLint
         run: npm run lint:check
+        env:
+          ESLINT_USE_FLAT_CONFIG: 'true'

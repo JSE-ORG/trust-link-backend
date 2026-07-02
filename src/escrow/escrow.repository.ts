@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { Injectable, Optional } from '@nestjs/common';
 import { CacheService } from '../cache/cache.service';
 import {
@@ -6,8 +7,12 @@ import {
   PrismaService,
 } from '../prisma/prisma.service';
 import { CreateEscrowDto } from './dto/create-escrow.dto';
-
-const ESCROW_CACHE_TTL = 60; // seconds
+import { ESCROW_CACHE_TTL_SECONDS } from './escrow.constants';
+import {
+  AutoReleaseEligibleResult,
+  EventsResult,
+  VendorEscrowsResult,
+} from './escrow.types';
 
 @Injectable()
 export class EscrowRepository {
@@ -29,7 +34,7 @@ export class EscrowRepository {
   create(dto: CreateEscrowDto, vendorAddress: string): Promise<EscrowRecord> {
     return this.prisma.escrow.create({
       data: {
-        id: crypto.randomUUID(),
+        id: randomUUID(),
         ...dto,
         vendorAddress,
       },
@@ -39,16 +44,17 @@ export class EscrowRepository {
   /**
    * Finds the first escrow matching both vendorAddress and itemRef,
    * used to detect duplicate submissions for the same item reference.
+   * Uses findFirst (LIMIT 1) rather than findMany so only one row is
+   * loaded; orderBy makes the result deterministic when duplicates exist.
    */
   findByVendorAndItem(
     vendorAddress: string,
     itemRef: string,
   ): Promise<EscrowRecord | null> {
-    return this.prisma.escrow
-      .findMany({
-        where: { vendorAddress, itemRef },
-      })
-      .then((results) => results[0] ?? null);
+    return this.prisma.escrow.findFirst({
+      where: { vendorAddress, itemRef },
+      orderBy: { createdAt: 'asc' },
+    });
   }
 
   /**
@@ -60,18 +66,48 @@ export class EscrowRepository {
     if (cached) return cached;
     const record = await this.prisma.escrow.findUnique({ where: { id } });
     if (record)
-      await this.cache?.set(this.cacheKey(id), record, ESCROW_CACHE_TTL);
+      await this.cache?.set(
+        this.cacheKey(id),
+        record,
+        ESCROW_CACHE_TTL_SECONDS,
+      );
     return record;
   }
 
-  /** Returns all escrows belonging to the given vendor address. */
-  findByVendor(vendorAddress: string): Promise<EscrowRecord[]> {
-    return this.prisma.escrow.findMany({ where: { vendorAddress } });
+  /**
+   * Returns a cursor-paginated slice of escrows for the given vendor,
+   * ordered newest-first. Pass `cursor` (an escrow ID) to get the page
+   * after that record; omit it for the first page.
+   */
+  findByVendor(
+    vendorAddress: string,
+    cursor?: string,
+    take = 20,
+  ): Promise<EscrowRecord[]> {
+    return this.prisma.escrow.findMany({
+      where: { vendorAddress },
+      orderBy: { createdAt: 'desc' },
+      take,
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+    });
   }
 
-  /** Returns all escrows belonging to the given buyer address. */
-  findByBuyer(buyerAddress: string): Promise<EscrowRecord[]> {
-    return this.prisma.escrow.findMany({ where: { buyerAddress } });
+  /**
+   * Returns a cursor-paginated slice of escrows for the given buyer,
+   * ordered newest-first. Pass `cursor` (an escrow ID) to get the page
+   * after that record; omit it for the first page.
+   */
+  findByBuyer(
+    buyerAddress: string,
+    cursor?: string,
+    take = 20,
+  ): Promise<EscrowRecord[]> {
+    return this.prisma.escrow.findMany({
+      where: { buyerAddress },
+      orderBy: { createdAt: 'desc' },
+      take,
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+    });
   }
 
   /** Updates the escrow state and invalidates its cache entry. */
@@ -97,33 +133,33 @@ export class EscrowRepository {
   /**
    * Returns a paginated, sorted slice of escrows for the given vendor.
    * Sorts by date or amount; returns the total count before slicing.
+   *
+   * @returns a {@link VendorEscrowsResult} with the page data and total count.
    */
-  findVendorEscrows(
+  async findVendorEscrows(
     vendorAddress: string,
     state: string | undefined,
     sort: 'date' | 'amount',
     order: 'asc' | 'desc',
     page: number,
     limit: number,
-  ): Promise<{ data: EscrowRecord[]; total: number }> {
-    return this.prisma.escrow
-      .findMany({
-        where: { vendorAddress, state: state as any },
-      })
-      .then((records) => {
-        const sorted = records.sort((a, b) => {
-          const primary =
-            sort === 'amount'
-              ? a.amount - b.amount
-              : a.createdAt.getTime() - b.createdAt.getTime();
-          return order === 'asc' ? primary : -primary;
-        });
+  ): Promise<VendorEscrowsResult> {
+    const where = { vendorAddress, state: state as EscrowState | undefined };
+    const orderBy =
+      sort === 'amount' ? { amount: order } : { createdAt: order };
+    const skip = (page - 1) * limit;
 
-        const total = sorted.length;
-        const start = (page - 1) * limit;
-        const data = sorted.slice(start, start + limit);
-        return { data, total };
-      });
+    const [data, all] = await Promise.all([
+      this.prisma.escrow.findMany({
+        where,
+        orderBy,
+        skip,
+        take: limit,
+      }) as Promise<EscrowRecord[]>,
+      this.prisma.escrow.findMany({ where }) as Promise<EscrowRecord[]>,
+    ]);
+
+    return { data, total: all.length };
   }
 
   /**
@@ -239,16 +275,20 @@ export class EscrowRepository {
   }
 
   /**
-   * Returns SHIPPED escrows whose deliveredAt is older than 48 hours and
-   * have no open dispute or existing auto-release transaction.
+   * Returns SHIPPED escrows whose deliveredAt is at or before the given
+   * referenceTime and have no open dispute or existing auto-release transaction.
+   * The caller (AutoReleaseService) is responsible for computing the cutoff.
+   *
+   * @returns an {@link AutoReleaseEligibleResult} of eligible escrow records.
    */
-  findAutoReleaseEligible(referenceTime = new Date()): Promise<EscrowRecord[]> {
-    const threshold = new Date(referenceTime.getTime() - 48 * 60 * 60 * 1000);
-
+  findAutoReleaseEligible(
+    referenceTime = new Date(),
+  ): Promise<AutoReleaseEligibleResult> {
+    const cutoff = new Date(referenceTime.getTime() - 48 * 60 * 60 * 1000);
     return this.prisma.escrow.findMany({
       where: {
         state: 'SHIPPED',
-        deliveredAt: { lte: threshold },
+        deliveredAt: { lte: cutoff },
         disputeId: null,
         autoReleaseTxHash: null,
         autoReleaseSubmittedAt: null,
@@ -301,14 +341,14 @@ export class EscrowRepository {
   /**
    * Derives a chronological event history for the given escrow from its
    * persisted timestamp fields. Returns an empty array if not found.
+   *
+   * @returns an {@link EventsResult} ordered oldest-first.
    */
-  async findEvents(
-    escrowId: string,
-  ): Promise<Array<{ event: string; occurredAt: Date }>> {
+  async findEvents(escrowId: string): Promise<EventsResult> {
     const escrow = await this.findById(escrowId);
     if (!escrow) return [];
 
-    const events: Array<{ event: string; occurredAt: Date }> = [
+    const events: EventsResult = [
       { event: 'CREATED', occurredAt: escrow.createdAt },
     ];
     if (escrow.shippedAt)

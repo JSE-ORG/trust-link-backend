@@ -52,9 +52,7 @@ export class BlockchainListenerService {
    */
   decodeScVal(input: string | xdr.ScVal): unknown {
     const scVal =
-      typeof input === 'string'
-        ? xdr.ScVal.fromXDR(input, 'base64')
-        : input;
+      typeof input === 'string' ? xdr.ScVal.fromXDR(input, 'base64') : input;
     return scValToNative(scVal);
   }
 
@@ -64,7 +62,9 @@ export class BlockchainListenerService {
    * @returns the parsed event, or `null` if the event is unknown/corrupted.
    *          Never throws — callers can safely map over a batch.
    */
-  parseEvent(raw: RawSorobanEvent | null | undefined): ParsedSorobanEvent | null {
+  parseEvent(
+    raw: RawSorobanEvent | null | undefined,
+  ): ParsedSorobanEvent | null {
     if (!raw || typeof raw !== 'object') {
       this.logger.warn(
         JSON.stringify({ msg: 'blockchain.event.skipped', reason: 'empty' }),
@@ -109,12 +109,27 @@ export class BlockchainListenerService {
    * array contains only the events that decoded cleanly — corrupt entries are
    * silently filtered so a bad event cannot abort processing of the good ones.
    */
-  parseEvents(rawEvents: Array<RawSorobanEvent | null | undefined>): ParsedSorobanEvent[] {
+  parseEvents(
+    rawEvents: Array<RawSorobanEvent | null | undefined>,
+  ): ParsedSorobanEvent[] {
     if (!Array.isArray(rawEvents)) return [];
     const parsed: ParsedSorobanEvent[] = [];
     for (const raw of rawEvents) {
-      const event = this.parseEvent(raw);
-      if (event) parsed.push(event);
+      try {
+        const event = this.parseEvent(raw);
+        if (event) parsed.push(event);
+      } catch (err) {
+        this.logger.error(
+          JSON.stringify({
+            msg: 'blockchain.event.handler_failed',
+            eventType: raw?.type,
+            contractId: raw?.contractId,
+            ledger: raw?.ledger,
+            error: err instanceof Error ? err.message : String(err),
+          }),
+          err instanceof Error ? err.stack : undefined,
+        );
+      }
     }
     return parsed;
   }

@@ -3,8 +3,10 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  Logger,
   Res,
 } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { AppService } from './app.service';
 import { getAppVersion } from './common/version';
@@ -17,6 +19,11 @@ type ComponentStatus = 'ok' | 'down';
 // not, by itself, make the service unhealthy (issue #31 — graceful fallback).
 type OptionalComponentStatus = ComponentStatus | 'disabled';
 
+interface ComponentHealth {
+  status: ComponentStatus;
+  error?: string;
+}
+
 interface HealthBody {
   status: ComponentStatus;
   db: ComponentStatus;
@@ -26,6 +33,11 @@ interface HealthBody {
   environment: string;
   version: string;
   durationMs: number;
+  details?: {
+    db?: ComponentHealth;
+    horizon?: ComponentHealth;
+    redis?: ComponentHealth;
+  };
 }
 
 const HORIZON_URLS: Record<'TESTNET' | 'MAINNET', string> = {
@@ -35,8 +47,11 @@ const HORIZON_URLS: Record<'TESTNET' | 'MAINNET', string> = {
 
 const HORIZON_TIMEOUT_MS = 150;
 
+@ApiTags('Health')
 @Controller()
 export class AppController {
+  private readonly logger = new Logger(AppController.name);
+
   constructor(
     private readonly appService: AppService,
     private readonly configService: ConfigService,
@@ -44,41 +59,98 @@ export class AppController {
     private readonly cacheService: CacheService,
   ) {}
 
+  @ApiOperation({ summary: 'Root endpoint — welcome message' })
+  @ApiResponse({ status: 200, description: 'Service welcome message.' })
   @Get()
   getHello(): string {
     return this.appService.getHello();
   }
 
+  /**
+   * Health check endpoint that verifies database connectivity,
+   * Stellar Horizon reachability, and Redis status. Redis is
+   * optional — a disabled or down Redis does not affect the
+   * overall health status.
+   *
+   * @param res - Express response object
+   * @returns Health status with component-level details, version, and timing
+   * @authentication None (public endpoint)
+   */
+  @ApiOperation({
+    summary: 'Service health check — database, Horizon, and Redis',
+  })
+  @ApiResponse({ status: 200, description: 'All components healthy.' })
+  @ApiResponse({ status: 503, description: 'One or more components are down.' })
   @Get('health')
   async getHealth(@Res() res: Response): Promise<Response<HealthBody>> {
     const start = Date.now();
 
-    const [db, horizon, redis] = await Promise.all([
-      this.checkDatabase(),
-      this.checkHorizon(),
-      this.cacheService.ping(),
+    const [dbResult, horizonResult, redisResult] = await Promise.all([
+      this.checkDatabase().catch((err: unknown) => ({
+        status: 'down' as ComponentStatus,
+        error: err instanceof Error ? err.message : 'Database check failed',
+      })),
+      this.checkHorizon().catch((err: unknown) => ({
+        status: 'down' as ComponentStatus,
+        error: err instanceof Error ? err.message : 'Horizon check failed',
+      })),
+      this.checkRedis().catch((err: unknown) => ({
+        status: 'down' as ComponentStatus,
+        error: err instanceof Error ? err.message : 'Redis check failed',
+      })),
     ]);
+
+    const redisStatus: OptionalComponentStatus =
+      'rawStatus' in redisResult && redisResult.rawStatus === 'disabled'
+        ? 'disabled'
+        : redisResult.status === 'ok'
+          ? 'ok'
+          : 'down';
 
     // Redis is optional: a 'disabled' or 'down' Redis is reported but does not
     // flip the overall status to unhealthy (graceful fallback — issue #31).
-    const allOk = db === 'ok' && horizon === 'ok';
+    const allOk = dbResult.status === 'ok' && horizonResult.status === 'ok';
+
+    if (!allOk) {
+      this.logger.warn(
+        `Health check failed: db=${dbResult.status}, horizon=${horizonResult.status}, redis=${redisStatus}`,
+      );
+    }
 
     const body: HealthBody = {
       status: allOk ? 'ok' : 'down',
-      db,
-      horizon,
-      redis,
+      db: dbResult.status,
+      horizon: horizonResult.status,
+      redis: redisStatus,
       timestamp: new Date().toISOString(),
       environment: this.configService.get('NODE_ENV'),
       version: getAppVersion(),
       durationMs: Date.now() - start,
     };
 
+    if (!allOk) {
+      body.details = {};
+      if (dbResult.status === 'down') {
+        body.details.db = { status: 'down', error: dbResult.error };
+      }
+      if (horizonResult.status === 'down') {
+        body.details.horizon = { status: 'down', error: horizonResult.error };
+      }
+    }
+
     return res
       .status(allOk ? HttpStatus.OK : HttpStatus.SERVICE_UNAVAILABLE)
       .json(body);
   }
 
+  /**
+   * Returns the application version and environment information.
+   *
+   * @returns Version string, package name, and current environment
+   * @authentication None (public endpoint)
+   */
+  @ApiOperation({ summary: 'Get current application version and environment' })
+  @ApiResponse({ status: 200, description: 'Version information returned.' })
   @Get('version')
   @HttpCode(HttpStatus.OK)
   getVersion() {
@@ -89,20 +161,25 @@ export class AppController {
     };
   }
 
-  private async checkDatabase(): Promise<ComponentStatus> {
+  private async checkDatabase(): Promise<ComponentHealth> {
     try {
       await this.prismaService.escrow.findMany({});
-      return 'ok';
-    } catch {
-      return 'down';
+      return { status: 'ok' };
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : 'Database connection failed';
+      this.logger.error(`Database health check failed: ${message}`);
+      return { status: 'down', error: message };
     }
   }
 
-  private async checkHorizon(): Promise<ComponentStatus> {
+  private async checkHorizon(): Promise<ComponentHealth> {
     const network = this.configService.get('STELLAR_NETWORK');
     const horizonUrl = HORIZON_URLS[network];
     if (!horizonUrl) {
-      return 'down';
+      const error = `Invalid network configuration: ${network}`;
+      this.logger.error(`Horizon health check failed: ${error}`);
+      return { status: 'down', error };
     }
 
     const controller = new AbortController();
@@ -113,11 +190,33 @@ export class AppController {
         method: 'GET',
         signal: controller.signal,
       });
-      return response.ok ? 'ok' : 'down';
-    } catch {
-      return 'down';
+      if (response.ok) {
+        return { status: 'ok' };
+      }
+      const error = `Horizon returned status ${response.status}`;
+      this.logger.error(`Horizon health check failed: ${error}`);
+      return { status: 'down', error };
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : 'Horizon connection failed';
+      this.logger.error(`Horizon health check failed: ${message}`);
+      return { status: 'down', error: message };
     } finally {
       clearTimeout(timeout);
     }
+  }
+
+  private async checkRedis(): Promise<
+    ComponentHealth & { rawStatus?: string }
+  > {
+    const result = await this.cacheService.ping();
+    if (result === 'ok') {
+      return { status: 'ok' };
+    }
+    const error =
+      result === 'disabled'
+        ? 'Redis not configured'
+        : 'Redis connection failed';
+    return { status: 'down', error, rawStatus: result };
   }
 }

@@ -19,12 +19,15 @@ RUN npx prisma generate && npm run build
 # Production stage
 FROM node:20-alpine AS production
 
+# Install dumb-init for proper signal handling
+RUN apk add --no-cache dumb-init
+
 # Create app directory
 WORKDIR /app
 
 # Create non-root user
-RUN addgroup -g 1001 -S nodejs
-RUN adduser -S nestjs -u 1001
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S nestjs -u 1001 -G nodejs
 
 # Copy package files
 COPY package*.json ./
@@ -43,9 +46,12 @@ USER nestjs
 # Expose port
 EXPOSE 3000
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+# Health check with increased timeout for production
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
   CMD node -e "require('http').get('http://localhost:3000/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"
+
+# Use dumb-init to handle signals properly
+ENTRYPOINT ["dumb-init", "--"]
 
 # Start the application
 CMD ["node", "dist/main.js"]

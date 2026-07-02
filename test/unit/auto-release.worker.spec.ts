@@ -100,4 +100,20 @@ describe('AutoReleaseWorker (issue #10)', () => {
 
     expect(contractService.submitAutoRelease).not.toHaveBeenCalled();
   });
+
+  it('catches top-level worker failures so interval handlers do not reject', async () => {
+    escrowRepository.findAutoReleaseEligible.mockRejectedValue(
+      new Error('database unavailable'),
+    );
+    const loggerSpy = jest
+      .spyOn((worker as any).logger, 'error')
+      .mockImplementation();
+
+    await expect(worker.run()).resolves.toBeUndefined();
+
+    expect(loggerSpy).toHaveBeenCalledWith(
+      expect.stringContaining('auto_release.worker_failed'),
+      expect.any(String),
+    );
+  });
 });

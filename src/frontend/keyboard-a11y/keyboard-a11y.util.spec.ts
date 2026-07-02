@@ -22,10 +22,7 @@ import {
   type ElementDescriptor,
 } from './tab-order.util';
 
-import {
-  createFocusTrap,
-  type FocusDriver,
-} from './focus-trap.util';
+import { createFocusTrap, type FocusDriver } from './focus-trap.util';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Focus Ring Validation
@@ -205,7 +202,9 @@ describe('getA11yIssues()', () => {
     const issues = getA11yIssues([badDiv]);
     const errors = issues.filter((i) => i.severity === 'error');
     expect(errors.length).toBeGreaterThanOrEqual(1);
-    expect(errors.some((e) => e.message.includes('not keyboard-reachable'))).toBe(true);
+    expect(
+      errors.some((e) => e.message.includes('not keyboard-reachable')),
+    ).toBe(true);
   });
 
   it('flags a <div> with onClick but no role as an ERROR', () => {
@@ -248,7 +247,9 @@ describe('getA11yIssues()', () => {
     };
     const issues = getA11yIssues([highTabIndex]);
     const warnings = issues.filter((i) => i.severity === 'warning');
-    expect(warnings.some((w) => w.message.includes('natural DOM order'))).toBe(true);
+    expect(warnings.some((w) => w.message.includes('natural DOM order'))).toBe(
+      true,
+    );
   });
 
   it('warns about disabled elements that are still tabbable', () => {
@@ -334,19 +335,21 @@ describe('validateTabOrder()', () => {
 
 describe('createFocusTrap() with Mock Driver', () => {
   let mockDriver: FocusDriver;
-  let focusableElements: any[];
-  let activeElement: any;
-  let eventListeners: Record<string, ((e: any) => void)[]>;
+  let focusableElements: Element[];
+  let activeElement: Element | null;
+  let eventListeners: Record<string, ((e: Event) => void)[]>;
 
   beforeEach(() => {
-    focusableElements = [{ id: 'btn1' }, { id: 'btn2' }, { id: 'btn3' }];
-    activeElement = { id: 'outside' };
+    focusableElements = [{ id: 'btn1' }, { id: 'btn2' }, { id: 'btn3' }] as unknown as Element[];
+    activeElement = { id: 'outside' } as unknown as Element;
     eventListeners = {};
 
     mockDriver = {
       getFocusableElements: jest.fn(() => focusableElements),
       getActiveElement: jest.fn(() => activeElement),
-      focusElement: jest.fn((el) => { activeElement = el; }),
+      focusElement: jest.fn((el) => {
+        activeElement = el;
+      }),
       preventDefault: jest.fn(),
       addEventListener: jest.fn((name, handler) => {
         if (!eventListeners[name]) eventListeners[name] = [];
@@ -354,7 +357,9 @@ describe('createFocusTrap() with Mock Driver', () => {
       }),
       removeEventListener: jest.fn((name, handler) => {
         if (eventListeners[name]) {
-          eventListeners[name] = eventListeners[name].filter(h => h !== handler);
+          eventListeners[name] = eventListeners[name].filter(
+            (h) => h !== handler,
+          );
         }
       }),
     };
@@ -379,7 +384,7 @@ describe('createFocusTrap() with Mock Driver', () => {
 
   it('restores focus on deactivation', () => {
     const trap = createFocusTrap(mockDriver);
-    const outside = { id: 'outside' };
+    const outside = { id: 'outside' } as unknown as Element;
     activeElement = outside;
 
     trap.activate();
@@ -395,7 +400,7 @@ describe('createFocusTrap() with Mock Driver', () => {
     activeElement = focusableElements[2]; // Last element
 
     const tabHandler = eventListeners['keydown'][0];
-    const event = { key: 'Tab', shiftKey: false };
+    const event = { key: 'Tab', shiftKey: false } as unknown as Event;
 
     tabHandler(event);
 
@@ -409,7 +414,7 @@ describe('createFocusTrap() with Mock Driver', () => {
     activeElement = focusableElements[0]; // First element
 
     const tabHandler = eventListeners['keydown'][0];
-    const event = { key: 'Tab', shiftKey: true };
+    const event = { key: 'Tab', shiftKey: true } as unknown as Event;
 
     tabHandler(event);
 
@@ -422,7 +427,7 @@ describe('createFocusTrap() with Mock Driver', () => {
     trap.activate();
 
     const handler = eventListeners['keydown'][0];
-    handler({ key: 'Escape' });
+    handler({ key: 'Escape' } as unknown as Event);
 
     expect(trap.isActive()).toBe(false);
   });
@@ -433,7 +438,7 @@ describe('createFocusTrap() with Mock Driver', () => {
     trap.activate();
 
     const handler = eventListeners['keydown'][0];
-    handler({ key: 'Escape' });
+    handler({ key: 'Escape' } as unknown as Event);
 
     expect(onEscape).toHaveBeenCalled();
   });
