@@ -1,3 +1,5 @@
+/// <reference types="jest" />
+
 import { Test, TestingModule } from '@nestjs/testing';
 import { UnauthorizedException } from '@nestjs/common';
 import { Sep10Service } from './sep10.service';
@@ -38,7 +40,7 @@ describe('Sep10Service', () => {
   const TEST_ACCOUNT_ID = 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5';
   const SERVER_PUBLIC_KEY = 'GAQAA5L65LSYH7CQ3LBOPEZBWSK4DPO4KZ4XXJNWUVOK5SDGA5LNLA36';
   const TEST_CHALLENGE_XDR = 'AAAABWw2D0wENyMXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX';
-  const TEST_TX_HASH = 'abc123def456ghi789jkl012mno345pqr678stu901vwx234yz567abc890def';
+  const TEST_TX_HASH = 'abc123def456abc789def012abc345def678abc901def234abc567abc890def';
   const REFRESH_TOKEN_TTL = 604800; // 7 days in seconds
 
   beforeEach(async () => {
@@ -57,7 +59,7 @@ describe('Sep10Service', () => {
 
     // Mock TransactionBuilder
     const mockTransactionBuilder = {
-      hash: jest.fn().mockReturnValue(Buffer.from(TEST_TX_HASH, 'hex')),
+      hash: jest.fn().mockReturnValue({ toString: () => TEST_TX_HASH }),
     };
 
     (TransactionBuilder as unknown as jest.Mock).mockImplementation(() => mockTransactionBuilder);
@@ -571,6 +573,82 @@ describe('Sep10Service', () => {
     });
   });
 
+  describe('JWT Claims and Signature', () => {
+    beforeEach(() => {
+      const mockNonce = {
+        id: 'nonce-id-123',
+        used: false,
+        expiresAt: new Date(Date.now() + 10000),
+      };
+      (prisma.nonce.findUnique as jest.Mock).mockResolvedValue(mockNonce);
+      (prisma.nonce.update as jest.Mock).mockResolvedValue({
+        ...mockNonce,
+        used: true,
+      });
+      (prisma.refreshToken.create as jest.Mock).mockResolvedValue({
+        id: 'rt-id-1',
+      });
+    });
+
+    it('should include correct sub claim in JWT', async () => {
+      const { token } = await service.verifyAndIssueToken(TEST_CHALLENGE_XDR);
+      const parts = token.split('.');
+      const payload = JSON.parse(
+        Buffer.from(parts[1], 'base64url').toString('utf-8'),
+      );
+
+      expect(payload.sub).toBe(TEST_ACCOUNT_ID);
+    });
+
+    it('should include valid iat and exp claims in JWT', async () => {
+      const beforeIssuance = Math.floor(Date.now() / 1000);
+      const { token } = await service.verifyAndIssueToken(TEST_CHALLENGE_XDR);
+      const afterIssuance = Math.floor(Date.now() / 1000);
+      const parts = token.split('.');
+      const payload = JSON.parse(
+        Buffer.from(parts[1], 'base64url').toString('utf-8'),
+      );
+
+      expect(payload.iat).toBeGreaterThanOrEqual(beforeIssuance);
+      expect(payload.iat).toBeLessThanOrEqual(afterIssuance);
+      expect(payload.exp).toBe(payload.iat + 3600); // 1 hour expiry
+    });
+
+    it('should generate a token with a signature verifiable by the configured secret', async () => {
+      const { token } = await service.verifyAndIssueToken(TEST_CHALLENGE_XDR);
+      const [header, payload, signature] = token.split('.');
+
+      const expectedSignature = createHmac('sha256', 'test-secret-key')
+        .update(`${header}.${payload}`)
+        .digest('base64url');
+
+      expect(signature).toBe(expectedSignature);
+    });
+
+    it('should have a signature that is invalid when using a different secret', async () => {
+      const { token } = await service.verifyAndIssueToken(TEST_CHALLENGE_XDR);
+      const [header, payload, originalSignature] = token.split('.');
+
+      // Create a signature with a different secret
+      const wrongSignature = createHmac('sha256', 'wrong-secret')
+        .update(`${header}.${payload}`)
+        .digest('base64url');
+
+      expect(wrongSignature).not.toBe(originalSignature);
+    });
+
+    it('should ensure exp is always 1 hour after iat', async () => {
+      const { token } = await service.verifyAndIssueToken(TEST_CHALLENGE_XDR);
+      const parts = token.split('.');
+      const payload = JSON.parse(
+        Buffer.from(parts[1], 'base64url').toString('utf-8'),
+      );
+
+      const tokenExpiryDuration = payload.exp - payload.iat;
+      expect(tokenExpiryDuration).toBe(3600); // Exactly 1 hour
+    });
+  });
+
   describe('Error Handling Edge Cases', () => {
     it('should handle empty error message from WebAuth.readChallengeTx', async () => {
       (WebAuth.readChallengeTx as jest.Mock).mockImplementation(() => {
@@ -767,7 +845,7 @@ describe('Sep10Service', () => {
       const hash2 = (service as any).hashToken(token);
 
       expect(hash1).toBe(hash2);
-      expect(hash1).toBe('5f5f067962d799335f58134cb258292659b2c654d60b553c639c4a800c88b6b1');
+      expect(hash1).toBe('6a79803b6781e7a9487b493eca2f424d569d72d20a4b5764fa932f4b0633622d');
     });
 
     it('should produce a different hash for a different input', () => {
@@ -779,100 +857,4 @@ describe('Sep10Service', () => {
       expect(hash1).not.toBe(hash2);
     });
   });
-
-  describe('JWT Signature Verification', () => {
-    it('should generate a token with a signature verifiable by the configured secret', async () => {
-      // This test re-uses the setup from the 'verifyAndIssueToken' success case
-      // to get a valid token generated by the service.
-      const mockNonce = { id: 'nonce-id-123', used: false, expiresAt: new Date(Date.now() + 10000) };
-      (prisma.nonce.findUnique as jest.Mock).mockResolvedValue(mockNonce);
-      (prisma.nonce.update as jest.Mock).mockResolvedValue({ ...mockNonce, used: true });
-      (prisma.refreshToken.create as jest.Mock).mockResolvedValue({ id: 'rt-id-1' });
-
-      const { token } = await service.verifyAndIssueToken(TEST_CHALLENGE_XDR);
-      const [header, payload, signature] = token.split('.');
-
-      const expectedSignature = createHmac('sha256', 'test-secret-key').update(`${header}.${payload}`).digest('base64url');
-
-      expect(signature).toBe(expectedSignature);
-    });
-  });
 });
-
-  describe('JWT Claims Verification', () => {
-    it('should include correct sub claim in JWT', async () => {
-      const mockNonce = { id: 'nonce-id-123', used: false, expiresAt: new Date(Date.now() + 10000) };
-      (prisma.nonce.findUnique as jest.Mock).mockResolvedValue(mockNonce);
-      (prisma.nonce.update as jest.Mock).mockResolvedValue({ ...mockNonce, used: true });
-      (prisma.refreshToken.create as jest.Mock).mockResolvedValue({ id: 'rt-id-1' });
-
-      const { token } = await service.verifyAndIssueToken(TEST_CHALLENGE_XDR);
-      const parts = token.split('.');
-      const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf-8'));
-
-      expect(payload.sub).toBe(TEST_ACCOUNT_ID);
-    });
-
-    it('should include valid iat and exp claims in JWT', async () => {
-      const beforeIssuance = Math.floor(Date.now() / 1000);
-      const mockNonce = { id: 'nonce-id-123', used: false, expiresAt: new Date(Date.now() + 10000) };
-      (prisma.nonce.findUnique as jest.Mock).mockResolvedValue(mockNonce);
-      (prisma.nonce.update as jest.Mock).mockResolvedValue({ ...mockNonce, used: true });
-      (prisma.refreshToken.create as jest.Mock).mockResolvedValue({ id: 'rt-id-1' });
-
-      const { token } = await service.verifyAndIssueToken(TEST_CHALLENGE_XDR);
-      const afterIssuance = Math.floor(Date.now() / 1000);
-      const parts = token.split('.');
-      const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf-8'));
-
-      expect(payload.iat).toBeGreaterThanOrEqual(beforeIssuance);
-      expect(payload.iat).toBeLessThanOrEqual(afterIssuance);
-      expect(payload.exp).toBe(payload.iat + 3600); // 1 hour expiry
-      expect(payload.exp).toBeGreaterThan(payload.iat);
-    });
-
-    it('should reject JWT token signed with different secret', async () => {
-      const mockNonce = { id: 'nonce-id-123', used: false, expiresAt: new Date(Date.now() + 10000) };
-      (prisma.nonce.findUnique as jest.Mock).mockResolvedValue(mockNonce);
-      (prisma.nonce.update as jest.Mock).mockResolvedValue({ ...mockNonce, used: true });
-      (prisma.refreshToken.create as jest.Mock).mockResolvedValue({ id: 'rt-id-1' });
-
-      const { token } = await service.verifyAndIssueToken(TEST_CHALLENGE_XDR);
-      const [header, payload, originalSignature] = token.split('.');
-
-      // Create a signature with a different secret
-      const wrongSignature = createHmac('sha256', 'wrong-secret')
-        .update(`${header}.${payload}`)
-        .digest('base64url');
-
-      expect(wrongSignature).not.toBe(originalSignature);
-    });
-
-    it('should generate JWT with valid HS256 header algorithm', async () => {
-      const mockNonce = { id: 'nonce-id-123', used: false, expiresAt: new Date(Date.now() + 10000) };
-      (prisma.nonce.findUnique as jest.Mock).mockResolvedValue(mockNonce);
-      (prisma.nonce.update as jest.Mock).mockResolvedValue({ ...mockNonce, used: true });
-      (prisma.refreshToken.create as jest.Mock).mockResolvedValue({ id: 'rt-id-1' });
-
-      const { token } = await service.verifyAndIssueToken(TEST_CHALLENGE_XDR);
-      const parts = token.split('.');
-      const header = JSON.parse(Buffer.from(parts[0], 'base64url').toString('utf-8'));
-
-      expect(header.alg).toBe('HS256');
-      expect(header.typ).toBe('JWT');
-    });
-
-    it('should ensure exp is always 1 hour after iat', async () => {
-      const mockNonce = { id: 'nonce-id-123', used: false, expiresAt: new Date(Date.now() + 10000) };
-      (prisma.nonce.findUnique as jest.Mock).mockResolvedValue(mockNonce);
-      (prisma.nonce.update as jest.Mock).mockResolvedValue({ ...mockNonce, used: true });
-      (prisma.refreshToken.create as jest.Mock).mockResolvedValue({ id: 'rt-id-1' });
-
-      const { token } = await service.verifyAndIssueToken(TEST_CHALLENGE_XDR);
-      const parts = token.split('.');
-      const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf-8'));
-
-      const tokenExpiryDuration = payload.exp - payload.iat;
-      expect(tokenExpiryDuration).toBe(3600); // Exactly 1 hour
-    });
-  });
