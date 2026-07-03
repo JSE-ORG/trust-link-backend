@@ -1,9 +1,20 @@
-import { Controller, Post, Body, Get, Param, Logger } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Logger,
+  Param,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
+import { JwtGuard } from '../auth/guards/jwt.guard';
+import { AdminGuard } from '../admin/guards/admin.guard';
 import { StressTestService } from './stress-test.service';
 import { StressTestConfigDto } from './dto/stress-test-config.dto';
 import { StressTestResult } from './interfaces/stress-test-result.interface';
 
 @Controller('stress-test')
+@UseGuards(JwtGuard, AdminGuard)
 export class StressTestController {
   private readonly logger = new Logger(StressTestController.name);
 
