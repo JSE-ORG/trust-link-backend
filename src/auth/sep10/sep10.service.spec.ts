@@ -40,7 +40,7 @@ describe('Sep10Service', () => {
   const TEST_ACCOUNT_ID = 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5';
   const SERVER_PUBLIC_KEY = 'GAQAA5L65LSYH7CQ3LBOPEZBWSK4DPO4KZ4XXJNWUVOK5SDGA5LNLA36';
   const TEST_CHALLENGE_XDR = 'AAAABWw2D0wENyMXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX';
-  const TEST_TX_HASH = 'abc123def456abc789def012abc345def678abc901def234abc567abc890def';
+  const TEST_TX_HASH = 'abc123def456ghi789jkl012mno345pqr678stu901vwx234yz567abc890def';
   const REFRESH_TOKEN_TTL = 604800; // 7 days in seconds
 
   beforeEach(async () => {
@@ -580,6 +580,21 @@ describe('Sep10Service', () => {
         used: false,
         expiresAt: new Date(Date.now() + 10000),
       };
+
+    it('should sign JWT using configured SEP10_JWT_SECRET', async () => {
+      const now = new Date();
+      const expiresAt = new Date(now.getTime() + 3600 * 1000);
+
+      const mockNonce = {
+        id: 'nonce-id-123',
+        nonce: TEST_TX_HASH,
+        walletAddress: TEST_ACCOUNT_ID,
+        challenge: TEST_CHALLENGE_XDR,
+        used: false,
+        expiresAt,
+        createdAt: now,
+      };
+
       (prisma.nonce.findUnique as jest.Mock).mockResolvedValue(mockNonce);
       (prisma.nonce.update as jest.Mock).mockResolvedValue({
         ...mockNonce,
@@ -646,6 +661,86 @@ describe('Sep10Service', () => {
 
       const tokenExpiryDuration = payload.exp - payload.iat;
       expect(tokenExpiryDuration).toBe(3600); // Exactly 1 hour
+        id: 'refresh-token-id',
+        userId: TEST_ACCOUNT_ID,
+        tokenHash: 'hash-123',
+      });
+
+      const result = await service.verifyAndIssueToken(TEST_CHALLENGE_XDR);
+      const token = result.token;
+      const parts = token.split('.');
+      const header = parts[0];
+      const body = parts[1];
+
+      const secret = 'test-secret-key';
+      const expectedSig = createHmac('sha256', secret)
+        .update(`${header}.${body}`)
+        .digest('base64url');
+
+      expect(parts[2]).toBe(expectedSig);
+    });
+
+    it('should produce a different signature when secret changes', async () => {
+      const now = new Date();
+      const expiresAt = new Date(now.getTime() + 3600 * 1000);
+
+      const mockNonce = {
+        id: 'nonce-id-123',
+        nonce: TEST_TX_HASH,
+        walletAddress: TEST_ACCOUNT_ID,
+        challenge: TEST_CHALLENGE_XDR,
+        used: false,
+        expiresAt,
+        createdAt: now,
+      };
+
+      (prisma.nonce.findUnique as jest.Mock).mockResolvedValue(mockNonce);
+      (prisma.nonce.update as jest.Mock).mockResolvedValue({
+        ...mockNonce,
+        used: true,
+      });
+      (prisma.refreshToken.create as jest.Mock).mockResolvedValue({
+        id: 'refresh-token-id',
+        userId: TEST_ACCOUNT_ID,
+        tokenHash: 'hash-123',
+      });
+
+      const result = await service.verifyAndIssueToken(TEST_CHALLENGE_XDR);
+      const token = result.token;
+      const parts = token.split('.');
+      const header = parts[0];
+      const body = parts[1];
+
+      const differentSig = createHmac('sha256', 'different-secret')
+        .update(`${header}.${body}`)
+        .digest('base64url');
+
+      expect(parts[2]).not.toBe(differentSig);
+    });
+  });
+
+  describe('hashToken', () => {
+    it('should consistently hash the same token and change when secret changes', () => {
+      const token = 'some-random-refresh-token';
+
+      const first = (service as any).hashToken(token);
+      const second = (service as any).hashToken(token);
+
+      expect(first).toBe(second);
+
+      // Change secret returned by config and ensure hash changes
+      (configService.get as jest.Mock).mockImplementation((key: string) => {
+        const configMap: Record<string, any> = {
+          STELLAR_NETWORK: 'TESTNET',
+          SEP10_JWT_SECRET: 'another-secret',
+          REFRESH_TOKEN_TTL: REFRESH_TOKEN_TTL,
+          ADMIN_ADDRESS: null,
+        };
+        return configMap[key];
+      });
+
+      const third = (service as any).hashToken(token);
+      expect(third).not.toBe(first);
     });
   });
 
