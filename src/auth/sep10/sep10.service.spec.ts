@@ -571,6 +571,15 @@ describe('Sep10Service', () => {
       );
       expect(payload.role).toBe('admin');
     });
+  });
+
+  describe('JWT Claims and Signature', () => {
+    beforeEach(() => {
+      const mockNonce = {
+        id: 'nonce-id-123',
+        used: false,
+        expiresAt: new Date(Date.now() + 10000),
+      };
 
     it('should sign JWT using configured SEP10_JWT_SECRET', async () => {
       const now = new Date();
@@ -592,6 +601,66 @@ describe('Sep10Service', () => {
         used: true,
       });
       (prisma.refreshToken.create as jest.Mock).mockResolvedValue({
+        id: 'rt-id-1',
+      });
+    });
+
+    it('should include correct sub claim in JWT', async () => {
+      const { token } = await service.verifyAndIssueToken(TEST_CHALLENGE_XDR);
+      const parts = token.split('.');
+      const payload = JSON.parse(
+        Buffer.from(parts[1], 'base64url').toString('utf-8'),
+      );
+
+      expect(payload.sub).toBe(TEST_ACCOUNT_ID);
+    });
+
+    it('should include valid iat and exp claims in JWT', async () => {
+      const beforeIssuance = Math.floor(Date.now() / 1000);
+      const { token } = await service.verifyAndIssueToken(TEST_CHALLENGE_XDR);
+      const afterIssuance = Math.floor(Date.now() / 1000);
+      const parts = token.split('.');
+      const payload = JSON.parse(
+        Buffer.from(parts[1], 'base64url').toString('utf-8'),
+      );
+
+      expect(payload.iat).toBeGreaterThanOrEqual(beforeIssuance);
+      expect(payload.iat).toBeLessThanOrEqual(afterIssuance);
+      expect(payload.exp).toBe(payload.iat + 3600); // 1 hour expiry
+    });
+
+    it('should generate a token with a signature verifiable by the configured secret', async () => {
+      const { token } = await service.verifyAndIssueToken(TEST_CHALLENGE_XDR);
+      const [header, payload, signature] = token.split('.');
+
+      const expectedSignature = createHmac('sha256', 'test-secret-key')
+        .update(`${header}.${payload}`)
+        .digest('base64url');
+
+      expect(signature).toBe(expectedSignature);
+    });
+
+    it('should have a signature that is invalid when using a different secret', async () => {
+      const { token } = await service.verifyAndIssueToken(TEST_CHALLENGE_XDR);
+      const [header, payload, originalSignature] = token.split('.');
+
+      // Create a signature with a different secret
+      const wrongSignature = createHmac('sha256', 'wrong-secret')
+        .update(`${header}.${payload}`)
+        .digest('base64url');
+
+      expect(wrongSignature).not.toBe(originalSignature);
+    });
+
+    it('should ensure exp is always 1 hour after iat', async () => {
+      const { token } = await service.verifyAndIssueToken(TEST_CHALLENGE_XDR);
+      const parts = token.split('.');
+      const payload = JSON.parse(
+        Buffer.from(parts[1], 'base64url').toString('utf-8'),
+      );
+
+      const tokenExpiryDuration = payload.exp - payload.iat;
+      expect(tokenExpiryDuration).toBe(3600); // Exactly 1 hour
         id: 'refresh-token-id',
         userId: TEST_ACCOUNT_ID,
         tokenHash: 'hash-123',
@@ -861,6 +930,26 @@ describe('Sep10Service', () => {
 
       await expect(service.rotateRefreshToken(OLD_REFRESH_TOKEN)).rejects.toThrow(UnauthorizedException);
       expect(prisma.refreshToken.updateMany).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('hashToken', () => {
+    it('should produce a consistent SHA-256 hash for the same input', () => {
+      const token = 'my-secret-refresh-token';
+      const hash1 = (service as any).hashToken(token);
+      const hash2 = (service as any).hashToken(token);
+
+      expect(hash1).toBe(hash2);
+      expect(hash1).toBe('6a79803b6781e7a9487b493eca2f424d569d72d20a4b5764fa932f4b0633622d');
+    });
+
+    it('should produce a different hash for a different input', () => {
+      const token1 = 'my-secret-refresh-token';
+      const token2 = 'my-other-secret-refresh-token';
+      const hash1 = (service as any).hashToken(token1);
+      const hash2 = (service as any).hashToken(token2);
+
+      expect(hash1).not.toBe(hash2);
     });
   });
 });
