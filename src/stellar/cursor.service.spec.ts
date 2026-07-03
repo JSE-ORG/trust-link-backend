@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { CursorService } from './cursor.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -58,11 +59,16 @@ describe('CursorService', () => {
       expect(result).toBeUndefined();
     });
 
-    it('should return undefined on error', async () => {
+    it('should log a warning and return undefined on Prisma error', async () => {
+      const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
       prismaMock.cursor.findFirst.mockRejectedValue(new Error('DB error'));
 
       const result = await service.get();
+
       expect(result).toBeUndefined();
+      expect(warnSpy).toHaveBeenCalledWith(
+        'Failed to read cursor from DB: DB error',
+      );
     });
   });
 
@@ -78,10 +84,14 @@ describe('CursorService', () => {
       });
     });
 
-    it('should not throw on error', async () => {
+    it('should log a warning and not rethrow on Prisma error', async () => {
+      const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
       prismaMock.cursor.upsert.mockRejectedValue(new Error('DB error'));
 
       await expect(service.set('67890')).resolves.toBeUndefined();
+      expect(warnSpy).toHaveBeenCalledWith(
+        'Failed to persist cursor to DB: DB error',
+      );
     });
   });
 });
