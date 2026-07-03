@@ -4,7 +4,16 @@
  * Compares JavaScript-based aggregation vs database-level aggregation
  */
 
-import { PrismaService } from '../src/prisma/prisma.service';
+import { EscrowCreateInput, EscrowState, PrismaService } from '../src/prisma/prisma.service';
+
+interface DailyData {
+  date: string;
+  totalVolume: number;
+  transactionCount: number;
+  completedCount: number;
+  disputedCount: number;
+  averageTransactionValue: number;
+}
 
 interface BenchmarkResult {
   name: string;
@@ -23,7 +32,7 @@ class ChartAggregationBenchmark {
   /**
    * Old approach: Load all transactions into memory and aggregate in JavaScript
    */
-  private async oldApproach(vendorAddress: string, days: number): Promise<any> {
+  private async oldApproach(vendorAddress: string, days: number): Promise<{ data: { date: string; totalVolume: number; transactionCount: number; completedCount: number; disputedCount: number; averageTransactionValue: number }[]; recordCount: number }> {
     const endDate = new Date();
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - days);
@@ -44,7 +53,7 @@ class ChartAggregationBenchmark {
       },
     });
 
-    const dailyMap = new Map<string, any>();
+    const dailyMap = new Map<string, DailyData>();
 
     for (const escrow of escrows) {
       const dateKey = this.formatDate(escrow.createdAt);
@@ -95,18 +104,18 @@ class ChartAggregationBenchmark {
   /**
    * New approach: Database-level aggregation using raw SQL
    */
-  private async newApproach(vendorAddress: string, days: number, timezone: string = 'UTC'): Promise<any> {
+  private async newApproach(vendorAddress: string, days: number, timezone: string = 'UTC'): Promise<{ data: DailyData[]; recordCount: number }> {
     const endDate = new Date();
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - days);
 
-    const aggregationResult = await this.prisma.$queryRaw<Array<{
+    const aggregationResult = await this.prisma.$queryRaw<{
       date: string;
       totalVolume: number;
       transactionCount: number;
       completedCount: number;
       disputedCount: number;
-    }>>`
+    }>`
       SELECT 
         DATE("createdAt" AT TIME ZONE ${timezone})::date as date,
         COALESCE(SUM("amount"), 0) as "totalVolume",
@@ -122,14 +131,14 @@ class ChartAggregationBenchmark {
       ORDER BY date ASC
     `;
 
-    const dailyMap = new Map<string, any>();
+    const dailyMap = new Map<string, DailyData>();
 
     for (const row of aggregationResult) {
-      const dateKey = (row as any).date;
-      const totalVolume = Number((row as any).totalVolume);
-      const transactionCount = Number((row as any).transactionCount);
-      const completedCount = Number((row as any).completedCount);
-      const disputedCount = Number((row as any).disputedCount);
+      const dateKey = row.date;
+      const totalVolume = Number(row.totalVolume);
+      const transactionCount = Number(row.transactionCount);
+      const completedCount = Number(row.completedCount);
+      const disputedCount = Number(row.disputedCount);
 
       dailyMap.set(dateKey, {
         date: dateKey,
@@ -151,12 +160,12 @@ class ChartAggregationBenchmark {
   }
 
   private fillDateGaps(
-    dailyMap: Map<string, any>,
+    dailyMap: Map<string, DailyData>,
     startDate: Date,
     endDate: Date,
     timezone: string = 'UTC',
-  ): any[] {
-    const result: any[] = [];
+  ): DailyData[] {
+    const result: DailyData[] = [];
     const currentDate = new Date(startDate);
 
     while (currentDate <= endDate) {
@@ -213,9 +222,8 @@ class ChartAggregationBenchmark {
           amount: Math.random() * 1000 + 50,
           currency: 'USD',
           buyerAddress: `0xBuyer${i}`,
-          createdAt,
-          state: state as any,
-        },
+          state: state as EscrowState,
+        } as unknown as EscrowCreateInput,
       });
     }
 

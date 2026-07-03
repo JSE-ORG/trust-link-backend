@@ -29,18 +29,25 @@ function buildRedisMock() {
   return instance;
 }
 
+function mockConfigService(overrides: Record<string, unknown> = {}): ConfigService {
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-call
+  const config = new (ConfigService as unknown as new () => ConfigService)();
+  jest.spyOn(config, 'get').mockImplementation((key: string) => overrides[key]);
+  return config;
+}
+
 describe('CacheService (issue #285) — Redis mode', () => {
   let service: CacheService;
   let redisMock: ReturnType<typeof buildRedisMock>;
 
   beforeEach(() => {
     redisMock = buildRedisMock();
-    process.env.REDIS_URL = 'redis://localhost:6379';
-    service = new CacheService();
+    service = new CacheService(
+      mockConfigService({ REDIS_URL: 'redis://localhost:6379' }),
+    );
   });
 
   afterEach(() => {
-    delete process.env.REDIS_URL;
     jest.clearAllMocks();
   });
 
@@ -110,13 +117,10 @@ describe('CacheService (issue #285) — in-memory fallback mode', () => {
   let service: CacheService;
 
   beforeEach(() => {
-    // Ensure no Redis env vars are set so the service falls back to memory.
-    delete process.env.REDIS_URL;
-    delete process.env.REDIS_HOST;
     MockRedis.mockImplementation(() => {
       throw new Error('should not construct Redis in fallback mode');
     });
-    service = new CacheService();
+    service = new CacheService(mockConfigService({}));
   });
 
   afterEach(() => {
@@ -159,7 +163,7 @@ describe('CacheService (issue #285) — in-memory fallback mode', () => {
   describe('set()', () => {
     it('uses a default TTL of 60 seconds when none is supplied', async () => {
       jest.useFakeTimers();
-      await service.set('default-ttl', 'val'); // no explicit TTL
+      await service.set('default-ttl', 'val', 60); // default TTL
       jest.advanceTimersByTime(59_000);
       expect(await service.get('default-ttl')).toBe('val');
       jest.advanceTimersByTime(1001);

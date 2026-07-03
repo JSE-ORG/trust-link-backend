@@ -178,6 +178,11 @@ export interface CursorRecord {
   updatedAt: Date;
 }
 
+export type FailedTransactionStatus =
+  | 'PENDING_REVIEW'
+  | 'REPLAYED'
+  | 'ABANDONED';
+
 export interface FailedTransactionRecord {
   id: string;
   operation: string;
@@ -185,7 +190,7 @@ export interface FailedTransactionRecord {
   errorMessage: string;
   ledgerFeedback: Record<string, unknown> | null;
   attempts: number;
-  status: string;
+  status: FailedTransactionStatus;
   lastReplayTxHash: string | null;
   createdAt: Date;
   updatedAt: Date;
@@ -193,8 +198,10 @@ export interface FailedTransactionRecord {
   replayedAt: Date | null;
 }
 
-type EscrowCreateInput = Omit<
+export type EscrowCreateInput = Omit<
   EscrowRecord,
+  | 'id'
+  | 'itemRef'
   | 'state'
   | 'trackingId'
   | 'shippedAt'
@@ -223,13 +230,19 @@ type EscrowCreateInput = Omit<
 
 type DisputeCreateInput = Omit<
   DisputeRecord,
-  'status' | 'resolvedAt' | 'createdAt' | 'updatedAt' | 'evidenceUrls'
+  | 'id'
+  | 'status'
+  | 'resolvedAt'
+  | 'createdAt'
+  | 'updatedAt'
+  | 'evidenceUrls'
+  | 'description'
 > & {
   id?: string;
-  description?: string;
   status?: DisputeState;
   resolvedAt?: Date | null;
   evidenceUrls?: string[];
+  description?: string;
 };
 
 type EscrowUpdateInput = Partial<
@@ -451,7 +464,7 @@ export class PrismaService implements OnModuleDestroy {
       orderBy?: Partial<Record<keyof EscrowRecord, 'asc' | 'desc'>>;
       skip?: number;
       take?: number;
-    } = {}): Promise<EscrowRecord[] | Partial<EscrowRecord>[]> => {
+    } = {}): Promise<EscrowRecord[]> => {
       let escrows = [...this.escrows.values()].filter((escrow) => {
         if (!where) {
           return true;
@@ -518,14 +531,14 @@ export class PrismaService implements OnModuleDestroy {
 
       if (select) {
         return Promise.resolve(
-          escrows.map((escrow) => {
-            const selected: Partial<EscrowRecord> = {};
+          escrows.map((escrow): EscrowRecord => {
+            const selected: Record<string, unknown> = {};
             for (const key of Object.keys(select) as Array<
               keyof EscrowRecord
             >) {
               selected[key] = escrow[key];
             }
-            return selected;
+            return selected as unknown as EscrowRecord;
           }),
         );
       }
@@ -1254,7 +1267,7 @@ export class PrismaService implements OnModuleDestroy {
     }: {
       data: Omit<
         FailedTransactionRecord,
-        'id' | 'createdAt' | 'updatedAt' | 'reviewedAt' | 'replayedAt'
+        'id' | 'createdAt' | 'updatedAt' | 'reviewedAt' | 'replayedAt' | 'lastReplayTxHash'
       >;
     }): Promise<FailedTransactionRecord> => {
       const now = new Date();
@@ -1282,7 +1295,7 @@ export class PrismaService implements OnModuleDestroy {
         records = records.filter((r) =>
           Object.entries(where).every(([key, value]) => {
             if (value === undefined) return true;
-            return (r as Record<string, unknown>)[key] === value;
+            return (r as unknown as Record<string, unknown>)[key] === value;
           }),
         );
       }
@@ -1310,7 +1323,7 @@ export class PrismaService implements OnModuleDestroy {
       if (!existing) {
         throw new Error(`FailedTransaction ${where.id} not found`);
       }
-      const updated = {
+      const updated: FailedTransactionRecord = {
         ...existing,
         ...data,
         updatedAt: new Date(),

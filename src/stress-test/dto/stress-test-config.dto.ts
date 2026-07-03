@@ -19,7 +19,7 @@ export class VirtualProfile {
   @IsNumber()
   @Min(1)
   @Max(10000)
-  concurrentUsers: number;
+  concurrentUsers!: number;
 
   @ApiProperty({
     description: 'Target number of requests per second for this profile.',
@@ -28,7 +28,7 @@ export class VirtualProfile {
   })
   @IsNumber()
   @Min(1)
-  requestsPerSecond: number;
+  requestsPerSecond!: number;
 
   @ApiProperty({
     description: 'Duration of the load profile in seconds.',
@@ -37,14 +37,14 @@ export class VirtualProfile {
   })
   @IsNumber()
   @Min(1)
-  duration: number;
+  duration!: number;
 
   @ApiProperty({
     description: 'API endpoint path to exercise during the test.',
     example: '/api/escrows',
   })
   @IsString()
-  endpoint: string;
+  endpoint!: string;
 
   @ApiPropertyOptional({
     description: 'HTTP method to use for the requests.',
@@ -73,7 +73,7 @@ export class PerformanceThresholds {
   })
   @IsNumber()
   @Min(0)
-  maxResponseTime: number;
+  maxResponseTime!: number;
 
   @ApiProperty({
     description: 'Maximum acceptable error rate as a percentage (0–100).',
@@ -84,7 +84,7 @@ export class PerformanceThresholds {
   @IsNumber()
   @Min(0)
   @Max(100)
-  maxErrorRate: number;
+  maxErrorRate!: number;
 
   @ApiProperty({
     description: 'Minimum acceptable throughput in requests per second.',
@@ -93,7 +93,7 @@ export class PerformanceThresholds {
   })
   @IsNumber()
   @Min(0)
-  minThroughput: number;
+  minThroughput!: number;
 }
 
 export class StressTestConfigDto {
@@ -102,14 +102,14 @@ export class StressTestConfigDto {
     example: 'escrow-create-peak-load',
   })
   @IsString()
-  testName: string;
+  testName!: string;
 
   @ApiProperty({
     description: 'One or more load profiles to run as part of the test.',
     type: [VirtualProfile],
   })
   @IsArray()
-  profiles: VirtualProfile[];
+  profiles!: VirtualProfile[];
 
   @ApiPropertyOptional({
     description: 'Pass/fail thresholds evaluated against the run results.',

@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { Queue } from 'bullmq';
 import { ConfigService } from '../../config/config.service';
-import { QueuesDashboardDto, QueueStatsDto } from './queue-stats.dto';
+import { QueuesDashboardDto, QueueJobCounts, QueueStatsDto } from './queue-stats.dto';
 
 /**
  * Issue #305 – Real BullMQ queue dashboard service.
@@ -84,7 +84,7 @@ export class QueueDashboardService
     const stats: QueueStatsDto[] = await Promise.all(
       this.queues.map(async (queue) => {
         try {
-          const counts = await queue.getJobCounts(
+          const rawCounts = await queue.getJobCounts(
             'waiting',
             'active',
             'completed',
@@ -92,6 +92,14 @@ export class QueueDashboardService
             'delayed',
             'paused',
           );
+          const counts: QueueJobCounts = {
+            waiting: rawCounts.waiting ?? 0,
+            active: rawCounts.active ?? 0,
+            completed: rawCounts.completed ?? 0,
+            failed: rawCounts.failed ?? 0,
+            delayed: rawCounts.delayed ?? 0,
+            paused: rawCounts.paused ?? 0,
+          };
           const isPaused = await queue.isPaused();
           return { name: queue.name, counts, isPaused };
         } catch (err) {

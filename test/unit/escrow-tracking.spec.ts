@@ -1,6 +1,7 @@
 import { NotFoundException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { EscrowService } from '../../src/escrow/escrow.service';
+import { LogisticsStatus } from '../../src/logistics/logistics.service';
 import { EscrowRepository } from '../../src/escrow/escrow.repository';
 import { LogisticsService } from '../../src/logistics/logistics.service';
 import { CacheService } from '../../src/cache/cache.service';
@@ -91,7 +92,8 @@ describe('EscrowService.getTracking (issue #58)', () => {
     repository.findById.mockResolvedValue(mockEscrow);
     cacheService.get.mockResolvedValue(null);
     logisticsService.getStatus.mockResolvedValue({
-      status: trackingDetails.status,
+      status: trackingDetails.status as LogisticsStatus,
+      events: [],
     });
 
     const expected = {

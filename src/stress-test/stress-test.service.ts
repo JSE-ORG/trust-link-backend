@@ -72,7 +72,7 @@ export class StressTestService {
 
       this.logger.log(`Stress test completed: ${config.testName}`);
       this.logAlerts(result.alerts);
-    } catch (error) {
+    } catch (error: unknown) {
       result.status = 'FAILED';
       result.endTime = Date.now();
       result.duration = result.endTime - result.startTime;
@@ -162,7 +162,7 @@ export class StressTestService {
           statusCode: response.status,
           success: response.status >= 200 && response.status < 300,
         });
-      } catch (error) {
+      } catch (error: unknown) {
         const responseTime = Date.now() - startTime;
         const axiosErr = error as {
           response?: { status?: number };

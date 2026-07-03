@@ -155,15 +155,16 @@ class StressTestRunner {
           statusCode: response.status,
           success: response.status >= 200 && response.status < 300,
         });
-      } catch (error: any) {
+      } catch (error: unknown) {
         const responseTime = Date.now() - startTime;
+        const axiosError = error as { response?: { status?: number }; message?: string };
         
         metrics.push({
           timestamp: startTime,
           responseTime,
-          statusCode: error.response?.status || 0,
+          statusCode: axiosError.response?.status || 0,
           success: false,
-          error: error.message,
+          error: axiosError.message || 'Unknown error',
         });
       }
     }

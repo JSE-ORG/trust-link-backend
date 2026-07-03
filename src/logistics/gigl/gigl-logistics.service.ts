@@ -70,7 +70,7 @@ export class GiglLogisticsService extends LogisticsService {
    */
   async getStatus(trackingId: string): Promise<{ status: LogisticsStatus }> {
     const raw = await this.client.fetchTracking(trackingId);
-    return { status: mapStatus(raw.current_status) };
+    return mapTrackingResponse(raw);
   }
 
   /**
