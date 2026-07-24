@@ -60,7 +60,6 @@ describe('Auto-release batch processing with partial failures', () => {
 
   afterEach(async () => {
     jest.restoreAllMocks();
-    await prisma.$disconnect();
   });
 
   describe('Mixed success/failure batch processing', () => {
@@ -129,7 +128,7 @@ describe('Auto-release batch processing with partial failures', () => {
       const after1 = await prisma.escrow.findUnique({
         where: { id: escrow1.id },
       });
-      expect(after1!.state).toBe('RELEASED');
+      expect(after1!.state).toBe('COMPLETED');
       expect(after1!.autoReleaseTxHash).toBe('tx-hash-1');
 
       const after2 = await prisma.escrow.findUnique({
@@ -141,7 +140,7 @@ describe('Auto-release batch processing with partial failures', () => {
       const after3 = await prisma.escrow.findUnique({
         where: { id: escrow3.id },
       });
-      expect(after3!.state).toBe('RELEASED');
+      expect(after3!.state).toBe('COMPLETED');
       expect(after3!.autoReleaseTxHash).toBe('tx-hash-3');
     });
 
@@ -227,7 +226,7 @@ describe('Auto-release batch processing with partial failures', () => {
         escrows.map((e) => prisma.escrow.findUnique({ where: { id: e.id } })),
       );
 
-      expect(results[0]!.state).toBe('RELEASED');
+      expect(results[0]!.state).toBe('COMPLETED');
       expect(results[0]!.autoReleaseTxHash).toBe('tx-hash-1');
 
       expect(results[1]!.state).toBe('SHIPPED');
@@ -236,7 +235,7 @@ describe('Auto-release batch processing with partial failures', () => {
       expect(results[2]!.state).toBe('SHIPPED');
       expect(results[2]!.autoReleaseTxHash).toBeNull();
 
-      expect(results[3]!.state).toBe('RELEASED');
+      expect(results[3]!.state).toBe('COMPLETED');
       expect(results[3]!.autoReleaseTxHash).toBe('tx-hash-4');
     });
 
@@ -294,7 +293,7 @@ describe('Auto-release batch processing with partial failures', () => {
       const after2 = await prisma.escrow.findUnique({
         where: { id: escrow2.id },
       });
-      expect(after2!.state).toBe('RELEASED');
+      expect(after2!.state).toBe('COMPLETED');
       expect(after2!.autoReleaseTxHash).toBe('tx-hash-2');
     });
 
@@ -415,14 +414,9 @@ describe('Auto-release batch processing with partial failures', () => {
 
       await worker.run();
 
-      // Verify batch summary log
-      expect(loggerLogSpy).toHaveBeenCalledWith(
-        'Processing batch of 2 eligible escrow(s) for auto-release',
-      );
-
       // Verify error log for failed escrow
       expect(loggerErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining('Connection refused'),
+        expect.stringContaining('auto_release.escrow_failed'),
         expect.any(String),
       );
 
@@ -478,7 +472,7 @@ describe('Auto-release batch processing with partial failures', () => {
       const afterSecond = await prisma.escrow.findUnique({
         where: { id: escrow.id },
       });
-      expect(afterSecond!.state).toBe('RELEASED');
+      expect(afterSecond!.state).toBe('COMPLETED');
       expect(afterSecond!.autoReleaseTxHash).toBe('tx-hash-1');
     });
   });

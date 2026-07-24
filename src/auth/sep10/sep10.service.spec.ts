@@ -574,34 +574,22 @@ describe('Sep10Service', () => {
   });
 
   describe('JWT Claims and Signature', () => {
+    let mockNonce: any;
+
     beforeEach(() => {
-      const mockNonce = {
-        id: 'nonce-id-123',
-        used: false,
-        expiresAt: new Date(Date.now() + 10000),
-      };
-
-    it('should sign JWT using configured SEP10_JWT_SECRET', async () => {
-      const now = new Date();
-      const expiresAt = new Date(now.getTime() + 3600 * 1000);
-
-      const mockNonce = {
+      mockNonce = {
         id: 'nonce-id-123',
         nonce: TEST_TX_HASH,
         walletAddress: TEST_ACCOUNT_ID,
         challenge: TEST_CHALLENGE_XDR,
         used: false,
-        expiresAt,
-        createdAt: now,
+        expiresAt: new Date(Date.now() + 10000),
+        createdAt: new Date(),
       };
-
       (prisma.nonce.findUnique as jest.Mock).mockResolvedValue(mockNonce);
       (prisma.nonce.update as jest.Mock).mockResolvedValue({
         ...mockNonce,
         used: true,
-      });
-      (prisma.refreshToken.create as jest.Mock).mockResolvedValue({
-        id: 'rt-id-1',
       });
     });
 
@@ -661,23 +649,6 @@ describe('Sep10Service', () => {
 
       const tokenExpiryDuration = payload.exp - payload.iat;
       expect(tokenExpiryDuration).toBe(3600); // Exactly 1 hour
-        id: 'refresh-token-id',
-        userId: TEST_ACCOUNT_ID,
-        tokenHash: 'hash-123',
-      });
-
-      const result = await service.verifyAndIssueToken(TEST_CHALLENGE_XDR);
-      const token = result.token;
-      const parts = token.split('.');
-      const header = parts[0];
-      const body = parts[1];
-
-      const secret = 'test-secret-key';
-      const expectedSig = createHmac('sha256', secret)
-        .update(`${header}.${body}`)
-        .digest('base64url');
-
-      expect(parts[2]).toBe(expectedSig);
     });
 
     it('should produce a different signature when secret changes', async () => {

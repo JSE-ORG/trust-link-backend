@@ -46,13 +46,16 @@ describe('Escrow Cancellation with On-Chain Validation (issue #298)', () => {
     await app.close();
   });
 
+  let nextIdemKey = 1;
+
   async function createEscrow(overrides?: Partial<{ state: string }>) {
     const res = await request(app.getHttpServer())
       .post('/escrow')
       .set('Authorization', `Bearer ${VENDOR_ADDRESS}`)
+      .set('Idempotency-Key', `cancel-${nextIdemKey++}`)
       .send({
         itemName: 'Test Item',
-        itemRef: `cancel-test-${Date.now()}`,
+        itemRef: `cancel-test-${Date.now()}-${nextIdemKey}`,
         amount: 150,
         currency: 'USDC',
         buyerAddress: BUYER_ADDRESS,

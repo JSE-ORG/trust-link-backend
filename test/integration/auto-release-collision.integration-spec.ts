@@ -18,7 +18,7 @@ describe('Auto-release collision detection (issue #277)', () => {
   let contractService: jest.Mocked<ContractService>;
   let service: AutoReleaseService;
 
-  const pastDelivery = new Date(Date.now() - 50 * 60 * 60 * 1000);
+  const pastDelivery = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000);
 
   beforeEach(async () => {
     const moduleRef: TestingModule = await Test.createTestingModule({

@@ -300,14 +300,14 @@ export class EscrowRepository {
    * Atomically claims an escrow for auto-release by setting autoReleaseSubmittedAt.
    */
   async markAutoReleaseSubmitting(id: string): Promise<EscrowRecord | null> {
-    const escrow = await this.findById(id);
-    if (!escrow || escrow.autoReleaseSubmittedAt !== null) {
-      return null;
-    }
-    const result = await this.prisma.escrow.update({
-      where: { id },
+    const { count } = await this.prisma.escrow.updateMany({
+      where: { id, autoReleaseSubmittedAt: null },
       data: { autoReleaseSubmittedAt: new Date() },
     });
+    if (count === 0) {
+      return null;
+    }
+    const result = await this.findById(id);
     await this.invalidate(id);
     return result;
   }

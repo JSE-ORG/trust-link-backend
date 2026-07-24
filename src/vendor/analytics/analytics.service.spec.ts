@@ -105,6 +105,7 @@ describe('AnalyticsService', () => {
           currency: 'USD',
           buyerAddress: '0xBuyer1',
           state: 'COMPLETED',
+          createdAt: baseDate,
         },
       });
 
@@ -119,6 +120,7 @@ describe('AnalyticsService', () => {
           currency: 'USD',
           buyerAddress: '0xBuyer1',
           state: 'COMPLETED',
+          createdAt: day3Date,
         },
       });
 
@@ -218,7 +220,8 @@ describe('AnalyticsService', () => {
         'UTC',
       );
 
-      const dayData = result.data[0];
+      const dayData = result.data.find((d) => d.transactionCount > 0)!;
+      expect(dayData).toBeDefined();
       expect(dayData.totalVolume).toBe(450);
       expect(dayData.transactionCount).toBe(3);
       expect(dayData.completedCount).toBe(2); // COMPLETED + RELEASED

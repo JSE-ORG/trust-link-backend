@@ -2,11 +2,13 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { AppModule } from '../../src/app.module';
+import { EscrowRepository } from '../../src/escrow/escrow.repository';
 import { PrismaService } from '../../src/prisma/prisma.service';
 
 describe('POST /escrow/:id/dispute integration (issue #51)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
+  let escrowRepository: EscrowRepository;
 
   const vendorAddress =
     'GB3LCRCZEETCBYV4PEIPV2PD2R3AJMC6S2OOBMV5MA6WCOKEMN3XA3K3';
@@ -27,6 +29,7 @@ describe('POST /escrow/:id/dispute integration (issue #51)', () => {
     );
     await app.init();
     prisma = app.get(PrismaService);
+    escrowRepository = app.get(EscrowRepository);
   });
 
   beforeEach(async () => {
@@ -77,14 +80,7 @@ describe('POST /escrow/:id/dispute integration (issue #51)', () => {
   });
 
   it('returns 409 if a dispute already exists', async () => {
-    await prisma.dispute.create({
-      data: {
-        escrowId: escrowUuid,
-        reason: 'DAMAGED_ITEM',
-        description: 'Item was damaged during shipping and is unusable',
-        status: 'OPEN',
-      },
-    });
+    await escrowRepository.updateState(escrowUuid, 'DISPUTED');
 
     await request(app.getHttpServer())
       .post(`/escrow/${escrowUuid}/dispute`)

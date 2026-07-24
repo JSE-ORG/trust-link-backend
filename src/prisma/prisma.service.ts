@@ -442,6 +442,7 @@ export class PrismaService implements OnModuleDestroy {
       orderBy,
       skip,
       take,
+      cursor,
     }: {
       where?: Partial<
         Pick<
@@ -464,6 +465,7 @@ export class PrismaService implements OnModuleDestroy {
       orderBy?: Partial<Record<keyof EscrowRecord, 'asc' | 'desc'>>;
       skip?: number;
       take?: number;
+      cursor?: { id: string };
     } = {}): Promise<EscrowRecord[]> => {
       let escrows = [...this.escrows.values()].filter((escrow) => {
         if (!where) {
@@ -526,7 +528,15 @@ export class PrismaService implements OnModuleDestroy {
         });
       }
 
-      if (skip !== undefined) escrows = escrows.slice(skip);
+      if (cursor && cursor.id) {
+        const cursorIndex = escrows.findIndex((e) => e.id === cursor.id);
+        if (cursorIndex >= 0) {
+          const effectiveSkip = cursorIndex + (skip ?? 1);
+          escrows = escrows.slice(effectiveSkip);
+        }
+      } else if (skip !== undefined) {
+        escrows = escrows.slice(skip);
+      }
       if (take !== undefined) escrows = escrows.slice(0, take);
 
       if (select) {
@@ -578,6 +588,25 @@ export class PrismaService implements OnModuleDestroy {
       return (this.escrow.findMany({ where }) as Promise<EscrowRecord[]>).then(
         (records) => records[0] ?? null,
       );
+    },
+    updateMany: ({
+      where,
+      data,
+    }: {
+      where: { id: string; autoReleaseSubmittedAt?: Date | null };
+      data: { autoReleaseSubmittedAt: Date };
+    }): Promise<{ count: number }> => {
+      const escrow = this.escrows.get(where.id);
+      if (
+        escrow &&
+        (where.autoReleaseSubmittedAt === undefined ||
+          escrow.autoReleaseSubmittedAt === where.autoReleaseSubmittedAt)
+      ) {
+        const updated = { ...escrow, ...data, updatedAt: new Date() };
+        this.escrows.set(where.id, updated);
+        return Promise.resolve({ count: 1 });
+      }
+      return Promise.resolve({ count: 0 });
     },
     deleteMany: (): Promise<{ count: number }> => {
       const count = this.escrows.size;

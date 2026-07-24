@@ -47,7 +47,28 @@ describe('Webhook HMAC signature rejection (issue #276)', () => {
       })
       .compile();
 
-    app = moduleFixture.createNestApplication();
+    app = moduleFixture.createNestApplication({ bodyParser: false });
+    app.use(
+      '/webhooks/stellar',
+      require('express').raw({ type: 'application/json' }),
+      (
+        req: import('express').Request,
+        _res: import('express').Response,
+        next: import('express').NextFunction,
+      ) => {
+        const request = req as import('express').Request & { rawBody?: Buffer };
+        if (Buffer.isBuffer(request.body)) {
+          request.rawBody = Buffer.from(request.body);
+          try {
+            request.body = JSON.parse(request.rawBody.toString('utf8'));
+          } catch {
+            request.body = undefined;
+          }
+        }
+        next();
+      },
+    );
+    app.use(require('express').json());
     app.useGlobalPipes(
       new ValidationPipe({ whitelist: true, transform: true }),
     );

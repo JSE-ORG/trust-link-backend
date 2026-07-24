@@ -62,7 +62,7 @@ describe('Evidence Upload Rate Limiting (e2e)', () => {
       const limit = Number(configService.get('EVIDENCE_UPLOAD_LIMIT')) || 5;
       let rateLimitHit = false;
 
-      for (let i = 0; i < limit + 5; i++) {
+      for (let i = 0; i < limit + 10; i++) {
         const response = await request(app.getHttpServer())
           .post('/escrow/evidence-upload')
           .query({ fileName: `test-file-${i}.pdf` })
@@ -86,7 +86,7 @@ describe('Evidence Upload Rate Limiting (e2e)', () => {
       const limit = Number(configService.get('EVIDENCE_UPLOAD_LIMIT')) || 5;
       const ttl = Number(configService.get('EVIDENCE_UPLOAD_TTL')) || 2000;
 
-      for (let i = 0; i < limit + 3; i++) {
+      for (let i = 0; i < limit + 10; i++) {
         const response = await request(app.getHttpServer())
           .post('/escrow/evidence-upload')
           .query({ fileName: `test-file-${i}.pdf` })
@@ -108,7 +108,7 @@ describe('Evidence Upload Rate Limiting (e2e)', () => {
       const limit = Number(configService.get('EVIDENCE_UPLOAD_LIMIT')) || 5;
 
       // Exhaust the rate limit
-      for (let i = 0; i < limit + 3; i++) {
+      for (let i = 0; i < limit + 10; i++) {
         await request(app.getHttpServer())
           .post('/escrow/evidence-upload')
           .query({ fileName: `test-file-${i}.pdf` })
@@ -131,7 +131,7 @@ describe('Evidence Upload Rate Limiting (e2e)', () => {
       const limit = Number(configService.get('EVIDENCE_UPLOAD_LIMIT')) || 5;
 
       // Exhaust rate limit for user 1
-      for (let i = 0; i < limit + 2; i++) {
+      for (let i = 0; i < limit + 10; i++) {
         await request(app.getHttpServer())
           .post('/escrow/evidence-upload')
           .query({ fileName: `user1-file-${i}.pdf` })

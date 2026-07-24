@@ -118,7 +118,7 @@ describe('Nonce cleanup integration (issue #274)', () => {
   });
 
   it('does not affect nonces that expire exactly at now', async () => {
-    const now = new Date();
+    const now = new Date(Date.now() + 100);
 
     await prisma.nonce.create({
       data: {

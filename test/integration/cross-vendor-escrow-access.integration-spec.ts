@@ -17,6 +17,7 @@ import { ConfigService } from '../../src/config/config.service';
 import { PrismaService } from '../../src/prisma/prisma.service';
 import { NotificationsService } from '../../src/notifications/notifications.service';
 import { EscrowRepository } from '../../src/escrow/escrow.repository';
+import { DisputeRepository } from '../../src/dispute/dispute.repository';
 import { S3PresignService } from '../../src/common/services/s3-presign.service';
 import { ContractService } from '../../src/stellar/contract.service';
 import { CacheService } from '../../src/cache/cache.service';
@@ -37,6 +38,8 @@ describe('Cross-vendor escrow access (issue #272)', () => {
             return 'TESTNET';
           case 'ADMIN_ADDRESS':
             return ADMIN_ADDRESS;
+          case 'SEP10_JWT_SECRET':
+            return 'integration-test-secret-key-for-jwt-32chars';
           default:
             return undefined;
         }
@@ -47,37 +50,25 @@ describe('Cross-vendor escrow access (issue #272)', () => {
 
     const mockNotificationsService = {
       notifyFunded: jest.fn(),
-      notifyShipped: jest.fn(),
+      notifyShipped: jest.fn().mockResolvedValue(undefined),
       notifyCompleted: jest.fn(),
       notifyDisputed: jest.fn(),
     } as unknown as NotificationsService;
-
-    const mockEscrowRepository = {
-      create: jest.fn(),
-      findById: jest.fn(),
-      findByVendorAndItem: jest.fn(),
-      findVendorEscrows: jest.fn(),
-      findEvents: jest.fn(),
-      markShipped: jest.fn(),
-      markCancelled: jest.fn(),
-      markCompleted: jest.fn(),
-      markAutoReleaseCompleted: jest.fn(),
-      updateState: jest.fn(),
-      saveBuyerContact: jest.fn(),
-    } as unknown as EscrowRepository;
 
     const mockS3PresignService = {
       presign: jest.fn(),
     } as unknown as S3PresignService;
 
     const mockContractService = {
-      getEscrowState: jest.fn(),
+      getEscrowState: jest.fn().mockResolvedValue({ exists: false, state: 'CREATED' }),
+      submitAutoRelease: jest.fn(),
       cancelEscrowOnChain: jest.fn(),
     } as unknown as ContractService;
 
     const mockCacheService = {
       get: jest.fn(),
       set: jest.fn(),
+      del: jest.fn(),
     } as unknown as CacheService;
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -85,10 +76,11 @@ describe('Cross-vendor escrow access (issue #272)', () => {
       providers: [
         EscrowService,
         BuyerDisputeService,
+        EscrowRepository,
+        DisputeRepository,
         { provide: ConfigService, useValue: mockConfigService },
         { provide: PrismaService, useValue: prisma },
         { provide: NotificationsService, useValue: mockNotificationsService },
-        { provide: EscrowRepository, useValue: mockEscrowRepository },
         { provide: S3PresignService, useValue: mockS3PresignService },
         { provide: ContractService, useValue: mockContractService },
         { provide: CacheService, useValue: mockCacheService },
@@ -115,7 +107,7 @@ describe('Cross-vendor escrow access (issue #272)', () => {
     it('returns 403 when vendor A tries to ship vendor B escrow', async () => {
       const escrow = await prisma.escrow.create({
         data: {
-          id: 'escrow-1',
+          id: '10000000-0000-4000-8000-000000000001',
           itemName: 'Test Item',
           amount: 100,
           currency: 'USDC',
@@ -137,7 +129,7 @@ describe('Cross-vendor escrow access (issue #272)', () => {
     it('returns 403 when vendor A tries to cancel vendor B escrow', async () => {
       const escrow = await prisma.escrow.create({
         data: {
-          id: 'escrow-2',
+          id: '10000000-0000-4000-8000-000000000002',
           itemName: 'Test Item',
           amount: 100,
           currency: 'USDC',
@@ -158,7 +150,7 @@ describe('Cross-vendor escrow access (issue #272)', () => {
     it('returns 403 when vendor A tries to delete vendor B escrow', async () => {
       const escrow = await prisma.escrow.create({
         data: {
-          id: 'escrow-3',
+          id: '10000000-0000-4000-8000-000000000003',
           itemName: 'Test Item',
           amount: 100,
           currency: 'USDC',
@@ -181,7 +173,7 @@ describe('Cross-vendor escrow access (issue #272)', () => {
     it('allows admin to ship any escrow', async () => {
       const escrow = await prisma.escrow.create({
         data: {
-          id: 'escrow-4',
+          id: '10000000-0000-4000-8000-000000000004',
           itemName: 'Test Item',
           amount: 100,
           currency: 'USDC',
@@ -203,7 +195,7 @@ describe('Cross-vendor escrow access (issue #272)', () => {
     it('allows admin to cancel any escrow', async () => {
       const escrow = await prisma.escrow.create({
         data: {
-          id: 'escrow-5',
+          id: '10000000-0000-4000-8000-000000000005',
           itemName: 'Test Item',
           amount: 100,
           currency: 'USDC',
@@ -224,7 +216,7 @@ describe('Cross-vendor escrow access (issue #272)', () => {
     it('allows admin to delete any escrow', async () => {
       const escrow = await prisma.escrow.create({
         data: {
-          id: 'escrow-6',
+          id: '10000000-0000-4000-8000-000000000006',
           itemName: 'Test Item',
           amount: 100,
           currency: 'USDC',

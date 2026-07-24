@@ -60,7 +60,10 @@ describe('AutoReleaseWorker (issue #10)', () => {
 
     await worker.run(new Date('2026-05-26T00:00:00.000Z'));
 
-    expect(contractService.submitAutoRelease).toHaveBeenCalledWith('escrow-1');
+    expect(contractService.submitAutoRelease).toHaveBeenCalledWith(
+      'escrow-1',
+      'GAUTORELEASE000000000000000000000000000000000000000000000',
+    );
     expect(escrowRepository.markAutoReleaseCompleted).toHaveBeenCalledWith(
       'escrow-1',
       'tx-hash',

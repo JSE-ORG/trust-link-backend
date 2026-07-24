@@ -1,19 +1,20 @@
+import crypto from 'node:crypto';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
+import { ConfigService } from '../../src/config/config.service';
 import { AppModule } from '../../src/app.module';
 import { PrismaService } from '../../src/prisma/prisma.service';
 
 describe('GET /escrow/:id/dispute access control integration (issue #52)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
+  let adminAddress: string;
 
   const vendorAddress =
     'GB3LCRCZEETCBYV4PEIPV2PD2R3AJMC6S2OOBMV5MA6WCOKEMN3XA3K3';
   const buyerAddress =
     'GDAMQCBXJI72A6R4QOTF6BJTXVLE5P7G2RT7ADADDB4UKMILJ3YF77F2';
-  const adminAddress =
-    'GAHJJJKMOKYE4RVPZEWZTKH5FVI4PA3VL7GK2LFNUBSGBFE3DMQUGMM';
   const strangerAddress =
     'GDTM7BUWHKUNZQVC3TA2O3NESSWCD26CHH6ORQLB4JCO6JXF4L3EUVCL';
   const nonExistentUuid = '00000000-0000-4000-8000-000000000099';
@@ -21,6 +22,18 @@ describe('GET /escrow/:id/dispute access control integration (issue #52)', () =>
   const escrowUuid = '00000000-0000-4000-8000-000000000010';
   const disputeUuid = '00000000-0000-4000-8000-000000000020';
   const noDisputeEscrowUuid = '00000000-0000-4000-8000-000000000030';
+
+  function adminJwt(): string {
+    const header = Buffer.from(
+      JSON.stringify({ alg: 'HS256', typ: 'JWT' }),
+    ).toString('base64url');
+    const payload = Buffer.from(
+      JSON.stringify({ sub: adminAddress, role: 'admin', iat: Math.floor(Date.now() / 1000), exp: Math.floor(Date.now() / 1000) + 3600 }),
+    ).toString('base64url');
+    const secret = process.env.SEP10_JWT_SECRET ?? 'test-jwt-secret-32-characters-long!!';
+    const sig = crypto.createHmac('sha256', secret).update(`${header}.${payload}`).digest('base64url');
+    return `${header}.${payload}.${sig}`;
+  }
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -33,6 +46,7 @@ describe('GET /escrow/:id/dispute access control integration (issue #52)', () =>
     );
     await app.init();
     prisma = app.get(PrismaService);
+    adminAddress = app.get(ConfigService).get<string>('ADMIN_ADDRESS')!;
   });
 
   beforeEach(async () => {
@@ -95,7 +109,7 @@ describe('GET /escrow/:id/dispute access control integration (issue #52)', () =>
   it('allows admin to retrieve dispute details', async () => {
     const res = await request(app.getHttpServer())
       .get(`/escrow/${escrowUuid}/dispute`)
-      .set('Authorization', `Bearer ${adminAddress}`)
+      .set('Authorization', `Bearer ${adminJwt()}`)
       .expect(200);
 
     expect(res.body.id).toBe(disputeUuid);

@@ -11,6 +11,7 @@ jest.mock('ioredis');
 
 import Redis from 'ioredis';
 import { CacheService } from '../../src/cache/cache.service';
+import { ConfigService } from '../../src/config/config.service';
 
 const MockRedis = Redis as jest.MockedClass<typeof Redis>;
 

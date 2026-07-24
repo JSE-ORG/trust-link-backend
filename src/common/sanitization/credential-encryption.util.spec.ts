@@ -108,8 +108,8 @@ describe('CredentialEncryption', () => {
     });
 
     it('should throw when CREDENTIAL_ENCRYPTION_KEY is not set', () => {
-      delete process.env.CREDENTIAL_ENCRYPTION_KEY;
       const encrypted = encryptCredential('test');
+      delete process.env.CREDENTIAL_ENCRYPTION_KEY;
 
       expect(() => decryptCredential(encrypted)).toThrow(
         'CREDENTIAL_ENCRYPTION_KEY environment variable is required',

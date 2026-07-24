@@ -11,7 +11,7 @@ describe('Auto-Release Idempotency Key Locking (issue #296)', () => {
   let contractService: ContractService;
   let escrowRepository: EscrowRepository;
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
@@ -25,7 +25,9 @@ describe('Auto-Release Idempotency Key Locking (issue #296)', () => {
     prisma = app.get(PrismaService);
     contractService = app.get(ContractService);
     escrowRepository = app.get(EscrowRepository);
+  });
 
+  beforeEach(async () => {
     await prisma.reset();
 
     jest
@@ -35,6 +37,9 @@ describe('Auto-Release Idempotency Key Locking (issue #296)', () => {
 
   afterEach(async () => {
     jest.restoreAllMocks();
+  });
+
+  afterAll(async () => {
     await app.close();
   });
 

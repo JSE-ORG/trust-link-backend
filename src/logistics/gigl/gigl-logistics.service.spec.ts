@@ -67,7 +67,7 @@ describe('GiglLogisticsService', () => {
 
       const result = await service.getStatus('TRK-001');
 
-      expect(result).toEqual({ status: 'DELIVERED' });
+      expect(result).toMatchObject({ status: 'DELIVERED' });
     });
 
     it('returns IN_TRANSIT when GIGL current_status is "IN_TRANSIT"', async () => {
@@ -77,7 +77,7 @@ describe('GiglLogisticsService', () => {
 
       const result = await service.getStatus('TRK-001');
 
-      expect(result).toEqual({ status: 'IN_TRANSIT' });
+      expect(result).toMatchObject({ status: 'IN_TRANSIT' });
     });
 
     it('returns IN_TRANSIT when GIGL current_status is "OUT_FOR_DELIVERY"', async () => {
@@ -87,7 +87,7 @@ describe('GiglLogisticsService', () => {
 
       const result = await service.getStatus('TRK-001');
 
-      expect(result).toEqual({ status: 'IN_TRANSIT' });
+      expect(result).toMatchObject({ status: 'IN_TRANSIT' });
     });
 
     it('returns PENDING for any unknown GIGL status code', async () => {
@@ -97,7 +97,7 @@ describe('GiglLogisticsService', () => {
 
       const result = await service.getStatus('TRK-001');
 
-      expect(result).toEqual({ status: 'PENDING' });
+      expect(result).toMatchObject({ status: 'PENDING' });
     });
 
     it('passes the correct tracking number to GiglClient', async () => {

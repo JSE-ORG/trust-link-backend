@@ -1,8 +1,17 @@
+import crypto from 'node:crypto';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { AppModule } from '../../src/app.module';
 import { PrismaService } from '../../src/prisma/prisma.service';
+
+const VENDOR =
+  'GA36PERSXWPBG7HYKNBVT5PFLTOFYO4Q3CWGJZTYH5GU5OLTKHW7SJHE';
+const BUYER =
+  'GADRXQS5ZCXLBX6U67CY2WBJNDUXCWGHSQKR76AOJDQECYX36W5S6IYK';
+const OTHER_VENDOR =
+  'GB3LCRCZEETCBYV4PEIPV2PD2R3AJMC6S2OOBMV5MA6WCOKEMN3XA3K3';
+const IDEM_KEY = 'escrow-integration-idem-key';
 
 describe('POST /escrow integration (issue #20)', () => {
   let app: INestApplication;
@@ -29,13 +38,14 @@ describe('POST /escrow integration (issue #20)', () => {
   it('creates a DB record and returns 201 for a valid request', async () => {
     const response = await request(app.getHttpServer())
       .post('/escrow')
-      .set('Authorization', 'Bearer vendor-address')
+      .set('Authorization', `Bearer ${VENDOR}`)
+      .set('Idempotency-Key', IDEM_KEY)
       .send({
         itemName: 'Vintage jacket',
         itemRef: 'jacket-001',
         amount: 75,
         currency: 'USDC',
-        buyerAddress: 'buyer-address',
+        buyerAddress: BUYER,
       })
       .expect(201);
 
@@ -45,8 +55,8 @@ describe('POST /escrow integration (issue #20)', () => {
         itemName: 'Vintage jacket',
         itemRef: 'jacket-001',
         amount: 75,
-        vendorAddress: 'vendor-address',
-        buyerAddress: 'buyer-address',
+        vendorAddress: VENDOR,
+        buyerAddress: BUYER,
         state: 'FUNDED',
         paymentUrl: expect.stringContaining('/pay/'),
       }),
@@ -59,7 +69,8 @@ describe('POST /escrow integration (issue #20)', () => {
   it('returns 400 with validation errors for missing required fields', async () => {
     const response = await request(app.getHttpServer())
       .post('/escrow')
-      .set('Authorization', 'Bearer vendor-address')
+      .set('Authorization', `Bearer ${VENDOR}`)
+      .set('Idempotency-Key', crypto.randomUUID())
       .send({ itemName: 'Hat' })
       .expect(400);
 
@@ -80,7 +91,7 @@ describe('POST /escrow integration (issue #20)', () => {
         itemName: 'Vintage jacket',
         amount: 75,
         currency: 'USDC',
-        buyerAddress: 'buyer-address',
+        buyerAddress: BUYER,
       })
       .expect(401);
   });
@@ -88,13 +99,14 @@ describe('POST /escrow integration (issue #20)', () => {
   it('retrieves a created escrow via GET /escrow/:id without authentication', async () => {
     const createResponse = await request(app.getHttpServer())
       .post('/escrow')
-      .set('Authorization', 'Bearer vendor-address')
+      .set('Authorization', `Bearer ${VENDOR}`)
+      .set('Idempotency-Key', IDEM_KEY)
       .send({
         itemName: 'Vintage jacket',
         itemRef: 'jacket-001',
         amount: 75,
         currency: 'USDC',
-        buyerAddress: 'buyer-address',
+        buyerAddress: BUYER,
       })
       .expect(201);
 
@@ -117,41 +129,44 @@ describe('POST /escrow integration (issue #20)', () => {
   it('returns paginated vendor escrows with state filtering and sorting', async () => {
     await request(app.getHttpServer())
       .post('/escrow')
-      .set('Authorization', 'Bearer vendor-address')
+      .set('Authorization', `Bearer ${VENDOR}`)
+      .set('Idempotency-Key', 'key-escrow-pagi-1')
       .send({
         itemName: 'Vintage jacket',
         itemRef: 'jacket-001',
         amount: 75,
         currency: 'USDC',
-        buyerAddress: 'buyer-address',
+        buyerAddress: BUYER,
       })
       .expect(201);
     await request(app.getHttpServer())
       .post('/escrow')
-      .set('Authorization', 'Bearer vendor-address')
+      .set('Authorization', `Bearer ${VENDOR}`)
+      .set('Idempotency-Key', 'key-escrow-pagi-2')
       .send({
         itemName: 'Leather bag',
         itemRef: 'bag-001',
         amount: 120,
         currency: 'USDC',
-        buyerAddress: 'buyer-address',
+        buyerAddress: BUYER,
       })
       .expect(201);
     await request(app.getHttpServer())
       .post('/escrow')
-      .set('Authorization', 'Bearer other-vendor')
+      .set('Authorization', `Bearer ${OTHER_VENDOR}`)
+      .set('Idempotency-Key', 'key-escrow-pagi-3')
       .send({
         itemName: 'Sneakers',
         itemRef: 'sneaker-001',
         amount: 150,
         currency: 'USDC',
-        buyerAddress: 'buyer-address',
+        buyerAddress: BUYER,
       })
       .expect(201);
 
     const response = await request(app.getHttpServer())
       .get('/vendor/escrows')
-      .set('Authorization', 'Bearer vendor-address')
+      .set('Authorization', `Bearer ${VENDOR}`)
       .query({
         state: 'FUNDED',
         sort: 'amount',
