@@ -137,6 +137,20 @@ Never run application instances from a new build against an old schema when the 
 - Queue dashboard and logs show no failed background jobs.
 - Error rate and p95 latency remain stable for at least one canary window.
 
+## Production Baseline Migration
+
+The `20260526000000_initial` baseline migration creates the foundational tables (`Escrow`, `VendorProfile`, `Dispute`, `Notification`) and enums. All statements are idempotent (`IF NOT EXISTS`), making them safe on any database.
+
+**If your production database was originally set up via `prisma db push`** (no `_prisma_migrations` table), you must run this one-time transition before the baseline is applied:
+
+```bash
+bash scripts/resolve-existing-migrations.sh
+```
+
+This script syncs the schema and marks all 14 existing migrations as applied, so subsequent `prisma migrate deploy` runs only apply new changes.
+
+**If your production database already uses Prisma Migrate** (has `_prisma_migrations` records), no action is needed — the baseline migration is a no-op via `IF NOT EXISTS`.
+
 ## Automated DB Migration Workflow
 
 The `.github/workflows/db-migrate.yml` workflow applies Prisma migrations automatically.
