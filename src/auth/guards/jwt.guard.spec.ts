@@ -8,7 +8,8 @@ import { ConfigService } from '../../config/config.service';
 import { AuthUser } from '../auth-user';
 
 const TEST_SECRET = 'test-secret-for-guard';
-const TEST_USER_ADDRESS = 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5';
+const TEST_USER_ADDRESS =
+  'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5';
 
 /**
  * Helper to create a mock JWT for testing.

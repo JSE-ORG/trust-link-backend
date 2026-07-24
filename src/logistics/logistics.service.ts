@@ -1,5 +1,8 @@
 import { Injectable } from '@nestjs/common';
-import { encryptCredential, decryptCredential } from '../common/sanitization/credential-encryption.util';
+import {
+  encryptCredential,
+  decryptCredential,
+} from '../common/sanitization/credential-encryption.util';
 
 export type LogisticsStatus = 'PENDING' | 'IN_TRANSIT' | 'DELIVERED';
 
@@ -42,7 +45,7 @@ export class LogisticsService {
     }
     try {
       return decryptCredential(this.apiKey);
-    } catch (error) {
+    } catch {
       throw new Error('Failed to decrypt logistics API key');
     }
   }

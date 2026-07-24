@@ -77,8 +77,10 @@ export function decryptCredential(stored: string): string {
     return Buffer.concat([decipher.update(ct), decipher.final()]).toString(
       'utf8',
     );
-  } catch (error) {
-    throw new Error('Failed to decrypt credential: invalid key or corrupted data.');
+  } catch {
+    throw new Error(
+      'Failed to decrypt credential: invalid key or corrupted data.',
+    );
   }
 }
 

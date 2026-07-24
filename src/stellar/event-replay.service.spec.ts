@@ -71,19 +71,32 @@ describe('EventReplayService', () => {
 
       expect(webhookService.processOperationDto).toHaveBeenCalledTimes(1);
 
-      const dto: StellarWebhookDto = webhookService.processOperationDto.mock.calls[0][0];
+      const dto: StellarWebhookDto =
+        webhookService.processOperationDto.mock.calls[0][0];
       expect(dto.id).toBe('100');
       expect(dto.type).toBe('payment');
       expect(dto.transaction_hash).toBe('abc123');
-      expect(dto.to).toBe('GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5');
+      expect(dto.to).toBe(
+        'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
+      );
       expect(dto.amount).toBe('100.0000000');
       expect(dto.asset_code).toBe('USDC');
     });
 
     it('persists cursor after processing records', async () => {
       const records = [
-        { id: '200', type: 'payment', transaction_hash: 'tx200', paging_token: '200' },
-        { id: '201', type: 'payment', transaction_hash: 'tx201', paging_token: '201' },
+        {
+          id: '200',
+          type: 'payment',
+          transaction_hash: 'tx200',
+          paging_token: '200',
+        },
+        {
+          id: '201',
+          type: 'payment',
+          transaction_hash: 'tx201',
+          paging_token: '201',
+        },
       ];
 
       mockedAxios.get = jest.fn().mockResolvedValue({
@@ -108,7 +121,9 @@ describe('EventReplayService', () => {
     });
 
     it('falls back to record id when paging_token is absent', async () => {
-      const records = [{ id: '300', type: 'create_account', transaction_hash: 'tx300' }];
+      const records = [
+        { id: '300', type: 'create_account', transaction_hash: 'tx300' },
+      ];
       mockedAxios.get = jest.fn().mockResolvedValue({
         data: { _embedded: { records } },
       });
@@ -130,8 +145,18 @@ describe('EventReplayService', () => {
 
     it('continues processing remaining records when one fails', async () => {
       const records = [
-        { id: '400', type: 'payment', transaction_hash: 'tx400', paging_token: '400' },
-        { id: '401', type: 'payment', transaction_hash: 'tx401', paging_token: '401' },
+        {
+          id: '400',
+          type: 'payment',
+          transaction_hash: 'tx400',
+          paging_token: '400',
+        },
+        {
+          id: '401',
+          type: 'payment',
+          transaction_hash: 'tx401',
+          paging_token: '401',
+        },
       ];
 
       mockedAxios.get = jest.fn().mockResolvedValue({

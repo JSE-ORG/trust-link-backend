@@ -1,4 +1,8 @@
-import { encryptCredential, decryptCredential, reencryptCredential } from './credential-encryption.util';
+import {
+  encryptCredential,
+  decryptCredential,
+  reencryptCredential,
+} from './credential-encryption.util';
 
 describe('CredentialEncryption', () => {
   const originalKey = process.env.CREDENTIAL_ENCRYPTION_KEY;
@@ -97,7 +101,7 @@ describe('CredentialEncryption', () => {
     it('should throw when decryption fails (tampered data)', () => {
       const plaintext = 'my-secret-api-key-12345';
       const encrypted = encryptCredential(plaintext);
-      
+
       // Tamper with the encrypted data
       const parts = encrypted.split(':');
       const tampered = `${parts[0]}:${parts[1]}:${parts[2].slice(0, -5)}xxxxx`;
@@ -149,7 +153,7 @@ describe('CredentialEncryption', () => {
   describe('encryption round-trip', () => {
     it('should successfully encrypt and decrypt multiple times', () => {
       const plaintext = 'my-secret-api-key-12345';
-      
+
       let encrypted = encryptCredential(plaintext);
       let decrypted = decryptCredential(encrypted);
       expect(decrypted).toBe(plaintext);

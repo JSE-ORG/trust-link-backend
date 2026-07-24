@@ -6,7 +6,11 @@ import {
 } from '@nestjs/common';
 import { Queue } from 'bullmq';
 import { ConfigService } from '../../config/config.service';
-import { QueuesDashboardDto, QueueJobCounts, QueueStatsDto } from './queue-stats.dto';
+import {
+  QueuesDashboardDto,
+  QueueJobCounts,
+  QueueStatsDto,
+} from './queue-stats.dto';
 
 /**
  * Issue #305 – Real BullMQ queue dashboard service.

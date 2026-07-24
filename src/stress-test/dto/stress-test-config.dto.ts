@@ -62,7 +62,7 @@ export class VirtualProfile {
     example: { itemName: 'Test item', amount: 100, currency: 'USDC' },
   })
   @IsOptional()
-  payload?: Record<string, any>;
+  payload?: Record<string, unknown>;
 }
 
 export class PerformanceThresholds {

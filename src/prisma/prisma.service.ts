@@ -9,12 +9,15 @@ const ENCRYPTED_CONTACT_RE = /^[0-9a-f]{24}:[0-9a-f]{32}:[0-9a-f]+$/i;
  * Throws at the repository layer if a non-null value doesn't match the
  * expected AES-256-GCM ciphertext format produced by encryptContact().
  */
-function assertEncryptedContact(field: string, value: string | null | undefined): void {
+function assertEncryptedContact(
+  field: string,
+  value: string | null | undefined,
+): void {
   if (value == null) return;
   if (!ENCRYPTED_CONTACT_RE.test(value)) {
     throw new Error(
       `Security violation: ${field} must be encrypted before persistence. ` +
-      `Use encryptContact() from contact-encryption.util before writing to the database.`,
+        `Use encryptContact() from contact-encryption.util before writing to the database.`,
     );
   }
 }
@@ -37,7 +40,12 @@ export type NotificationType =
   | 'DISPUTED'
   | 'COMPLETED'
   | 'REFUNDED';
-export type DisputeState = 'OPEN' | 'UNDER_REVIEW' | 'RESOLVED' | 'CANCELLED' | 'ABANDONED';
+export type DisputeState =
+  | 'OPEN'
+  | 'UNDER_REVIEW'
+  | 'RESOLVED'
+  | 'CANCELLED'
+  | 'ABANDONED';
 
 export interface EscrowRecord {
   id: string;
@@ -585,9 +593,9 @@ export class PrismaService implements OnModuleDestroy {
         >
       >;
     } = {}): Promise<EscrowRecord | null> => {
-      return (this.escrow.findMany({ where }) as Promise<EscrowRecord[]>).then(
-        (records) => records[0] ?? null,
-      );
+      return this.escrow
+        .findMany({ where })
+        .then((records) => records[0] ?? null);
     },
     updateMany: ({
       where,
@@ -1296,7 +1304,12 @@ export class PrismaService implements OnModuleDestroy {
     }: {
       data: Omit<
         FailedTransactionRecord,
-        'id' | 'createdAt' | 'updatedAt' | 'reviewedAt' | 'replayedAt' | 'lastReplayTxHash'
+        | 'id'
+        | 'createdAt'
+        | 'updatedAt'
+        | 'reviewedAt'
+        | 'replayedAt'
+        | 'lastReplayTxHash'
       >;
     }): Promise<FailedTransactionRecord> => {
       const now = new Date();

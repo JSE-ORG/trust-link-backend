@@ -29,12 +29,15 @@ export const FOCUSABLE_SELECTOR = [
  * Default DOM driver for use in a real browser context.
  */
 export const createDomDriver = (container: Element): FocusDriver => ({
-  getFocusableElements: () => Array.from(container.querySelectorAll(FOCUSABLE_SELECTOR)),
+  getFocusableElements: () =>
+    Array.from(container.querySelectorAll(FOCUSABLE_SELECTOR)),
   getActiveElement: () => document.activeElement,
   focusElement: (el: Element) => (el as HTMLElement).focus(),
   preventDefault: (e: Event) => e.preventDefault(),
-  addEventListener: (name, handler) => container.addEventListener(name, handler),
-  removeEventListener: (name, handler) => container.removeEventListener(name, handler),
+  addEventListener: (name, handler) =>
+    container.addEventListener(name, handler),
+  removeEventListener: (name, handler) =>
+    container.removeEventListener(name, handler),
 });
 
 /**

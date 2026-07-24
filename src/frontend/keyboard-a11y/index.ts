@@ -5,10 +5,7 @@
  * so the NestJS backend tsconfig compiles cleanly.
  */
 
-export {
-  FOCUSABLE_SELECTOR,
-  createFocusTrap,
-} from './focus-trap.util';
+export { FOCUSABLE_SELECTOR, createFocusTrap } from './focus-trap.util';
 export type { FocusTrap } from './focus-trap.util';
 
 export {

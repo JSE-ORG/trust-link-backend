@@ -28,10 +28,19 @@ describe('GET /escrow/:id/dispute access control integration (issue #52)', () =>
       JSON.stringify({ alg: 'HS256', typ: 'JWT' }),
     ).toString('base64url');
     const payload = Buffer.from(
-      JSON.stringify({ sub: adminAddress, role: 'admin', iat: Math.floor(Date.now() / 1000), exp: Math.floor(Date.now() / 1000) + 3600 }),
+      JSON.stringify({
+        sub: adminAddress,
+        role: 'admin',
+        iat: Math.floor(Date.now() / 1000),
+        exp: Math.floor(Date.now() / 1000) + 3600,
+      }),
     ).toString('base64url');
-    const secret = process.env.SEP10_JWT_SECRET ?? 'test-jwt-secret-32-characters-long!!';
-    const sig = crypto.createHmac('sha256', secret).update(`${header}.${payload}`).digest('base64url');
+    const secret =
+      process.env.SEP10_JWT_SECRET ?? 'test-jwt-secret-32-characters-long!!';
+    const sig = crypto
+      .createHmac('sha256', secret)
+      .update(`${header}.${payload}`)
+      .digest('base64url');
     return `${header}.${payload}.${sig}`;
   }
 

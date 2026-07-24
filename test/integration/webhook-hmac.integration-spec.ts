@@ -50,7 +50,7 @@ describe('Webhook HMAC signature rejection (issue #276)', () => {
     app = moduleFixture.createNestApplication({ bodyParser: false });
     app.use(
       '/webhooks/stellar',
-      require('express').raw({ type: 'application/json' }),
+      express.raw({ type: 'application/json' }),
       (
         req: import('express').Request,
         _res: import('express').Response,
@@ -68,7 +68,7 @@ describe('Webhook HMAC signature rejection (issue #276)', () => {
         next();
       },
     );
-    app.use(require('express').json());
+    app.use(express.json());
     app.useGlobalPipes(
       new ValidationPipe({ whitelist: true, transform: true }),
     );

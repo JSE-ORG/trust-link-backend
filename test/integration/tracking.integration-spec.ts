@@ -111,12 +111,16 @@ describe('GET /escrow/:id/tracking integration (issue #54)', () => {
       .get(`/escrow/${uuid3}/tracking`)
       .expect(200);
 
-    expect(res1.body).toEqual(expect.objectContaining({ status: 'IN_TRANSIT' }));
+    expect(res1.body).toEqual(
+      expect.objectContaining({ status: 'IN_TRANSIT' }),
+    );
 
     const res2 = await request(app.getHttpServer())
       .get(`/escrow/${uuid3}/tracking`)
       .expect(200);
 
-    expect(res2.body).toEqual(expect.objectContaining({ status: 'IN_TRANSIT' }));
+    expect(res2.body).toEqual(
+      expect.objectContaining({ status: 'IN_TRANSIT' }),
+    );
   });
 });

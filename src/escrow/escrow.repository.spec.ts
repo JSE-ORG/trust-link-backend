@@ -75,7 +75,11 @@ describe('EscrowRepository', () => {
 
     it('returns remaining records after a cursor', async () => {
       const first = await repo.findByVendor('v-page', undefined, 2);
-      const second = await repo.findByVendor('v-page', first[first.length - 1].id, 10);
+      const second = await repo.findByVendor(
+        'v-page',
+        first[first.length - 1].id,
+        10,
+      );
       expect(second.length).toBeGreaterThanOrEqual(1);
       expect(second.map((e) => e.id)).not.toContain(first[0].id);
     });
@@ -90,8 +94,14 @@ describe('EscrowRepository', () => {
 
   describe('findByBuyer() — pagination (#205)', () => {
     beforeEach(async () => {
-      await repo.create({ ...makeDto(), itemRef: 'P', buyerAddress: 'b-page' }, 'v1');
-      await repo.create({ ...makeDto(), itemRef: 'Q', buyerAddress: 'b-page' }, 'v1');
+      await repo.create(
+        { ...makeDto(), itemRef: 'P', buyerAddress: 'b-page' },
+        'v1',
+      );
+      await repo.create(
+        { ...makeDto(), itemRef: 'Q', buyerAddress: 'b-page' },
+        'v1',
+      );
     });
 
     it('returns up to `take` records', async () => {
@@ -108,7 +118,10 @@ describe('EscrowRepository', () => {
   // ── #206: findFirst instead of findMany + index ────────────────────────────
   describe('findByVendorAndItem() — findFirst determinism (#206)', () => {
     it('returns the earliest record when multiple share the same (vendorAddress, itemRef)', async () => {
-      const first = await repo.create({ ...makeDto(), itemRef: 'DUP' }, 'v-dup');
+      const first = await repo.create(
+        { ...makeDto(), itemRef: 'DUP' },
+        'v-dup',
+      );
       await repo.create({ ...makeDto(), itemRef: 'DUP' }, 'v-dup');
       const found = await repo.findByVendorAndItem('v-dup', 'DUP');
       expect(found?.id).toBe(first.id);

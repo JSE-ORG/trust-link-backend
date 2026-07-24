@@ -12,7 +12,8 @@ const EVERY_5_MINUTES = 5 * 60 * 1000;
 
 // Stellar address of the auto-release signing account. Must be set in production.
 const AUTO_RELEASE_SOURCE =
-  process.env.AUTO_RELEASE_SOURCE_ADDRESS ?? 'GAUTORELEASE000000000000000000000000000000000000000000000';
+  process.env.AUTO_RELEASE_SOURCE_ADDRESS ??
+  'GAUTORELEASE000000000000000000000000000000000000000000000';
 
 @Injectable()
 export class AutoReleaseWorker implements OnModuleInit, OnApplicationShutdown {

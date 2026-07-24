@@ -137,7 +137,7 @@ export class StressTestService {
   private async runWorker(
     url: string,
     method: string,
-    payload: Record<string, any> | undefined,
+    payload: Record<string, unknown> | undefined,
     requestCount: number,
     metrics: PerformanceMetrics[],
   ): Promise<void> {

@@ -54,9 +54,9 @@ describe('ContractService.submitAutoRelease (issue #19)', () => {
   it('throws when max retries are exceeded', async () => {
     server.submitTransaction.mockRejectedValue(new Error('sequence mismatch'));
 
-    await expect(service.submitAutoRelease('escrow-1', SOURCE, 1)).rejects.toThrow(
-      'Max retries exceeded',
-    );
+    await expect(
+      service.submitAutoRelease('escrow-1', SOURCE, 1),
+    ).rejects.toThrow('Max retries exceeded');
     expect(server.submitTransaction).toHaveBeenCalledTimes(2);
   });
 

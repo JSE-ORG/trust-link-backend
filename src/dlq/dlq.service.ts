@@ -127,6 +127,6 @@ export class DlqService {
   private toRecord(
     row: import('../prisma/prisma.service').FailedTransactionRecord,
   ): FailedTransactionRecord {
-    return row as unknown as FailedTransactionRecord;
+    return row;
   }
 }

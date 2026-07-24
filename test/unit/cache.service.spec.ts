@@ -30,8 +30,9 @@ function buildRedisMock() {
   return instance;
 }
 
-function mockConfigService(overrides: Record<string, unknown> = {}): ConfigService {
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-call
+function mockConfigService(
+  overrides: Record<string, unknown> = {},
+): ConfigService {
   const config = new (ConfigService as unknown as new () => ConfigService)();
   jest.spyOn(config, 'get').mockImplementation((key: string) => overrides[key]);
   return config;

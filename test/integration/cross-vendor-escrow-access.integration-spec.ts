@@ -60,7 +60,9 @@ describe('Cross-vendor escrow access (issue #272)', () => {
     } as unknown as S3PresignService;
 
     const mockContractService = {
-      getEscrowState: jest.fn().mockResolvedValue({ exists: false, state: 'CREATED' }),
+      getEscrowState: jest
+        .fn()
+        .mockResolvedValue({ exists: false, state: 'CREATED' }),
       submitAutoRelease: jest.fn(),
       cancelEscrowOnChain: jest.fn(),
     } as unknown as ContractService;

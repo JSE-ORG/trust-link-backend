@@ -22,7 +22,7 @@ function buildEscrow(overrides: Partial<Record<string, unknown>> = {}) {
     itemRef: 'ref-1',
     buyerAddress: 'buyer-1',
     vendorAddress: 'vendor-1',
-    state: 'SHIPPED' as EscrowState,
+    state: 'SHIPPED',
     trackingId: 'TRK-1',
     deliveredAt: null,
     deliveryRecordedAt: null,
@@ -140,7 +140,10 @@ describe('TrackingPollWorker — interval scheduling & polling loop (issue #46)'
         buildEscrow({ id: 'escrow-1', trackingId: 'TRK-1' }),
         buildEscrow({ id: 'escrow-2', trackingId: 'TRK-2' }),
       ]);
-      logisticsService.getStatus.mockResolvedValue({ status: 'IN_TRANSIT', events: [] });
+      logisticsService.getStatus.mockResolvedValue({
+        status: 'IN_TRANSIT',
+        events: [],
+      });
 
       await worker.run();
 
@@ -174,7 +177,10 @@ describe('TrackingPollWorker — interval scheduling & polling loop (issue #46)'
       escrowRepository.findShippedWithTracking.mockResolvedValue([
         buildEscrow({ id: 'escrow-1', trackingId: 'TRK-1' }),
       ]);
-      logisticsService.getStatus.mockResolvedValue({ status: 'IN_TRANSIT', events: [] });
+      logisticsService.getStatus.mockResolvedValue({
+        status: 'IN_TRANSIT',
+        events: [],
+      });
 
       await worker.run();
 
@@ -186,7 +192,10 @@ describe('TrackingPollWorker — interval scheduling & polling loop (issue #46)'
       escrowRepository.findShippedWithTracking.mockResolvedValue([
         buildEscrow({ id: 'escrow-1', trackingId: 'TRK-1' }),
       ]);
-      logisticsService.getStatus.mockResolvedValue({ status: 'DELIVERED', events: [] });
+      logisticsService.getStatus.mockResolvedValue({
+        status: 'DELIVERED',
+        events: [],
+      });
       contractService.recordDelivery.mockResolvedValue('record-hash');
 
       await worker.run();

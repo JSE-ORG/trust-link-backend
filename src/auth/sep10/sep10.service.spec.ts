@@ -37,10 +37,14 @@ describe('Sep10Service', () => {
   let mockServerKeypair: any;
   let mockClientKeypair: any;
 
-  const TEST_ACCOUNT_ID = 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5';
-  const SERVER_PUBLIC_KEY = 'GAQAA5L65LSYH7CQ3LBOPEZBWSK4DPO4KZ4XXJNWUVOK5SDGA5LNLA36';
-  const TEST_CHALLENGE_XDR = 'AAAABWw2D0wENyMXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX';
-  const TEST_TX_HASH = 'abc123def456ghi789jkl012mno345pqr678stu901vwx234yz567abc890def';
+  const TEST_ACCOUNT_ID =
+    'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5';
+  const SERVER_PUBLIC_KEY =
+    'GAQAA5L65LSYH7CQ3LBOPEZBWSK4DPO4KZ4XXJNWUVOK5SDGA5LNLA36';
+  const TEST_CHALLENGE_XDR =
+    'AAAABWw2D0wENyMXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX';
+  const TEST_TX_HASH =
+    'abc123def456ghi789jkl012mno345pqr678stu901vwx234yz567abc890def';
   const REFRESH_TOKEN_TTL = 604800; // 7 days in seconds
 
   beforeEach(async () => {
@@ -62,8 +66,12 @@ describe('Sep10Service', () => {
       hash: jest.fn().mockReturnValue({ toString: () => TEST_TX_HASH }),
     };
 
-    (TransactionBuilder as unknown as jest.Mock).mockImplementation(() => mockTransactionBuilder);
-    (TransactionBuilder.fromXDR as jest.Mock) = jest.fn().mockReturnValue(mockTransactionBuilder);
+    (TransactionBuilder as unknown as jest.Mock).mockImplementation(
+      () => mockTransactionBuilder,
+    );
+    (TransactionBuilder.fromXDR as jest.Mock) = jest
+      .fn()
+      .mockReturnValue(mockTransactionBuilder);
 
     // Mock WebAuth methods
     (WebAuth.buildChallengeTx as jest.Mock).mockReturnValue(TEST_CHALLENGE_XDR);
@@ -291,9 +299,7 @@ describe('Sep10Service', () => {
 
       await expect(
         service.verifyAndIssueToken(TEST_CHALLENGE_XDR),
-      ).rejects.toThrow(
-        new UnauthorizedException('Challenge expired'),
-      );
+      ).rejects.toThrow(new UnauthorizedException('Challenge expired'));
 
       expect(prisma.nonce.update).not.toHaveBeenCalled();
       expect(prisma.refreshToken.create).not.toHaveBeenCalled();
@@ -320,9 +326,7 @@ describe('Sep10Service', () => {
 
       await expect(
         service.verifyAndIssueToken(TEST_CHALLENGE_XDR),
-      ).rejects.toThrow(
-        new UnauthorizedException('Invalid signature'),
-      );
+      ).rejects.toThrow(new UnauthorizedException('Invalid signature'));
 
       expect(prisma.nonce.update).not.toHaveBeenCalled();
       expect(prisma.refreshToken.create).not.toHaveBeenCalled();
@@ -333,9 +337,7 @@ describe('Sep10Service', () => {
 
       await expect(
         service.verifyAndIssueToken(TEST_CHALLENGE_XDR),
-      ).rejects.toThrow(
-        new UnauthorizedException('Challenge not found'),
-      );
+      ).rejects.toThrow(new UnauthorizedException('Challenge not found'));
 
       expect(prisma.nonce.update).not.toHaveBeenCalled();
       expect(prisma.refreshToken.create).not.toHaveBeenCalled();
@@ -348,9 +350,7 @@ describe('Sep10Service', () => {
 
       await expect(
         service.verifyAndIssueToken(TEST_CHALLENGE_XDR),
-      ).rejects.toThrow(
-        new UnauthorizedException('Invalid challenge format'),
-      );
+      ).rejects.toThrow(new UnauthorizedException('Invalid challenge format'));
 
       expect(prisma.nonce.findUnique).not.toHaveBeenCalled();
       expect(prisma.nonce.update).not.toHaveBeenCalled();
@@ -392,14 +392,13 @@ describe('Sep10Service', () => {
 
     it('should handle non-Error exceptions in WebAuth.readChallengeTx', async () => {
       (WebAuth.readChallengeTx as jest.Mock).mockImplementation(() => {
+        // eslint-disable-next-line @typescript-eslint/only-throw-error
         throw 'Some non-Error exception';
       });
 
       await expect(
         service.verifyAndIssueToken(TEST_CHALLENGE_XDR),
-      ).rejects.toThrow(
-        new UnauthorizedException('Invalid challenge'),
-      );
+      ).rejects.toThrow(new UnauthorizedException('Invalid challenge'));
     });
 
     it('should handle non-Error exceptions in WebAuth.verifyChallengeTxSigners', async () => {
@@ -418,14 +417,13 @@ describe('Sep10Service', () => {
 
       (prisma.nonce.findUnique as jest.Mock).mockResolvedValue(mockNonce);
       (WebAuth.verifyChallengeTxSigners as jest.Mock).mockImplementation(() => {
+        // eslint-disable-next-line @typescript-eslint/only-throw-error
         throw 'Some non-Error exception';
       });
 
       await expect(
         service.verifyAndIssueToken(TEST_CHALLENGE_XDR),
-      ).rejects.toThrow(
-        new UnauthorizedException('Invalid client signature'),
-      );
+      ).rejects.toThrow(new UnauthorizedException('Invalid client signature'));
     });
   });
 
@@ -773,8 +771,13 @@ describe('Sep10Service', () => {
         expiresAt: new Date(now.getTime() + 1000 * 60 * 60), // expires in 1 hour
       };
 
-      (prisma.refreshToken.findUnique as jest.Mock).mockResolvedValue(storedToken);
-      (prisma.refreshToken.update as jest.Mock).mockResolvedValue({ ...storedToken, revoked: true });
+      (prisma.refreshToken.findUnique as jest.Mock).mockResolvedValue(
+        storedToken,
+      );
+      (prisma.refreshToken.update as jest.Mock).mockResolvedValue({
+        ...storedToken,
+        revoked: true,
+      });
       (prisma.refreshToken.create as jest.Mock).mockResolvedValue({
         id: 'rt-id-2',
         userId: TEST_ACCOUNT_ID,
@@ -786,7 +789,9 @@ describe('Sep10Service', () => {
 
       expect(result).toHaveProperty('token');
       expect(result).toHaveProperty('refreshToken');
-      expect(prisma.refreshToken.findUnique).toHaveBeenCalledWith({ where: { tokenHash: TOKEN_HASH } });
+      expect(prisma.refreshToken.findUnique).toHaveBeenCalledWith({
+        where: { tokenHash: TOKEN_HASH },
+      });
       expect(prisma.refreshToken.update).toHaveBeenCalledWith({
         where: { id: storedToken.id },
         data: { revoked: true },
@@ -797,9 +802,9 @@ describe('Sep10Service', () => {
     it('should throw UnauthorizedException for an invalid refresh token', async () => {
       (prisma.refreshToken.findUnique as jest.Mock).mockResolvedValue(null);
 
-      await expect(service.rotateRefreshToken(OLD_REFRESH_TOKEN)).rejects.toThrow(
-        new UnauthorizedException('Invalid refresh token'),
-      );
+      await expect(
+        service.rotateRefreshToken(OLD_REFRESH_TOKEN),
+      ).rejects.toThrow(new UnauthorizedException('Invalid refresh token'));
     });
 
     it('should throw UnauthorizedException for an expired refresh token', async () => {
@@ -812,11 +817,13 @@ describe('Sep10Service', () => {
         expiresAt: new Date(now.getTime() - 1000 * 60), // expired 1 minute ago
       };
 
-      (prisma.refreshToken.findUnique as jest.Mock).mockResolvedValue(storedToken);
-
-      await expect(service.rotateRefreshToken(OLD_REFRESH_TOKEN)).rejects.toThrow(
-        new UnauthorizedException('Refresh token expired'),
+      (prisma.refreshToken.findUnique as jest.Mock).mockResolvedValue(
+        storedToken,
       );
+
+      await expect(
+        service.rotateRefreshToken(OLD_REFRESH_TOKEN),
+      ).rejects.toThrow(new UnauthorizedException('Refresh token expired'));
     });
 
     it('should throw UnauthorizedException and revoke family on revoked token reuse', async () => {
@@ -829,11 +836,19 @@ describe('Sep10Service', () => {
         expiresAt: new Date(now.getTime() + 1000 * 60 * 60),
       };
 
-      (prisma.refreshToken.findUnique as jest.Mock).mockResolvedValue(storedToken);
-      (prisma.refreshToken.findUnique as jest.Mock).mockResolvedValueOnce(storedToken); // For findUnique in revokeTokenFamily
+      (prisma.refreshToken.findUnique as jest.Mock).mockResolvedValue(
+        storedToken,
+      );
+      (prisma.refreshToken.findUnique as jest.Mock).mockResolvedValueOnce(
+        storedToken,
+      ); // For findUnique in revokeTokenFamily
 
-      await expect(service.rotateRefreshToken(OLD_REFRESH_TOKEN)).rejects.toThrow(
-        new UnauthorizedException('Refresh token reuse detected. All sessions revoked.'),
+      await expect(
+        service.rotateRefreshToken(OLD_REFRESH_TOKEN),
+      ).rejects.toThrow(
+        new UnauthorizedException(
+          'Refresh token reuse detected. All sessions revoked.',
+        ),
       );
 
       expect(prisma.refreshToken.updateMany).toHaveBeenCalledWith({
@@ -852,8 +867,13 @@ describe('Sep10Service', () => {
         expiresAt: new Date(now.getTime() + 1000 * 60 * 60),
       };
 
-      (prisma.refreshToken.findUnique as jest.Mock).mockResolvedValue(storedToken);
-      (prisma.refreshToken.update as jest.Mock).mockResolvedValue({ ...storedToken, revoked: true });
+      (prisma.refreshToken.findUnique as jest.Mock).mockResolvedValue(
+        storedToken,
+      );
+      (prisma.refreshToken.update as jest.Mock).mockResolvedValue({
+        ...storedToken,
+        revoked: true,
+      });
       (prisma.refreshToken.create as jest.Mock).mockResolvedValue({
         id: 'rt-id-2',
         userId: TEST_ACCOUNT_ID,
@@ -863,7 +883,8 @@ describe('Sep10Service', () => {
 
       await service.rotateRefreshToken(OLD_REFRESH_TOKEN);
 
-      const createCall = (prisma.refreshToken.create as jest.Mock).mock.calls[0][0];
+      const createCall = (prisma.refreshToken.create as jest.Mock).mock
+        .calls[0][0];
       expect(createCall.data.parentTokenId).toBe(storedToken.id);
     });
 
@@ -878,9 +899,13 @@ describe('Sep10Service', () => {
         expiresAt: new Date(now.getTime() + 1000 * 60 * 60),
       };
 
-      (prisma.refreshToken.findUnique as jest.Mock).mockResolvedValue(storedToken);
+      (prisma.refreshToken.findUnique as jest.Mock).mockResolvedValue(
+        storedToken,
+      );
 
-      await expect(service.rotateRefreshToken(OLD_REFRESH_TOKEN)).rejects.toThrow(UnauthorizedException);
+      await expect(
+        service.rotateRefreshToken(OLD_REFRESH_TOKEN),
+      ).rejects.toThrow(UnauthorizedException);
 
       expect(loggerWarnSpy).toHaveBeenCalledWith(
         `Reuse of revoked refresh token detected for user ${storedToken.userId}`,
@@ -897,9 +922,13 @@ describe('Sep10Service', () => {
         expiresAt: new Date(now.getTime() + 1000 * 60 * 60),
       };
 
-      (prisma.refreshToken.findUnique as jest.Mock).mockResolvedValueOnce(storedToken).mockResolvedValueOnce(null);
+      (prisma.refreshToken.findUnique as jest.Mock)
+        .mockResolvedValueOnce(storedToken)
+        .mockResolvedValueOnce(null);
 
-      await expect(service.rotateRefreshToken(OLD_REFRESH_TOKEN)).rejects.toThrow(UnauthorizedException);
+      await expect(
+        service.rotateRefreshToken(OLD_REFRESH_TOKEN),
+      ).rejects.toThrow(UnauthorizedException);
       expect(prisma.refreshToken.updateMany).not.toHaveBeenCalled();
     });
   });
@@ -911,7 +940,9 @@ describe('Sep10Service', () => {
       const hash2 = (service as any).hashToken(token);
 
       expect(hash1).toBe(hash2);
-      expect(hash1).toBe('6a79803b6781e7a9487b493eca2f424d569d72d20a4b5764fa932f4b0633622d');
+      expect(hash1).toBe(
+        '6a79803b6781e7a9487b493eca2f424d569d72d20a4b5764fa932f4b0633622d',
+      );
     });
 
     it('should produce a different hash for a different input', () => {

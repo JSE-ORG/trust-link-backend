@@ -340,7 +340,11 @@ describe('createFocusTrap() with Mock Driver', () => {
   let eventListeners: Record<string, ((e: Event) => void)[]>;
 
   beforeEach(() => {
-    focusableElements = [{ id: 'btn1' }, { id: 'btn2' }, { id: 'btn3' }] as unknown as Element[];
+    focusableElements = [
+      { id: 'btn1' },
+      { id: 'btn2' },
+      { id: 'btn3' },
+    ] as unknown as Element[];
     activeElement = { id: 'outside' } as unknown as Element;
     eventListeners = {};
 

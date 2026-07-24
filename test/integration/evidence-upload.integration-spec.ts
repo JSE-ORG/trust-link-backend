@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /**
  * Integration tests for POST /escrow/evidence-upload (issue #295).
  *

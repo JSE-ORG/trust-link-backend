@@ -155,8 +155,8 @@ export class EscrowRepository {
         orderBy,
         skip,
         take: limit,
-      }) as Promise<EscrowRecord[]>,
-      this.prisma.escrow.findMany({ where }) as Promise<EscrowRecord[]>,
+      }),
+      this.prisma.escrow.findMany({ where }),
     ]);
 
     return { data, total: all.length };

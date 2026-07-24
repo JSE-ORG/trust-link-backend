@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { EscrowRecord, PrismaService } from '../../prisma/prisma.service';
+import { PrismaService } from '../../prisma/prisma.service';
 import { AdminStatsDto } from './dto/admin-stats.dto';
 
 @Injectable()
@@ -14,7 +14,7 @@ export class AdminStatsService {
     ]);
 
     const totalEscrows = allEscrows.length;
-    const escrows = allEscrows as EscrowRecord[];
+    const escrows = allEscrows;
     const totalVolume = escrows.reduce<number>(
       (sum, e) => sum + Number(e.amount),
       0,
