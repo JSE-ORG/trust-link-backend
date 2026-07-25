@@ -34,18 +34,9 @@ export type EscrowState =
   | 'CANCELLED';
 export type NotificationChannel = 'EMAIL' | 'SMS';
 export type NotificationType =
-  | 'FUNDED'
-  | 'SHIPPED'
-  | 'DELIVERED'
-  | 'DISPUTED'
-  | 'COMPLETED'
-  | 'REFUNDED';
+  'FUNDED' | 'SHIPPED' | 'DELIVERED' | 'DISPUTED' | 'COMPLETED' | 'REFUNDED';
 export type DisputeState =
-  | 'OPEN'
-  | 'UNDER_REVIEW'
-  | 'RESOLVED'
-  | 'CANCELLED'
-  | 'ABANDONED';
+  'OPEN' | 'UNDER_REVIEW' | 'RESOLVED' | 'CANCELLED' | 'ABANDONED';
 
 export interface EscrowRecord {
   id: string;
@@ -187,9 +178,7 @@ export interface CursorRecord {
 }
 
 export type FailedTransactionStatus =
-  | 'PENDING_REVIEW'
-  | 'REPLAYED'
-  | 'ABANDONED';
+  'PENDING_REVIEW' | 'REPLAYED' | 'ABANDONED';
 
 export interface FailedTransactionRecord {
   id: string;

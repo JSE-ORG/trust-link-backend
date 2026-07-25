@@ -1,7 +1,5 @@
 export type FailedTransactionStatus =
-  | 'PENDING_REVIEW'
-  | 'REPLAYED'
-  | 'ABANDONED';
+  'PENDING_REVIEW' | 'REPLAYED' | 'ABANDONED';
 
 /**
  * Captured failure of a Stellar contract submission queued for admin review or
