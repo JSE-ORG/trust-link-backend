@@ -66,15 +66,33 @@ export class AutoReleaseWorker implements OnModuleInit, OnApplicationShutdown {
             continue;
           }
 
-          const txHash = await this.contractService.submitAutoRelease(
+          // Atomically claim the escrow before any network call. This is the
+          // guard against the race where two concurrent runs fetch the same
+          // stale eligible snapshot — a stale in-memory check alone cannot
+          // prevent both from submitting. Returns null if another run
+          // already holds the claim.
+          const claimed = await this.escrowRepository.markAutoReleaseSubmitting(
             escrow.id,
-            AUTO_RELEASE_SOURCE,
           );
-          await this.escrowRepository.markAutoReleaseCompleted(
-            escrow.id,
-            txHash,
-          );
-          successCount++;
+          if (!claimed) {
+            continue;
+          }
+
+          try {
+            const txHash = await this.contractService.submitAutoRelease(
+              escrow.id,
+              AUTO_RELEASE_SOURCE,
+            );
+            await this.escrowRepository.markAutoReleaseCompleted(
+              escrow.id,
+              txHash,
+            );
+            successCount++;
+          } catch (error) {
+            // Release the claim so the next poll cycle can retry.
+            await this.escrowRepository.clearAutoReleaseSubmitting(escrow.id);
+            throw error;
+          }
         } catch (error) {
           failureCount++;
           failures.push({

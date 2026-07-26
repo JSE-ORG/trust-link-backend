@@ -101,7 +101,10 @@ describe('AutoReleaseService.run', () => {
     expect(repository.markAutoReleaseSubmitting).toHaveBeenCalledWith(
       'escrow-1',
     );
-    expect(contractService.submitAutoRelease).toHaveBeenCalledWith('escrow-1');
+    expect(contractService.submitAutoRelease).toHaveBeenCalledWith(
+      'escrow-1',
+      expect.any(String),
+    );
     expect(repository.markAutoReleased).toHaveBeenCalledWith(
       'escrow-1',
       'tx-hash',

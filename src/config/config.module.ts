@@ -38,6 +38,7 @@ import { ConfigService } from './config.service';
           'any.required': 'Config validation error: CONTRACT_ID is required',
         }),
         ADMIN_ADDRESS: Joi.string().required(),
+        AUTO_RELEASE_SOURCE_ADDRESS: Joi.string().optional(),
         NODE_ENV: Joi.string()
           .valid('development', 'production', 'test')
           .default('development'),

@@ -1,5 +1,9 @@
 import { Injectable } from '@nestjs/common';
-import { PrismaService, VendorProfileRecord } from '../prisma/prisma.service';
+import {
+  PrismaService,
+  VendorProfileRecord,
+  VendorTrackingSettingsRecord,
+} from '../prisma/prisma.service';
 import { CreateVendorProfileDto } from './dto/create-vendor-profile.dto';
 import { UpdateVendorProfileDto } from './dto/update-vendor-profile.dto';
 import { UpdateNotificationPreferencesDto } from './dto/update-notification-preferences.dto';
@@ -68,7 +72,7 @@ export class VendorProfileRepository {
   async updateNotificationPreferences(
     address: string,
     dto: UpdateNotificationPreferencesDto,
-  ): Promise<{ trackingSettings: Record<string, unknown> }> {
+  ): Promise<{ trackingSettings: VendorTrackingSettingsRecord }> {
     // Upsert VendorTrackingSettings to ensure it exists
     const trackingSettings = await this.prisma.vendorTrackingSettings.upsert({
       where: { vendorAddress: address },

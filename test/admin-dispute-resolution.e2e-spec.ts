@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
@@ -6,6 +7,7 @@ import { PrismaService } from '../src/prisma/prisma.service';
 import { ContractService } from '../src/stellar/contract.service';
 import { NotificationsService } from '../src/notifications/notifications.service';
 import { ConfigService } from '../src/config/config.service';
+import { bearer } from './auth-helper';
 
 const VENDOR_ADDRESS =
   'GA36PERSXWPBG7HYKNBVT5PFLTOFYO4Q3CWGJZTYH5GU5OLTKHW7SJHE';
@@ -65,7 +67,8 @@ describe('Admin Dispute Resolution Flow E2E (issue #299)', () => {
   async function createEscrowAndDispute() {
     const createRes = await request(app.getHttpServer())
       .post('/escrow')
-      .set('Authorization', `Bearer ${VENDOR_ADDRESS}`)
+      .set('Authorization', bearer(VENDOR_ADDRESS))
+      .set('Idempotency-Key', crypto.randomUUID())
       .send({
         itemName: 'Dispute Resolution Test Item',
         itemRef: `dispute-res-${Date.now()}`,
@@ -79,7 +82,7 @@ describe('Admin Dispute Resolution Flow E2E (issue #299)', () => {
 
     const disputeRes = await request(app.getHttpServer())
       .post(`/escrow/${escrowId}/dispute`)
-      .set('Authorization', `Bearer ${BUYER_ADDRESS}`)
+      .set('Authorization', bearer(BUYER_ADDRESS))
       .send({
         reason: 'ITEM_NOT_AS_DESCRIBED',
         description: 'Item quality does not match the listing description',
@@ -104,7 +107,8 @@ describe('Admin Dispute Resolution Flow E2E (issue #299)', () => {
     it('vendor can also open a dispute', async () => {
       const createRes = await request(app.getHttpServer())
         .post('/escrow')
-        .set('Authorization', `Bearer ${VENDOR_ADDRESS}`)
+        .set('Authorization', bearer(VENDOR_ADDRESS))
+        .set('Idempotency-Key', crypto.randomUUID())
         .send({
           itemName: 'Vendor Dispute Item',
           itemRef: `vendor-dispute-${Date.now()}`,
@@ -116,7 +120,7 @@ describe('Admin Dispute Resolution Flow E2E (issue #299)', () => {
 
       const res = await request(app.getHttpServer())
         .post(`/escrow/${createRes.body.id}/dispute`)
-        .set('Authorization', `Bearer ${VENDOR_ADDRESS}`)
+        .set('Authorization', bearer(VENDOR_ADDRESS))
         .send({
           reason: 'FRAUD',
           description: 'Buyer submitted fraudulent payment',
@@ -129,7 +133,8 @@ describe('Admin Dispute Resolution Flow E2E (issue #299)', () => {
     it('prevents non-participants from opening disputes', async () => {
       const createRes = await request(app.getHttpServer())
         .post('/escrow')
-        .set('Authorization', `Bearer ${VENDOR_ADDRESS}`)
+        .set('Authorization', bearer(VENDOR_ADDRESS))
+        .set('Idempotency-Key', crypto.randomUUID())
         .send({
           itemName: 'Unauthorized Dispute Item',
           itemRef: `unauth-dispute-${Date.now()}`,
@@ -141,7 +146,7 @@ describe('Admin Dispute Resolution Flow E2E (issue #299)', () => {
 
       await request(app.getHttpServer())
         .post(`/escrow/${createRes.body.id}/dispute`)
-        .set('Authorization', `Bearer ${NON_ADMIN_ADDRESS}`)
+        .set('Authorization', bearer(NON_ADMIN_ADDRESS))
         .send({
           reason: 'FRAUD',
           description: 'Unauthorized dispute attempt',
@@ -156,7 +161,7 @@ describe('Admin Dispute Resolution Flow E2E (issue #299)', () => {
 
       const res = await request(app.getHttpServer())
         .get('/admin/disputes')
-        .set('Authorization', `Bearer ${adminAddress}`)
+        .set('Authorization', bearer(adminAddress, { role: 'admin' }))
         .expect(200);
 
       expect(res.body.total).toBeGreaterThanOrEqual(1);
@@ -168,7 +173,7 @@ describe('Admin Dispute Resolution Flow E2E (issue #299)', () => {
 
       const res = await request(app.getHttpServer())
         .get('/admin/disputes')
-        .set('Authorization', `Bearer ${adminAddress}`)
+        .set('Authorization', bearer(adminAddress, { role: 'admin' }))
         .query({ status: 'OPEN' })
         .expect(200);
 
@@ -182,7 +187,7 @@ describe('Admin Dispute Resolution Flow E2E (issue #299)', () => {
 
       const res = await request(app.getHttpServer())
         .patch(`/admin/dispute/${escrowId}/resolve`)
-        .set('Authorization', `Bearer ${adminAddress}`)
+        .set('Authorization', bearer(adminAddress, { role: 'admin' }))
         .send({ resolution: 'RELEASE' })
         .expect(200);
 
@@ -205,7 +210,7 @@ describe('Admin Dispute Resolution Flow E2E (issue #299)', () => {
 
       const res = await request(app.getHttpServer())
         .patch(`/admin/dispute/${escrowId}/resolve`)
-        .set('Authorization', `Bearer ${adminAddress}`)
+        .set('Authorization', bearer(adminAddress, { role: 'admin' }))
         .send({ resolution: 'REFUND' })
         .expect(200);
 
@@ -228,7 +233,7 @@ describe('Admin Dispute Resolution Flow E2E (issue #299)', () => {
 
       await request(app.getHttpServer())
         .patch(`/admin/dispute/${escrowId}/resolve`)
-        .set('Authorization', `Bearer ${adminAddress}`)
+        .set('Authorization', bearer(adminAddress, { role: 'admin' }))
         .send({ resolution: 'RELEASE' })
         .expect(200);
 
@@ -243,7 +248,7 @@ describe('Admin Dispute Resolution Flow E2E (issue #299)', () => {
 
       const res = await request(app.getHttpServer())
         .patch(`/admin/dispute/${escrowId}/resolve`)
-        .set('Authorization', `Bearer ${adminAddress}`)
+        .set('Authorization', bearer(adminAddress, { role: 'admin' }))
         .send({ resolution: 'REFUND' })
         .expect(200);
 
@@ -255,7 +260,7 @@ describe('Admin Dispute Resolution Flow E2E (issue #299)', () => {
     it('returns 404 when resolving a non-existent escrow dispute', async () => {
       await request(app.getHttpServer())
         .patch('/admin/dispute/00000000-0000-0000-0000-000000000000/resolve')
-        .set('Authorization', `Bearer ${adminAddress}`)
+        .set('Authorization', bearer(adminAddress, { role: 'admin' }))
         .send({ resolution: 'RELEASE' })
         .expect(404);
     });
@@ -265,13 +270,13 @@ describe('Admin Dispute Resolution Flow E2E (issue #299)', () => {
 
       await request(app.getHttpServer())
         .patch(`/admin/dispute/${escrowId}/resolve`)
-        .set('Authorization', `Bearer ${adminAddress}`)
+        .set('Authorization', bearer(adminAddress, { role: 'admin' }))
         .send({ resolution: 'RELEASE' })
         .expect(200);
 
       await request(app.getHttpServer())
         .patch(`/admin/dispute/${escrowId}/resolve`)
-        .set('Authorization', `Bearer ${adminAddress}`)
+        .set('Authorization', bearer(adminAddress, { role: 'admin' }))
         .send({ resolution: 'REFUND' })
         .expect(409);
     });
@@ -281,7 +286,7 @@ describe('Admin Dispute Resolution Flow E2E (issue #299)', () => {
 
       await request(app.getHttpServer())
         .patch(`/admin/dispute/${escrowId}/resolve`)
-        .set('Authorization', `Bearer ${BUYER_ADDRESS}`)
+        .set('Authorization', bearer(BUYER_ADDRESS))
         .send({ resolution: 'RELEASE' })
         .expect(403);
     });

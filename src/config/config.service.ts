@@ -8,6 +8,7 @@ export interface Config {
   DB_POOL_TIMEOUT_MS?: number;
   SEP10_JWT_SECRET: string;
   ADMIN_ADDRESS: string;
+  AUTO_RELEASE_SOURCE_ADDRESS?: string;
   NODE_ENV: 'development' | 'production' | 'test';
   SENDGRID_API_KEY?: string;
   TWILIO_ACCOUNT_SID?: string;

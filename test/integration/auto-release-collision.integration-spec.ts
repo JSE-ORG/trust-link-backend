@@ -179,7 +179,10 @@ describe('Auto-release collision detection (issue #277)', () => {
 
       // Only one submission should have occurred
       expect(contractService.submitAutoRelease).toHaveBeenCalledTimes(1);
-      expect(contractService.submitAutoRelease).toHaveBeenCalledWith(escrow.id);
+      expect(contractService.submitAutoRelease).toHaveBeenCalledWith(
+        escrow.id,
+        expect.any(String),
+      );
 
       // Escrow state should be consistent
       const after = await prisma.escrow.findUnique({

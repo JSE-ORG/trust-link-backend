@@ -76,8 +76,14 @@ describe('Auto-Release Worker E2E (issue #59)', () => {
     await worker.run();
 
     expect(contractService.submitAutoRelease).toHaveBeenCalledTimes(2);
-    expect(contractService.submitAutoRelease).toHaveBeenCalledWith(escrow1.id);
-    expect(contractService.submitAutoRelease).toHaveBeenCalledWith(escrow2.id);
+    expect(contractService.submitAutoRelease).toHaveBeenCalledWith(
+      escrow1.id,
+      expect.any(String),
+    );
+    expect(contractService.submitAutoRelease).toHaveBeenCalledWith(
+      escrow2.id,
+      expect.any(String),
+    );
 
     const escrow1After = await prisma.escrow.findUnique({
       where: { id: escrow1.id },
@@ -128,7 +134,11 @@ describe('Auto-Release Worker E2E (issue #59)', () => {
     const escrowAfter = await prisma.escrow.findUnique({
       where: { id: escrow.id },
     });
-    expect(escrowAfter?.state).toBe('SHIPPED');
+    // Creating the dispute transitions the linked escrow to DISPUTED as a
+    // side effect (see PrismaService.dispute.create) — the worker's
+    // dispute-open check makes this redundant with the state/disputeId
+    // filters in findAutoReleaseEligible, but the escrow is no longer SHIPPED.
+    expect(escrowAfter?.state).toBe('DISPUTED');
     expect(escrowAfter?.autoReleaseTxHash).toBeNull();
   });
 

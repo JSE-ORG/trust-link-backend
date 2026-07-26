@@ -4,7 +4,10 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { VendorProfileRecord } from '../prisma/prisma.service';
+import {
+  VendorProfileRecord,
+  VendorTrackingSettingsRecord,
+} from '../prisma/prisma.service';
 import { CreateVendorProfileDto } from './dto/create-vendor-profile.dto';
 import { UpdateVendorProfileDto } from './dto/update-vendor-profile.dto';
 import { UpdateNotificationPreferencesDto } from './dto/update-notification-preferences.dto';
@@ -67,7 +70,7 @@ export class VendorProfileService {
   async updateNotificationPreferences(
     address: string,
     dto: UpdateNotificationPreferencesDto,
-  ): Promise<{ trackingSettings: Record<string, unknown> }> {
+  ): Promise<{ trackingSettings: VendorTrackingSettingsRecord }> {
     const keys = Object.keys(dto).filter(
       (k) => (dto as Record<string, unknown>)[k] !== undefined,
     );

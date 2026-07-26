@@ -1,9 +1,11 @@
+import crypto from 'node:crypto';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { ContractService } from '../src/stellar/contract.service';
+import { bearer } from './auth-helper';
 
 const VENDOR_ADDRESS =
   'GA36PERSXWPBG7HYKNBVT5PFLTOFYO4Q3CWGJZTYH5GU5OLTKHW7SJHE';
@@ -56,7 +58,8 @@ describe('Cancelled escrow state cleanup E2E (issue #300)', () => {
     it('cancels a CREATED escrow and verifies CANCELLED state on GET', async () => {
       const createRes = await request(app.getHttpServer())
         .post('/escrow')
-        .set('Authorization', `Bearer ${VENDOR_ADDRESS}`)
+        .set('Authorization', bearer(VENDOR_ADDRESS))
+        .set('Idempotency-Key', crypto.randomUUID())
         .send({
           itemName: 'Test Item For Cancel',
           itemRef: 'cancel-created-001',
@@ -75,7 +78,7 @@ describe('Cancelled escrow state cleanup E2E (issue #300)', () => {
 
       const cancelRes = await request(app.getHttpServer())
         .delete(`/escrow/${escrowId}`)
-        .set('Authorization', `Bearer ${BUYER_ADDRESS}`)
+        .set('Authorization', bearer(BUYER_ADDRESS))
         .expect(200);
 
       expect(cancelRes.body.state).toBe('CANCELLED');
@@ -91,7 +94,8 @@ describe('Cancelled escrow state cleanup E2E (issue #300)', () => {
     it('records CANCELLED event in escrow event history after cancel from CREATED', async () => {
       const createRes = await request(app.getHttpServer())
         .post('/escrow')
-        .set('Authorization', `Bearer ${VENDOR_ADDRESS}`)
+        .set('Authorization', bearer(VENDOR_ADDRESS))
+        .set('Idempotency-Key', crypto.randomUUID())
         .send({
           itemName: 'Test Item Events',
           itemRef: 'cancel-created-events-001',
@@ -110,7 +114,7 @@ describe('Cancelled escrow state cleanup E2E (issue #300)', () => {
 
       await request(app.getHttpServer())
         .delete(`/escrow/${escrowId}`)
-        .set('Authorization', `Bearer ${VENDOR_ADDRESS}`)
+        .set('Authorization', bearer(VENDOR_ADDRESS))
         .expect(200);
 
       const eventsRes = await request(app.getHttpServer())
@@ -125,7 +129,8 @@ describe('Cancelled escrow state cleanup E2E (issue #300)', () => {
     it('allows vendor to cancel a CREATED escrow', async () => {
       const createRes = await request(app.getHttpServer())
         .post('/escrow')
-        .set('Authorization', `Bearer ${VENDOR_ADDRESS}`)
+        .set('Authorization', bearer(VENDOR_ADDRESS))
+        .set('Idempotency-Key', crypto.randomUUID())
         .send({
           itemName: 'Vendor Cancel Test',
           itemRef: 'cancel-created-vendor-001',
@@ -144,7 +149,7 @@ describe('Cancelled escrow state cleanup E2E (issue #300)', () => {
 
       const cancelRes = await request(app.getHttpServer())
         .delete(`/escrow/${escrowId}`)
-        .set('Authorization', `Bearer ${VENDOR_ADDRESS}`)
+        .set('Authorization', bearer(VENDOR_ADDRESS))
         .expect(200);
 
       expect(cancelRes.body.state).toBe('CANCELLED');
@@ -157,7 +162,8 @@ describe('Cancelled escrow state cleanup E2E (issue #300)', () => {
     it('cancels a FUNDED escrow and verifies CANCELLED state on GET', async () => {
       const createRes = await request(app.getHttpServer())
         .post('/escrow')
-        .set('Authorization', `Bearer ${VENDOR_ADDRESS}`)
+        .set('Authorization', bearer(VENDOR_ADDRESS))
+        .set('Idempotency-Key', crypto.randomUUID())
         .send({
           itemName: 'Test Item Funded Cancel',
           itemRef: 'cancel-funded-001',
@@ -172,7 +178,7 @@ describe('Cancelled escrow state cleanup E2E (issue #300)', () => {
 
       const cancelRes = await request(app.getHttpServer())
         .patch(`/escrow/${escrowId}/cancel`)
-        .set('Authorization', `Bearer ${BUYER_ADDRESS}`)
+        .set('Authorization', bearer(BUYER_ADDRESS))
         .expect(200);
 
       expect(cancelRes.body.state).toBe('CANCELLED');
@@ -188,7 +194,8 @@ describe('Cancelled escrow state cleanup E2E (issue #300)', () => {
     it('records CANCELLED event in escrow event history after cancel from FUNDED', async () => {
       const createRes = await request(app.getHttpServer())
         .post('/escrow')
-        .set('Authorization', `Bearer ${VENDOR_ADDRESS}`)
+        .set('Authorization', bearer(VENDOR_ADDRESS))
+        .set('Idempotency-Key', crypto.randomUUID())
         .send({
           itemName: 'Test Item Funded Events',
           itemRef: 'cancel-funded-events-001',
@@ -202,7 +209,7 @@ describe('Cancelled escrow state cleanup E2E (issue #300)', () => {
 
       await request(app.getHttpServer())
         .patch(`/escrow/${escrowId}/cancel`)
-        .set('Authorization', `Bearer ${VENDOR_ADDRESS}`)
+        .set('Authorization', bearer(VENDOR_ADDRESS))
         .expect(200);
 
       const eventsRes = await request(app.getHttpServer())
@@ -217,7 +224,8 @@ describe('Cancelled escrow state cleanup E2E (issue #300)', () => {
     it('allows vendor to cancel a FUNDED escrow', async () => {
       const createRes = await request(app.getHttpServer())
         .post('/escrow')
-        .set('Authorization', `Bearer ${VENDOR_ADDRESS}`)
+        .set('Authorization', bearer(VENDOR_ADDRESS))
+        .set('Idempotency-Key', crypto.randomUUID())
         .send({
           itemName: 'Vendor Funded Cancel',
           itemRef: 'cancel-funded-vendor-001',
@@ -231,7 +239,7 @@ describe('Cancelled escrow state cleanup E2E (issue #300)', () => {
 
       const cancelRes = await request(app.getHttpServer())
         .patch(`/escrow/${escrowId}/cancel`)
-        .set('Authorization', `Bearer ${VENDOR_ADDRESS}`)
+        .set('Authorization', bearer(VENDOR_ADDRESS))
         .expect(200);
 
       expect(cancelRes.body.state).toBe('CANCELLED');
@@ -244,7 +252,8 @@ describe('Cancelled escrow state cleanup E2E (issue #300)', () => {
     it('rejects cancel from CREATED state via PATCH (wrong endpoint)', async () => {
       const createRes = await request(app.getHttpServer())
         .post('/escrow')
-        .set('Authorization', `Bearer ${VENDOR_ADDRESS}`)
+        .set('Authorization', bearer(VENDOR_ADDRESS))
+        .set('Idempotency-Key', crypto.randomUUID())
         .send({
           itemName: 'Wrong Endpoint Cancel',
           itemRef: 'cancel-wrong-endpoint-001',
@@ -263,14 +272,15 @@ describe('Cancelled escrow state cleanup E2E (issue #300)', () => {
 
       await request(app.getHttpServer())
         .patch(`/escrow/${escrowId}/cancel`)
-        .set('Authorization', `Bearer ${VENDOR_ADDRESS}`)
+        .set('Authorization', bearer(VENDOR_ADDRESS))
         .expect(409);
     });
 
     it('rejects cancel from FUNDED state via DELETE (wrong endpoint)', async () => {
       const createRes = await request(app.getHttpServer())
         .post('/escrow')
-        .set('Authorization', `Bearer ${VENDOR_ADDRESS}`)
+        .set('Authorization', bearer(VENDOR_ADDRESS))
+        .set('Idempotency-Key', crypto.randomUUID())
         .send({
           itemName: 'Wrong Endpoint Cancel Funded',
           itemRef: 'cancel-wrong-endpoint-funded-001',
@@ -284,14 +294,15 @@ describe('Cancelled escrow state cleanup E2E (issue #300)', () => {
 
       await request(app.getHttpServer())
         .delete(`/escrow/${escrowId}`)
-        .set('Authorization', `Bearer ${VENDOR_ADDRESS}`)
+        .set('Authorization', bearer(VENDOR_ADDRESS))
         .expect(409);
     });
 
     it('rejects cancellation by unauthorized address', async () => {
       const createRes = await request(app.getHttpServer())
         .post('/escrow')
-        .set('Authorization', `Bearer ${VENDOR_ADDRESS}`)
+        .set('Authorization', bearer(VENDOR_ADDRESS))
+        .set('Idempotency-Key', crypto.randomUUID())
         .send({
           itemName: 'Unauthorized Cancel',
           itemRef: 'cancel-unauthorized-001',
@@ -305,14 +316,15 @@ describe('Cancelled escrow state cleanup E2E (issue #300)', () => {
 
       await request(app.getHttpServer())
         .patch(`/escrow/${escrowId}/cancel`)
-        .set('Authorization', `Bearer ${UNAUTHORIZED_ADDRESS}`)
+        .set('Authorization', bearer(UNAUTHORIZED_ADDRESS))
         .expect(403);
     });
 
     it('rejects cancellation without authentication', async () => {
       const createRes = await request(app.getHttpServer())
         .post('/escrow')
-        .set('Authorization', `Bearer ${VENDOR_ADDRESS}`)
+        .set('Authorization', bearer(VENDOR_ADDRESS))
+        .set('Idempotency-Key', crypto.randomUUID())
         .send({
           itemName: 'No Auth Cancel',
           itemRef: 'cancel-no-auth-001',
@@ -332,7 +344,8 @@ describe('Cancelled escrow state cleanup E2E (issue #300)', () => {
     it('rejects cancellation of an already cancelled escrow', async () => {
       const createRes = await request(app.getHttpServer())
         .post('/escrow')
-        .set('Authorization', `Bearer ${VENDOR_ADDRESS}`)
+        .set('Authorization', bearer(VENDOR_ADDRESS))
+        .set('Idempotency-Key', crypto.randomUUID())
         .send({
           itemName: 'Double Cancel',
           itemRef: 'cancel-double-001',
@@ -346,19 +359,20 @@ describe('Cancelled escrow state cleanup E2E (issue #300)', () => {
 
       await request(app.getHttpServer())
         .patch(`/escrow/${escrowId}/cancel`)
-        .set('Authorization', `Bearer ${BUYER_ADDRESS}`)
+        .set('Authorization', bearer(BUYER_ADDRESS))
         .expect(200);
 
       await request(app.getHttpServer())
         .patch(`/escrow/${escrowId}/cancel`)
-        .set('Authorization', `Bearer ${BUYER_ADDRESS}`)
+        .set('Authorization', bearer(BUYER_ADDRESS))
         .expect(409);
     });
 
     it('rejects cancellation of a SHIPPED escrow', async () => {
       const createRes = await request(app.getHttpServer())
         .post('/escrow')
-        .set('Authorization', `Bearer ${VENDOR_ADDRESS}`)
+        .set('Authorization', bearer(VENDOR_ADDRESS))
+        .set('Idempotency-Key', crypto.randomUUID())
         .send({
           itemName: 'Shipped Cancel',
           itemRef: 'cancel-shipped-001',
@@ -372,20 +386,20 @@ describe('Cancelled escrow state cleanup E2E (issue #300)', () => {
 
       await request(app.getHttpServer())
         .patch(`/escrow/${escrowId}/ship`)
-        .set('Authorization', `Bearer ${VENDOR_ADDRESS}`)
+        .set('Authorization', bearer(VENDOR_ADDRESS))
         .send({ trackingId: 'TRK-SHIP-001' })
         .expect(200);
 
       await request(app.getHttpServer())
         .patch(`/escrow/${escrowId}/cancel`)
-        .set('Authorization', `Bearer ${BUYER_ADDRESS}`)
+        .set('Authorization', bearer(BUYER_ADDRESS))
         .expect(409);
     });
 
     it('rejects cancellation of a non-existent escrow', async () => {
       await request(app.getHttpServer())
         .patch('/escrow/00000000-0000-0000-0000-000000000000/cancel')
-        .set('Authorization', `Bearer ${VENDOR_ADDRESS}`)
+        .set('Authorization', bearer(VENDOR_ADDRESS))
         .expect(404);
     });
   });

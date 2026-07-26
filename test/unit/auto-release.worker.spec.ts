@@ -3,6 +3,7 @@ import { DisputeRepository } from '../../src/dispute/dispute.repository';
 import { EscrowRepository } from '../../src/escrow/escrow.repository';
 import { AutoReleaseWorker } from '../../src/workers/auto-release.worker';
 import { ContractService } from '../../src/stellar/contract.service';
+import { EscrowRecord } from '../../src/prisma/prisma.service';
 
 describe('AutoReleaseWorker (issue #10)', () => {
   let worker: AutoReleaseWorker;
@@ -14,6 +15,16 @@ describe('AutoReleaseWorker (issue #10)', () => {
     escrowRepository = {
       findAutoReleaseEligible: jest.fn(),
       markAutoReleaseCompleted: jest.fn(),
+      markAutoReleaseSubmitting: jest
+        .fn()
+        .mockImplementation((id: string) =>
+          Promise.resolve({ id } as EscrowRecord),
+        ),
+      clearAutoReleaseSubmitting: jest
+        .fn()
+        .mockImplementation((id: string) =>
+          Promise.resolve({ id } as EscrowRecord),
+        ),
     } as unknown as jest.Mocked<EscrowRepository>;
     disputeRepository = {
       findByEscrow: jest.fn(),
@@ -62,7 +73,7 @@ describe('AutoReleaseWorker (issue #10)', () => {
 
     expect(contractService.submitAutoRelease).toHaveBeenCalledWith(
       'escrow-1',
-      'GAUTORELEASE000000000000000000000000000000000000000000000',
+      expect.any(String),
     );
     expect(escrowRepository.markAutoReleaseCompleted).toHaveBeenCalledWith(
       'escrow-1',

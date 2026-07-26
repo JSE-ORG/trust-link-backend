@@ -53,6 +53,16 @@ describe('AutoReleaseWorker', () => {
     escrowRepository = {
       findAutoReleaseEligible: jest.fn(),
       markAutoReleaseCompleted: jest.fn(),
+      markAutoReleaseSubmitting: jest
+        .fn()
+        .mockImplementation((id: string) =>
+          Promise.resolve(makeEscrow({ id })),
+        ),
+      clearAutoReleaseSubmitting: jest
+        .fn()
+        .mockImplementation((id: string) =>
+          Promise.resolve(makeEscrow({ id })),
+        ),
     } as unknown as jest.Mocked<EscrowRepository>;
 
     disputeRepository = {
@@ -123,6 +133,9 @@ describe('AutoReleaseWorker', () => {
 
       await worker.run();
 
+      expect(escrowRepository.markAutoReleaseSubmitting).toHaveBeenCalledWith(
+        'escrow-1',
+      );
       expect(contractService.submitAutoRelease).toHaveBeenCalledWith(
         'escrow-1',
         expect.any(String),
@@ -131,6 +144,18 @@ describe('AutoReleaseWorker', () => {
         'escrow-1',
         'tx-hash-abc',
       );
+    });
+
+    it('skips an escrow that cannot be claimed because another run already holds it', async () => {
+      const escrow = makeEscrow();
+      escrowRepository.findAutoReleaseEligible.mockResolvedValue([escrow]);
+      disputeRepository.findByEscrow.mockResolvedValue(null);
+      escrowRepository.markAutoReleaseSubmitting.mockResolvedValueOnce(null);
+
+      await worker.run();
+
+      expect(contractService.submitAutoRelease).not.toHaveBeenCalled();
+      expect(escrowRepository.markAutoReleaseCompleted).not.toHaveBeenCalled();
     });
 
     it('increments failureCount and records the error when submitAutoRelease throws, and still processes remaining escrows', async () => {
@@ -155,6 +180,9 @@ describe('AutoReleaseWorker', () => {
 
       await worker.run();
 
+      expect(escrowRepository.clearAutoReleaseSubmitting).toHaveBeenCalledWith(
+        'escrow-fail',
+      );
       expect(contractService.submitAutoRelease).toHaveBeenCalledTimes(2);
       expect(escrowRepository.markAutoReleaseCompleted).toHaveBeenCalledTimes(
         1,
