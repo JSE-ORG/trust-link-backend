@@ -13,6 +13,7 @@ import { Sep10Controller } from '../../src/auth/sep10/sep10.controller';
 import { Sep10Service } from '../../src/auth/sep10/sep10.service';
 import { ConfigService } from '../../src/config/config.service';
 import { PrismaService } from '../../src/prisma/prisma.service';
+import { TEST_SIGNING_SECRET } from '../auth-helper';
 
 describe('SEP-10 authentication (issue #23)', () => {
   let app: INestApplication;
@@ -29,6 +30,8 @@ describe('SEP-10 authentication (issue #23)', () => {
         switch (key) {
           case 'STELLAR_NETWORK':
             return 'TESTNET';
+          case 'SYSTEM_SIGNER_SECRET':
+            return TEST_SIGNING_SECRET;
           case 'SEP10_JWT_SECRET':
             return 'a-very-long-secret-key-for-testing-purposes-32chars';
           case 'REFRESH_TOKEN_TTL':

@@ -19,7 +19,7 @@ import {
 @Injectable()
 export class Sep10Service {
   private readonly logger = new Logger(Sep10Service.name);
-  private readonly serverKeypair = Keypair.random();
+  private readonly serverKeypair: Keypair;
   private readonly networkPassphrase: string;
   private readonly homeDomain = 'trust-link.local';
   private readonly webAuthDomain = 'trust-link.local';
@@ -32,6 +32,43 @@ export class Sep10Service {
       this.configService.get('STELLAR_NETWORK') === 'MAINNET'
         ? Networks.PUBLIC
         : Networks.TESTNET;
+
+    this.serverKeypair = this.loadServerKeypair();
+  }
+
+  /**
+   * Loads the SEP-10 challenge signing keypair from configuration.
+   *
+   * This was previously `Keypair.random()`, evaluated once per instance. That
+   * meant the signing key changed on every restart, so a challenge issued
+   * before a restart could never be verified after one, and two replicas could
+   * never verify each other's challenges. It also made it impossible to publish
+   * a stable SIGNING_KEY in a stellar.toml, which is what wallets check.
+   *
+   * Prefers `SEP10_SIGNING_SECRET` so web-auth signing can be separated from
+   * transaction signing, and falls back to the already-required
+   * `SYSTEM_SIGNER_SECRET`. Never generates a key.
+   */
+  private loadServerKeypair(): Keypair {
+    const secret =
+      this.configService.get<string>('SEP10_SIGNING_SECRET') ||
+      this.configService.get<string>('SYSTEM_SIGNER_SECRET');
+
+    if (!secret) {
+      throw new Error(
+        'No SEP-10 signing key configured. Set SEP10_SIGNING_SECRET, or ' +
+          'SYSTEM_SIGNER_SECRET as a fallback. Refusing to generate an ' +
+          'ephemeral key, which would invalidate every challenge on restart.',
+      );
+    }
+
+    try {
+      return Keypair.fromSecret(secret);
+    } catch {
+      throw new Error(
+        'The configured SEP-10 signing secret is not a valid Stellar secret key.',
+      );
+    }
   }
 
   /** Removes expired nonces from the database every 24 hours. */

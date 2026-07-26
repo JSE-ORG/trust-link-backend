@@ -17,6 +17,16 @@ import { MILLISECONDS_PER_SECOND } from '../src/common/constants/time.constants'
  * authenticated test will start failing for the wrong reason.
  */
 
+/**
+ * Throwaway Stellar secret key for tests that construct `Sep10Service` with a
+ * mocked `ConfigService`. Matches `SYSTEM_SIGNER_SECRET` in `.env.test`.
+ *
+ * Generated for test use only. It holds no funds and must never be used
+ * anywhere real.
+ */
+export const TEST_SIGNING_SECRET =
+  'SAIJDXETR5B7YFPH7SUOISWVBHHSI46JLYFDCWDMEV2L46XAHASPP35C';
+
 /** Secret used to sign test tokens. Matches `SEP10_JWT_SECRET` in `.env.test`. */
 function testSecret(): string {
   const secret = process.env.SEP10_JWT_SECRET;

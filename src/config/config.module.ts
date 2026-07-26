@@ -21,6 +21,18 @@ import { ConfigService } from './config.service';
             'any.required':
               'Config validation error: SYSTEM_SIGNER_SECRET is required',
           }),
+        // Secret key used to sign SEP-10 challenge transactions. Its public key
+        // is what wallets verify against and what a stellar.toml would publish
+        // as SIGNING_KEY, so it must be stable across restarts and identical on
+        // every replica. Optional: falls back to SYSTEM_SIGNER_SECRET. Set it
+        // explicitly to keep web-auth signing separate from transaction signing.
+        SEP10_SIGNING_SECRET: Joi.string()
+          .pattern(/^S[A-Z2-7]{55}$/)
+          .optional()
+          .messages({
+            'string.pattern.base':
+              'Config validation error: SEP10_SIGNING_SECRET must be a valid Stellar secret key (starts with S)',
+          }),
         // Soroban smart contract ID for the escrow contract
         CONTRACT_ID: Joi.string().required().messages({
           'any.required': 'Config validation error: CONTRACT_ID is required',

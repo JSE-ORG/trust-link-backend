@@ -2,6 +2,7 @@ import { Test } from '@nestjs/testing';
 import { Sep10Service } from '../../src/auth/sep10/sep10.service';
 import { ConfigService } from '../../src/config/config.service';
 import { PrismaService } from '../../src/prisma/prisma.service';
+import { TEST_SIGNING_SECRET } from '../auth-helper';
 
 describe('Sep10Service nonce cleanup (issue #274)', () => {
   let service: Sep10Service;
@@ -15,6 +16,8 @@ describe('Sep10Service nonce cleanup (issue #274)', () => {
         switch (key) {
           case 'STELLAR_NETWORK':
             return 'TESTNET';
+          case 'SYSTEM_SIGNER_SECRET':
+            return TEST_SIGNING_SECRET;
           case 'SEP10_JWT_SECRET':
             return 'test-secret-key-for-hmac-signing';
           default:
