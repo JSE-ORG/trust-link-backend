@@ -17,9 +17,7 @@ import { VendorAccountDetailsService } from './vendor-account-details.service';
 @Controller('vendor/account-details')
 @UseGuards(JwtGuard)
 export class VendorAccountDetailsController {
-  constructor(
-    private readonly service: VendorAccountDetailsService,
-  ) {}
+  constructor(private readonly service: VendorAccountDetailsService) {}
 
   /**
    * Returns account details for the authenticated vendor.

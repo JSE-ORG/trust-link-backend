@@ -147,9 +147,7 @@ export class VendorAccountDetailsResponseDto {
  * Masks a sensitive string field by showing only the last 4 characters.
  * Returns null if the input is null or undefined.
  */
-function maskSensitiveField(
-  value: string | null | undefined,
-): string | null {
+function maskSensitiveField(value: string | null | undefined): string | null {
   if (!value) return null;
   if (value.length <= 4) return '****';
   return '*'.repeat(value.length - 4) + value.slice(-4);

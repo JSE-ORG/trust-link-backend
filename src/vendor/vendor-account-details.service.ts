@@ -5,9 +5,7 @@ import { VendorAccountDetailsRepository } from './vendor-account-details.reposit
 
 @Injectable()
 export class VendorAccountDetailsService {
-  constructor(
-    private readonly repository: VendorAccountDetailsRepository,
-  ) {}
+  constructor(private readonly repository: VendorAccountDetailsRepository) {}
 
   /** Returns account details for the given vendor, or null if not configured. */
   async getDetails(
