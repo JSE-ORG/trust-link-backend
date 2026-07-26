@@ -17,6 +17,12 @@ describe('TracingService (issue #79)', () => {
     expect(tracing.isEnabled()).toBe(false);
   });
 
+  it('is disabled when OTEL_ENABLED is unset', () => {
+    delete process.env.OTEL_ENABLED;
+    const svc = new TracingService();
+    expect(svc.isEnabled()).toBe(false);
+  });
+
   it('runs fn without span overhead when disabled', async () => {
     const result = await tracing.withDbSpan('escrow', 'findUnique', () => 42);
     expect(result).toBe(42);
@@ -30,24 +36,45 @@ describe('TracingService (issue #79)', () => {
   it('returns empty carrier when disabled', () => {
     expect(tracing.injectTraceHeaders()).toEqual({});
   });
-});
 
-describe('TracingService when enabled', () => {
-  let tracing: TracingService;
-
-  beforeEach(() => {
-    process.env.OTEL_ENABLED = 'true';
-    process.env.NODE_ENV = 'development';
-    // Re-import bootstrap state is set at module load; service checks isTracingEnabled()
-    tracing = new TracingService();
+  it('returns undefined for active span when disabled', () => {
+    expect(tracing.getActiveSpan()).toBeUndefined();
   });
 
-  afterEach(() => {
-    delete process.env.OTEL_ENABLED;
+  it('setSpanAttributes does not throw when no active span', () => {
+    expect(() =>
+      tracing.setSpanAttributes({ 'test.key': 'value' }),
+    ).not.toThrow();
   });
 
-  it('reports enabled state', () => {
-    // isTracingEnabled reads env at bootstrap load; may be false in test env
-    expect(typeof tracing.isEnabled()).toBe('boolean');
+  it('returns fn result from withDbSpan when disabled', async () => {
+    const fn = jest.fn().mockResolvedValue({ id: 1 });
+    const result = await tracing.withDbSpan('escrow', 'findMany', fn);
+    expect(result).toEqual({ id: 1 });
+    expect(fn).toHaveBeenCalled();
+  });
+
+  it('returns fn result from withWorkflowSpan when disabled', async () => {
+    const fn = jest.fn().mockReturnValue('workflow-result');
+    const result = await tracing.withWorkflowSpan('escrow.create', fn);
+    expect(result).toBe('workflow-result');
+  });
+
+  it('propagates errors from withDbSpan when disabled', async () => {
+    const error = new Error('DB error');
+    await expect(
+      tracing.withDbSpan('escrow', 'create', () => {
+        throw error;
+      }),
+    ).rejects.toThrow('DB error');
+  });
+
+  it('propagates errors from withWorkflowSpan when disabled', async () => {
+    const error = new Error('Workflow error');
+    await expect(
+      tracing.withWorkflowSpan('escrow.create', () => {
+        throw error;
+      }),
+    ).rejects.toThrow('Workflow error');
   });
 });
