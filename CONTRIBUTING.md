@@ -92,47 +92,100 @@ Key requirements from the SRD:
 
 | Tool | Version | Notes |
 |---|---|---|
-| Node.js | `20+` | Use [nvm](https://github.com/nvm-sh/nvm) |
-| npm / pnpm | latest | |
+| Node.js | `22` | Pinned in `.nvmrc`. Run `nvm use` in the project root |
+| npm | `10.x` | Ships with Node 22. See the note below before using another version |
 | PostgreSQL | `15+` | Local install or Docker |
 | Docker | optional | For spinning up Postgres quickly |
+
+> **Use Node 22, not just "20 or newer".** Every CI workflow reads `.nvmrc`, so
+> anything else means your local results and CI's can disagree. Newer versions
+> of npm in particular resolve optional platform dependencies differently and
+> will produce a `package-lock.json` that makes `npm ci` fail in CI with
+> `Missing: ... from lock file`. If you see that error, you are on the wrong
+> Node version.
 
 ### First-Time Setup
 
 ```bash
 # 1. Fork and clone
-git clone https://github.com/YOUR_USERNAME/trustlink-backend
-cd trustlink-backend
+git clone https://github.com/YOUR_USERNAME/trust-link-backend
+cd trust-link-backend
 
 # 2. Add upstream
-git remote add upstream https://github.com/your-org/trustlink-backend
+git remote add upstream https://github.com/JSE-ORG/trust-link-backend
 
-# 3. Install dependencies
-npm install
+# 3. Use the pinned Node version
+nvm use          # reads .nvmrc
 
-# 4. Set up environment
+# 4. Install dependencies
+npm ci           # not `npm install` — see note below
+
+# 5. Generate the Prisma client
+npx prisma generate
+
+# 6. Set up environment
 cp .env.example .env
 # Edit .env — testnet values are pre-filled, you need your own DB URL
 
-# 5. Start Postgres (Docker shortcut)
+# 7. Start Postgres (Docker shortcut)
 docker run --name trustlink-pg \
   -e POSTGRES_USER=trustlink \
   -e POSTGRES_PASSWORD=trustlink \
   -e POSTGRES_DB=trustlink_dev \
   -p 5432:5432 -d postgres:15
 
-# 6. Run migrations
+# 8. Run migrations
 npx prisma migrate dev
 
-# 7. Seed the database (optional — creates test escrow records)
-npx prisma db seed
+# 9. Seed the database (optional — creates test escrow records)
+npm run db:seed
 
-# 8. Start the dev server
+# 10. Start the dev server
 npm run start:dev
 ```
 
-The API will be available at `http://localhost:3001`.
-Swagger docs: `http://localhost:3001/api/docs`
+The API will be available at `http://localhost:3000`.
+Swagger docs: `http://localhost:3000/api/docs`
+
+**Step 4, why `npm ci`.** It installs exactly what the lockfile specifies and
+never rewrites it. `npm install` will silently update `package-lock.json`, and
+committing that drift is the single most common reason a pull request fails
+every check at the install step. Only run `npm install` when you are
+deliberately adding or upgrading a dependency.
+
+**Step 5, why `prisma generate`.** The Prisma client is generated into
+`node_modules` and is not committed. Skip this and `@prisma/client` exports do
+not exist, so `npm run typecheck` fails with errors like
+`Module '"@prisma/client"' has no exported member 'PrismaClient'`. That is a
+missing step, not a broken repository. Re-run it whenever
+`prisma/schema.prisma` changes.
+
+### Writing Tests That Need Authentication
+
+`JwtGuard` requires a properly signed SEP-10 access token. Sending a bare
+Stellar address as a bearer token does **not** authenticate, so
+`` .set('Authorization', `Bearer ${address}`) `` will return 401.
+
+Use the helper in `test/auth-helper.ts`:
+
+```ts
+import { bearer } from '../auth-helper';
+
+// Ordinary caller
+.set('Authorization', bearer(VENDOR_ADDRESS))
+
+// Admin caller
+.set('Authorization', bearer(ADMIN_ADDRESS, { role: 'admin' }))
+```
+
+It signs tokens with the same algorithm and claim shape as
+`Sep10Service.issueJwt`, so a test token is indistinguishable from a real one to
+the guard. `test/integration/dispute-access.integration-spec.ts` is a worked
+example covering both cases.
+
+If you branched before this landed, rebase onto `main`. Tests that authenticated
+with a bare address were migrated across the whole suite, and yours will need
+the same change.
 
 ### Staying in Sync
 

@@ -42,9 +42,18 @@ Trust-Link Backend — NestJS escrow API for Stellar blockchain payments.
 
 ## Project setup
 
+Full instructions, including Postgres and environment configuration, are in
+[CONTRIBUTING.md](./CONTRIBUTING.md#development-setup). The short version:
+
 ```bash
-$ npm install
+$ nvm use              # Node 22, pinned in .nvmrc
+$ npm ci               # not `npm install` — it rewrites the lockfile
+$ npx prisma generate  # the Prisma client is generated, not committed
 ```
+
+Skipping `prisma generate` makes `npm run typecheck` fail with
+`Module '"@prisma/client"' has no exported member`. That is a missing step, not
+a broken checkout.
 
 ## Compile and run the project
 

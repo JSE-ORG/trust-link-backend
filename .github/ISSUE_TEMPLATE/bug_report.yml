@@ -70,3 +70,13 @@ body:
       placeholder: "#123"
     validations:
       required: false
+
+  - type: markdown
+    attributes:
+      value: |
+        ---
+        ### Before you start
+
+        - **Setup:** [CONTRIBUTING.md → Development Setup](https://github.com/JSE-ORG/trust-link-backend/blob/main/CONTRIBUTING.md#development-setup). Use **Node 22** (`nvm use`), run `npm ci` rather than `npm install`, and run `npx prisma generate` after installing.
+        - **Tests that authenticate:** use `bearer()` from `test/auth-helper.ts`. A bare Stellar address as a bearer token returns 401. See [Writing Tests That Need Authentication](https://github.com/JSE-ORG/trust-link-backend/blob/main/CONTRIBUTING.md#writing-tests-that-need-authentication).
+        - **Branch from the latest `main`** and rebase before pushing.
