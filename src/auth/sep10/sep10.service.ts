@@ -223,13 +223,26 @@ export class Sep10Service {
     return { token, refreshToken };
   }
 
+  /**
+   * Returns the JWT signing secret, throwing rather than falling back.
+   *
+   * `SEP10_JWT_SECRET` is `Joi.string().min(32).required()` in
+   * `config.module.ts`, so this should be unreachable in a booted process.
+   * It exists so that a partially wired process fails loudly instead of
+   * signing tokens with a guessable constant.
+   */
+  private jwtSecret(): string {
+    const secret = this.configService.get<string>('SEP10_JWT_SECRET');
+    if (!secret) {
+      throw new Error(
+        'SEP10_JWT_SECRET is not configured. Refusing to sign or hash tokens.',
+      );
+    }
+    return secret;
+  }
+
   private hashToken(token: string): string {
-    return createHmac(
-      'sha256',
-      this.configService.get('SEP10_JWT_SECRET') || 'secret',
-    )
-      .update(token)
-      .digest('hex');
+    return createHmac('sha256', this.jwtSecret()).update(token).digest('hex');
   }
 
   /** Returns the public key used to sign SEP-10 challenge transactions. */
@@ -258,10 +271,7 @@ export class Sep10Service {
       JSON.stringify({ alg: 'HS256', typ: 'JWT' }),
     ).toString('base64url');
     const body = Buffer.from(JSON.stringify(payload)).toString('base64url');
-    const sig = createHmac(
-      'sha256',
-      this.configService.get('SEP10_JWT_SECRET') || 'secret',
-    )
+    const sig = createHmac('sha256', this.jwtSecret())
       .update(`${header}.${body}`)
       .digest('base64url');
     return `${header}.${body}.${sig}`;

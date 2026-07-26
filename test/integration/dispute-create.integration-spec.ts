@@ -4,6 +4,7 @@ import request from 'supertest';
 import { AppModule } from '../../src/app.module';
 import { EscrowRepository } from '../../src/escrow/escrow.repository';
 import { PrismaService } from '../../src/prisma/prisma.service';
+import { bearer } from '../auth-helper';
 
 describe('POST /escrow/:id/dispute integration (issue #51)', () => {
   let app: INestApplication;
@@ -56,7 +57,7 @@ describe('POST /escrow/:id/dispute integration (issue #51)', () => {
   it('creates a dispute and returns 201 for a valid request', async () => {
     const res = await request(app.getHttpServer())
       .post(`/escrow/${escrowUuid}/dispute`)
-      .set('Authorization', `Bearer ${buyerAddress}`)
+      .set('Authorization', bearer(buyerAddress))
       .send({
         reason: 'ITEM_NOT_RECEIVED',
         description: 'The package has not arrived after 3 weeks of waiting',
@@ -84,7 +85,7 @@ describe('POST /escrow/:id/dispute integration (issue #51)', () => {
 
     await request(app.getHttpServer())
       .post(`/escrow/${escrowUuid}/dispute`)
-      .set('Authorization', `Bearer ${buyerAddress}`)
+      .set('Authorization', bearer(buyerAddress))
       .send({
         reason: 'ITEM_NOT_RECEIVED',
         description: 'The package has not arrived after 3 weeks of waiting',
@@ -95,7 +96,7 @@ describe('POST /escrow/:id/dispute integration (issue #51)', () => {
   it('returns 400 for invalid dispute reason', async () => {
     await request(app.getHttpServer())
       .post(`/escrow/${escrowUuid}/dispute`)
-      .set('Authorization', `Bearer ${buyerAddress}`)
+      .set('Authorization', bearer(buyerAddress))
       .send({
         reason: 'INVALID_REASON',
         description: 'This reason is not a valid enum value',
@@ -106,7 +107,7 @@ describe('POST /escrow/:id/dispute integration (issue #51)', () => {
   it('returns 400 for short description', async () => {
     await request(app.getHttpServer())
       .post(`/escrow/${escrowUuid}/dispute`)
-      .set('Authorization', `Bearer ${buyerAddress}`)
+      .set('Authorization', bearer(buyerAddress))
       .send({
         reason: 'OTHER',
         description: 'Too short',
@@ -118,7 +119,7 @@ describe('POST /escrow/:id/dispute integration (issue #51)', () => {
     const stranger = 'GCD53U57NWPPB2AGR25MEEDXW36GIYXBAWB7NCUT3JGC6YBKUJ22WQL7';
     await request(app.getHttpServer())
       .post(`/escrow/${escrowUuid}/dispute`)
-      .set('Authorization', `Bearer ${stranger}`)
+      .set('Authorization', bearer(stranger))
       .send({
         reason: 'FRAUD',
         description: 'The seller attempted to scam me with fake tracking',
@@ -140,7 +141,7 @@ describe('POST /escrow/:id/dispute integration (issue #51)', () => {
   it('returns 404 for non-existent escrow', async () => {
     const res = await request(app.getHttpServer())
       .post(`/escrow/${nonExistentUuid}/dispute`)
-      .set('Authorization', `Bearer ${buyerAddress}`)
+      .set('Authorization', bearer(buyerAddress))
       .send({
         reason: 'ITEM_NOT_RECEIVED',
         description: 'Package never arrived at my address',

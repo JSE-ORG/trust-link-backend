@@ -10,6 +10,7 @@ import request from 'supertest';
 import { AppModule } from '../../src/app.module';
 import { PrismaService } from '../../src/prisma/prisma.service';
 import { EscrowState } from '@prisma/client';
+import { bearer } from '../auth-helper';
 
 describe('GET /vendor/analytics (issue #289)', () => {
   let app: INestApplication;
@@ -17,8 +18,8 @@ describe('GET /vendor/analytics (issue #289)', () => {
 
   const VENDOR_A = 'GANALYTICSSTAT001';
   const VENDOR_B = 'GANALYTICSSTAT002';
-  const AUTH_A = `Bearer ${VENDOR_A}`;
-  const AUTH_B = `Bearer ${VENDOR_B}`;
+  const AUTH_A = bearer(VENDOR_A);
+  const AUTH_B = bearer(VENDOR_B);
   const BUYER = 'GBUYER001';
 
   jest.setTimeout(30000);

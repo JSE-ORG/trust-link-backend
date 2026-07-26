@@ -12,6 +12,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { AppModule } from '../../src/app.module';
 import { PrismaService } from '../../src/prisma/prisma.service';
+import { bearer } from '../auth-helper';
 
 describe('Vendor profile CRUD (issue #292)', () => {
   let app: INestApplication;
@@ -19,7 +20,7 @@ describe('Vendor profile CRUD (issue #292)', () => {
 
   const VENDOR = 'GVENDORADDRESS001';
   const OTHER_VENDOR = 'GVENDORADDRESS002';
-  const AUTH = `Bearer ${VENDOR}`;
+  const AUTH = bearer(VENDOR);
 
   const validProfile = {
     businessName: 'Acme Goods',
@@ -138,7 +139,7 @@ describe('Vendor profile CRUD (issue #292)', () => {
     it('isolates profiles — vendor A cannot see vendor B profile via GET', async () => {
       await request(app.getHttpServer())
         .post('/vendor/profile')
-        .set('Authorization', `Bearer ${OTHER_VENDOR}`)
+        .set('Authorization', bearer(OTHER_VENDOR))
         .send({ businessName: 'Other Co', email: 'other@example.com' })
         .expect(201);
 

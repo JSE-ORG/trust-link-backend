@@ -1,10 +1,10 @@
-import crypto from 'node:crypto';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { ConfigService } from '../../src/config/config.service';
 import { AppModule } from '../../src/app.module';
 import { PrismaService } from '../../src/prisma/prisma.service';
+import { bearer } from '../auth-helper';
 
 describe('GET /escrow/:id/dispute access control integration (issue #52)', () => {
   let app: INestApplication;
@@ -23,26 +23,9 @@ describe('GET /escrow/:id/dispute access control integration (issue #52)', () =>
   const disputeUuid = '00000000-0000-4000-8000-000000000020';
   const noDisputeEscrowUuid = '00000000-0000-4000-8000-000000000030';
 
-  function adminJwt(): string {
-    const header = Buffer.from(
-      JSON.stringify({ alg: 'HS256', typ: 'JWT' }),
-    ).toString('base64url');
-    const payload = Buffer.from(
-      JSON.stringify({
-        sub: adminAddress,
-        role: 'admin',
-        iat: Math.floor(Date.now() / 1000),
-        exp: Math.floor(Date.now() / 1000) + 3600,
-      }),
-    ).toString('base64url');
-    const secret =
-      process.env.SEP10_JWT_SECRET ?? 'test-jwt-secret-32-characters-long!!';
-    const sig = crypto
-      .createHmac('sha256', secret)
-      .update(`${header}.${payload}`)
-      .digest('base64url');
-    return `${header}.${payload}.${sig}`;
-  }
+  // Replaced a hand-rolled JWT builder with the shared helper so there is one
+  // place that has to stay in step with Sep10Service.issueJwt.
+  const adminAuth = (): string => bearer(adminAddress, { role: 'admin' });
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -93,7 +76,7 @@ describe('GET /escrow/:id/dispute access control integration (issue #52)', () =>
   it('allows buyer to retrieve dispute details', async () => {
     const res = await request(app.getHttpServer())
       .get(`/escrow/${escrowUuid}/dispute`)
-      .set('Authorization', `Bearer ${buyerAddress}`)
+      .set('Authorization', bearer(buyerAddress))
       .expect(200);
 
     expect(res.body).toEqual(
@@ -109,7 +92,7 @@ describe('GET /escrow/:id/dispute access control integration (issue #52)', () =>
   it('allows vendor to retrieve dispute details', async () => {
     const res = await request(app.getHttpServer())
       .get(`/escrow/${escrowUuid}/dispute`)
-      .set('Authorization', `Bearer ${vendorAddress}`)
+      .set('Authorization', bearer(vendorAddress))
       .expect(200);
 
     expect(res.body.id).toBe(disputeUuid);
@@ -118,7 +101,7 @@ describe('GET /escrow/:id/dispute access control integration (issue #52)', () =>
   it('allows admin to retrieve dispute details', async () => {
     const res = await request(app.getHttpServer())
       .get(`/escrow/${escrowUuid}/dispute`)
-      .set('Authorization', `Bearer ${adminJwt()}`)
+      .set('Authorization', adminAuth())
       .expect(200);
 
     expect(res.body.id).toBe(disputeUuid);
@@ -127,7 +110,7 @@ describe('GET /escrow/:id/dispute access control integration (issue #52)', () =>
   it('blocks unauthorized users from viewing dispute', async () => {
     await request(app.getHttpServer())
       .get(`/escrow/${escrowUuid}/dispute`)
-      .set('Authorization', `Bearer ${strangerAddress}`)
+      .set('Authorization', bearer(strangerAddress))
       .expect(403);
   });
 
@@ -140,7 +123,7 @@ describe('GET /escrow/:id/dispute access control integration (issue #52)', () =>
   it('returns 404 for non-existent escrow', async () => {
     await request(app.getHttpServer())
       .get(`/escrow/${nonExistentUuid}/dispute`)
-      .set('Authorization', `Bearer ${buyerAddress}`)
+      .set('Authorization', bearer(buyerAddress))
       .expect(404);
   });
 
@@ -160,7 +143,7 @@ describe('GET /escrow/:id/dispute access control integration (issue #52)', () =>
 
     await request(app.getHttpServer())
       .get(`/escrow/${noDisputeEscrowUuid}/dispute`)
-      .set('Authorization', `Bearer ${buyerAddress}`)
+      .set('Authorization', bearer(buyerAddress))
       .expect(404);
   });
 });
