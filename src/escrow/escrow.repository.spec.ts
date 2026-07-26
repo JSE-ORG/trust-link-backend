@@ -170,6 +170,108 @@ describe('EscrowRepository', () => {
     });
   });
 
+  describe('findEvents()', () => {
+    it('returns the initial event when escrow is created', async () => {
+      const escrow = await repo.create(makeDto(), 'vendor-events');
+      const events = await repo.findEvents(escrow.id);
+
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({
+        event: 'FUNDED',
+        fromState: null,
+        toState: 'FUNDED',
+      });
+    });
+
+    it('returns events in chronological order with fromState and toState', async () => {
+      const escrow = await repo.create(makeDto(), 'vendor-events');
+
+      await prisma.escrowEvent.create({
+        data: {
+          escrowId: escrow.id,
+          fromState: 'FUNDED',
+          toState: 'SHIPPED',
+        },
+      });
+
+      const events = await repo.findEvents(escrow.id);
+
+      expect(events).toHaveLength(2);
+      expect(events[0]).toMatchObject({
+        event: 'FUNDED',
+        fromState: null,
+        toState: 'FUNDED',
+      });
+      expect(events[1]).toMatchObject({
+        event: 'SHIPPED',
+        fromState: 'FUNDED',
+        toState: 'SHIPPED',
+      });
+    });
+
+    it('includes DISPUTED transition for a disputed escrow', async () => {
+      const escrow = await repo.create(makeDto(), 'vendor-disputed');
+
+      await prisma.escrowEvent.create({
+        data: {
+          escrowId: escrow.id,
+          fromState: 'FUNDED',
+          toState: 'DISPUTED',
+        },
+      });
+
+      const events = await repo.findEvents(escrow.id);
+
+      expect(events).toHaveLength(2);
+      expect(events[1]).toMatchObject({
+        event: 'DISPUTED',
+        fromState: 'FUNDED',
+        toState: 'DISPUTED',
+      });
+    });
+
+    it('returns all transitions for an escrow taken through full lifecycle', async () => {
+      const escrow = await repo.create(makeDto(), 'vendor-lifecycle');
+
+      await prisma.escrowEvent.create({
+        data: {
+          escrowId: escrow.id,
+          fromState: 'FUNDED',
+          toState: 'SHIPPED',
+        },
+      });
+      await prisma.escrowEvent.create({
+        data: {
+          escrowId: escrow.id,
+          fromState: 'SHIPPED',
+          toState: 'DELIVERED',
+        },
+      });
+      await prisma.escrowEvent.create({
+        data: {
+          escrowId: escrow.id,
+          fromState: 'DELIVERED',
+          toState: 'COMPLETED',
+        },
+      });
+
+      const events = await repo.findEvents(escrow.id);
+
+      expect(events).toHaveLength(4);
+      expect(events.map((e) => e.event)).toEqual([
+        'FUNDED',
+        'SHIPPED',
+        'DELIVERED',
+        'COMPLETED',
+      ]);
+    });
+
+    it('returns an empty array for a non-existent escrow', async () => {
+      const events = await repo.findEvents('non-existent-id');
+      expect(events).toEqual([]);
+    });
+  });
+
   describe('findVendorEscrows()', () => {
     beforeEach(async () => {
       await repo.create({ ...makeDto(), amount: 300, itemRef: 'A' }, 'v1');

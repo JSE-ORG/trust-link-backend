@@ -348,28 +348,22 @@ export class EscrowRepository {
   }
 
   /**
-   * Derives a chronological event history for the given escrow from its
-   * persisted timestamp fields. Returns an empty array if not found.
+   * Returns the chronological event history for the given escrow from the
+   * EscrowEvent audit table. Returns an empty array if no events exist.
    *
    * @returns an {@link EventsResult} ordered oldest-first.
    */
   async findEvents(escrowId: string): Promise<EventsResult> {
-    const escrow = await this.findById(escrowId);
-    if (!escrow) return [];
+    const rawEvents = await this.prisma.escrowEvent.findMany({
+      where: { escrowId },
+    });
 
-    const events: EventsResult = [
-      { event: 'CREATED', occurredAt: escrow.createdAt },
-    ];
-    if (escrow.shippedAt)
-      events.push({ event: 'SHIPPED', occurredAt: escrow.shippedAt });
-    if (escrow.deliveredAt)
-      events.push({ event: 'DELIVERED', occurredAt: escrow.deliveredAt });
-    if (escrow.cancelledAt)
-      events.push({ event: 'CANCELLED', occurredAt: escrow.cancelledAt });
-
-    return events.sort(
-      (a, b) => a.occurredAt.getTime() - b.occurredAt.getTime(),
-    );
+    return rawEvents.map((e) => ({
+      event: e.toState,
+      occurredAt: e.createdAt,
+      fromState: e.fromState,
+      toState: e.toState,
+    }));
   }
 
   // ── Issue #28 ─────────────────────────────────────────────────────────────
