@@ -33,11 +33,23 @@ Trust-Link Backend — NestJS escrow API for Stellar blockchain payments.
 |----------|-------------|
 | [ARCHITECTURE.md](./ARCHITECTURE.md) | System design and module overview |
 | [CHANGELOG.md](./CHANGELOG.md) | Version history (semver) |
+| [CONTRIBUTING.md](./CONTRIBUTING.md) | Local setup and contribution process |
 | [SECURITY.md](./SECURITY.md) | Security policy and vulnerability disclosure |
 | [DEPLOYMENT.md](./DEPLOYMENT.md) | Production deployment, migration order, and validation milestones |
+| [SPECIFICATION.md](./SPECIFICATION.md) | Authoritative product and API requirements |
+| [docs/AboutRepo.md](./docs/AboutRepo.md) | Historical backend overview |
+| [docs/ACCESSIBILITY_AUDIT.md](./docs/ACCESSIBILITY_AUDIT.md) | Historical keyboard accessibility audit |
+| [docs/CHART_OPTIMIZATION_README.md](./docs/CHART_OPTIMIZATION_README.md) | Chart aggregation implementation notes |
+| [docs/DATABASE_MIGRATION_README.md](./docs/DATABASE_MIGRATION_README.md) | Historical vendor-data migration notes |
+| [docs/EVIDENCE_UPLOAD_RATE_LIMITING.md](./docs/EVIDENCE_UPLOAD_RATE_LIMITING.md) | Evidence-upload rate-limit notes |
+| [docs/PARTIAL_BATCH_FAILURE_IMPLEMENTATION.md](./docs/PARTIAL_BATCH_FAILURE_IMPLEMENTATION.md) | Auto-release batch-failure notes |
 | [docs/QUERY_PERFORMANCE.md](./docs/QUERY_PERFORMANCE.md) | EXPLAIN ANALYZE query-performance workflow and optimized indexes |
+| [docs/STRESS_TEST_README.md](./docs/STRESS_TEST_README.md) | Stress-testing guide |
 | [docs/TRACING.md](./docs/TRACING.md) | OpenTelemetry distributed tracing |
 | [docs/INCIDENT_RESPONSE_RUNBOOK.md](./docs/INCIDENT_RESPONSE_RUNBOOK.md) | Incident response and recovery procedures |
+| [docs/events.md](./docs/events.md) | Event reference |
+| [docs/soroban-compatibility.md](./docs/soroban-compatibility.md) | Soroban compatibility notes |
+| [docs/state-machine.md](./docs/state-machine.md) | Escrow state-machine reference |
 | [.env.example](./.env.example) | Environment variable reference |
 
 ## Project setup
