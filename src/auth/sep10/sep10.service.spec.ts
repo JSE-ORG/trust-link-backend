@@ -17,6 +17,7 @@ import { createHmac } from 'crypto';
 jest.mock('@stellar/stellar-sdk', () => ({
   Keypair: {
     random: jest.fn(),
+    fromSecret: jest.fn(),
   },
   Networks: {
     PUBLIC: 'Public Global Stellar Network ; September 2015',
@@ -53,7 +54,8 @@ describe('Sep10Service', () => {
       sign: jest.fn(),
     };
 
-    (Keypair.random as jest.Mock).mockReturnValue(mockServerKeypair);
+    // The signing key is loaded from config, never generated.
+    (Keypair.fromSecret as jest.Mock).mockReturnValue(mockServerKeypair);
 
     // Mock TransactionBuilder
     const mockTransactionBuilder = {
@@ -99,6 +101,8 @@ describe('Sep10Service', () => {
             get: jest.fn((key: string) => {
               const configMap: Record<string, any> = {
                 STELLAR_NETWORK: 'TESTNET',
+                SYSTEM_SIGNER_SECRET:
+                  'SAIJDXETR5B7YFPH7SUOISWVBHHSI46JLYFDCWDMEV2L46XAHASPP35C',
                 SEP10_JWT_SECRET: 'test-secret-key',
                 REFRESH_TOKEN_TTL: REFRESH_TOKEN_TTL,
                 ADMIN_ADDRESS: null,
@@ -117,6 +121,69 @@ describe('Sep10Service', () => {
 
   afterEach(() => {
     jest.clearAllMocks();
+  });
+
+  describe('signing key', () => {
+    // Regression: the signing key used to be Keypair.random(), so it changed on
+    // every restart. Challenges issued before a restart could not be verified
+    // after one, replicas could not verify each other's, and no stable
+    // SIGNING_KEY could be published for wallets to check.
+
+    it('loads the signing key from configuration and never generates one', () => {
+      expect(Keypair.fromSecret).toHaveBeenCalledWith(
+        'SAIJDXETR5B7YFPH7SUOISWVBHHSI46JLYFDCWDMEV2L46XAHASPP35C',
+      );
+      expect(Keypair.random).not.toHaveBeenCalled();
+      expect(service.getServerPublicKey()).toBe(SERVER_PUBLIC_KEY);
+    });
+
+    it('prefers SEP10_SIGNING_SECRET over SYSTEM_SIGNER_SECRET', async () => {
+      const dedicated =
+        'SDWG7OPXKSKX2JMFVO2C4W37DA56UKOZIUYP34COSENTJ53OIYMYYS4V';
+
+      const module: TestingModule = await Test.createTestingModule({
+        providers: [
+          Sep10Service,
+          { provide: PrismaService, useValue: prisma },
+          {
+            provide: ConfigService,
+            useValue: {
+              get: jest.fn((key: string) =>
+                ({
+                  STELLAR_NETWORK: 'TESTNET',
+                  SEP10_SIGNING_SECRET: dedicated,
+                  SYSTEM_SIGNER_SECRET:
+                    'SAIJDXETR5B7YFPH7SUOISWVBHHSI46JLYFDCWDMEV2L46XAHASPP35C',
+                  SEP10_JWT_SECRET: 'test-secret-key',
+                })[key],
+              ),
+            },
+          },
+        ],
+      }).compile();
+
+      module.get<Sep10Service>(Sep10Service);
+      expect(Keypair.fromSecret).toHaveBeenCalledWith(dedicated);
+    });
+
+    it('refuses to start when no signing secret is configured', async () => {
+      await expect(
+        Test.createTestingModule({
+          providers: [
+            Sep10Service,
+            { provide: PrismaService, useValue: prisma },
+            {
+              provide: ConfigService,
+              useValue: {
+                get: jest.fn((key: string) =>
+                  key === 'STELLAR_NETWORK' ? 'TESTNET' : undefined,
+                ),
+              },
+            },
+          ],
+        }).compile(),
+      ).rejects.toThrow(/No SEP-10 signing key configured/);
+    });
   });
 
   describe('buildChallenge', () => {
@@ -439,6 +506,8 @@ describe('Sep10Service', () => {
       (configService.get as jest.Mock).mockImplementation((key: string) => {
         const configMap: Record<string, any> = {
           STELLAR_NETWORK: 'MAINNET',
+          SYSTEM_SIGNER_SECRET:
+            'SAIJDXETR5B7YFPH7SUOISWVBHHSI46JLYFDCWDMEV2L46XAHASPP35C',
           SEP10_JWT_SECRET: 'test-secret-key',
           REFRESH_TOKEN_TTL: REFRESH_TOKEN_TTL,
           ADMIN_ADDRESS: null,
@@ -514,6 +583,8 @@ describe('Sep10Service', () => {
       (configService.get as jest.Mock).mockImplementation((key: string) => {
         const configMap: Record<string, any> = {
           STELLAR_NETWORK: 'TESTNET',
+          SYSTEM_SIGNER_SECRET:
+            'SAIJDXETR5B7YFPH7SUOISWVBHHSI46JLYFDCWDMEV2L46XAHASPP35C',
           SEP10_JWT_SECRET: 'test-secret-key',
           REFRESH_TOKEN_TTL: REFRESH_TOKEN_TTL,
           ADMIN_ADDRESS: TEST_ACCOUNT_ID,
@@ -695,6 +766,8 @@ describe('Sep10Service', () => {
       (configService.get as jest.Mock).mockImplementation((key: string) => {
         const configMap: Record<string, any> = {
           STELLAR_NETWORK: 'TESTNET',
+          SYSTEM_SIGNER_SECRET:
+            'SAIJDXETR5B7YFPH7SUOISWVBHHSI46JLYFDCWDMEV2L46XAHASPP35C',
           SEP10_JWT_SECRET: 'another-secret',
           REFRESH_TOKEN_TTL: REFRESH_TOKEN_TTL,
           ADMIN_ADDRESS: null,

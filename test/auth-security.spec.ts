@@ -5,6 +5,7 @@ import { Sep10Service } from '../src/auth/sep10/sep10.service';
 import { JwtGuard } from '../src/auth/guards/jwt.guard';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { ConfigService } from '../src/config/config.service';
+import { TEST_SIGNING_SECRET } from './auth-helper';
 
 describe('Auth Security Tests (Refresh, Nonce, Rate Limiting)', () => {
   let sep10Service: Sep10Service;
@@ -65,6 +66,7 @@ describe('Auth Security Tests (Refresh, Nonce, Rate Limiting)', () => {
             get: jest.fn((key: string) => {
               if (key === 'SEP10_JWT_SECRET') return jwtSecret;
               if (key === 'ADMIN_ADDRESS') return adminAddress;
+              if (key === 'SYSTEM_SIGNER_SECRET') return TEST_SIGNING_SECRET;
               return undefined;
             }),
           },
