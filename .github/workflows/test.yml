@@ -52,6 +52,15 @@ jobs:
       - name: Run unit tests with coverage
         run: npm run test:cov
 
+      - name: Generate OpenAPI document
+        run: npm run openapi:generate
+
+      - name: Upload OpenAPI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: openapi-document
+          path: openapi.json
+
       - name: Upload coverage artifact
         uses: actions/upload-artifact@v4
         with:

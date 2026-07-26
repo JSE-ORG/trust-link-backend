@@ -2,6 +2,7 @@
 /node_modules
 /dist
 /coverage
+/openapi.json
 .eslintcache
 
 # Local environment. Never commit a real secret.
