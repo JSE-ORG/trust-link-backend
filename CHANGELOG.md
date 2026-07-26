@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Additional escrow and dispute lifecycle states for creation, cancellation, review, resolution, and abandonment.
+- Production Docker Compose profile with service health checks, restart policies, resource limits, and log rotation.
+- Optional `SEP10_SIGNING_SECRET` configuration for a dedicated, stable SEP-10 web-auth signing key.
+- Database commands for safely applying migrations, resetting a local database, and idempotently seeding development data.
+- Persistent notification delivery status and retry information.
+
+### Changed
+
+- Escrow listings for vendors and buyers are cursor-paginated, return newest records first, and default to 20 records per page.
+- Creating an escrow requires an `Idempotency-Key`; keys must be UUIDs and are scoped to the authenticated vendor.
+- SEP-10 challenge signing now uses a configured key that remains stable across restarts and replicas.
+
+### Fixed
+
+- Auto-release transactions reload the Stellar account sequence before retrying and use an atomic claim to prevent duplicate submissions.
+- Dispute creation invalidates the related escrow cache, and administrative dispute resolution records the dispute as resolved.
+- Configured SendGrid and Twilio notification clients are now used when their credentials are available.
+- Auto-release processing continues with other eligible escrows when an individual submission fails.
+
+### Removed
+
+- Support for using a raw Stellar address as a bearer token; API clients must send a valid, signed, unexpired SEP-10 JWT.
+
+### Security
+
+- Stress-test endpoints now require authenticated administrator access.
+- Escrow contact details are rejected unless encrypted before persistence, and logistics API credentials are encrypted at rest.
+- JWT validation fails closed when its signing secret is missing, malformed, expired, or has an invalid signature.
+
 ---
 
 ## [1.1.0] - 2026-06-27

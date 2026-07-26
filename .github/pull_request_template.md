@@ -24,6 +24,7 @@ Closes #
 - [ ] No `any` types introduced
 - [ ] Services go through a repository, never Prisma directly
 - [ ] No secrets, keys, or real addresses committed
+- [ ] Changelog updated for consumer-facing changes, or not needed for internal-only work
 - [ ] Conventional commit title, for example `fix(escrow): correct auto release eligibility query`
 
 ## Notes for the reviewer

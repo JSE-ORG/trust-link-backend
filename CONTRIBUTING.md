@@ -293,6 +293,21 @@ git checkout -b feat/your-feature-name
 
 ---
 
+### Changelog Entries
+
+Add an entry to the `[Unreleased]` section of `CHANGELOG.md` when a change
+affects service consumers or operators: new or changed endpoints, request or
+response contracts, authentication or authorization behavior, configuration,
+deployment behavior, security fixes, or observable bug fixes. Group entries
+under the Keep a Changelog headings and describe the outcome for users rather
+than copying the commit subject.
+
+Do not add an entry for internal-only work such as tests, CI, refactors with no
+observable behavior change, formatting, or dependency maintenance unless it
+changes a consumer-facing behavior or fixes a security issue.
+
+---
+
 ## Coding Standards
 
 ### General
