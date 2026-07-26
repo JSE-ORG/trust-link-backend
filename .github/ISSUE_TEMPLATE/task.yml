@@ -1,0 +1,61 @@
+name: Task
+description: A change that is not a bug. Feature, refactor, test, docs, or chore.
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not use this form for security vulnerabilities. See SECURITY.md and email security@trust-link.io instead.
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: What is missing or should change, and why it matters now.
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Current state
+      description: |
+        Where the relevant code lives today, as `path/to/file.ts:line`. Write "does not exist yet" if this is new.
+    validations:
+      required: true
+
+  - type: textarea
+    id: change
+    attributes:
+      label: What to change
+      description: Numbered steps where the order matters.
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Checklist a reviewer can verify.
+      value: |
+        - [ ]
+        - [ ] Tests covering the new behaviour
+        - [ ] `npm run validate` passes
+    validations:
+      required: true
+
+  - type: textarea
+    id: out-of-scope
+    attributes:
+      label: Out of scope
+    validations:
+      required: false
+
+  - type: input
+    id: blocked-by
+    attributes:
+      label: Blocked by
+      description: Issue numbers that must merge first. Leave empty if none.
+      placeholder: "#123"
+    validations:
+      required: false

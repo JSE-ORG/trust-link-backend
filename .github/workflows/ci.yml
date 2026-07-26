@@ -6,7 +6,12 @@ on:
   pull_request:
 
 jobs:
+  # Job id is `test` for history continuity, but this job audits dependencies,
+  # checks licence compliance and enforces the coverage threshold. The display
+  # name disambiguates it from the `test` job in test.yml, which is the one that
+  # provisions Postgres and is required by branch protection.
   test:
+    name: Audit and Coverage
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

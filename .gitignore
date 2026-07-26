@@ -1,9 +1,22 @@
+# Dependencies and build output
 /node_modules
+/dist
+/coverage
+.eslintcache
+
+# Local environment. Never commit a real secret.
+# .env.example documents every variable and stays tracked.
+# .env.test holds throwaway values for the test suite and stays tracked.
+.env
+.env.local
+.env.*.local
+
+# OS and editor noise
+.DS_Store
+
+# Local scratch files
 issues.txt
 upload_issues.sh
 WAVE_ISSUES.md
-/dist
-/coverage
 .github/copilot-instructions.md
 /data
-.eslintcache
