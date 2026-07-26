@@ -2,6 +2,7 @@ import { INestApplication, Logger, ValidationPipe } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { EscrowRepository } from '../src/escrow/escrow.repository';
 import { AutoReleaseWorker } from '../src/workers/auto-release.worker';
 import { ContractService } from '../src/stellar/contract.service';
 
@@ -12,13 +13,7 @@ import { ContractService } from '../src/stellar/contract.service';
  * interleave at every `await` point. Both workers call findAutoReleaseEligible()
  * before either has finished processing, so both receive the same eligible escrow
  * in their snapshot. The collision guard relies on:
- *   1. The in-memory check: `escrow.state === 'COMPLETED' || escrow.autoReleaseTxHash`
- *      (stale snapshot — does NOT protect against concurrent runs that fetched
- *       the list before the first write completed).
- *   2. The DB-level guard: findAutoReleaseEligible filters autoReleaseTxHash: null,
- *      but both workers have already fetched their snapshots, so this only helps
- *      on the NEXT poll cycle.
- *   3. markAutoReleaseSubmitting atomically sets autoReleaseSubmittedAt and returns
+ *   1. markAutoReleaseSubmitting atomically sets autoReleaseSubmittedAt and returns
  *      null if already set — this is the true optimistic lock the worker should use.
  *
  * These tests verify that even under concurrent execution:
@@ -29,6 +24,7 @@ import { ContractService } from '../src/stellar/contract.service';
 describe('Auto-Release Worker — concurrent collision detection (issues #302/#307/#308)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
+  let escrowRepository: EscrowRepository;
   let worker: AutoReleaseWorker;
   let contractService: ContractService;
 
@@ -44,6 +40,7 @@ describe('Auto-Release Worker — concurrent collision detection (issues #302/#3
     await app.init();
 
     prisma = app.get(PrismaService);
+    escrowRepository = app.get(EscrowRepository);
     worker = app.get(AutoReleaseWorker);
     contractService = app.get(ContractService);
 
@@ -62,11 +59,14 @@ describe('Auto-Release Worker — concurrent collision detection (issues #302/#3
 
   /**
    * Helper: create a single escrow that is eligible for auto-release.
-   * deliveredAt is 50 hours ago (well past the 48-hour threshold).
+   * Escrow is created via markDelivered so it's in the DELIVERED state
+   * with deliveredAt 50 hours ago (well past the 48-hour threshold).
    */
   async function createEligibleEscrow(suffix: string) {
     const pastDelivery = new Date(Date.now() - 50 * 60 * 60 * 1000);
-    return prisma.escrow.create({
+    
+    // Create escrow in CREATED state first
+    const escrow = await prisma.escrow.create({
       data: {
         itemName: `Concurrent Item ${suffix}`,
         itemRef: `concurrent-item-${suffix}`,
@@ -74,13 +74,13 @@ describe('Auto-Release Worker — concurrent collision detection (issues #302/#3
         currency: 'USDC',
         buyerAddress: `buyer-concurrent-${suffix}`,
         vendorAddress: `vendor-concurrent-${suffix}`,
-        state: 'SHIPPED',
+        state: 'CREATED',
         trackingId: `TRK-CONCURRENT-${suffix}`,
-        shippedAt: new Date(Date.now() - 60 * 60 * 60 * 1000),
-        deliveredAt: pastDelivery,
-        deliveryRecordedAt: pastDelivery,
       },
     });
+    
+    // Transition to DELIVERED state via the repository
+    return escrowRepository.markDelivered(escrow.id, pastDelivery);
   }
 
   it('calls submitAutoRelease exactly once when two workers race for the same eligible escrow', async () => {
@@ -225,5 +225,160 @@ describe('Auto-Release Worker — concurrent collision detection (issues #302/#3
     // The successful call's hash must be persisted.
     expect(after!.autoReleaseTxHash).toBe(TX_HASH);
     expect(after!.state).toBe('COMPLETED');
+  });
+});
+
+/**
+ * Tests for auto-release eligibility query filters.
+ * Ensures the correct escrows are selected and others are excluded.
+ */
+describe('Auto-Release Worker — eligibility query filters', () => {
+  let app: INestApplication;
+  let prisma: PrismaService;
+  let escrowRepository: EscrowRepository;
+  let worker: AutoReleaseWorker;
+  let contractService: ContractService;
+
+  beforeEach(async () => {
+    const moduleFixture: TestingModule = await Test.createTestingModule({
+      imports: [AppModule],
+    }).compile();
+
+    app = moduleFixture.createNestApplication();
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true }),
+    );
+    await app.init();
+
+    prisma = app.get(PrismaService);
+    escrowRepository = app.get(EscrowRepository);
+    worker = app.get(AutoReleaseWorker);
+    contractService = app.get(ContractService);
+
+    await prisma.reset();
+  });
+
+  afterEach(async () => {
+    jest.restoreAllMocks();
+    await app.close();
+  });
+
+  it('selects escrows delivered more than 48 hours ago', async () => {
+    jest
+      .spyOn(contractService, 'submitAutoRelease')
+      .mockResolvedValue('tx-hash-006');
+
+    // Create an escrow delivered exactly 49 hours ago
+    const escrow = await prisma.escrow.create({
+      data: {
+        itemName: 'Eligible Item',
+        itemRef: 'eligible-item-006',
+        amount: 100,
+        currency: 'USDC',
+        buyerAddress: 'buyer-006',
+        vendorAddress: 'vendor-006',
+        state: 'CREATED',
+        trackingId: 'TRK-006',
+      },
+    });
+
+    const deliveredAt = new Date(Date.now() - 49 * 60 * 60 * 1000);
+    await escrowRepository.markDelivered(escrow.id, deliveredAt);
+
+    await worker.run();
+
+    // Should have been selected and processed
+    expect(contractService.submitAutoRelease).toHaveBeenCalledTimes(1);
+    expect(contractService.submitAutoRelease).toHaveBeenCalledWith(escrow.id);
+
+    const after = await prisma.escrow.findUnique({ where: { id: escrow.id } });
+    expect(after!.state).toBe('COMPLETED');
+    expect(after!.autoReleaseTxHash).toBe('tx-hash-006');
+  });
+
+  it('excludes escrows with an existing dispute', async () => {
+    jest
+      .spyOn(contractService, 'submitAutoRelease')
+      .mockResolvedValue('tx-hash-007');
+
+    // Create an escrow delivered 50 hours ago
+    const escrow = await prisma.escrow.create({
+      data: {
+        itemName: 'Disputed Item',
+        itemRef: 'disputed-item-007',
+        amount: 100,
+        currency: 'USDC',
+        buyerAddress: 'buyer-007',
+        vendorAddress: 'vendor-007',
+        state: 'CREATED',
+        trackingId: 'TRK-007',
+      },
+    });
+
+    const deliveredAt = new Date(Date.now() - 50 * 60 * 60 * 1000);
+    const delivered = await escrowRepository.markDelivered(escrow.id, deliveredAt);
+
+    // Create a dispute linked to this escrow
+    await prisma.dispute.create({
+      data: {
+        id: `dispute-${escrow.id}`,
+        escrowId: escrow.id,
+        buyerAddress: 'buyer-007',
+        reason: 'Item not as described',
+        status: 'OPEN',
+      },
+    });
+
+    // Link the dispute to the escrow
+    await prisma.escrow.update({
+      where: { id: escrow.id },
+      data: { disputeId: `dispute-${escrow.id}` },
+    });
+
+    await worker.run();
+
+    // Should NOT have been selected because it has a dispute
+    expect(contractService.submitAutoRelease).toHaveBeenCalledTimes(0);
+
+    const after = await prisma.escrow.findUnique({ where: { id: escrow.id } });
+    expect(after!.state).toBe('DELIVERED');
+    expect(after!.autoReleaseTxHash).toBeNull();
+  });
+
+  it('excludes escrows with autoReleaseTxHash already set', async () => {
+    jest
+      .spyOn(contractService, 'submitAutoRelease')
+      .mockResolvedValue('tx-hash-008');
+
+    // Create an escrow delivered 50 hours ago
+    const escrow = await prisma.escrow.create({
+      data: {
+        itemName: 'Already Released Item',
+        itemRef: 'already-released-008',
+        amount: 100,
+        currency: 'USDC',
+        buyerAddress: 'buyer-008',
+        vendorAddress: 'vendor-008',
+        state: 'CREATED',
+        trackingId: 'TRK-008',
+      },
+    });
+
+    const deliveredAt = new Date(Date.now() - 50 * 60 * 60 * 1000);
+    await escrowRepository.markDelivered(escrow.id, deliveredAt);
+
+    // Manually set autoReleaseTxHash to simulate it was already released
+    await prisma.escrow.update({
+      where: { id: escrow.id },
+      data: { autoReleaseTxHash: 'previous-tx-hash' },
+    });
+
+    await worker.run();
+
+    // Should NOT have been selected because it already has a tx hash
+    expect(contractService.submitAutoRelease).toHaveBeenCalledTimes(0);
+
+    const after = await prisma.escrow.findUnique({ where: { id: escrow.id } });
+    expect(after!.autoReleaseTxHash).toBe('previous-tx-hash');
   });
 });

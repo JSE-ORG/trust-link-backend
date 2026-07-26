@@ -1,6 +1,6 @@
 /**
  * Escrow-module constants (issue #238). Centralises magic numbers previously
- * inlined in `escrow.repository.ts` and `auto-release.service.ts`.
+ * inlined in `escrow.repository.ts` and `auto-release.worker.ts`.
  */
 
 /** Redis cache TTL for a single escrow record, in seconds. */
