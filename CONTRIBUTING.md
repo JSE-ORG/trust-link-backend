@@ -623,6 +623,7 @@ We aim to acknowledge within 48 hours and patch critical issues within 7 days.
 
 ## Getting Help
 
+- 💬 **Telegram** → [Join the TrustLink contributor group](https://t.me/+Y8K7AmrX9kViOTBk) — fastest way to reach a maintainer
 - 💬 **GitHub Discussions** → [Ask a question](../../discussions/categories/q-a)
 - 🐛 **GitHub Issues** → Confirmed bugs only — include steps to reproduce and error logs
 - 🌊 **Stellar Developers Discord** → [discord.gg/stellardev](https://discord.gg/stellardev) for real-time help
