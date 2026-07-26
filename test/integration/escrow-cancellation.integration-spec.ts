@@ -4,6 +4,7 @@ import request from 'supertest';
 import { AppModule } from '../../src/app.module';
 import { PrismaService } from '../../src/prisma/prisma.service';
 import { ContractService } from '../../src/stellar/contract.service';
+import { bearer } from '../auth-helper';
 
 const VENDOR_ADDRESS =
   'GA36PERSXWPBG7HYKNBVT5PFLTOFYO4Q3CWGJZTYH5GU5OLTKHW7SJHE';
@@ -51,7 +52,7 @@ describe('Escrow Cancellation with On-Chain Validation (issue #298)', () => {
   async function createEscrow(overrides?: Partial<{ state: string }>) {
     const res = await request(app.getHttpServer())
       .post('/escrow')
-      .set('Authorization', `Bearer ${VENDOR_ADDRESS}`)
+      .set('Authorization', bearer(VENDOR_ADDRESS))
       .set('Idempotency-Key', `cancel-${nextIdemKey++}`)
       .send({
         itemName: 'Test Item',
@@ -78,7 +79,7 @@ describe('Escrow Cancellation with On-Chain Validation (issue #298)', () => {
 
       const res = await request(app.getHttpServer())
         .delete(`/escrow/${escrow.id}`)
-        .set('Authorization', `Bearer ${VENDOR_ADDRESS}`)
+        .set('Authorization', bearer(VENDOR_ADDRESS))
         .expect(200);
 
       expect(res.body.state).toBe('CANCELLED');
@@ -95,7 +96,7 @@ describe('Escrow Cancellation with On-Chain Validation (issue #298)', () => {
 
       const res = await request(app.getHttpServer())
         .patch(`/escrow/${escrow.id}/cancel`)
-        .set('Authorization', `Bearer ${VENDOR_ADDRESS}`)
+        .set('Authorization', bearer(VENDOR_ADDRESS))
         .expect(200);
 
       expect(res.body.state).toBe('CANCELLED');
@@ -106,20 +107,20 @@ describe('Escrow Cancellation with On-Chain Validation (issue #298)', () => {
 
       await request(app.getHttpServer())
         .patch(`/escrow/${escrow.id}/ship`)
-        .set('Authorization', `Bearer ${VENDOR_ADDRESS}`)
+        .set('Authorization', bearer(VENDOR_ADDRESS))
         .send({ trackingId: 'TRK-SHIP-001' })
         .expect(200);
 
       await request(app.getHttpServer())
         .delete(`/escrow/${escrow.id}`)
-        .set('Authorization', `Bearer ${VENDOR_ADDRESS}`)
+        .set('Authorization', bearer(VENDOR_ADDRESS))
         .expect(409);
     });
 
     it('returns 404 for a non-existent escrow', async () => {
       await request(app.getHttpServer())
         .delete('/escrow/00000000-0000-0000-0000-000000000000')
-        .set('Authorization', `Bearer ${VENDOR_ADDRESS}`)
+        .set('Authorization', bearer(VENDOR_ADDRESS))
         .expect(404);
     });
 
@@ -128,7 +129,7 @@ describe('Escrow Cancellation with On-Chain Validation (issue #298)', () => {
 
       await request(app.getHttpServer())
         .delete(`/escrow/${escrow.id}`)
-        .set('Authorization', `Bearer ${UNRELATED_ADDRESS}`)
+        .set('Authorization', bearer(UNRELATED_ADDRESS))
         .expect(403);
     });
 
@@ -137,7 +138,7 @@ describe('Escrow Cancellation with On-Chain Validation (issue #298)', () => {
 
       const res = await request(app.getHttpServer())
         .delete(`/escrow/${escrow.id}`)
-        .set('Authorization', `Bearer ${BUYER_ADDRESS}`)
+        .set('Authorization', bearer(BUYER_ADDRESS))
         .expect(200);
 
       expect(res.body.state).toBe('CANCELLED');

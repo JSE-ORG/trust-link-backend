@@ -133,28 +133,39 @@ describe('JwtGuard', () => {
       );
     });
 
-    it('should handle legacy raw address token and set request.user', () => {
+    // ── Privilege-escalation regression tests ────────────────────────────
+    // The guard used to fall back to treating any unverifiable token as a raw
+    // Stellar address. Because AdminGuard grants admin when the caller address
+    // equals ADMIN_ADDRESS, and that address is public, sending it as a bearer
+    // token granted full admin. These tests exist to keep that shut.
+
+    it('rejects a bare Stellar address presented as a bearer token', () => {
       const context = createMockExecutionContext(`Bearer ${TEST_USER_ADDRESS}`);
 
-      const canActivate = guard.canActivate(context);
-
-      expect(canActivate).toBe(true);
-      const request = context.switchToHttp().getRequest<{ user: AuthUser }>();
-      expect(request.user).toEqual({ address: TEST_USER_ADDRESS });
+      expect(() => guard.canActivate(context)).toThrow(
+        new UnauthorizedException('Authentication required'),
+      );
     });
 
-    it('should handle malformed token (not 3 segments) as a legacy raw address', () => {
-      const malformedToken = 'not-a-jwt.at-all';
-      const context = createMockExecutionContext(`Bearer ${malformedToken}`);
+    it('rejects the admin address presented as a bearer token', () => {
+      const adminAddress =
+        'GDQTHTXOKWFZCT2T4U24YANOWEKGTTIPCBPAWL65YEIPCWCT3A2WNZEP';
+      const context = createMockExecutionContext(`Bearer ${adminAddress}`);
 
-      const canActivate = guard.canActivate(context);
-
-      expect(canActivate).toBe(true);
-      const request = context.switchToHttp().getRequest<{ user: AuthUser }>();
-      expect(request.user).toEqual({ address: malformedToken });
+      expect(() => guard.canActivate(context)).toThrow(
+        new UnauthorizedException('Authentication required'),
+      );
     });
 
-    it('should throw if JWT payload is invalid JSON', () => {
+    it('rejects a token that is not three segments', () => {
+      const context = createMockExecutionContext('Bearer not-a-jwt.at-all');
+
+      expect(() => guard.canActivate(context)).toThrow(
+        new UnauthorizedException('Authentication required'),
+      );
+    });
+
+    it('rejects a correctly signed token whose payload is not valid JSON', () => {
       const header = Buffer.from(
         JSON.stringify({ alg: 'HS256', typ: 'JWT' }),
       ).toString('base64url');
@@ -162,14 +173,76 @@ describe('JwtGuard', () => {
       const signature = createHmac('sha256', TEST_SECRET)
         .update(`${header}.${invalidBody}`)
         .digest('base64url');
-      const token = `${header}.${invalidBody}.${signature}`;
+      const context = createMockExecutionContext(
+        `Bearer ${header}.${invalidBody}.${signature}`,
+      );
+
+      expect(() => guard.canActivate(context)).toThrow(
+        new UnauthorizedException('Authentication required'),
+      );
+    });
+
+    it('rejects a signed token with no sub claim', () => {
+      const token = createMockJwt({ iat: 1, exp: 9_999_999_999 });
       const context = createMockExecutionContext(`Bearer ${token}`);
 
-      // The guard will treat this as a legacy token because JSON.parse fails
-      const canActivate = guard.canActivate(context);
-      expect(canActivate).toBe(true);
+      expect(() => guard.canActivate(context)).toThrow(
+        new UnauthorizedException('Authentication required'),
+      );
+    });
+
+    it('rejects a correctly signed but expired token', () => {
+      const nowSeconds = Math.floor(Date.now() / 1000);
+      const token = createMockJwt({
+        sub: TEST_USER_ADDRESS,
+        iat: nowSeconds - 7200,
+        exp: nowSeconds - 3600,
+      });
+      const context = createMockExecutionContext(`Bearer ${token}`);
+
+      expect(() => guard.canActivate(context)).toThrow(
+        new UnauthorizedException('Authentication required'),
+      );
+    });
+
+    it('fails closed when no signing secret is configured anywhere', () => {
+      const previous = process.env.SEP10_JWT_SECRET;
+      delete process.env.SEP10_JWT_SECRET;
+
+      try {
+        // No ConfigService and no env var: the guard must reject rather than
+        // fall back to a default secret.
+        const unconfiguredGuard = new JwtGuard();
+        const token = createMockJwt({ sub: TEST_USER_ADDRESS });
+        const context = createMockExecutionContext(`Bearer ${token}`);
+
+        expect(() => unconfiguredGuard.canActivate(context)).toThrow(
+          new UnauthorizedException('Authentication required'),
+        );
+      } finally {
+        if (previous === undefined) {
+          delete process.env.SEP10_JWT_SECRET;
+        } else {
+          process.env.SEP10_JWT_SECRET = previous;
+        }
+      }
+    });
+
+    it('carries a signed role claim through unchanged', () => {
+      const token = createMockJwt({
+        sub: TEST_USER_ADDRESS,
+        role: 'superuser',
+      });
+      const context = createMockExecutionContext(`Bearer ${token}`);
+
+      expect(guard.canActivate(context)).toBe(true);
       const request = context.switchToHttp().getRequest<{ user: AuthUser }>();
-      expect(request.user).toEqual({ address: token });
+      // The guard authenticates; AdminGuard authorises. Only a token signed by
+      // Sep10Service can claim a role at all, so passing it through is safe.
+      expect(request.user).toEqual({
+        address: TEST_USER_ADDRESS,
+        role: 'superuser',
+      });
     });
   });
 });

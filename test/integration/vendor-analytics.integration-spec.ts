@@ -10,6 +10,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { AppModule } from '../../src/app.module';
 import { PrismaService } from '../../src/prisma/prisma.service';
+import { bearer } from '../auth-helper';
 
 describe('GET /vendor/analytics/chart (issue #290)', () => {
   let app: INestApplication;
@@ -17,7 +18,7 @@ describe('GET /vendor/analytics/chart (issue #290)', () => {
 
   const VENDOR = 'GANALYTICS001';
   const OTHER_VENDOR = 'GANALYTICS002';
-  const AUTH = `Bearer ${VENDOR}`;
+  const AUTH = bearer(VENDOR);
 
   beforeEach(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({

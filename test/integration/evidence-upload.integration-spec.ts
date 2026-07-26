@@ -9,13 +9,14 @@ import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { AppModule } from '../../src/app.module';
 import { PrismaService } from '../../src/prisma/prisma.service';
+import { bearer } from '../auth-helper';
 
 describe('POST /escrow/evidence-upload (issue #295)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
 
   const VENDOR_ADDR = 'GEVIDENCEVENDOR001';
-  const AUTH = `Bearer ${VENDOR_ADDR}`;
+  const AUTH = bearer(VENDOR_ADDR);
 
   jest.setTimeout(30000);
 

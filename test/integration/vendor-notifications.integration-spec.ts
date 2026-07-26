@@ -15,13 +15,16 @@ import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { AppModule } from '../../src/app.module';
 import { PrismaService } from '../../src/prisma/prisma.service';
+import { bearer } from '../auth-helper';
 
 describe('Vendor notification preferences (issue #293)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
 
   const VENDOR = 'GVENDORNOT001';
-  const AUTH = `Bearer ${VENDOR}`;
+  // JwtGuard requires a genuinely signed token. Passing the address alone
+  // used to work and no longer does.
+  const AUTH = bearer(VENDOR);
 
   beforeEach(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -69,7 +72,7 @@ describe('Vendor notification preferences (issue #293)', () => {
       // without checking if a vendor profile exists — returns 200 with defaults.
       const res = await request(app.getHttpServer())
         .get('/vendor/profile/notifications')
-        .set('Authorization', 'Bearer GNOPROFILE')
+        .set('Authorization', bearer('GNOPROFILE'))
         .expect(200);
 
       expect(res.body.notifyOnDelivery).toBe(true);
@@ -172,7 +175,7 @@ describe('Vendor notification preferences (issue #293)', () => {
     it('returns 404 when the vendor has no profile', async () => {
       await request(app.getHttpServer())
         .patch('/vendor/profile/notifications')
-        .set('Authorization', 'Bearer GNOPROFILE2')
+        .set('Authorization', bearer('GNOPROFILE2'))
         .send({ notifyOnDelay: false })
         .expect(404);
     });
