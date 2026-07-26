@@ -1,0 +1,72 @@
+name: Bug report
+description: Something in the backend behaves incorrectly.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not use this form for security vulnerabilities. See SECURITY.md and email security@trust-link.io instead.
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: What is broken, and why it matters. Two or three sentences.
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: |
+        Point at the code. One `path/to/file.ts:line` per claim, so nobody has to guess where the problem lives.
+      placeholder: |
+        - `src/escrow/escrow.repository.ts:284` queries `state: 'SHIPPED'` with a `deliveredAt` filter.
+        - `src/escrow/escrow.repository.ts:212` is the only writer of `deliveredAt`, and it sets state to `DELIVERED`.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+
+  - type: textarea
+    id: change
+    attributes:
+      label: What to change
+      description: The intended fix, at whatever detail you have. Leave rough if you are unsure.
+    validations:
+      required: false
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Checklist a reviewer can verify. Include the tests that must exist.
+      value: |
+        - [ ]
+        - [ ] Unit or integration test covering the fixed behaviour
+        - [ ] `npm run validate` passes
+    validations:
+      required: true
+
+  - type: textarea
+    id: out-of-scope
+    attributes:
+      label: Out of scope
+      description: What a PR on this issue should not touch. Prevents scope creep.
+    validations:
+      required: false
+
+  - type: input
+    id: blocked-by
+    attributes:
+      label: Blocked by
+      description: Issue numbers that must merge first. Leave empty if none.
+      placeholder: "#123"
+    validations:
+      required: false
