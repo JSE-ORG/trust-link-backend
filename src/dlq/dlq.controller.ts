@@ -7,6 +7,7 @@ import type {
   ListFailedTransactionsQuery,
 } from './dlq.types';
 import { ContractService } from '../stellar/contract.service';
+import { ConfigService } from '../config/config.service';
 
 /**
  * Admin endpoints for reviewing and re-executing failed Stellar contract
@@ -15,10 +16,22 @@ import { ContractService } from '../stellar/contract.service';
 @Controller('admin/dlq')
 @UseGuards(JwtGuard, AdminGuard)
 export class DlqController {
+  /** Stellar address of the auto-release signing account used to replay `submitAutoRelease`. */
+  private readonly autoReleaseSourceAddress: string;
+
   constructor(
     private readonly dlq: DlqService,
     private readonly contract: ContractService,
-  ) {}
+    config: ConfigService,
+  ) {
+    const address = config.get('AUTO_RELEASE_SOURCE_ADDRESS');
+    if (!address) {
+      throw new Error(
+        'AUTO_RELEASE_SOURCE_ADDRESS must be set to enable DLQ auto-release replay',
+      );
+    }
+    this.autoReleaseSourceAddress = address;
+  }
 
   @Get()
   list(
@@ -48,7 +61,10 @@ export class DlqController {
     const record = await this.dlq.get(id);
     return this.dlq.replay(record.id, async (r) => {
       if (r.operation === 'submitAutoRelease' && r.escrowId) {
-        return this.contract.submitAutoRelease(r.escrowId);
+        return this.contract.submitAutoRelease(
+          r.escrowId,
+          this.autoReleaseSourceAddress,
+        );
       }
       throw new Error(
         `Operation "${r.operation}" cannot be replayed automatically; replay manually.`,

@@ -574,6 +574,7 @@ export class PrismaService implements OnModuleDestroy {
     },
     findFirst: ({
       where,
+      orderBy,
     }: {
       where?: Partial<
         Pick<
@@ -581,9 +582,10 @@ export class PrismaService implements OnModuleDestroy {
           'vendorAddress' | 'buyerAddress' | 'state' | 'itemRef' | 'disputeId'
         >
       >;
+      orderBy?: Partial<Record<keyof EscrowRecord, 'asc' | 'desc'>>;
     } = {}): Promise<EscrowRecord | null> => {
       return this.escrow
-        .findMany({ where })
+        .findMany({ where, orderBy })
         .then((records) => records[0] ?? null);
     },
     updateMany: ({
@@ -654,20 +656,6 @@ export class PrismaService implements OnModuleDestroy {
     }): Promise<DisputeRecord | null> => {
       const dispute = this.disputes.get(where.id);
       return Promise.resolve(dispute ? { ...dispute } : null);
-    },
-    findFirst: ({
-      where,
-    }: {
-      where?: Partial<Pick<DisputeRecord, 'escrowId' | 'status'>>;
-    } = {}): Promise<DisputeRecord | null> => {
-      const found = [...this.disputes.values()].find((dispute) => {
-        if (!where) return true;
-        return Object.entries(where).every(([key, value]) => {
-          if (value === undefined) return true;
-          return dispute[key as keyof DisputeRecord] === value;
-        });
-      });
-      return Promise.resolve(found ? { ...found } : null);
     },
     findMany: ({
       where,
@@ -1072,7 +1060,6 @@ export class PrismaService implements OnModuleDestroy {
   vendorTrackingSettings = {
     findUnique: ({
       where,
-      select,
     }: {
       where: { vendorAddress: string };
       select?: { notificationChannels?: boolean };
@@ -1080,16 +1067,6 @@ export class PrismaService implements OnModuleDestroy {
       const settings = this.vendorTrackingSettingsStore.get(
         where.vendorAddress,
       );
-      if (!settings) {
-        return Promise.resolve(null);
-      }
-
-      if (select?.notificationChannels) {
-        return Promise.resolve({
-          notificationChannels: settings.notificationChannels || [],
-        });
-      }
-
       return Promise.resolve(settings ? { ...settings } : null);
     },
     upsert: ({
@@ -1209,7 +1186,7 @@ export class PrismaService implements OnModuleDestroy {
       a.date.localeCompare(b.date),
     );
 
-    return result as T[];
+    return Promise.resolve(result as T[]);
   }
 
   /**

@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
@@ -53,10 +54,10 @@ describe('Escrow Cancellation with On-Chain Validation (issue #298)', () => {
     const res = await request(app.getHttpServer())
       .post('/escrow')
       .set('Authorization', bearer(VENDOR_ADDRESS))
-      .set('Idempotency-Key', `cancel-${nextIdemKey++}`)
+      .set('Idempotency-Key', crypto.randomUUID())
       .send({
         itemName: 'Test Item',
-        itemRef: `cancel-test-${Date.now()}-${nextIdemKey}`,
+        itemRef: `cancel-test-${Date.now()}-${nextIdemKey++}`,
         amount: 150,
         currency: 'USDC',
         buyerAddress: BUYER_ADDRESS,

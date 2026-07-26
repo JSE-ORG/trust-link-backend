@@ -180,6 +180,7 @@ describe('Admin DLQ Operations (issue #297)', () => {
       expect(res.body.lastReplayTxHash).toBe('tx-hash-replayed-001');
       expect(contractService.submitAutoRelease).toHaveBeenCalledWith(
         'escrow-replay-001',
+        configService.get('AUTO_RELEASE_SOURCE_ADDRESS'),
       );
     });
 

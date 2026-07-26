@@ -19,7 +19,8 @@ import { ContractService } from '../src/stellar/contract.service';
  *      but both workers have already fetched their snapshots, so this only helps
  *      on the NEXT poll cycle.
  *   3. markAutoReleaseSubmitting atomically sets autoReleaseSubmittedAt and returns
- *      null if already set — this is the true optimistic lock the worker should use.
+ *      null if already set — the worker calls this before any network call, so it
+ *      is the true optimistic lock that closes the race the first two points leave open.
  *
  * These tests verify that even under concurrent execution:
  * - submitAutoRelease is called exactly once per escrow
@@ -103,7 +104,10 @@ describe('Auto-Release Worker — concurrent collision detection (issues #302/#3
 
     // Only one on-chain submission should have been made.
     expect(contractService.submitAutoRelease).toHaveBeenCalledTimes(1);
-    expect(contractService.submitAutoRelease).toHaveBeenCalledWith(escrow.id);
+    expect(contractService.submitAutoRelease).toHaveBeenCalledWith(
+      escrow.id,
+      expect.any(String),
+    );
 
     // The escrow must be in its terminal state with the correct tx hash.
     const after = await prisma.escrow.findUnique({ where: { id: escrow.id } });
@@ -197,7 +201,12 @@ describe('Auto-Release Worker — concurrent collision detection (issues #302/#3
     expect(afterB!.state).toBe('COMPLETED');
   });
 
-  it('leaves escrow in a consistent state when submitAutoRelease throws during a concurrent run', async () => {
+  // Note: with the atomic markAutoReleaseSubmitting claim in place, only the
+  // worker that wins the race ever calls submitAutoRelease — the loser skips
+  // the escrow outright rather than attempting a redundant submission. So a
+  // failed submission cannot be masked by a concurrent sibling's success;
+  // instead the claim is released so the *next* poll cycle can retry.
+  it('releases the claim on failure so a later poll cycle can retry, even under concurrent execution', async () => {
     const TX_HASH = 'tx-hash-error-005';
     let callCount = 0;
 
@@ -205,24 +214,31 @@ describe('Auto-Release Worker — concurrent collision detection (issues #302/#3
       .spyOn(contractService, 'submitAutoRelease')
       .mockImplementation(async () => {
         callCount += 1;
-        if (callCount === 1) {
-          // First call fails; simulate a transient network error.
-          await new Promise((resolve) => setTimeout(resolve, 10));
-          throw new Error('Stellar node timeout');
-        }
-        return TX_HASH;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        throw new Error('Stellar node timeout');
       });
 
     const escrow = await createEligibleEscrow('005');
 
-    // One worker fails, the other should still complete successfully.
+    // Two workers race for the same escrow; only the claim-winner attempts
+    // submission, so exactly one call is made despite the concurrent run.
     await Promise.all([worker.run(), worker.run()]);
 
-    // Exactly two attempts were made (one from each concurrent worker).
-    expect(callCount).toBe(2);
+    expect(callCount).toBe(1);
+
+    const afterFailure = await prisma.escrow.findUnique({
+      where: { id: escrow.id },
+    });
+    expect(afterFailure!.autoReleaseTxHash).toBeNull();
+    expect(afterFailure!.autoReleaseSubmittedAt).toBeNull();
+    expect(afterFailure!.state).toBe('SHIPPED');
+
+    // The claim was released on failure — the next poll cycle retries and
+    // this time succeeds.
+    jest.spyOn(contractService, 'submitAutoRelease').mockResolvedValue(TX_HASH);
+    await worker.run();
 
     const after = await prisma.escrow.findUnique({ where: { id: escrow.id } });
-    // The successful call's hash must be persisted.
     expect(after!.autoReleaseTxHash).toBe(TX_HASH);
     expect(after!.state).toBe('COMPLETED');
   });

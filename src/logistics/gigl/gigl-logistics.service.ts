@@ -68,7 +68,7 @@ export class GiglLogisticsService extends LogisticsService {
    * Errors from GiglClient (unauthorized, network, provider) propagate
    * unchanged to the caller.
    */
-  async getStatus(trackingId: string): Promise<{ status: LogisticsStatus }> {
+  async getStatus(trackingId: string): Promise<TrackingDetails> {
     const raw = await this.client.fetchTracking(trackingId);
     return mapTrackingResponse(raw);
   }

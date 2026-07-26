@@ -161,7 +161,7 @@ export class EscrowService {
     dto: CreateEscrowDto,
     vendorAddress: string,
   ): Promise<EscrowWithPaymentUrl> {
-    const cacheKey = `idempotency:${idempotencyKey}`;
+    const cacheKey = `idempotency:${vendorAddress}:${idempotencyKey}`;
     if (this.cacheService) {
       const cached =
         await this.cacheService.get<EscrowWithPaymentUrl>(cacheKey);

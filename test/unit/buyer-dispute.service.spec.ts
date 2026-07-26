@@ -76,6 +76,7 @@ describe('BuyerDisputeService.openDispute (issue #41)', () => {
           provide: EscrowRepository,
           useValue: {
             findById: jest.fn(),
+            invalidateCache: jest.fn().mockResolvedValue(undefined),
           },
         },
         {

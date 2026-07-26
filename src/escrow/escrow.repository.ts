@@ -30,6 +30,15 @@ export class EscrowRepository {
     await this.cache?.del(this.cacheKey(id));
   }
 
+  /**
+   * Invalidates the cached escrow for callers that mutate escrow state as a
+   * side effect of another write (e.g. creating a dispute transitions the
+   * linked escrow to DISPUTED) without going through this repository.
+   */
+  async invalidateCache(id: string): Promise<void> {
+    await this.invalidate(id);
+  }
+
   /** Persists a new escrow record with the given DTO fields and vendor address. */
   create(dto: CreateEscrowDto, vendorAddress: string): Promise<EscrowRecord> {
     return this.prisma.escrow.create({

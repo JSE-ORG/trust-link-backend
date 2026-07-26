@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -12,7 +13,6 @@ import {
   HttpStatus,
   Query,
   Headers,
-  BadRequestException,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -21,6 +21,7 @@ import {
   ApiBearerAuth,
   ApiQuery,
 } from '@nestjs/swagger';
+import { isUUID } from 'class-validator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { AuthUser } from '../auth/auth-user';
 import { JwtGuard } from '../auth/guards/jwt.guard';
@@ -46,8 +47,9 @@ export class EscrowController {
    *
    * @param dto - Escrow details including item name, amount, currency and buyer address
    * @param user - Authenticated vendor making the request
+   * @param idempotencyKey - UUID sent via the Idempotency-Key header, scoped per vendor
    * @returns Created escrow record with payment URL
-   * @throws BadRequestException if amount is not positive
+   * @throws BadRequestException if amount is not positive, or the Idempotency-Key header is missing or not a UUID
    * @throws ConflictException if duplicate item reference exists
    * @throws UnauthorizedException if Bearer token is missing or invalid
    * @authentication Requires valid SEP-10 JWT (vendor)
@@ -69,8 +71,10 @@ export class EscrowController {
     @CurrentUser() user: AuthUser,
     @Headers('idempotency-key') idempotencyKey?: string,
   ) {
-    if (!idempotencyKey) {
-      throw new BadRequestException('Idempotency-Key header required');
+    if (!idempotencyKey || !isUUID(idempotencyKey)) {
+      throw new BadRequestException(
+        'Idempotency-Key header is required and must be a valid UUID',
+      );
     }
     return this.escrowService.createIdempotent(
       idempotencyKey,

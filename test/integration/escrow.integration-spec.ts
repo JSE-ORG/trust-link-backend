@@ -9,7 +9,7 @@ import { bearer } from '../auth-helper';
 const VENDOR = 'GA36PERSXWPBG7HYKNBVT5PFLTOFYO4Q3CWGJZTYH5GU5OLTKHW7SJHE';
 const BUYER = 'GADRXQS5ZCXLBX6U67CY2WBJNDUXCWGHSQKR76AOJDQECYX36W5S6IYK';
 const OTHER_VENDOR = 'GB3LCRCZEETCBYV4PEIPV2PD2R3AJMC6S2OOBMV5MA6WCOKEMN3XA3K3';
-const IDEM_KEY = 'escrow-integration-idem-key';
+const IDEM_KEY = crypto.randomUUID();
 
 describe('POST /escrow integration (issue #20)', () => {
   let app: INestApplication;
@@ -128,7 +128,7 @@ describe('POST /escrow integration (issue #20)', () => {
     await request(app.getHttpServer())
       .post('/escrow')
       .set('Authorization', bearer(VENDOR))
-      .set('Idempotency-Key', 'key-escrow-pagi-1')
+      .set('Idempotency-Key', crypto.randomUUID())
       .send({
         itemName: 'Vintage jacket',
         itemRef: 'jacket-001',
@@ -140,7 +140,7 @@ describe('POST /escrow integration (issue #20)', () => {
     await request(app.getHttpServer())
       .post('/escrow')
       .set('Authorization', bearer(VENDOR))
-      .set('Idempotency-Key', 'key-escrow-pagi-2')
+      .set('Idempotency-Key', crypto.randomUUID())
       .send({
         itemName: 'Leather bag',
         itemRef: 'bag-001',
@@ -152,7 +152,7 @@ describe('POST /escrow integration (issue #20)', () => {
     await request(app.getHttpServer())
       .post('/escrow')
       .set('Authorization', bearer(OTHER_VENDOR))
-      .set('Idempotency-Key', 'key-escrow-pagi-3')
+      .set('Idempotency-Key', crypto.randomUUID())
       .send({
         itemName: 'Sneakers',
         itemRef: 'sneaker-001',

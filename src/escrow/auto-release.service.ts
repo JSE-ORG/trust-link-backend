@@ -4,6 +4,11 @@ import { EscrowRepository } from './escrow.repository';
 import { AUTO_RELEASE_DAYS } from './escrow.constants';
 import { MILLISECONDS_PER_DAY } from '../common/constants/time.constants';
 
+// Stellar address of the auto-release signing account. Must be set in production.
+const AUTO_RELEASE_SOURCE =
+  process.env.AUTO_RELEASE_SOURCE_ADDRESS ??
+  'GAUTORELEASE000000000000000000000000000000000000000000000';
+
 @Injectable()
 export class AutoReleaseService {
   private readonly logger = new Logger(AutoReleaseService.name);
@@ -40,7 +45,10 @@ export class AutoReleaseService {
       }
 
       try {
-        const txHash = await this.contractService.submitAutoRelease(escrow.id);
+        const txHash = await this.contractService.submitAutoRelease(
+          escrow.id,
+          AUTO_RELEASE_SOURCE,
+        );
         await this.escrowRepository.markAutoReleased(escrow.id, txHash);
       } catch (err: unknown) {
         this.logger.error(

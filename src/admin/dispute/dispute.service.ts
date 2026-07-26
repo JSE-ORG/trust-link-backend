@@ -60,6 +60,16 @@ export class DisputeService {
 
     await this.contractService.resolveDispute(escrowId, resolution);
 
+    const dispute = await this.prisma.dispute.findFirst({
+      where: { escrowId, status: 'OPEN' },
+    });
+    if (dispute) {
+      await this.prisma.dispute.update({
+        where: { id: dispute.id },
+        data: { status: 'RESOLVED', resolvedAt: new Date() },
+      });
+    }
+
     if (resolution === 'RELEASE') {
       return this.escrowRepository.markCompleted(escrowId);
     }
