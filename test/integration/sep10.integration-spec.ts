@@ -30,8 +30,8 @@ describe('SEP-10 authentication (issue #23)', () => {
         switch (key) {
           case 'STELLAR_NETWORK':
             return 'TESTNET';
-            case 'SYSTEM_SIGNER_SECRET':
-              return TEST_SIGNING_SECRET;
+          case 'SYSTEM_SIGNER_SECRET':
+            return TEST_SIGNING_SECRET;
           case 'SEP10_JWT_SECRET':
             return 'a-very-long-secret-key-for-testing-purposes-32chars';
           case 'REFRESH_TOKEN_TTL':

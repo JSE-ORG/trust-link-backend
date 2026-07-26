@@ -24,8 +24,8 @@ describe('Nonce cleanup integration (issue #274)', () => {
         switch (key) {
           case 'STELLAR_NETWORK':
             return 'TESTNET';
-            case 'SYSTEM_SIGNER_SECRET':
-              return TEST_SIGNING_SECRET;
+          case 'SYSTEM_SIGNER_SECRET':
+            return TEST_SIGNING_SECRET;
           case 'SEP10_JWT_SECRET':
             return 'integration-test-secret-key-for-jwt-32chars';
           default:

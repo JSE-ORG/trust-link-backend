@@ -16,8 +16,8 @@ describe('Sep10Service nonce cleanup (issue #274)', () => {
         switch (key) {
           case 'STELLAR_NETWORK':
             return 'TESTNET';
-            case 'SYSTEM_SIGNER_SECRET':
-              return TEST_SIGNING_SECRET;
+          case 'SYSTEM_SIGNER_SECRET':
+            return TEST_SIGNING_SECRET;
           case 'SEP10_JWT_SECRET':
             return 'test-secret-key-for-hmac-signing';
           default:

@@ -148,14 +148,15 @@ describe('Sep10Service', () => {
           {
             provide: ConfigService,
             useValue: {
-              get: jest.fn((key: string) =>
-                ({
-                  STELLAR_NETWORK: 'TESTNET',
-                  SEP10_SIGNING_SECRET: dedicated,
-                  SYSTEM_SIGNER_SECRET:
-                    'SAIJDXETR5B7YFPH7SUOISWVBHHSI46JLYFDCWDMEV2L46XAHASPP35C',
-                  SEP10_JWT_SECRET: 'test-secret-key',
-                })[key],
+              get: jest.fn(
+                (key: string) =>
+                  ({
+                    STELLAR_NETWORK: 'TESTNET',
+                    SEP10_SIGNING_SECRET: dedicated,
+                    SYSTEM_SIGNER_SECRET:
+                      'SAIJDXETR5B7YFPH7SUOISWVBHHSI46JLYFDCWDMEV2L46XAHASPP35C',
+                    SEP10_JWT_SECRET: 'test-secret-key',
+                  })[key],
               ),
             },
           },
