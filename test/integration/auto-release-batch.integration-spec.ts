@@ -17,8 +17,6 @@ import { CacheService } from '../../src/cache/cache.service';
  */
 describe('Auto-release batch processing with partial failures', () => {
   let prisma: PrismaService;
-  let escrowRepository: EscrowRepository;
-  let disputeRepository: DisputeRepository;
   let contractService: jest.Mocked<ContractService>;
   let worker: AutoReleaseWorker;
 
@@ -49,8 +47,6 @@ describe('Auto-release batch processing with partial failures', () => {
     }).compile();
 
     prisma = moduleRef.get(PrismaService);
-    escrowRepository = moduleRef.get(EscrowRepository);
-    disputeRepository = moduleRef.get(DisputeRepository);
     contractService =
       moduleRef.get<jest.Mocked<ContractService>>(ContractService);
     worker = moduleRef.get(AutoReleaseWorker);

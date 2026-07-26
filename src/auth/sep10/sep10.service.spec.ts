@@ -35,7 +35,6 @@ describe('Sep10Service', () => {
   let prisma: PrismaService;
   let configService: ConfigService;
   let mockServerKeypair: any;
-  let mockClientKeypair: any;
 
   const TEST_ACCOUNT_ID =
     'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5';
@@ -51,11 +50,6 @@ describe('Sep10Service', () => {
     // Mock Keypair
     mockServerKeypair = {
       publicKey: jest.fn().mockReturnValue(SERVER_PUBLIC_KEY),
-      sign: jest.fn(),
-    };
-
-    mockClientKeypair = {
-      publicKey: jest.fn().mockReturnValue(TEST_ACCOUNT_ID),
       sign: jest.fn(),
     };
 

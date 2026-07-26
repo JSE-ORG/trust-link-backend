@@ -67,7 +67,6 @@ describe('BuyerDisputeService.openDispute (issue #41)', () => {
   let disputeRepository: jest.Mocked<DisputeRepository>;
   let notificationsService: jest.Mocked<NotificationsService>;
   let s3PresignService: jest.Mocked<S3PresignService>;
-  let configService: jest.Mocked<ConfigService>;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -116,7 +115,6 @@ describe('BuyerDisputeService.openDispute (issue #41)', () => {
     disputeRepository = module.get(DisputeRepository);
     notificationsService = module.get(NotificationsService);
     s3PresignService = module.get(S3PresignService);
-    configService = module.get(ConfigService);
   });
 
   describe('success path', () => {

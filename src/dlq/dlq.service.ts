@@ -83,6 +83,15 @@ export class DlqService {
           errorMessage: err instanceof Error ? err.message : String(err),
         },
       });
+      this.logger.warn(
+        JSON.stringify({
+          msg: 'dlq.replay.failed',
+          failedTransactionId: id,
+          operation: record.operation,
+          attempts: record.attempts + 1,
+          error: err instanceof Error ? err.message : String(err),
+        }),
+      );
       throw err;
     }
 

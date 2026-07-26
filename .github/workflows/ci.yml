@@ -6,12 +6,12 @@ on:
   pull_request:
 
 jobs:
-  # Job id is `test` for history continuity, but this job audits dependencies,
-  # checks licence compliance and enforces the coverage threshold. The display
-  # name disambiguates it from the `test` job in test.yml, which is the one that
-  # provisions Postgres and is required by branch protection.
+  # Job id is `test` for history continuity. This job enforces the coverage
+  # threshold only. Dependency auditing and licence compliance moved to
+  # security-audit.yml, which runs on a schedule: a newly published advisory
+  # is not caused by the pull request in front of it and must not block merges.
   test:
-    name: Audit and Coverage
+    name: Coverage
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,46 +19,11 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version-file: '.nvmrc'
           cache: 'npm'
 
       - name: Install dependencies
         run: npm ci
-
-      - name: Run npm audit
-        run: npm audit --audit-level=moderate
-        continue-on-error: false
-
-      - name: Generate audit report
-        if: always()
-        run: npm audit --json > audit-report.json || true
-
-      - name: Upload audit report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: npm-audit-report
-          path: audit-report.json
-
-      - name: Install license-checker
-        run: npm install -g license-checker
-
-      - name: Check license compliance
-        run: |
-          npx license-checker --production --excludePackages "elkjs@0.11.1" --failOn "GPL-2.0;GPL-3.0;AGPL-3.0;SSPL-1.0;EUPL-1.1;OSL-3.0;CPAL-1.0;CPL-1.0;EPL-1.0;EPL-2.0;CDDL-1.0;CDDL-1.1;MPL-2.0" --summary
-          echo "License compliance check passed"
-
-      - name: Generate license report
-        if: always()
-        run: |
-          npx license-checker --production --json --out license-report.json || true
-
-      - name: Upload license report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: license-report
-          path: license-report.json
 
       - name: Cache TypeScript build output
         uses: actions/cache@v4

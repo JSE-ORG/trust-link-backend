@@ -293,7 +293,11 @@ R-SEC-23: Rate limit exceeded must return 429 with Retry-After header.
 R-TST-01: Every service method must have at least one unit test.
 R-TST-02: Every controller endpoint must have at least one integration test.
 R-TST-03: Every critical user flow must have an E2E test.
-R-TST-04: Overall code coverage must not drop below 70%.
+R-TST-04: Line coverage of application source (`src/`, excluding spec files
+and `main.ts`) must not drop below 70%, enforced by
+`scripts/check_coverage.js`. Coverage is measured over application source
+only. Do not widen `collectCoverageFrom` to include specs, scripts or config,
+which inflates the denominator and makes the gate meaningless.
 R-TST-05: PRs that reduce coverage by more than 2% must be rejected.
 
 ### 7.2 Test Types

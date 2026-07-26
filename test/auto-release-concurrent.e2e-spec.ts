@@ -31,7 +31,6 @@ describe('Auto-Release Worker — concurrent collision detection (issues #302/#3
   let prisma: PrismaService;
   let worker: AutoReleaseWorker;
   let contractService: ContractService;
-  let loggerWarnSpy: jest.SpyInstance;
 
   beforeEach(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -50,11 +49,10 @@ describe('Auto-Release Worker — concurrent collision detection (issues #302/#3
 
     await prisma.reset();
 
-    // Spy on the Logger prototype so we can assert skip/warn log entries
-    // without coupling to internal Logger instances.
-    loggerWarnSpy = jest
-      .spyOn(Logger.prototype, 'warn')
-      .mockImplementation(() => undefined);
+    // Silence expected skip/collision warnings so the test output stays
+    // readable. Collision behaviour is asserted on submitAutoRelease call
+    // counts below, not on log output.
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
   });
 
   afterEach(async () => {

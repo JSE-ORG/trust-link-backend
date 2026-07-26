@@ -16,10 +16,7 @@ import {
   NotificationRetryJobData,
   computeBackoffDelay,
 } from '../../src/notifications/notification-retry-queue.types';
-import {
-  EscrowRecord,
-  NotificationType,
-} from '../../src/prisma/prisma.service';
+import { EscrowRecord } from '../../src/prisma/prisma.service';
 
 const escrow: EscrowRecord = {
   id: 'escrow-1',

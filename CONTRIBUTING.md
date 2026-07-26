@@ -62,9 +62,9 @@ Before contributing, read **[SPECIFICATION.md](SPECIFICATION.md)** — it is the
 
 Key requirements from the SRD:
 - **No `any` types** — strict TypeScript required
-- **Tests required** for all new code — coverage must not drop below 70%
+- **Tests required** for all new code — line coverage of `src/` must not drop below **70%**, enforced by `scripts/check_coverage.js`
 - **Security first** — JWT signature verification, input sanitization, PII encryption
-- **CI must pass** — lint, typecheck, test, build, audit all required
+- **CI must pass** — lint, test, integration tests and migrations are required checks. Dependency auditing runs weekly in `security-audit.yml` and does not block merges
 - **Conventional commits** — `type(scope): description`
 - **Repository pattern** — services never call Prisma directly
 

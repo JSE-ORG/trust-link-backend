@@ -10,7 +10,6 @@ const TEN_MINUTES = 10 * 60 * 1000;
  * Builds a SHIPPED escrow row, overriding only the fields a test cares about.
  * Keeps each test focused on behaviour instead of fixture boilerplate.
  */
-import { EscrowState } from '@prisma/client';
 import { EscrowRecord } from '../../src/prisma/prisma.service';
 
 function buildEscrow(overrides: Partial<Record<string, unknown>> = {}) {
