@@ -60,7 +60,7 @@ async function main() {
 
   // 3. Create 3 disputes (2 OPEN, 1 RESOLVED) linked to valid escrow IDs
   // We link them to some created escrows, for example escrows at index 0, 1, 2
-  const dispute1 = await prisma.dispute.create({
+  await prisma.dispute.create({
     data: {
       escrowId: escrowIds[0],
       status: DisputeStatus.OPEN,
@@ -68,7 +68,7 @@ async function main() {
     },
   });
 
-  const dispute2 = await prisma.dispute.create({
+  await prisma.dispute.create({
     data: {
       escrowId: escrowIds[1],
       status: DisputeStatus.OPEN,
@@ -76,7 +76,7 @@ async function main() {
     },
   });
 
-  const dispute3 = await prisma.dispute.create({
+  await prisma.dispute.create({
     data: {
       escrowId: escrowIds[2],
       status: DisputeStatus.RESOLVED,

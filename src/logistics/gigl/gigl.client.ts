@@ -64,7 +64,7 @@ export class GiglProviderError extends Error {
 export class GiglClient {
   private readonly http: AxiosInstance;
 
-  constructor(private readonly options: GiglClientOptions) {
+  constructor(options: GiglClientOptions) {
     this.http = axios.create({
       baseURL: options.baseUrl,
       timeout: options.timeoutMs ?? 10_000,

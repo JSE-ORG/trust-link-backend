@@ -1,0 +1,88 @@
+name: Security Audit
+
+# Dependency advisories and licence violations appear independently of any
+# code change, so gating pull requests on them blocks merges for reasons the
+# author did not cause. This runs on a schedule instead and raises an issue.
+on:
+  schedule:
+    # Every Monday at 06:00 UTC.
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  audit:
+    name: Dependency Audit and Licence Compliance
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run npm audit
+        id: audit
+        run: npm audit --audit-level=moderate
+
+      - name: Generate audit report
+        if: always()
+        run: npm audit --json > audit-report.json || true
+
+      - name: Check licence compliance
+        id: licences
+        run: |
+          npx license-checker --production \
+            --excludePackages "elkjs@0.11.1" \
+            --failOn "GPL-2.0;GPL-3.0;AGPL-3.0;SSPL-1.0;EUPL-1.1;OSL-3.0;CPAL-1.0;CPL-1.0;EPL-1.0;EPL-2.0;CDDL-1.0;CDDL-1.1;MPL-2.0" \
+            --summary
+
+      - name: Generate licence report
+        if: always()
+        run: npx license-checker --production --json --out license-report.json || true
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-audit-reports
+          path: |
+            audit-report.json
+            license-report.json
+          retention-days: 30
+
+      # Only one open issue at a time. A second failing run comments on the
+      # existing issue rather than opening a duplicate every Monday.
+      - name: Raise or update issue on failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          TITLE="Scheduled security audit failed"
+          BODY="The weekly dependency audit or licence compliance check failed.
+
+          Run: $RUN_URL
+
+          Download the \`security-audit-reports\` artifact from that run for the
+          full \`npm audit\` and licence output.
+
+          This does not block merges by design. Triage and either upgrade the
+          affected dependency or record why the advisory does not apply."
+
+          EXISTING=$(gh issue list --state open --label security \
+            --search "$TITLE in:title" --json number --jq '.[0].number // empty')
+
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --body "$BODY"
+          else
+            gh issue create --title "$TITLE" --body "$BODY" --label security
+          fi

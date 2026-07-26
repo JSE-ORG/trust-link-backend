@@ -143,8 +143,6 @@ describe('AnalyticsService', () => {
       const days = 2;
 
       // Create escrow near midnight UTC
-      const utcDate = new Date('2024-01-01T23:30:00Z');
-
       await prisma.escrow.create({
         data: {
           vendorAddress,

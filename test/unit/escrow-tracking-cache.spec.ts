@@ -8,11 +8,7 @@
  * - Cache invalidation: tracking cache key is deleted when a shipment is marked
  * - Cache hit returned when logistics API is unreachable (fallback)
  */
-import {
-  NotFoundException,
-  ForbiddenException,
-  ConflictException,
-} from '@nestjs/common';
+import { NotFoundException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { EscrowService } from '../../src/escrow/escrow.service';
 import { EscrowRepository } from '../../src/escrow/escrow.repository';
