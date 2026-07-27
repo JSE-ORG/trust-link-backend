@@ -1,5 +1,6 @@
 import { NotFoundException } from '@nestjs/common';
 import { DlqService } from '../../src/dlq/dlq.service';
+import { PrismaService } from '../../src/prisma/prisma.service';
 
 describe('DlqService (#74)', () => {
   let service: DlqService;
@@ -36,7 +37,7 @@ describe('DlqService (#74)', () => {
         update: jest.fn(),
       },
     };
-    service = new DlqService(prismaMock as any);
+    service = new DlqService(prismaMock as never as PrismaService);
   });
 
   afterEach(() => {

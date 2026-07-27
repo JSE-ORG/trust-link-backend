@@ -3,6 +3,7 @@ import { Test } from '@nestjs/testing';
 import * as crypto from 'crypto';
 import { ConfigService } from '../../src/config/config.service';
 import { EscrowRepository } from '../../src/escrow/escrow.repository';
+import { EscrowRecord } from '../../src/prisma/prisma.service';
 import { StellarWebhookDto } from '../../src/webhooks/dto/stellar-webhook.dto';
 import { StellarWebhookService } from '../../src/webhooks/stellar-webhook.service';
 
@@ -156,11 +157,11 @@ describe('StellarWebhookService (issue #76)', () => {
 
     const createdEscrow = makeCreatedEscrow();
 
-    escrowRepository.findByVendor.mockResolvedValue([createdEscrow] as any);
+    escrowRepository.findByVendor.mockResolvedValue([createdEscrow] as never as EscrowRecord[]);
     escrowRepository.updateState.mockResolvedValue({
       ...createdEscrow,
       state: 'FUNDED',
-    } as any);
+    } as never as EscrowRecord);
 
     const result = await service.handleEvent(raw, undefined, dto);
 
@@ -200,7 +201,7 @@ describe('StellarWebhookService (issue #76)', () => {
     const dto = makeDto({ id: 'op-fail', to: undefined });
     const raw = Buffer.from(JSON.stringify(dto));
     const loggerSpy = jest
-      .spyOn((service as any).logger, 'error')
+      .spyOn(service['logger'], 'error')
       .mockImplementation();
 
     await expect(service.handleEvent(raw, undefined, dto)).rejects.toThrow(

@@ -10,6 +10,8 @@ import { EscrowService, SorobanChainEvent } from './escrow.service';
 import { EscrowRepository } from './escrow.repository';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService, EscrowRecord } from '../prisma/prisma.service';
+import { S3PresignService } from '../common/services/s3-presign.service';
+import { ContractService } from '../stellar/contract.service';
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -84,8 +86,8 @@ describe('EscrowService.syncStateFromChain', () => {
     service = new EscrowService(
       repo,
       notifications,
-      {} as any, // s3PresignService
-      {} as any, // contractService
+      {} as S3PresignService,
+      {} as ContractService,
       undefined, // logisticsService
       undefined, // cacheService
       prisma,

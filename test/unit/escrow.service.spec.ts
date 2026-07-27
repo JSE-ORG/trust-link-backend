@@ -11,6 +11,7 @@ import { EscrowRepository } from '../../src/escrow/escrow.repository';
 import { EscrowService } from '../../src/escrow/escrow.service';
 import { S3PresignService } from '../../src/common/services/s3-presign.service';
 import { ContractService } from '../../src/stellar/contract.service';
+import { CreateEscrowDto } from '../../src/escrow/dto/create-escrow.dto';
 
 describe('EscrowService.handleShipment (issue #16)', () => {
   let service: EscrowService;
@@ -131,7 +132,7 @@ describe('EscrowService.handleShipment (issue #16)', () => {
     notifications.notifyFunded.mockResolvedValue();
 
     await expect(
-      service.createEscrow(createDto as any, 'vendor-address'),
+      service.createEscrow(createDto as CreateEscrowDto, 'vendor-address'),
     ).resolves.toEqual(
       expect.objectContaining({
         id: 'escrow-2',
@@ -153,7 +154,7 @@ describe('EscrowService.handleShipment (issue #16)', () => {
     repository.findByVendorAndItem.mockResolvedValue(fundedEscrow);
 
     await expect(
-      service.createEscrow(createDto as any, 'vendor-address'),
+      service.createEscrow(createDto as CreateEscrowDto, 'vendor-address'),
     ).rejects.toThrow(ConflictException);
     expect(repository.create).not.toHaveBeenCalled();
   });
@@ -169,7 +170,7 @@ describe('EscrowService.handleShipment (issue #16)', () => {
     repository.findByVendorAndItem.mockResolvedValue(null);
 
     await expect(
-      service.createEscrow(createDto as any, 'vendor-address'),
+      service.createEscrow(createDto as CreateEscrowDto, 'vendor-address'),
     ).rejects.toThrow(BadRequestException);
     expect(repository.create).not.toHaveBeenCalled();
   });

@@ -201,7 +201,7 @@ describe('BlockchainListenerService — Soroban event parsing (issue #49)', () =
         value: toXdrBase64(nativeToScVal(1n, { type: 'i128' })),
       };
       const loggerSpy = jest
-        .spyOn((service as any).logger, 'error')
+        .spyOn(service['logger'], 'error')
         .mockImplementation();
       const originalParse = service.parseEvent.bind(service);
       jest

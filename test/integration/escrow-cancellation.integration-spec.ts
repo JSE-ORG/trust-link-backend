@@ -5,6 +5,7 @@ import request from 'supertest';
 import { AppModule } from '../../src/app.module';
 import { PrismaService } from '../../src/prisma/prisma.service';
 import { ContractService } from '../../src/stellar/contract.service';
+import { EscrowState } from '../../src/prisma/prisma.service';
 import { bearer } from '../auth-helper';
 
 const VENDOR_ADDRESS =
@@ -67,7 +68,7 @@ describe('Escrow Cancellation with On-Chain Validation (issue #298)', () => {
     if (overrides?.state && overrides.state !== 'FUNDED') {
       await prisma.escrow.update({
         where: { id: res.body.id },
-        data: { state: overrides.state as any },
+        data: { state: overrides.state as EscrowState },
       });
     }
 

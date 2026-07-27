@@ -66,7 +66,7 @@ describe('GET /vendor/analytics/chart (issue #290)', () => {
         vendorAddress,
       },
     });
-    (prisma as any).escrows.set(escrow.id, { ...escrow, createdAt });
+    (prisma['escrows'] as Map<string, unknown>).set(escrow.id, { ...escrow, createdAt });
   }
 
   // ── Empty chart ──────────────────────────────────────────────────────────

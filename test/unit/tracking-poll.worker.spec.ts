@@ -102,7 +102,7 @@ describe('TrackingPollWorker (issue #11)', () => {
       new Error('database unavailable'),
     );
     const loggerSpy = jest
-      .spyOn((worker as any).logger, 'error')
+      .spyOn(worker['logger'], 'error')
       .mockImplementation();
 
     await expect(worker.run()).resolves.toBeUndefined();
