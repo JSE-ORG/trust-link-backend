@@ -1,7 +1,7 @@
 import { NotFoundException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { EscrowService } from '../../src/escrow/escrow.service';
-import { LogisticsStatus, TrackingDetails } from '../../src/logistics/logistics.service';
+import { LogisticsStatus } from '../../src/logistics/logistics.service';
 import { EscrowRepository } from '../../src/escrow/escrow.repository';
 import { LogisticsService } from '../../src/logistics/logistics.service';
 import { CacheService } from '../../src/cache/cache.service';
