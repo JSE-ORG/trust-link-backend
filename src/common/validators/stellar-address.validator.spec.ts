@@ -17,9 +17,10 @@ describe('IsStellarAddressConstraint', () => {
   it('should reject invalid Stellar addresses', () => {
     expect(validator.validate('invalid-address')).toBe(false);
     expect(validator.validate('')).toBe(false);
-    expect(validator.validate(null as any)).toBe(false);
-    expect(validator.validate(undefined as any)).toBe(false);
-    expect(validator.validate(123 as any)).toBe(false);
+    expect(validator.validate(null as string)).toBe(false);
+    expect(validator.validate(undefined as string)).toBe(false);
+    const numInput: unknown = 123;
+    expect(validator.validate(numInput as string)).toBe(false);
   });
 
   it('should reject addresses with wrong prefix', () => {

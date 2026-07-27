@@ -53,7 +53,7 @@ describe('NotificationsService (issue #18)', () => {
     prisma = moduleRef.get(PrismaService);
 
     // Prevent actual timer delays in all tests
-    jest.spyOn(service as any, 'sleep').mockResolvedValue(undefined);
+    jest.spyOn(service, 'sleep' as keyof NotificationsService).mockResolvedValue(undefined);
     jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
     jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
   });
@@ -182,7 +182,7 @@ describe('NotificationsService (issue #18)', () => {
   });
 
   it('applies exponentially increasing delays between retries', async () => {
-    const sleepSpy = jest.spyOn(service as any, 'sleep');
+    const sleepSpy = jest.spyOn(service, 'sleep' as keyof NotificationsService);
     sendGrid.send
       .mockRejectedValueOnce(new Error('fail'))
       .mockRejectedValueOnce(new Error('fail'))

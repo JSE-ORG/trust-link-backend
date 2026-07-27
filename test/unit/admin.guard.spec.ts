@@ -106,7 +106,7 @@ describe('AdminGuard (issue #284)', () => {
         caught = e as ForbiddenException;
       }
       expect(caught).toBeInstanceOf(ForbiddenException);
-      expect((caught!.getResponse() as any).message).toBe(
+      expect((caught!.getResponse() as { message: string }).message).toBe(
         'Admin role required',
       );
     });
@@ -121,7 +121,7 @@ describe('AdminGuard (issue #284)', () => {
         caught = e as ForbiddenException;
       }
       expect(caught).toBeInstanceOf(ForbiddenException);
-      expect((caught!.getResponse() as any).message).toBe(
+      expect((caught!.getResponse() as { message: string }).message).toBe(
         'Admin access required',
       );
     });
