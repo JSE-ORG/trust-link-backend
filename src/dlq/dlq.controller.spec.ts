@@ -25,7 +25,9 @@ describe('DlqController', () => {
     autoReleaseSourceAddress: string | undefined,
   ) => {
     const dlq = {
+      list: jest.fn(),
       get: jest.fn(),
+      abandon: jest.fn(),
       replay: jest.fn(),
     } as unknown as jest.Mocked<DlqService>;
 
@@ -112,6 +114,88 @@ describe('DlqController', () => {
         'cannot be replayed automatically',
       );
       expect(contract.submitAutoRelease).not.toHaveBeenCalled();
+    });
+
+    it('rejects replaying a record that is not PENDING_REVIEW', async () => {
+      const { controller, dlq } = await buildController(
+        'GAUTORELEASESOURCEADDRESS0000000000000000000000000000',
+      );
+      dlq.get.mockResolvedValue({
+        ...autoReleaseRecord,
+        status: 'REPLAYED',
+      });
+      dlq.replay.mockRejectedValue(
+        new Error('Failed transaction failed-tx-1 is not pending review'),
+      );
+
+      await expect(controller.replay('failed-tx-1')).rejects.toThrow(
+        'is not pending review',
+      );
+    });
+  });
+
+  describe('GET /admin/dlq', () => {
+    it('passes query filters to dlq.list()', async () => {
+      const { controller, dlq } = await buildController(
+        'GAUTORELEASESOURCEADDRESS0000000000000000000000000000',
+      );
+      dlq.list.mockResolvedValue([autoReleaseRecord]);
+
+      const result = await controller.list(
+        'PENDING_REVIEW',
+        'submitAutoRelease',
+        'escrow-123',
+      );
+
+      expect(dlq.list).toHaveBeenCalledWith({
+        status: 'PENDING_REVIEW',
+        operation: 'submitAutoRelease',
+        escrowId: 'escrow-123',
+      });
+      expect(result).toEqual([autoReleaseRecord]);
+    });
+
+    it('passes empty query when no filters are provided', async () => {
+      const { controller, dlq } = await buildController(
+        'GAUTORELEASESOURCEADDRESS0000000000000000000000000000',
+      );
+      dlq.list.mockResolvedValue([]);
+
+      await controller.list();
+
+      expect(dlq.list).toHaveBeenCalledWith({});
+    });
+  });
+
+  describe('GET /admin/dlq/:id', () => {
+    it('delegates to dlq.get() and returns the record', async () => {
+      const { controller, dlq } = await buildController(
+        'GAUTORELEASESOURCEADDRESS0000000000000000000000000000',
+      );
+      dlq.get.mockResolvedValue(autoReleaseRecord);
+
+      const result = await controller.detail('failed-tx-1');
+
+      expect(dlq.get).toHaveBeenCalledWith('failed-tx-1');
+      expect(result).toEqual(autoReleaseRecord);
+    });
+  });
+
+  describe('POST /admin/dlq/:id/abandon', () => {
+    it('delegates to dlq.abandon() and returns the result', async () => {
+      const { controller, dlq } = await buildController(
+        'GAUTORELEASESOURCEADDRESS0000000000000000000000000000',
+      );
+      const abandonedRecord = {
+        ...autoReleaseRecord,
+        status: 'ABANDONED',
+      };
+      dlq.abandon.mockResolvedValue(abandonedRecord);
+
+      const result = await controller.abandon('failed-tx-1');
+
+      expect(dlq.abandon).toHaveBeenCalledWith('failed-tx-1');
+      expect(result).toEqual(abandonedRecord);
     });
   });
 });
