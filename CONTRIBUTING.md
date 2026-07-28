@@ -19,6 +19,7 @@ Your contributions keep the oracle running cleanly and securely.
 - [Pull Request Process](#pull-request-process)
 - [Testing](#testing)
 - [Database Migrations](#database-migrations)
+- [Dependency Updates](#dependency-updates)
 - [Security Vulnerabilities](#security-vulnerabilities)
 - [Getting Help](#getting-help)
 
@@ -628,6 +629,75 @@ The CI pipeline uses two levels of caching to reduce run times:
 The TS build cache is invalidated whenever `tsconfig.build.json` or any `src/**/*.ts` file changes. On cache hit, `nest build` skips unchanged files and only recompiles what changed.
 
 `npm ci` is used instead of `npm install` in all CI steps for faster, deterministic installs from the lockfile.
+
+---
+
+## Dependency Updates
+
+Routine and security dependency updates are managed by **Dependabot** via `.github/dependabot.yml`. The goal of this policy is to keep the dependency queue short enough that it gets reviewed, not so long that it is ignored, and to make security patches visible against the noise of routine bumps.
+
+### Who Reviews
+
+All Dependabot pull requests are reviewed by the **core maintainer team** (the same set of people with merge rights on code PRs). A single approving review is sufficient unless the update touches authentication, cryptography, Stellar integration, or the auto-release worker — those require two approvals per the normal PR rules.
+
+Contributors without write access are welcome to leave reviews or run the test suite on a Dependabot branch (check out the branch locally, `npm ci && npm run test:cov && npm run test:integration`), but the merge decision rests with the maintainer team.
+
+### Schedule and Cadence
+
+| Update Type | Cadence | How it Arrives |
+|---|---|---|
+| npm — minor + patch | Weekly, Monday 09:00 UTC | Grouped into **two PRs**: one for `production` deps, one for `devDependencies`. See `groups:` in `dependabot.yml`. |
+| npm — major | Weekly, Monday 09:00 UTC | **Individual PRs per package** — majors require manual breaking-change review and cannot be batched. |
+| GitHub Actions — minor + patch | Weekly, Monday 09:00 UTC | Grouped into **one PR** (`github-actions-minor-patch`) so a batch of pin updates (e.g. `actions/checkout v4.1.2 → v4.1.3` across eight workflows) is a single review, not eight. |
+| GitHub Actions — major | Weekly, Monday 09:00 UTC | **Individual PRs** — two-major-version-behind Actions updates are the most common stale PRs; they stay separate because a major bump often carries runner or Node-runtime changes. |
+| npm — security advisory | Daily, 03:00 UTC | Individual or per-advisory grouped PRs, labelled `security` + `dependencies:security`. Security updates run separately from the weekly bump schedule so a CVE patch is visible the next morning. |
+| GitHub Actions — security advisory | Daily, 03:00 UTC | Individual PRs, labelled `security` + `dependencies:security` + `github_actions`. |
+
+### Reviewing a Dependabot Pull Request
+
+1. **Read the release notes** linked in the Dependabot PR body. If release notes are missing for a major bump, ask for them in a comment before merging.
+2. **CI must be green.** Dependabot PRs go through the same checks (lint, type-check, unit, integration, build) as any other PR. If CI fails for an unrelated reason (e.g. a flaky integration test), re-run it before making a judgment.
+3. **Node 22 constraint.** The repository is pinned to Node 22 in `.nvmrc` and every CI workflow reads that file. If a **major** bump requires a newer runtime (check its release notes / `engines` field), **do not merge**. Leave a comment flagging the runtime requirement and close the PR with the label `blocked:needs-node-upgrade`. Routine minor and patch updates are assumed compatible.
+4. **Lockfile hygiene.** Dependabot produces a correct `package-lock.json` via `npm ci`; a reviewer rarely needs to touch it. If a PR shows a stray `package-lock.json` diff beyond what the version bump should produce, run `npm ci && npm install <package>@<version> --no-save` on the branch to normalize it, or ask the Dependabot bot to rebase with a comment `@dependabot rebase`.
+5. **Major bump diligence.** For a major version bump of a runtime dependency (`@nestjs/*`, `@prisma/client`, `stellar-sdk`, `soroban-client`, class-validator, etc.) verify:
+   - No removed public API used anywhere in `src/`
+   - Migration guide steps are reflected in code or a follow-up issue
+   - The `CHANGELOG.md` `[Unreleased]` section notes the upgrade if it is user- or operator-observable
+
+### Triaging the Open Queue
+
+When several Dependabot PRs accumulate (e.g. eight stale ones sitting for months), triage in this order before reviewing individually:
+
+| Label / Pattern | Action | Why |
+|---|---|---|
+| `security` or `dependencies:security` | **Top priority.** Review and merge or close within **48 hours** of filing. | A CVE patch buried under eight routine bumps defeats the point of the separate schedule. |
+| GitHub Actions, minor or patch, grouped as `github-actions-minor-patch` | Merge if CI is green. These are pin bumps with zero runtime behaviour change. | Two-major-version-behind Actions are the symptom of these being ignored week over week. |
+| npm dev-dependency minor/patch group (`dev-dependencies`) | Merge if CI is green. Test framework, lint, and build-tool patches never reach production. | Jest / ESLint / Prettier / ts-node bumps are the largest volume and the lowest risk. |
+| npm production-dependency minor/patch group (`production-deps`) | Merge if CI + integration tests are green. Skim release notes for any "behaviour change" caveats. | Minor bumps are semver-safe; a failing test is the signal to stop. |
+| npm or Actions **major** bump, any package | Review on merits. If the upgrade has a migration cost and no pressing need, **close it** with a comment linking the release notes and noting when it should be revisited. Do not let it sit open. | Open major bumps older than 30 days with no reviewer activity are noise, not a backlog. Closing is reversible; anyone can file a tracking issue to plan the upgrade later. |
+| Stale > 60 days, any non-security Dependabot PR | **Close.** Dependabot will re-open or re-create the PR on the next weekly cycle if the upstream version still differs. | "We haven't got to it in two months" means it wasn't important enough to block on. |
+
+### How to Triage the Currently Open Dependabot Queue (as of policy adoption)
+
+The eight open Dependabot PRs referenced in the policy discussion fall into the buckets above. The table below maps the pattern to the merge/close decision — the actual merge is a maintainer action and is out of scope for this policy change.
+
+| Assumed PR (based on the description) | Bucket from table above | Decision | Reasoning |
+|---|---|---|---|
+| ~6× GitHub Actions pin bumps (same batch, individual PRs because the old config had no groups) | GitHub Actions minor/patch | **Merge (all 6 as a batch or re-created as the new grouped PR).** Once the new grouped config lands, Dependabot will fold future bumps into one PR; these six should either be merged as-is (zero risk, CI green) or superseded by the new grouped equivalent. | Actions pins are safe; the reason eight accumulated is nobody wants to approve eight identical two-line diffs. |
+| 1× GitHub Actions major bump (e.g. `setup-node` v3→v5, two majors behind) | Actions major | **Review on merits.** If it is purely a version pin with no new runtime requirements, merge after confirming the action still runs on Node 22. If it drops Node 22 support, **close** and tag `blocked:needs-node-upgrade`. | Two majors behind is the exact anti-pattern the policy addresses — the PR was forgotten because major bumps were treated the same as routine pins. |
+| 1× npm dev dependency major bump (example: Jest 28→29 or similar, open for months) | npm major | **Close with comment.** Note the upgrade cost (test migrations, snapshots) and file a follow-up issue if the upgrade unlocks something. Or merge if someone has bandwidth to do the test migration now; do not leave it open. | Stale >60 days non-security majors are the primary source of queue clutter. |
+
+The "review often, close ruthlessly" default means the queue never again grows to eight items where a security patch gets the same zero attention as a 90-day-old Jest bump.
+
+### Opening a Manual Dependency PR
+
+Occasionally you need to upgrade or add a dependency outside of Dependabot (e.g. a new integration requires a specific package). Follow the same rules as Dependabot:
+
+- Run `npm install <package>@<version>` (not `npm ci`) so the lockfile updates correctly
+- Run the full test suite locally before opening: `npm run test:cov && npm run test:integration`
+- Commit both `package.json` **and** `package-lock.json`
+- Use the commit prefix `chore(deps):` for routine adds/upgrades, `security(deps):` for advisories
+- If the upgrade is major, link the release notes in the PR body and note breaking changes
 
 ---
 
