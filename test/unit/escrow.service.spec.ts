@@ -173,4 +173,111 @@ describe('EscrowService.handleShipment (issue #16)', () => {
     ).rejects.toThrow(BadRequestException);
     expect(repository.create).not.toHaveBeenCalled();
   });
+
+  // Additional tests for cancellation, updateBuyerContact, and viewer projection
+  describe('additional EscrowService behaviors (issue #409)', () => {
+    it('cancelEscrow allows buyer, vendor, admin and rejects strangers', async () => {
+      const escrow = { ...fundedEscrow } as EscrowRecord;
+      repository.findById.mockResolvedValue(escrow);
+      repository.markCancelled = jest.fn().mockResolvedValue({ ...escrow, state: 'CANCELLED' });
+
+      // buyer allowed
+      await expect(
+        service.cancelEscrow(escrow.id, escrow.buyerAddress, false),
+      ).resolves.toHaveProperty('state', 'CANCELLED');
+
+      // vendor allowed
+      await expect(
+        service.cancelEscrow(escrow.id, escrow.vendorAddress, false),
+      ).resolves.toHaveProperty('state', 'CANCELLED');
+
+      // admin allowed
+      await expect(
+        service.cancelEscrow(escrow.id, 'some-rando', true),
+      ).resolves.toHaveProperty('state', 'CANCELLED');
+
+      // stranger rejected
+      repository.findById.mockResolvedValue(escrow);
+      await expect(
+        service.cancelEscrow(escrow.id, 'not-related', false),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('cancelEscrow rejects non-FUNDED terminal transitions with ConflictException', async () => {
+      const escrow = { ...fundedEscrow, state: 'COMPLETED' } as EscrowRecord;
+      repository.findById.mockResolvedValue(escrow);
+
+      await expect(
+        service.cancelEscrow(escrow.id, escrow.buyerAddress, false),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('cancelPendingEscrow authorizes buyer/vendor/admin and consults chain state', async () => {
+      const escrow = { ...fundedEscrow, state: 'CREATED' } as EscrowRecord;
+      repository.findById.mockResolvedValue(escrow);
+      const contractService = { getEscrowState: jest.fn(), cancelEscrowOnChain: jest.fn() } as unknown as ContractService;
+
+      // replace module service instance with one that has contract hooks
+      (service as any).contractService = contractService;
+      repository.markCancelled = jest.fn().mockResolvedValue({ ...escrow, state: 'CANCELLED' });
+
+      // chain reports FUNDED: should call cancelEscrowOnChain then markCancelled
+      (contractService.getEscrowState as jest.Mock).mockResolvedValue({ exists: true, state: 'FUNDED' });
+      (contractService.cancelEscrowOnChain as jest.Mock).mockResolvedValue('tx-123');
+
+      await expect(
+        service.cancelPendingEscrow(escrow.id, escrow.vendorAddress, false),
+      ).resolves.toHaveProperty('state', 'CANCELLED');
+      expect(contractService.cancelEscrowOnChain).toHaveBeenCalledWith(escrow.id);
+
+      // stranger rejected
+      repository.findById.mockResolvedValue(escrow);
+      await expect(
+        service.cancelPendingEscrow(escrow.id, 'not-related', false),
+      ).rejects.toThrow(ForbiddenException);
+
+      // chain reports non-CREATED non-FUNDED -> conflict
+      repository.findById.mockResolvedValue({ ...escrow, state: 'CREATED' });
+      (contractService.getEscrowState as jest.Mock).mockResolvedValue({ exists: true, state: 'SHIPPED' });
+      await expect(
+        service.cancelPendingEscrow(escrow.id, escrow.vendorAddress, false),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('updateBuyerContact rejects updates for terminal-state escrows', async () => {
+      const escrow = { ...fundedEscrow, state: 'COMPLETED' } as EscrowRecord;
+      repository.findById.mockResolvedValue(escrow);
+
+      await expect(
+        service.updateBuyerContact(escrow.id, { email: 'x@x.com' } as any),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('getEscrowForViewer sets isBuyer and isVendor flags and omits viewer when no caller', async () => {
+      const escrow = { ...fundedEscrow, buyerContactEmail: 'a:b:c', buyerContactPhone: 'd:e:f' } as EscrowRecord;
+      repository.findById.mockResolvedValue(escrow);
+
+      const withBuyer = await service.getEscrowForViewer(escrow.id, escrow.buyerAddress);
+      expect(withBuyer.viewer).toEqual({ isBuyer: true, isVendor: false });
+
+      const withVendor = await service.getEscrowForViewer(escrow.id, escrow.vendorAddress);
+      expect(withVendor.viewer).toEqual({ isBuyer: false, isVendor: true });
+
+      const noViewer = await service.getEscrowForViewer(escrow.id);
+      expect((noViewer as any).viewer).toBeUndefined();
+    });
+
+    it('toPublicEscrow never exposes buyerContactEmail or buyerContactPhone', async () => {
+      const escrow = {
+        ...fundedEscrow,
+        buyerContactEmail: 'aa:bb:cc',
+        buyerContactPhone: 'dd:ee:ff',
+      } as EscrowRecord;
+      repository.findById.mockResolvedValue(escrow);
+
+      const pub = await service.getPublicEscrow(escrow.id);
+      expect((pub as any).buyerContactEmail).toBeUndefined();
+      expect((pub as any).buyerContactPhone).toBeUndefined();
+    });
+  });
 });
