@@ -349,15 +349,12 @@ export class PrismaService implements OnModuleDestroy {
   // databaseUrl is accepted so the module can pass the pool-tuned URL from
   // ConfigService. The in-memory store does not use it, but a real PrismaClient
   // replacement should forward it to `new PrismaClient({ datasources: { db: { url } } })`.
-  constructor(@Optional() readonly databaseUrl?: string) {
+  constructor(readonly databaseUrl?: string) {
     // Issue #316: apply statement_timeout to prevent long-running queries
     if (databaseUrl) {
       try {
         const url = new URL(databaseUrl);
-        url.searchParams.set(
-          'statement_timeout',
-          process.env.QUERY_TIMEOUT_MS ?? '30000',
-        );
+        url.searchParams.set('statement_timeout', process.env.QUERY_TIMEOUT_MS ?? '30000');
         url.searchParams.set('connect_timeout', '10');
         this.effectiveDatabaseUrl = url.toString();
       } catch {
@@ -369,10 +366,8 @@ export class PrismaService implements OnModuleDestroy {
   readonly effectiveDatabaseUrl?: string;
 
   // Issue #315: slow query logging middleware
-  private readonly slowQueryThresholdMs = parseInt(
-    process.env.SLOW_QUERY_THRESHOLD_MS ?? '500',
-    10,
-  );
+  private readonly slowQueryThresholdMs =
+    parseInt(process.env.SLOW_QUERY_THRESHOLD_MS ?? '500', 10);
 
   private readonly logger = new Logger('PrismaService');
 
@@ -389,7 +384,7 @@ export class PrismaService implements OnModuleDestroy {
     if (duration > this.slowQueryThresholdMs) {
       this.logger.warn(
         `Slow query: ${model ?? 'unknown'}.${action} took ${duration}ms ` +
-          `(threshold: ${this.slowQueryThresholdMs}ms)`,
+        `(threshold: ${this.slowQueryThresholdMs}ms)`,
       );
     }
     return result;
@@ -645,66 +640,6 @@ export class PrismaService implements OnModuleDestroy {
         return Promise.resolve({ count: 1 });
       }
       return Promise.resolve({ count: 0 });
-    },
-    count: ({
-      where,
-    }: {
-      where?: Partial<
-        Pick<
-          EscrowRecord,
-          | 'state'
-          | 'trackingId'
-          | 'vendorAddress'
-          | 'buyerAddress'
-          | 'disputeId'
-          | 'itemRef'
-          | 'autoReleaseTxHash'
-          | 'autoReleaseSubmittedAt'
-        >
-      > & {
-        shippedAt?: { lte: Date };
-        deliveredAt?: { lte: Date } | null;
-        createdAt?: { gte: Date; lte: Date };
-      };
-    } = {}): Promise<number> => {
-      const escrows = [...this.escrows.values()].filter((escrow) => {
-        if (!where) {
-          return true;
-        }
-
-        return Object.entries(where).every(([key, value]) => {
-          if (value === undefined) {
-            return true;
-          }
-
-          if (
-            (key === 'shippedAt' || key === 'deliveredAt') &&
-            typeof value === 'object' &&
-            value !== null &&
-            'lte' in value
-          ) {
-            const { lte } = value;
-            const field =
-              key === 'shippedAt' ? escrow.shippedAt : escrow.deliveredAt;
-            return field !== null && field !== undefined && field <= lte;
-          }
-
-          if (
-            key === 'createdAt' &&
-            typeof value === 'object' &&
-            value !== null &&
-            'gte' in value &&
-            'lte' in value
-          ) {
-            const { gte, lte } = value;
-            return escrow.createdAt >= gte && escrow.createdAt <= lte;
-          }
-
-          return escrow[key as keyof EscrowRecord] === value;
-        });
-      }).filter((e) => (where?.state ? true : e.state !== 'CANCELLED'));
-
-      return Promise.resolve(escrows.length);
     },
     deleteMany: (): Promise<{ count: number }> => {
       const count = this.escrows.size;

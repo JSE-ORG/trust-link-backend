@@ -86,8 +86,14 @@ const stellarPublicKey = Joi.string().custom((value, helpers) => {
         CONTRACT_ID: Joi.string().required().messages({
           'any.required': 'Config validation error: CONTRACT_ID is required',
         }),
-        ADMIN_ADDRESS: stellarPublicKey.required(),
-        AUTO_RELEASE_SOURCE_ADDRESS: Joi.string().optional(),
+        ADMIN_ADDRESS: Joi.string().required(),
+        AUTO_RELEASE_SOURCE_ADDRESS: Joi.string()
+          .pattern(/^G[A-Z2-7]{55}$/)
+          .optional()
+          .messages({
+            'string.pattern.base':
+              'Config validation error: AUTO_RELEASE_SOURCE_ADDRESS must be a valid Stellar public key (starts with G)',
+          }),
         NODE_ENV: Joi.string()
           .valid('development', 'production', 'test')
           .default('development'),
@@ -98,7 +104,14 @@ const stellarPublicKey = Joi.string().custom((value, helpers) => {
           .valid('TESTNET', 'MAINNET')
           .default('TESTNET'),
         ALLOWED_ORIGINS: Joi.string().optional(),
-        STELLAR_WEBHOOK_SECRET: Joi.string().optional(),
+        STELLAR_WEBHOOK_SECRET: Joi.when('NODE_ENV', {
+          is: 'production',
+          then: Joi.string().required().messages({
+            'any.required':
+              'Config validation error: STELLAR_WEBHOOK_SECRET is required in production',
+          }),
+          otherwise: Joi.string().optional(),
+        }),
         LOG_LEVEL: Joi.string()
           .valid('trace', 'debug', 'info', 'warn', 'error', 'fatal')
           .default('info'),
