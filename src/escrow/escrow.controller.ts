@@ -136,10 +136,11 @@ export class EscrowController {
 
   /**
    * Returns chronological event history for an escrow.
-   * Events include CREATED, SHIPPED, DELIVERED, CANCELLED etc.
+   * Events include CREATED, SHIPPED, DELIVERED, CANCELLED, FUNDED, DISPUTED,
+   * COMPLETED, RELEASED and REFUNDED, read from the EscrowEvent audit table.
    *
    * @param id - UUID of the escrow
-   * @returns Array of event objects with name and timestamp
+   * @returns Array of event objects with event name, timestamp, fromState and toState
    */
   @ApiOperation({ summary: 'Get all events for an escrow transaction' })
   @ApiResponse({ status: 200, description: 'List of escrow events returned.' })

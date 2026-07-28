@@ -170,6 +170,41 @@ export interface EscrowEventRecord {
   createdAt: Date;
 }
 
+export interface VendorAccountDetailsRecord {
+  id: string;
+  vendorAddress: string;
+  businessLicense: string | null;
+  taxId: string | null;
+  bankAccountNumber: string | null;
+  bankRoutingNumber: string | null;
+  paymentMethods: string[];
+  preferredCurrency: string;
+  billingAddress: string | null;
+  billingCity: string | null;
+  billingState: string | null;
+  billingCountry: string | null;
+  billingPostalCode: string | null;
+  shippingAddress: string | null;
+  shippingCity: string | null;
+  shippingState: string | null;
+  shippingCountry: string | null;
+  shippingPostalCode: string | null;
+  websiteUrl: string | null;
+  socialMediaLinks: string[];
+  businessHours: string | null;
+  timezone: string;
+  language: string;
+  verificationStatus: string;
+  verifiedAt: Date | null;
+  kycStatus: string;
+  kycCompletedAt: Date | null;
+  riskScore: number;
+  complianceNotes: string | null;
+  customFields: Record<string, unknown> | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 export interface CursorRecord {
   id: string;
   cursorValue: string;
@@ -367,6 +402,10 @@ export class PrismaService implements OnModuleDestroy {
   private vendorTrackingSettingsStore = new Map<
     string,
     VendorTrackingSettingsRecord
+  >();
+  private vendorAccountDetailsStore = new Map<
+    string,
+    VendorAccountDetailsRecord
   >();
   private webhookEvents = new Map<string, ProcessedWebhookEventRecord>();
   private refreshTokens = new Map<string, RefreshTokenRecord>();
@@ -1117,6 +1156,74 @@ export class PrismaService implements OnModuleDestroy {
         ...create,
       };
       this.vendorTrackingSettingsStore.set(where.vendorAddress, created);
+      return Promise.resolve({ ...created });
+    },
+  };
+
+  vendorAccountDetails = {
+    findUnique: ({
+      where,
+    }: {
+      where: { vendorAddress: string };
+    }): Promise<VendorAccountDetailsRecord | null> => {
+      const details = this.vendorAccountDetailsStore.get(where.vendorAddress);
+      return Promise.resolve(details ? { ...details } : null);
+    },
+    upsert: ({
+      where,
+      create,
+      update,
+    }: {
+      where: { vendorAddress: string };
+      create: Partial<VendorAccountDetailsRecord>;
+      update: Partial<VendorAccountDetailsRecord>;
+    }): Promise<VendorAccountDetailsRecord> => {
+      const existing = this.vendorAccountDetailsStore.get(where.vendorAddress);
+      const now = new Date();
+      if (existing) {
+        const updated = {
+          ...existing,
+          ...update,
+          updatedAt: now,
+        };
+        this.vendorAccountDetailsStore.set(where.vendorAddress, updated);
+        return Promise.resolve({ ...updated });
+      }
+      const created: VendorAccountDetailsRecord = {
+        id: `account-${where.vendorAddress}`,
+        vendorAddress: where.vendorAddress,
+        businessLicense: create.businessLicense ?? null,
+        taxId: create.taxId ?? null,
+        bankAccountNumber: create.bankAccountNumber ?? null,
+        bankRoutingNumber: create.bankRoutingNumber ?? null,
+        paymentMethods: create.paymentMethods ?? [],
+        preferredCurrency: create.preferredCurrency ?? 'USD',
+        billingAddress: create.billingAddress ?? null,
+        billingCity: create.billingCity ?? null,
+        billingState: create.billingState ?? null,
+        billingCountry: create.billingCountry ?? null,
+        billingPostalCode: create.billingPostalCode ?? null,
+        shippingAddress: create.shippingAddress ?? null,
+        shippingCity: create.shippingCity ?? null,
+        shippingState: create.shippingState ?? null,
+        shippingCountry: create.shippingCountry ?? null,
+        shippingPostalCode: create.shippingPostalCode ?? null,
+        websiteUrl: create.websiteUrl ?? null,
+        socialMediaLinks: create.socialMediaLinks ?? [],
+        businessHours: create.businessHours ?? null,
+        timezone: create.timezone ?? 'UTC',
+        language: create.language ?? 'en',
+        verificationStatus: create.verificationStatus ?? 'PENDING',
+        verifiedAt: create.verifiedAt ?? null,
+        kycStatus: create.kycStatus ?? 'NOT_STARTED',
+        kycCompletedAt: create.kycCompletedAt ?? null,
+        riskScore: create.riskScore ?? 0,
+        complianceNotes: create.complianceNotes ?? null,
+        customFields: create.customFields ?? null,
+        createdAt: now,
+        updatedAt: now,
+      };
+      this.vendorAccountDetailsStore.set(where.vendorAddress, created);
       return Promise.resolve({ ...created });
     },
   };
