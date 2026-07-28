@@ -34,6 +34,11 @@ const validationSchema = Joi.object({
   LOG_LEVEL: Joi.string()
     .valid('trace', 'debug', 'info', 'warn', 'error', 'fatal')
     .default('info'),
+  SENTRY_DSN: Joi.when('NODE_ENV', {
+    is: 'production',
+    then: Joi.string().uri().required(),
+    otherwise: Joi.string().uri().optional(),
+  }),
 });
 
 const VALID_ENV = {
@@ -59,6 +64,7 @@ const ALL_KNOWN_KEYS = [
   'SENDGRID_API_KEY',
   'TWILIO_ACCOUNT_SID',
   'TWILIO_AUTH_TOKEN',
+  'SENTRY_DSN',
 ];
 
 async function buildService(

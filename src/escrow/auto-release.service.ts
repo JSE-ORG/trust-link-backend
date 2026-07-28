@@ -1,9 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ContractService } from '../stellar/contract.service';
 import { EscrowRepository } from './escrow.repository';
+import { AUTO_RELEASE_DAYS } from './escrow.constants';
+import { MILLISECONDS_PER_DAY } from '../common/constants/time.constants';
 
-/** Number of days after delivery before an escrow qualifies for auto-release. */
-const AUTO_RELEASE_DAYS = 7;
+// Stellar address of the auto-release signing account. Must be set in production.
+const AUTO_RELEASE_SOURCE =
+  process.env.AUTO_RELEASE_SOURCE_ADDRESS ??
+  'GAUTORELEASE000000000000000000000000000000000000000000000';
 
 @Injectable()
 export class AutoReleaseService {
@@ -17,7 +21,7 @@ export class AutoReleaseService {
   /** Scans eligible delivered escrows and submits guarded auto-release transactions. */
   async run(): Promise<void> {
     const cutoff = new Date(
-      Date.now() - AUTO_RELEASE_DAYS * 24 * 60 * 60 * 1000,
+      Date.now() - AUTO_RELEASE_DAYS * MILLISECONDS_PER_DAY,
     );
 
     const eligible =
@@ -41,7 +45,10 @@ export class AutoReleaseService {
       }
 
       try {
-        const txHash = await this.contractService.submitAutoRelease(escrow.id);
+        const txHash = await this.contractService.submitAutoRelease(
+          escrow.id,
+          AUTO_RELEASE_SOURCE,
+        );
         await this.escrowRepository.markAutoReleased(escrow.id, txHash);
       } catch (err: unknown) {
         this.logger.error(

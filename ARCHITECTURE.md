@@ -126,50 +126,50 @@ AppModule
 
 ### Escrow (core entity)
 
-| Field | Type | Notes |
-|---|---|---|
-| `id` | UUID | Primary key |
-| `itemName` | string | 3–100 chars |
-| `itemRef` | string | Vendor-scoped dedup key |
-| `amount` | Decimal(18,8) | Stellar asset amount |
-| `currency` | string | 3–12 uppercase, e.g. `USDC` |
-| `buyerAddress` | string | Stellar public key |
-| `vendorAddress` | string | Stellar public key |
-| `state` | EscrowState | See state machine below |
-| `trackingId` | string? | Set when shipped |
-| `shippedAt` | DateTime? | |
-| `deliveredAt` | DateTime? | Set by TrackingPollWorker |
-| `autoReleaseSubmittedAt` | DateTime? | Optimistic lock for auto-release |
-| `autoReleaseTxHash` | string? | Horizon transaction hash |
-| `disputeId` | string? | FK to Dispute |
+| Field                    | Type          | Notes                            |
+| ------------------------ | ------------- | -------------------------------- |
+| `id`                     | UUID          | Primary key                      |
+| `itemName`               | string        | 3–100 chars                      |
+| `itemRef`                | string        | Vendor-scoped dedup key          |
+| `amount`                 | Decimal(18,8) | Stellar asset amount             |
+| `currency`               | string        | 3–12 uppercase, e.g. `USDC`      |
+| `buyerAddress`           | string        | Stellar public key               |
+| `vendorAddress`          | string        | Stellar public key               |
+| `state`                  | EscrowState   | See state machine below          |
+| `trackingId`             | string?       | Set when shipped                 |
+| `shippedAt`              | DateTime?     |                                  |
+| `deliveredAt`            | DateTime?     | Set by TrackingPollWorker        |
+| `autoReleaseSubmittedAt` | DateTime?     | Optimistic lock for auto-release |
+| `autoReleaseTxHash`      | string?       | Horizon transaction hash         |
+| `disputeId`              | string?       | FK to Dispute                    |
 
 ### Dispute
 
-| Field | Type | Notes |
-|---|---|---|
-| `id` | UUID | Primary key |
-| `escrowId` | UUID | FK → Escrow (cascade delete) |
-| `reason` | string | |
-| `description` | string | |
-| `evidenceUrls` | string[] | |
-| `status` | DisputeState | OPEN → UNDER_REVIEW → RESOLVED |
+| Field          | Type         | Notes                          |
+| -------------- | ------------ | ------------------------------ |
+| `id`           | UUID         | Primary key                    |
+| `escrowId`     | UUID         | FK → Escrow (cascade delete)   |
+| `reason`       | string       |                                |
+| `description`  | string       |                                |
+| `evidenceUrls` | string[]     |                                |
+| `status`       | DisputeState | OPEN → UNDER_REVIEW → RESOLVED |
 
 ### ProcessedWebhookEvent (cursor persistence — issue #77)
 
-| Field | Type | Notes |
-|---|---|---|
-| `operationId` | string | PK — Stellar operation ID |
-| `processedAt` | DateTime | Default now() |
+| Field         | Type     | Notes                     |
+| ------------- | -------- | ------------------------- |
+| `operationId` | string   | PK — Stellar operation ID |
+| `processedAt` | DateTime | Default now()             |
 
 ### VendorProfile
 
-| Field | Type | Notes |
-|---|---|---|
-| `address` | string | PK — Stellar public key |
-| `businessName` | string | |
-| `email` | string? | |
-| `phone` | string? | |
-| Relationships | | `accountDetails`, `trackingSettings`, `escrows` |
+| Field          | Type    | Notes                                           |
+| -------------- | ------- | ----------------------------------------------- |
+| `address`      | string  | PK — Stellar public key                         |
+| `businessName` | string  |                                                 |
+| `email`        | string? |                                                 |
+| `phone`        | string? |                                                 |
+| Relationships  |         | `accountDetails`, `trackingSettings`, `escrows` |
 
 ---
 
@@ -221,6 +221,34 @@ HTTP Request
   │
   └─ GlobalExceptionFilter       Maps exceptions to RFC 7807 JSON responses
 ```
+
+---
+
+## Standard Error Responses
+
+All HTTP errors are normalized by `GlobalExceptionFilter` before they leave the
+API. Controllers and services should throw Nest `HttpException` subclasses (for
+example `BadRequestException`, `UnauthorizedException`, `NotFoundException`) and
+let the global filter write the response.
+
+Every error response uses this envelope:
+
+```json
+{
+  "statusCode": 400,
+  "message": "Validation failed",
+  "error": "BadRequestException",
+  "timestamp": "2026-06-27T12:00:00.000Z",
+  "path": "/escrow",
+  "requestId": "1a1d98a2-12c2-48a9-9b4d-36e568c89b5d"
+}
+```
+
+`message` may be a string array for class-validator failures. `requestId` is
+resolved by `RequestIdMiddleware` from `x-request-id` or generated when absent,
+then echoed in both logs and error responses. In development only, the filter may
+also include `details` for diagnostics. Swagger registers the same contract as
+`ErrorResponseDto` and exposes a reusable `StandardError` response component.
 
 ---
 
@@ -285,49 +313,119 @@ Horizon ──POST /webhooks/stellar──► StellarWebhookController
 
 ## Authentication
 
-SEP-10 (Stellar Ecosystem Proposal) is used for wallet-native authentication:
+### SEP-10 Auth Flow
 
-1. Client calls `GET /auth` with its Stellar public key.
-2. Server returns a signed challenge transaction.
-3. Client signs with its private key and submits to `POST /auth`.
-4. Server verifies the signature and issues a JWT (`SEP10_JWT_SECRET`, HS256).
-5. Protected endpoints use `@UseGuards(JwtGuard)` + `@CurrentUser()` to extract the verified Stellar address.
+SEP-10 (Stellar Ecosystem Proposal 10) provides wallet-native authentication: the client proves ownership of a Stellar private key by signing a server-generated challenge transaction rather than submitting a password.
+
+#### Challenge Request
+
+```
+Client                                Server (Sep10Controller)
+  │                                        │
+  │── POST /auth/challenge ──────────────► │
+  │   { publicKey: "G..." }                │
+  │                                        │  1. WebAuth.buildChallengeTx()
+  │                                        │     (serverKeypair signs the tx)
+  │                                        │  2. Hash tx → nonce
+  │                                        │  3. prisma.nonce.create()
+  │                                        │     { nonce, walletAddress,
+  │                                        │       challenge (XDR), used=false,
+  │                                        │       expiresAt = now + 900s }
+  │◄── { transaction: "<XDR>",  ──────────│
+  │      network_passphrase }              │
+```
+
+#### Verification and JWT Issuance
+
+```
+Client                                Server (Sep10Service)
+  │                                        │
+  │  (client signs the XDR with its        │
+  │   Stellar private key)                 │
+  │                                        │
+  │── POST /auth ──────────────────────── ►│
+  │   { transaction: "<signed XDR>" }      │
+  │                                        │  1. WebAuth.readChallengeTx()
+  │                                        │     → extracts clientAccountID
+  │                                        │  2. Hash tx → look up nonce record
+  │                                        │  3. Reject if: not found | used
+  │                                        │     | expired
+  │                                        │  4. WebAuth.verifyChallengeTxSigners()
+  │                                        │     confirms client signature
+  │                                        │  5. nonce.update({ used: true })
+  │                                        │  6. issueJwt(sub=clientAccountID)
+  │                                        │     HS256, exp=now+3600s
+  │                                        │     role="admin" if sub===ADMIN_ADDRESS
+  │                                        │  7. Generate 32-byte refresh token,
+  │                                        │     store HMAC-SHA256 hash in DB
+  │◄── { token, refreshToken } ───────────│
+```
+
+#### Refresh Token Rotation
+
+```
+Client                                Server (Sep10Service)
+  │                                        │
+  │── POST /auth/refresh ────────────────►│
+  │   { refreshToken: "<hex>" }            │
+  │                                        │  1. Hash token → look up in DB
+  │                                        │  2. If revoked → revokeTokenFamily()
+  │                                        │     (revoke ALL tokens for userId)
+  │                                        │     → 401 Refresh token reuse detected
+  │                                        │  3. If expired → 401
+  │                                        │  4. Mark old token revoked=true
+  │                                        │  5. Generate new token pair,
+  │                                        │     parentTokenId = old token id
+  │◄── { token, refreshToken } ───────────│
+```
+
+#### Security Considerations
+
+| Threat | Mitigation |
+|---|---|
+| Nonce reuse | Each challenge nonce is stored with `used=false`; set to `true` after one successful verify. Replaying the same signed XDR is rejected. |
+| Expired challenges | `expiresAt` stored with the nonce (default 900 s). Server rejects if `now > expiresAt`. |
+| Refresh token theft | Rotation: each use issues a new token and revokes the old one. If a stolen token is replayed, the `revoked=true` check triggers full session revocation via `revokeTokenFamily()`. |
+| Token family escalation | `parentTokenId` links child tokens to their parent so the entire chain can be revoked on reuse detection. |
+| Privilege escalation | JWT `role: "admin"` is only embedded when `sub === ADMIN_ADDRESS` (set via env var, not user-supplied). |
+
+Protected endpoints use `@UseGuards(JwtGuard)` + `@CurrentUser()` to extract the verified Stellar address from the JWT.
 
 ---
 
 ## Security Controls
 
-| Layer | Mechanism |
-|---|---|
-| Transport | HTTPS enforced in production |
-| Headers | SecurityMiddleware: CSP, HSTS, X-Frame-Options |
-| CORS | `ALLOWED_ORIGINS` allowlist; blocks all in production if unset |
-| Auth | SEP-10 JWT on protected routes |
-| Rate limiting | `RateLimitGuard` with per-route limits (5–100 req/min) |
-| Webhook integrity | HMAC-SHA256 signature verification (`X-Stellar-Signature`) |
-| Input validation | `ValidationPipe` (whitelist, transform, forbid extra fields) |
-| SQL injection | Parameterised queries via Prisma ORM |
+| Layer             | Mechanism                                                      |
+| ----------------- | -------------------------------------------------------------- |
+| Transport         | HTTPS enforced in production                                   |
+| Headers           | SecurityMiddleware: CSP, HSTS, X-Frame-Options                 |
+| CORS              | `ALLOWED_ORIGINS` allowlist; blocks all in production if unset |
+| Auth              | SEP-10 JWT on protected routes                                 |
+| Rate limiting     | `RateLimitGuard` with per-route limits (5–100 req/min)         |
+| Webhook integrity | HMAC-SHA256 signature verification (`X-Stellar-Signature`)     |
+| Input validation  | `ValidationPipe` (whitelist, transform, forbid extra fields)   |
+| SQL injection     | Parameterised queries via Prisma ORM                           |
 
 ---
 
 ## Environment Configuration Summary
 
-| Variable | Required | Default | Purpose |
-|---|---|---|---|
-| `DATABASE_URL` | Yes | — | PostgreSQL connection string |
-| `SEP10_JWT_SECRET` | Yes | — | JWT signing secret (min 32 chars) |
-| `ADMIN_ADDRESS` | Yes | — | Admin Stellar public key |
-| `PORT` | No | `3000` | HTTP listen port |
-| `NODE_ENV` | No | `development` | Runtime mode |
-| `STELLAR_NETWORK` | No | `TESTNET` | `TESTNET` or `MAINNET` |
-| `STELLAR_HORIZON_URL` | No | Horizon default | Horizon API base URL |
-| `STELLAR_WEBHOOK_SECRET` | No | — | HMAC secret for webhook verification |
-| `REDIS_URL` | No | — | Redis URL; caching disabled if absent |
-| `ALLOWED_ORIGINS` | No | — | Comma-separated CORS allowlist |
-| `SENDGRID_API_KEY` | No | — | Email notifications |
-| `TWILIO_ACCOUNT_SID` | No | — | SMS notifications |
-| `TWILIO_AUTH_TOKEN` | No | — | SMS notifications |
-| `LOG_LEVEL` | No | `info` | `trace│debug│info│warn│error│fatal` |
+| Variable                 | Required | Default         | Purpose                               |
+| ------------------------ | -------- | --------------- | ------------------------------------- |
+| `DATABASE_URL`           | Yes      | —               | PostgreSQL connection string          |
+| `SEP10_JWT_SECRET`       | Yes      | —               | JWT signing secret (min 32 chars)     |
+| `ADMIN_ADDRESS`          | Yes      | —               | Admin Stellar public key              |
+| `PORT`                   | No       | `3000`          | HTTP listen port                      |
+| `NODE_ENV`               | No       | `development`   | Runtime mode                          |
+| `STELLAR_NETWORK`        | No       | `TESTNET`       | `TESTNET` or `MAINNET`                |
+| `STELLAR_HORIZON_URL`    | No       | Horizon default | Horizon API base URL                  |
+| `STELLAR_WEBHOOK_SECRET` | No       | —               | HMAC secret for webhook verification  |
+| `REDIS_URL`              | No       | —               | Redis URL; caching disabled if absent |
+| `ALLOWED_ORIGINS`        | No       | —               | Comma-separated CORS allowlist        |
+| `SENDGRID_API_KEY`       | No       | —               | Email notifications                   |
+| `TWILIO_ACCOUNT_SID`     | No       | —               | SMS notifications                     |
+| `TWILIO_AUTH_TOKEN`      | No       | —               | SMS notifications                     |
+| `LOG_LEVEL`              | No       | `info`          | `trace│debug│info│warn│error│fatal`   |
 
 See [.env.example](.env.example) for format descriptions and example values.
 
@@ -335,19 +433,19 @@ See [.env.example](.env.example) for format descriptions and example values.
 
 ## Key File Locations
 
-| Path | Purpose |
-|---|---|
-| `src/app.module.ts` | Root module — all imports and global middleware |
-| `src/main.ts` | Bootstrap — CORS, ValidationPipe, graceful shutdown |
-| `src/config/` | Joi-validated env config (`ConfigModule`, `ConfigService`) |
-| `src/escrow/` | Core escrow CRUD, state machine, dispute endpoints |
-| `src/stellar/` | Stellar contract calls (auto-release, delivery, dispute resolution) |
-| `src/webhooks/` | Horizon webhook receiver with HMAC verification and DB cursor |
-| `src/workers/` | `AutoReleaseWorker` (5 min) and `TrackingPollWorker` (10 min) |
-| `src/cache/` | `CacheService` (Redis) and `CacheModule` |
-| `src/prisma/` | `PrismaService` — in-memory mock for dev/tests |
-| `src/notifications/` | SendGrid + Twilio dispatch with retry |
-| `src/auth/` | SEP-10 challenge, JWT issuance, `JwtGuard` |
-| `src/common/` | Guards, filters, middleware, logger |
-| `prisma/schema.prisma` | Prisma data model |
-| `prisma/migrations/` | Versioned SQL migrations |
+| Path                   | Purpose                                                             |
+| ---------------------- | ------------------------------------------------------------------- |
+| `src/app.module.ts`    | Root module — all imports and global middleware                     |
+| `src/main.ts`          | Bootstrap — CORS, ValidationPipe, graceful shutdown                 |
+| `src/config/`          | Joi-validated env config (`ConfigModule`, `ConfigService`)          |
+| `src/escrow/`          | Core escrow CRUD, state machine, dispute endpoints                  |
+| `src/stellar/`         | Stellar contract calls (auto-release, delivery, dispute resolution) |
+| `src/webhooks/`        | Horizon webhook receiver with HMAC verification and DB cursor       |
+| `src/workers/`         | `AutoReleaseWorker` (5 min) and `TrackingPollWorker` (10 min)       |
+| `src/cache/`           | `CacheService` (Redis) and `CacheModule`                            |
+| `src/prisma/`          | `PrismaService` — in-memory mock for dev/tests                      |
+| `src/notifications/`   | SendGrid + Twilio dispatch with retry                               |
+| `src/auth/`            | SEP-10 challenge, JWT issuance, `JwtGuard`                          |
+| `src/common/`          | Guards, filters, middleware, logger                                 |
+| `prisma/schema.prisma` | Prisma data model                                                   |
+| `prisma/migrations/`   | Versioned SQL migrations                                            |

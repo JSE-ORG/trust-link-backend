@@ -1,3 +1,7 @@
+/**
+ * Aggregate transaction statistics for the authenticated vendor,
+ * including volume, counts, rates, and averages.
+ */
 export interface TransactionStats {
   totalVolume: number; // Total transaction amount across all time
   activeVolume: number; // Total transaction amount for active/ongoing transactions
@@ -11,6 +15,9 @@ export interface TransactionStats {
   cancelledTransactions: number; // Number of cancelled transactions
 }
 
+/**
+ * Notification channel availability status for the vendor.
+ */
 export interface ChannelMetrics {
   email: {
     notificationsEnabled: boolean;
@@ -20,6 +27,10 @@ export interface ChannelMetrics {
   };
 }
 
+/**
+ * Response shape for GET /vendor/analytics containing overall
+ * transaction statistics and notification channel metrics.
+ */
 export interface AnalyticsStatsResponse {
   stats: TransactionStats;
   channels: ChannelMetrics;

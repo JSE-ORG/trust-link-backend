@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy, Optional } from '@nestjs/common';
 import { ConfigService } from '../config/config.service';
 import Redis from 'ioredis';
 
@@ -12,9 +12,13 @@ import Redis from 'ioredis';
 export class CacheService implements OnModuleDestroy {
   private readonly logger = new Logger(CacheService.name);
   private readonly client: Redis | null;
+  private readonly memory = new Map<
+    string,
+    { value: unknown; expiresAt: number }
+  >();
 
-  constructor(configService: ConfigService) {
-    const redisUrl = configService.get('REDIS_URL');
+  constructor(@Optional() configService?: ConfigService) {
+    const redisUrl = configService?.get('REDIS_URL') ?? process.env.REDIS_URL;
     if (redisUrl) {
       this.client = new Redis(redisUrl, { lazyConnect: true });
       this.client.on('error', (err: Error) =>
@@ -27,13 +31,21 @@ export class CacheService implements OnModuleDestroy {
         );
     } else {
       this.client = null;
-      this.logger.warn('REDIS_URL not set — response caching disabled');
+      this.logger.warn('REDIS_URL not set — using in-memory fallback cache');
     }
   }
 
-  /** Reads a cached JSON value from Redis, returning null on miss or failure. */
+  /** Reads a cached JSON value from Redis or the in-memory fallback, returning null on miss. */
   async get<T>(key: string): Promise<T | null> {
-    if (!this.client) return null;
+    if (!this.client) {
+      const entry = this.memory.get(key);
+      if (!entry) return null;
+      if (Date.now() > entry.expiresAt) {
+        this.memory.delete(key);
+        return null;
+      }
+      return entry.value as T;
+    }
     try {
       const raw = await this.client.get(key);
       return raw ? (JSON.parse(raw) as T) : null;
@@ -46,9 +58,15 @@ export class CacheService implements OnModuleDestroy {
     }
   }
 
-  /** Stores a JSON-serialized value in Redis for the supplied TTL. */
-  async set(key: string, value: unknown, ttlSeconds: number): Promise<void> {
-    if (!this.client) return;
+  /** Stores a JSON-serialized value in Redis or the in-memory fallback for the supplied TTL. */
+  async set(key: string, value: unknown, ttlSeconds = 60): Promise<void> {
+    if (!this.client) {
+      this.memory.set(key, {
+        value,
+        expiresAt: Date.now() + ttlSeconds * 1000,
+      });
+      return;
+    }
     try {
       await this.client.set(key, JSON.stringify(value), 'EX', ttlSeconds);
     } catch (err: unknown) {
@@ -77,9 +95,12 @@ export class CacheService implements OnModuleDestroy {
     }
   }
 
-  /** Deletes a cached Redis key when caching is enabled. */
+  /** Deletes a cached key from Redis or the in-memory fallback. */
   async del(key: string): Promise<void> {
-    if (!this.client) return;
+    if (!this.client) {
+      this.memory.delete(key);
+      return;
+    }
     try {
       await this.client.del(key);
     } catch (err: unknown) {

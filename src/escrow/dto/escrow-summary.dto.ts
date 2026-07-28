@@ -1,6 +1,11 @@
 import { ApiProperty } from '@nestjs/swagger';
 import type { EscrowState } from '../../prisma/prisma.service';
 
+/**
+ * Compact escrow representation returned in paginated vendor escrow
+ * listings (GET /vendor/escrows). Contains the essential fields needed
+ * for list views without exposing internal identifiers.
+ */
 export class EscrowSummaryDto {
   @ApiProperty({
     description: 'Unique escrow identifier (UUID).',

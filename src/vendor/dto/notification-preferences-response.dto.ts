@@ -1,5 +1,10 @@
 import { ApiProperty } from '@nestjs/swagger';
 
+/**
+ * Response shape for GET /vendor/profile/notifications containing the
+ * vendor's current notification preferences including delivery channels,
+ * webhook configuration, and tracking settings.
+ */
 export class NotificationPreferencesResponseDto {
   @ApiProperty({
     description: 'Whether to send notifications on delivery.',

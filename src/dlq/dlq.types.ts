@@ -1,7 +1,5 @@
 export type FailedTransactionStatus =
-  | 'PENDING_REVIEW'
-  | 'REPLAYED'
-  | 'ABANDONED';
+  'PENDING_REVIEW' | 'REPLAYED' | 'ABANDONED';
 
 /**
  * Captured failure of a Stellar contract submission queued for admin review or
@@ -45,6 +43,4 @@ export interface ListFailedTransactionsQuery {
  * success; throwing surfaces as a replay failure that bumps `attempts` and
  * keeps the record `PENDING_REVIEW`.
  */
-export type ReplayFn = (
-  record: FailedTransactionRecord,
-) => Promise<string>;
+export type ReplayFn = (record: FailedTransactionRecord) => Promise<string>;

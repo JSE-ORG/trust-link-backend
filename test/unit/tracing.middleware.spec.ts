@@ -23,6 +23,8 @@ describe('resolveWorkflow (issue #79)', () => {
   it('maps admin routes', () => {
     expect(resolveWorkflow('GET', '/admin/stats')).toBe('admin.stats');
     expect(resolveWorkflow('GET', '/admin/queues')).toBe('admin.queues');
+    expect(resolveWorkflow('GET', '/admin/disputes')).toBe('admin.disputes');
+    expect(resolveWorkflow('GET', '/admin/api-keys')).toBe('admin.api_keys');
   });
 
   it('maps health and version', () => {
@@ -32,5 +34,18 @@ describe('resolveWorkflow (issue #79)', () => {
 
   it('strips query strings', () => {
     expect(resolveWorkflow('GET', '/escrow?page=1')).toBe('escrow.get');
+  });
+
+  it('returns http.method for unknown routes', () => {
+    expect(resolveWorkflow('POST', '/unknown')).toBe('http.post');
+    expect(resolveWorkflow('PUT', '/foo/bar')).toBe('http.put');
+  });
+
+  it('handles DELETE method', () => {
+    expect(resolveWorkflow('DELETE', '/escrow/123')).toBe('escrow.delete');
+  });
+
+  it('handles PATCH method', () => {
+    expect(resolveWorkflow('PATCH', '/vendor/profile')).toBe('vendor.patch');
   });
 });

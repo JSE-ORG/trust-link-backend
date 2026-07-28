@@ -1,5 +1,8 @@
 import { Injectable } from '@nestjs/common';
-import { PrismaService } from '../../prisma/prisma.service';
+import {
+  PrismaService,
+  VendorTrackingSettingsRecord,
+} from '../../prisma/prisma.service';
 import { ChartDataResponse, DailyVolumeData } from './analytics.dto';
 import {
   AnalyticsStatsResponse,
@@ -13,79 +16,82 @@ export class AnalyticsService {
 
   /**
    * Retrieves daily transaction volume data for a vendor.
-   * Uses composite indexes on (vendorAddress, createdAt) for optimal query performance.
+   * Uses database-level aggregation with raw SQL for optimal performance on large datasets.
+   * Handles timezone boundaries correctly and fills gaps for days with zero transactions.
    * Returns time-series data grouped by date with aggregated metrics.
    */
   async getDailyVolumeChart(
     vendorAddress: string,
     days: number = 30,
+    timezone: string = 'UTC',
   ): Promise<ChartDataResponse> {
     const endDate = new Date();
     const startDate = new Date();
-    startDate.setDate(startDate.getDate() - days);
+    startDate.setDate(startDate.getDate() - days + 1);
+    startDate.setUTCHours(0, 0, 0, 0);
 
-    // Query escrows for the vendor within the date range
-    // Uses index on (vendorAddress, createdAt) for efficient filtering
-    const escrows = await this.prisma.escrow.findMany({
-      where: {
-        vendorAddress,
-        createdAt: {
-          gte: startDate,
-          lte: endDate,
-        },
-      },
-      select: {
-        id: true,
-        amount: true,
-        state: true,
-        createdAt: true,
-      },
-    });
+    // Use raw SQL for database-level aggregation with proper timezone handling
+    const aggregationResult = await this.prisma.$queryRaw<{
+      date: string;
+      totalVolume: number;
+      transactionCount: number;
+      completedCount: number;
+      disputedCount: number;
+    }>`
+      SELECT 
+        DATE("createdAt" AT TIME ZONE ${timezone})::date as date,
+        COALESCE(SUM("amount"), 0) as "totalVolume",
+        COUNT(*) as "transactionCount",
+        SUM(CASE WHEN "state" IN ('COMPLETED', 'RELEASED') THEN 1 ELSE 0 END) as "completedCount",
+        SUM(CASE WHEN "state" = 'DISPUTED' THEN 1 ELSE 0 END) as "disputedCount"
+      FROM "Escrow"
+      WHERE 
+        "vendorAddress" = ${vendorAddress}
+        AND "createdAt" >= ${startDate}
+        AND "createdAt" <= ${endDate}
+      GROUP BY DATE("createdAt" AT TIME ZONE ${timezone})::date
+      ORDER BY date ASC
+    `;
 
-    // Group escrows by date and calculate aggregations
+    // Convert aggregation results to DailyVolumeData format
     const dailyMap = new Map<string, DailyVolumeData>();
 
-    for (const escrow of escrows) {
-      const dateKey = this.formatDate(escrow.createdAt);
+    type AggRow = {
+      date: string;
+      totalVolume: number | string;
+      transactionCount: number | string;
+      completedCount: number | string;
+      disputedCount: number | string;
+    };
+    for (const row of aggregationResult) {
+      const r = row as AggRow;
+      const dateKey = r.date;
+      const totalVolume = Number(r.totalVolume);
+      const transactionCount = Number(r.transactionCount);
+      const completedCount = Number(r.completedCount);
+      const disputedCount = Number(r.disputedCount);
 
-      if (!dailyMap.has(dateKey)) {
-        dailyMap.set(dateKey, {
-          date: dateKey,
-          totalVolume: 0,
-          transactionCount: 0,
-          completedCount: 0,
-          disputedCount: 0,
-          averageTransactionValue: 0,
-        });
-      }
-
-      const daily = dailyMap.get(dateKey)!;
-      const amount = Number(escrow.amount);
-
-      daily.totalVolume += amount;
-      daily.transactionCount += 1;
-
-      if (escrow.state === 'COMPLETED' || escrow.state === 'RELEASED') {
-        daily.completedCount += 1;
-      }
-
-      if (escrow.state === 'DISPUTED') {
-        daily.disputedCount += 1;
-      }
+      dailyMap.set(dateKey, {
+        date: dateKey,
+        totalVolume,
+        transactionCount,
+        completedCount,
+        disputedCount,
+        averageTransactionValue:
+          transactionCount > 0 ? totalVolume / transactionCount : 0,
+      });
     }
 
-    // Calculate average transaction values
-    dailyMap.forEach((daily) => {
-      daily.averageTransactionValue =
-        daily.transactionCount > 0
-          ? daily.totalVolume / daily.transactionCount
-          : 0;
-    });
+    // Fill gaps for days with zero transactions
+    const filledData = this.fillDateGaps(
+      dailyMap,
+      startDate,
+      endDate,
+      timezone,
+    );
 
     // Sort by date ascending
-    const sortedData = Array.from(dailyMap.values()).sort((a, b) =>
-      a.date.localeCompare(b.date),
-    );
+    const sortedData = filledData.sort((a, b) => a.date.localeCompare(b.date));
 
     // Calculate summary statistics
     const totalVolume = sortedData.reduce((sum, d) => sum + d.totalVolume, 0);
@@ -108,6 +114,49 @@ export class AnalyticsService {
         averageDaily,
       },
     };
+  }
+
+  /**
+   * Fills gaps in the date range with zero-transaction entries
+   * Ensures consistent time-series data even for days with no activity
+   */
+  private fillDateGaps(
+    dailyMap: Map<string, DailyVolumeData>,
+    startDate: Date,
+    endDate: Date,
+    timezone: string = 'UTC',
+  ): DailyVolumeData[] {
+    const result: DailyVolumeData[] = [];
+    const currentDate = new Date(startDate);
+
+    while (currentDate <= endDate) {
+      const dateKey = this.formatDateInTimezone(currentDate, timezone);
+
+      if (dailyMap.has(dateKey)) {
+        result.push(dailyMap.get(dateKey)!);
+      } else {
+        result.push({
+          date: dateKey,
+          totalVolume: 0,
+          transactionCount: 0,
+          completedCount: 0,
+          disputedCount: 0,
+          averageTransactionValue: 0,
+        });
+      }
+
+      // Move to next day
+      currentDate.setDate(currentDate.getDate() + 1);
+    }
+
+    return result;
+  }
+
+  /**
+   * Formats a Date object to ISO date string (YYYY-MM-DD) in a specific timezone
+   */
+  private formatDateInTimezone(date: Date, timezone: string): string {
+    return date.toLocaleDateString('en-CA', { timeZone: timezone });
   }
 
   /**
@@ -150,22 +199,23 @@ export class AnalyticsService {
 
     for (const escrow of escrows) {
       const amount = Number(escrow.amount);
+      const state = (escrow as { state: string }).state;
       stats.totalVolume += amount;
 
-      if (activeStates.includes(escrow.state)) {
+      if (activeStates.includes(state)) {
         stats.activeVolume += amount;
         stats.activeTransactions += 1;
       }
 
-      if (escrow.state === 'COMPLETED' || escrow.state === 'RELEASED') {
+      if (state === 'COMPLETED' || state === 'RELEASED') {
         stats.completedTransactions += 1;
       }
 
-      if (escrow.state === 'DISPUTED') {
+      if (state === 'DISPUTED') {
         stats.disputedTransactions += 1;
       }
 
-      if (escrow.state === 'CANCELLED') {
+      if (state === 'CANCELLED') {
         stats.cancelledTransactions += 1;
       }
     }
@@ -182,21 +232,21 @@ export class AnalyticsService {
 
     // Fetch vendor tracking settings for channel preferences
     const trackingSettings =
-      await this.prisma.vendorTrackingSettings.findUnique({
+      (await this.prisma.vendorTrackingSettings.findUnique({
         where: { vendorAddress },
         select: {
           notificationChannels: true,
         },
-      });
+      })) as Pick<VendorTrackingSettingsRecord, 'notificationChannels'> | null;
+
+    const notificationChannels = trackingSettings?.notificationChannels ?? [];
 
     const channels: ChannelMetrics = {
       email: {
-        notificationsEnabled:
-          trackingSettings?.notificationChannels?.includes('EMAIL') ?? false,
+        notificationsEnabled: notificationChannels.includes('EMAIL'),
       },
       sms: {
-        notificationsEnabled:
-          trackingSettings?.notificationChannels?.includes('SMS') ?? false,
+        notificationsEnabled: notificationChannels.includes('SMS'),
       },
     };
 

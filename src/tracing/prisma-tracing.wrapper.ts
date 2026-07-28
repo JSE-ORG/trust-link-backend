@@ -25,7 +25,7 @@ export function wrapPrismaWithTracing(
 ): PrismaService {
   const handler: ProxyHandler<PrismaService> = {
     get(target, prop, receiver) {
-      const value = Reflect.get(target, prop, receiver);
+      const value: unknown = Reflect.get(target, prop, receiver) as unknown;
 
       if (typeof prop === 'string' && isTracedModel(prop) && value) {
         return wrapModelDelegate(
@@ -36,7 +36,9 @@ export function wrapPrismaWithTracing(
       }
 
       if (typeof value === 'function') {
-        return (value as (...args: unknown[]) => unknown).bind(target);
+        return (value as (...args: unknown[]) => unknown).bind(
+          target,
+        ) as unknown;
       }
 
       return value;

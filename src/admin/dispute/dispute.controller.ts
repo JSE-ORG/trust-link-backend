@@ -1,5 +1,18 @@
-import { Body, Controller, Get, Param, Patch, Query, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
 import { JwtGuard } from '../../auth/guards/jwt.guard';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import type { AuthUser } from '../../auth/auth-user';
@@ -35,8 +48,13 @@ export class DisputeController {
     });
   }
 
-  @ApiOperation({ summary: 'Resolve a dispute by releasing or refunding the escrow' })
-  @ApiResponse({ status: 200, description: 'Dispute resolved, escrow state updated.' })
+  @ApiOperation({
+    summary: 'Resolve a dispute by releasing or refunding the escrow',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Dispute resolved, escrow state updated.',
+  })
   @ApiResponse({ status: 400, description: 'Invalid resolution value.' })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   @ApiResponse({ status: 403, description: 'Admin access required.' })

@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/unbound-method */
 import {
   ConflictException,
   ForbiddenException,
@@ -60,7 +59,12 @@ describe('DisputeService (issue #25)', () => {
       resolveDispute: jest.fn(),
     } as unknown as jest.Mocked<ContractService>;
 
-    prisma = {} as unknown as jest.Mocked<PrismaService>;
+    prisma = {
+      dispute: {
+        findFirst: jest.fn().mockResolvedValue(null),
+        update: jest.fn(),
+      },
+    } as unknown as jest.Mocked<PrismaService>;
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -74,11 +78,16 @@ describe('DisputeService (issue #25)', () => {
     service = moduleRef.get(DisputeService);
   });
 
-  it('RELEASE resolution calls contract and marks escrow COMPLETED', async () => {
+  it('RELEASE resolution calls contract, marks escrow COMPLETED, and resolves the open dispute', async () => {
     const completed = { ...shippedEscrow, state: 'COMPLETED' as const };
     repository.findById.mockResolvedValue(shippedEscrow);
     contractService.resolveDispute.mockResolvedValue('tx-hash');
     repository.markCompleted.mockResolvedValue(completed);
+    (prisma.dispute.findFirst as jest.Mock).mockResolvedValue({
+      id: 'dispute-1',
+      escrowId: 'escrow-1',
+      status: 'OPEN',
+    });
 
     const result = await service.resolve('escrow-1', 'RELEASE');
 
@@ -86,6 +95,10 @@ describe('DisputeService (issue #25)', () => {
       'escrow-1',
       'RELEASE',
     );
+    expect(prisma.dispute.update).toHaveBeenCalledWith({
+      where: { id: 'dispute-1' },
+      data: { status: 'RESOLVED', resolvedAt: expect.any(Date) },
+    });
     expect(repository.markCompleted).toHaveBeenCalledWith('escrow-1');
     expect(result.state).toBe('COMPLETED');
   });
@@ -198,7 +211,7 @@ describe('PATCH /admin/dispute/:id/resolve (admin guard)', () => {
       .patch('/admin/dispute/escrow-1/resolve')
       .set(
         'Authorization',
-        'Bearer eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiJ2ZW5kb3ItYWRkcmVzcyIsInJvbGUiOiJ2ZW5kb3IifQ.signature',
+        'Bearer eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiJ2ZW5kb3ItYWRkcmVzcyIsInJvbGUiOiJ2ZW5kb3IifQ.tZDbS0v2ze8t-x6hZsE1Q1hP0odlamTWSFZlwjPNwXk',
       )
       .send({ resolution: 'RELEASE' })
       .expect(403);
@@ -209,7 +222,7 @@ describe('PATCH /admin/dispute/:id/resolve (admin guard)', () => {
       .patch('/admin/dispute/escrow-1/resolve')
       .set(
         'Authorization',
-        'Bearer eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiJhZG1pbi1hZGRyZXNzIiwicm9sZSI6ImFkbWluIn0.signature',
+        'Bearer eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiJhZG1pbi1hZGRyZXNzIiwicm9sZSI6ImFkbWluIn0.Q4EeLZuB3V0utXclLNM02bCZ_WyNHFaZukHcMTjHa6o',
       )
       .send({ resolution: 'RELEASE' })
       .expect(200);
@@ -226,7 +239,7 @@ describe('PATCH /admin/dispute/:id/resolve (admin guard)', () => {
       .patch('/admin/dispute/escrow-1/resolve')
       .set(
         'Authorization',
-        'Bearer eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiJhZG1pbi1hZGRyZXNzIiwicm9sZSI6ImFkbWluIn0.signature',
+        'Bearer eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiJhZG1pbi1hZGRyZXNzIiwicm9sZSI6ImFkbWluIn0.Q4EeLZuB3V0utXclLNM02bCZ_WyNHFaZukHcMTjHa6o',
       )
       .send({ resolution: 'RELEASE' })
       .expect(409);
@@ -240,7 +253,7 @@ describe('PATCH /admin/dispute/:id/resolve (admin guard)', () => {
       .patch('/admin/dispute/escrow-1/resolve')
       .set(
         'Authorization',
-        'Bearer eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiJ2ZW5kb3ItYWRkcmVzcyIsInJvbGUiOiJ2ZW5kb3IifQ.signature',
+        'Bearer eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiJ2ZW5kb3ItYWRkcmVzcyIsInJvbGUiOiJ2ZW5kb3IifQ.tZDbS0v2ze8t-x6hZsE1Q1hP0odlamTWSFZlwjPNwXk',
       )
       .send({ resolution: 'RELEASE' })
       .expect(403);

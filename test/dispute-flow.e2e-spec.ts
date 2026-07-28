@@ -1,17 +1,18 @@
-/* eslint-disable @typescript-eslint/no-unsafe-argument */
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
+import crypto from 'node:crypto';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { ContractService } from '../src/stellar/contract.service';
+import { ConfigService } from '../src/config/config.service';
+import { bearer } from './auth-helper';
 
 describe('Dispute Flow E2E (issue #57)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let contractService: ContractService;
+  let adminAddress: string;
 
   beforeEach(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -26,6 +27,7 @@ describe('Dispute Flow E2E (issue #57)', () => {
 
     prisma = app.get(PrismaService);
     contractService = app.get(ContractService);
+    adminAddress = app.get(ConfigService).get('ADMIN_ADDRESS');
 
     await prisma.reset();
 
@@ -44,8 +46,9 @@ describe('Dispute Flow E2E (issue #57)', () => {
       .post('/escrow')
       .set(
         'Authorization',
-        'Bearer GA36PERSXWPBG7HYKNBVT5PFLTOFYO4Q3CWGJZTYH5GU5OLTKHW7SJHE',
+        bearer('GA36PERSXWPBG7HYKNBVT5PFLTOFYO4Q3CWGJZTYH5GU5OLTKHW7SJHE'),
       )
+      .set('Idempotency-Key', crypto.randomUUID())
       .send({
         itemName: 'Vintage camera',
         itemRef: 'camera-dispute-001',
@@ -62,7 +65,7 @@ describe('Dispute Flow E2E (issue #57)', () => {
       .post(`/escrow/${escrowId}/dispute`)
       .set(
         'Authorization',
-        'Bearer GADRXQS5ZCXLBX6U67CY2WBJNDUXCWGHSQKR76AOJDQECYX36W5S6IYK',
+        bearer('GADRXQS5ZCXLBX6U67CY2WBJNDUXCWGHSQKR76AOJDQECYX36W5S6IYK'),
       )
       .send({
         reason: 'ITEM_NOT_AS_DESCRIBED',
@@ -77,7 +80,7 @@ describe('Dispute Flow E2E (issue #57)', () => {
         escrowId,
         reason: 'ITEM_NOT_AS_DESCRIBED',
         description:
-          'The camera lens is scratched and not as described in listing',
+          'The camera lens is scratched and not as described in the listing provided by the vendor',
         status: 'OPEN',
       }),
     );
@@ -86,10 +89,7 @@ describe('Dispute Flow E2E (issue #57)', () => {
 
     const resolveResponse = await request(app.getHttpServer())
       .patch(`/admin/dispute/${escrowId}/resolve`)
-      .set(
-        'Authorization',
-        'Bearer GDQTHTXOKWFZCT2T4U24YANOWEKGTTIPCBPAWL65YEIPCWCT3A2WNZEP',
-      )
+      .set('Authorization', bearer(adminAddress, { role: 'admin' }))
       .send({ resolution: 'RELEASE' })
       .expect(200);
 
@@ -116,8 +116,9 @@ describe('Dispute Flow E2E (issue #57)', () => {
       .post('/escrow')
       .set(
         'Authorization',
-        'Bearer GA36PERSXWPBG7HYKNBVT5PFLTOFYO4Q3CWGJZTYH5GU5OLTKHW7SJHE',
+        bearer('GA36PERSXWPBG7HYKNBVT5PFLTOFYO4Q3CWGJZTYH5GU5OLTKHW7SJHE'),
       )
+      .set('Idempotency-Key', crypto.randomUUID())
       .send({
         itemName: 'Leather jacket',
         itemRef: 'jacket-dispute-002',
@@ -134,7 +135,7 @@ describe('Dispute Flow E2E (issue #57)', () => {
       .post(`/escrow/${escrowId}/dispute`)
       .set(
         'Authorization',
-        'Bearer GADRXQS5ZCXLBX6U67CY2WBJNDUXCWGHSQKR76AOJDQECYX36W5S6IYK',
+        bearer('GADRXQS5ZCXLBX6U67CY2WBJNDUXCWGHSQKR76AOJDQECYX36W5S6IYK'),
       )
       .send({
         reason: 'DAMAGED_ITEM',
@@ -145,10 +146,7 @@ describe('Dispute Flow E2E (issue #57)', () => {
 
     const resolveResponse = await request(app.getHttpServer())
       .patch(`/admin/dispute/${escrowId}/resolve`)
-      .set(
-        'Authorization',
-        'Bearer GDQTHTXOKWFZCT2T4U24YANOWEKGTTIPCBPAWL65YEIPCWCT3A2WNZEP',
-      )
+      .set('Authorization', bearer(adminAddress, { role: 'admin' }))
       .send({ resolution: 'REFUND' })
       .expect(200);
 
@@ -169,8 +167,9 @@ describe('Dispute Flow E2E (issue #57)', () => {
       .post('/escrow')
       .set(
         'Authorization',
-        'Bearer GA36PERSXWPBG7HYKNBVT5PFLTOFYO4Q3CWGJZTYH5GU5OLTKHW7SJHE',
+        bearer('GA36PERSXWPBG7HYKNBVT5PFLTOFYO4Q3CWGJZTYH5GU5OLTKHW7SJHE'),
       )
+      .set('Idempotency-Key', crypto.randomUUID())
       .send({
         itemName: 'Watch',
         itemRef: 'watch-001',
@@ -185,7 +184,7 @@ describe('Dispute Flow E2E (issue #57)', () => {
       .post(`/escrow/${createResponse.body.id}/dispute`)
       .set(
         'Authorization',
-        'Bearer GCLKIIQCXY62273JIOSH4BKI5LP2W2FTMLSPNACTM2NAIVYXHSREUQSQ',
+        bearer('GCLKIIQCXY62273JIOSH4BKI5LP2W2FTMLSPNACTM2NAIVYXHSREUQSQ'),
       )
       .send({
         reason: 'FRAUD',
@@ -199,8 +198,9 @@ describe('Dispute Flow E2E (issue #57)', () => {
       .post('/escrow')
       .set(
         'Authorization',
-        'Bearer GA36PERSXWPBG7HYKNBVT5PFLTOFYO4Q3CWGJZTYH5GU5OLTKHW7SJHE',
+        bearer('GA36PERSXWPBG7HYKNBVT5PFLTOFYO4Q3CWGJZTYH5GU5OLTKHW7SJHE'),
       )
+      .set('Idempotency-Key', crypto.randomUUID())
       .send({
         itemName: 'Headphones',
         itemRef: 'headphones-001',
@@ -217,7 +217,7 @@ describe('Dispute Flow E2E (issue #57)', () => {
       .post(`/escrow/${escrowId}/dispute`)
       .set(
         'Authorization',
-        'Bearer GADRXQS5ZCXLBX6U67CY2WBJNDUXCWGHSQKR76AOJDQECYX36W5S6IYK',
+        bearer('GADRXQS5ZCXLBX6U67CY2WBJNDUXCWGHSQKR76AOJDQECYX36W5S6IYK'),
       )
       .send({
         reason: 'ITEM_NOT_RECEIVED',
@@ -229,7 +229,7 @@ describe('Dispute Flow E2E (issue #57)', () => {
       .post(`/escrow/${escrowId}/dispute`)
       .set(
         'Authorization',
-        'Bearer GADRXQS5ZCXLBX6U67CY2WBJNDUXCWGHSQKR76AOJDQECYX36W5S6IYK',
+        bearer('GADRXQS5ZCXLBX6U67CY2WBJNDUXCWGHSQKR76AOJDQECYX36W5S6IYK'),
       )
       .send({
         reason: 'FRAUD',

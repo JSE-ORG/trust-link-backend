@@ -1,12 +1,16 @@
 import { Test } from '@nestjs/testing';
 import { QueueDashboardService } from '../../src/admin/queues/queue-dashboard.service';
+import { ConfigService } from '../../src/config/config.service';
 
 describe('QueueDashboardService (issue #75)', () => {
   let service: QueueDashboardService;
 
   beforeEach(async () => {
     const moduleRef = await Test.createTestingModule({
-      providers: [QueueDashboardService],
+      providers: [
+        QueueDashboardService,
+        { provide: ConfigService, useValue: { get: jest.fn() } },
+      ],
     }).compile();
 
     service = moduleRef.get(QueueDashboardService);

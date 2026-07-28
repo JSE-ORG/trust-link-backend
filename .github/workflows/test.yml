@@ -2,7 +2,7 @@ name: Test
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   pull_request:
 
 jobs:
@@ -27,7 +27,7 @@ jobs:
     env:
       DATABASE_URL: postgresql://trustlink:trustlink@localhost:5432/trustlink_test
       SEP10_JWT_SECRET: test-jwt-secret-must-be-at-least-32-chars
-      SYSTEM_SIGNER_SECRET: SCZANGBA5XTONSXE2SCBA5XTONSXE2SCBA5XTONSXE2SCBA5XTONSXE2SC
+      SYSTEM_SIGNER_SECRET: SAIJDXETR5B7YFPH7SUOISWVBHHSI46JLYFDCWDMEV2L46XAHASPP35C
       CONTRACT_ID: CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4
       ADMIN_ADDRESS: GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5
       NODE_ENV: test
@@ -40,7 +40,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version-file: '.nvmrc'
           cache: 'npm'
 
       - name: Install dependencies
@@ -51,6 +51,15 @@ jobs:
 
       - name: Run unit tests with coverage
         run: npm run test:cov
+
+      - name: Generate OpenAPI document
+        run: npm run openapi:generate
+
+      - name: Upload OpenAPI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: openapi-document
+          path: openapi.json
 
       - name: Upload coverage artifact
         uses: actions/upload-artifact@v4

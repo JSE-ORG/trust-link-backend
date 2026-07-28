@@ -26,6 +26,53 @@ psql "$DATABASE_URL" -f scripts/query-performance.sql
 
 Each query uses `EXPLAIN (ANALYZE, BUFFERS, VERBOSE)` so the output includes timing, buffer activity, join strategy, and whether PostgreSQL chose sequential or index scans.
 
+## Vendor Dashboard Index Verification
+
+Issue #309 tracks the vendor dashboard endpoint (`GET /vendor/escrows`). The repository method `EscrowRepository.findVendorEscrows` always filters by `vendorAddress` and optionally narrows by `state`, so the Prisma schema includes:
+
+```prisma
+@@index([vendorAddress, state])
+```
+
+The index is named `Escrow_vendorAddress_state_idx` in PostgreSQL. It is created by the historical `20260529000000_security_updates` migration and guarded by the idempotent `20260701000000_vendor_dashboard_vendor_state_index` migration.
+
+Use the `vendor_escrows_by_state_recent` probe in `scripts/query-performance.sql` to verify the filtered dashboard path:
+
+```sql
+EXPLAIN (ANALYZE, BUFFERS, VERBOSE)
+SELECT *
+FROM "Escrow"
+WHERE "vendorAddress" = '<vendor-address>'
+  AND "state" = 'SHIPPED'
+ORDER BY "createdAt" DESC
+LIMIT 20;
+```
+
+On a populated staging database, the expected plan should include an index-backed scan such as `Index Scan`, `Bitmap Index Scan`, or a low-cost plan that references `Escrow_vendorAddress_state_idx`. Record the total execution time and buffer reads before and after deploying the migration.
+
+For a before/after benchmark on staging only, wrap the "without index" measurement in a transaction so the index drop is rolled back:
+
+```sql
+BEGIN;
+DROP INDEX IF EXISTS "Escrow_vendorAddress_state_idx";
+EXPLAIN (ANALYZE, BUFFERS, VERBOSE)
+SELECT *
+FROM "Escrow"
+WHERE "vendorAddress" = '<vendor-address>'
+  AND "state" = 'SHIPPED'
+ORDER BY "createdAt" DESC
+LIMIT 20;
+ROLLBACK;
+
+EXPLAIN (ANALYZE, BUFFERS, VERBOSE)
+SELECT *
+FROM "Escrow"
+WHERE "vendorAddress" = '<vendor-address>'
+  AND "state" = 'SHIPPED'
+ORDER BY "createdAt" DESC
+LIMIT 20;
+```
+
 ## Bottleneck Documentation
 
 Record each run in the task tracker with:
@@ -37,6 +84,10 @@ Record each run in the task tracker with:
 - Verification: post-change plan showing lower cost or index usage.
 
 ## Indexes Added
+
+The vendor dashboard index is present from `20260529000000_security_updates` and is guarded by `20260701000000_vendor_dashboard_vendor_state_index`:
+
+- `Escrow_vendorAddress_state_idx` for the vendor dashboard path (`vendorAddress + state`).
 
 The `20260529170000_query_performance_indexes` migration adds:
 

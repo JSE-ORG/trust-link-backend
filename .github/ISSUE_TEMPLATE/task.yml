@@ -1,0 +1,71 @@
+name: Task
+description: A change that is not a bug. Feature, refactor, test, docs, or chore.
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not use this form for security vulnerabilities. See SECURITY.md and email security@trust-link.io instead.
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: What is missing or should change, and why it matters now.
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Current state
+      description: |
+        Where the relevant code lives today, as `path/to/file.ts:line`. Write "does not exist yet" if this is new.
+    validations:
+      required: true
+
+  - type: textarea
+    id: change
+    attributes:
+      label: What to change
+      description: Numbered steps where the order matters.
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Checklist a reviewer can verify.
+      value: |
+        - [ ]
+        - [ ] Tests covering the new behaviour
+        - [ ] `npm run validate` passes
+    validations:
+      required: true
+
+  - type: textarea
+    id: out-of-scope
+    attributes:
+      label: Out of scope
+    validations:
+      required: false
+
+  - type: input
+    id: blocked-by
+    attributes:
+      label: Blocked by
+      description: Issue numbers that must merge first. Leave empty if none.
+      placeholder: "#123"
+    validations:
+      required: false
+
+  - type: markdown
+    attributes:
+      value: |
+        ---
+        ### Before you start
+
+        - **Setup:** [CONTRIBUTING.md → Development Setup](https://github.com/JSE-ORG/trust-link-backend/blob/dev/CONTRIBUTING.md#development-setup). Use **Node 22** (`nvm use`), run `npm ci` rather than `npm install`, and run `npx prisma generate` after installing.
+        - **Tests that authenticate:** use `bearer()` from `test/auth-helper.ts`. A bare Stellar address as a bearer token returns 401. See [Writing Tests That Need Authentication](https://github.com/JSE-ORG/trust-link-backend/blob/dev/CONTRIBUTING.md#writing-tests-that-need-authentication).
+        - **Branch from the latest `dev`** and open your pull request against `dev`, not `main`. `dev` is the default branch. `main` is the released baseline and is not a branching point.

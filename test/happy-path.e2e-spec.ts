@@ -1,6 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-argument */
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
+import crypto from 'node:crypto';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
@@ -8,16 +6,13 @@ import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { ContractService } from '../src/stellar/contract.service';
 import { AutoReleaseWorker } from '../src/workers/auto-release.worker';
+import { bearer } from './auth-helper';
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
-// Raw Stellar addresses used as Bearer tokens — JwtGuard treats a non-JWT
-// token as a raw address, so no real SEP-10 handshake is needed in tests.
 const VENDOR_ADDRESS =
   'GA36PERSXWPBG7HYKNBVT5PFLTOFYO4Q3CWGJZTYH5GU5OLTKHW7SJHE';
 const BUYER_ADDRESS =
   'GADRXQS5ZCXLBX6U67CY2WBJNDUXCWGHSQKR76AOJDQECYX36W5S6IYK';
-const ADMIN_ADDRESS =
-  'GDQTHTXOKWFZCT2T4U24YANOWEKGTTIPCBPAWL65YEIPCWCT3A2WNZEP';
 
 describe('Happy-Path E2E — full escrow lifecycle (issue #56)', () => {
   let app: INestApplication;
@@ -72,7 +67,8 @@ describe('Happy-Path E2E — full escrow lifecycle (issue #56)', () => {
     // ── 1. Vendor creates escrow ───────────────────────────────────────────
     const createRes = await request(app.getHttpServer())
       .post('/escrow')
-      .set('Authorization', `Bearer ${VENDOR_ADDRESS}`)
+      .set('Authorization', bearer(VENDOR_ADDRESS))
+      .set('Idempotency-Key', crypto.randomUUID())
       .send({
         itemName: 'Sony WH-1000XM5 Headphones',
         itemRef: 'happy-path-001',
@@ -122,7 +118,7 @@ describe('Happy-Path E2E — full escrow lifecycle (issue #56)', () => {
     // ── 4. Vendor ships the order ──────────────────────────────────────────
     const shipRes = await request(app.getHttpServer())
       .patch(`/escrow/${escrowId}/ship`)
-      .set('Authorization', `Bearer ${VENDOR_ADDRESS}`)
+      .set('Authorization', bearer(VENDOR_ADDRESS))
       .send({ trackingId: 'TRK-XM5-HAPPY-001' })
       .expect(200);
 
@@ -163,7 +159,10 @@ describe('Happy-Path E2E — full escrow lifecycle (issue #56)', () => {
 
     await autoReleaseWorker.run();
 
-    expect(contractService.submitAutoRelease).toHaveBeenCalledWith(escrowId);
+    expect(contractService.submitAutoRelease).toHaveBeenCalledWith(
+      escrowId,
+      expect.any(String),
+    );
 
     const completed = await prisma.escrow.findUnique({
       where: { id: escrowId },
@@ -183,7 +182,8 @@ describe('Happy-Path E2E — full escrow lifecycle (issue #56)', () => {
   it('accepts buyer contact with email only', async () => {
     const createRes = await request(app.getHttpServer())
       .post('/escrow')
-      .set('Authorization', `Bearer ${VENDOR_ADDRESS}`)
+      .set('Authorization', bearer(VENDOR_ADDRESS))
+      .set('Idempotency-Key', crypto.randomUUID())
       .send({
         itemName: 'Test Item Email Only',
         itemRef: 'happy-path-email-only',
@@ -210,7 +210,8 @@ describe('Happy-Path E2E — full escrow lifecycle (issue #56)', () => {
   it('accepts buyer contact with phone only', async () => {
     const createRes = await request(app.getHttpServer())
       .post('/escrow')
-      .set('Authorization', `Bearer ${VENDOR_ADDRESS}`)
+      .set('Authorization', bearer(VENDOR_ADDRESS))
+      .set('Idempotency-Key', crypto.randomUUID())
       .send({
         itemName: 'Test Item Phone Only',
         itemRef: 'happy-path-phone-only',
@@ -237,7 +238,8 @@ describe('Happy-Path E2E — full escrow lifecycle (issue #56)', () => {
   it('rejects buyer contact with neither email nor phone', async () => {
     const createRes = await request(app.getHttpServer())
       .post('/escrow')
-      .set('Authorization', `Bearer ${VENDOR_ADDRESS}`)
+      .set('Authorization', bearer(VENDOR_ADDRESS))
+      .set('Idempotency-Key', crypto.randomUUID())
       .send({
         itemName: 'Test Item No Contact',
         itemRef: 'happy-path-no-contact',
@@ -258,7 +260,8 @@ describe('Happy-Path E2E — full escrow lifecycle (issue #56)', () => {
   it('rejects buyer contact with invalid email', async () => {
     const createRes = await request(app.getHttpServer())
       .post('/escrow')
-      .set('Authorization', `Bearer ${VENDOR_ADDRESS}`)
+      .set('Authorization', bearer(VENDOR_ADDRESS))
+      .set('Idempotency-Key', crypto.randomUUID())
       .send({
         itemName: 'Test Item Bad Email',
         itemRef: 'happy-path-bad-email',
@@ -279,7 +282,8 @@ describe('Happy-Path E2E — full escrow lifecycle (issue #56)', () => {
   it('rejects buyer contact update on a cancelled escrow', async () => {
     const createRes = await request(app.getHttpServer())
       .post('/escrow')
-      .set('Authorization', `Bearer ${VENDOR_ADDRESS}`)
+      .set('Authorization', bearer(VENDOR_ADDRESS))
+      .set('Idempotency-Key', crypto.randomUUID())
       .send({
         itemName: 'Test Item Cancelled',
         itemRef: 'happy-path-cancelled',
@@ -293,7 +297,7 @@ describe('Happy-Path E2E — full escrow lifecycle (issue #56)', () => {
 
     await request(app.getHttpServer())
       .patch(`/escrow/${escrowId}/cancel`)
-      .set('Authorization', `Bearer ${VENDOR_ADDRESS}`)
+      .set('Authorization', bearer(VENDOR_ADDRESS))
       .expect(200);
 
     await request(app.getHttpServer())
@@ -307,7 +311,8 @@ describe('Happy-Path E2E — full escrow lifecycle (issue #56)', () => {
   it('rejects shipment on an already-shipped escrow', async () => {
     const createRes = await request(app.getHttpServer())
       .post('/escrow')
-      .set('Authorization', `Bearer ${VENDOR_ADDRESS}`)
+      .set('Authorization', bearer(VENDOR_ADDRESS))
+      .set('Idempotency-Key', crypto.randomUUID())
       .send({
         itemName: 'Test Item Double Ship',
         itemRef: 'happy-path-double-ship',
@@ -321,13 +326,13 @@ describe('Happy-Path E2E — full escrow lifecycle (issue #56)', () => {
 
     await request(app.getHttpServer())
       .patch(`/escrow/${escrowId}/ship`)
-      .set('Authorization', `Bearer ${VENDOR_ADDRESS}`)
+      .set('Authorization', bearer(VENDOR_ADDRESS))
       .send({ trackingId: 'TRK-FIRST-001' })
       .expect(200);
 
     await request(app.getHttpServer())
       .patch(`/escrow/${escrowId}/ship`)
-      .set('Authorization', `Bearer ${VENDOR_ADDRESS}`)
+      .set('Authorization', bearer(VENDOR_ADDRESS))
       .send({ trackingId: 'TRK-SECOND-001' })
       .expect(409);
   });
@@ -345,13 +350,15 @@ describe('Happy-Path E2E — full escrow lifecycle (issue #56)', () => {
 
     await request(app.getHttpServer())
       .post('/escrow')
-      .set('Authorization', `Bearer ${VENDOR_ADDRESS}`)
+      .set('Authorization', bearer(VENDOR_ADDRESS))
+      .set('Idempotency-Key', crypto.randomUUID())
       .send(payload)
       .expect(201);
 
     await request(app.getHttpServer())
       .post('/escrow')
-      .set('Authorization', `Bearer ${VENDOR_ADDRESS}`)
+      .set('Authorization', bearer(VENDOR_ADDRESS))
+      .set('Idempotency-Key', crypto.randomUUID())
       .send(payload)
       .expect(409);
   });

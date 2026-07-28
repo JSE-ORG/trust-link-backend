@@ -10,12 +10,15 @@ const TEN_MINUTES = 10 * 60 * 1000;
  * Builds a SHIPPED escrow row, overriding only the fields a test cares about.
  * Keeps each test focused on behaviour instead of fixture boilerplate.
  */
+import { EscrowRecord } from '../../src/prisma/prisma.service';
+
 function buildEscrow(overrides: Partial<Record<string, unknown>> = {}) {
   return {
     id: 'escrow-1',
     itemName: 'Camera',
     amount: 250,
     currency: 'USDC',
+    itemRef: 'ref-1',
     buyerAddress: 'buyer-1',
     vendorAddress: 'vendor-1',
     state: 'SHIPPED',
@@ -28,7 +31,7 @@ function buildEscrow(overrides: Partial<Record<string, unknown>> = {}) {
     createdAt: new Date(),
     updatedAt: new Date(),
     ...overrides,
-  };
+  } as EscrowRecord;
 }
 
 describe('TrackingPollWorker — interval scheduling & polling loop (issue #46)', () => {
@@ -136,7 +139,10 @@ describe('TrackingPollWorker — interval scheduling & polling loop (issue #46)'
         buildEscrow({ id: 'escrow-1', trackingId: 'TRK-1' }),
         buildEscrow({ id: 'escrow-2', trackingId: 'TRK-2' }),
       ]);
-      logisticsService.getStatus.mockResolvedValue({ status: 'IN_TRANSIT' });
+      logisticsService.getStatus.mockResolvedValue({
+        status: 'IN_TRANSIT',
+        events: [],
+      });
 
       await worker.run();
 
@@ -170,7 +176,10 @@ describe('TrackingPollWorker — interval scheduling & polling loop (issue #46)'
       escrowRepository.findShippedWithTracking.mockResolvedValue([
         buildEscrow({ id: 'escrow-1', trackingId: 'TRK-1' }),
       ]);
-      logisticsService.getStatus.mockResolvedValue({ status: 'IN_TRANSIT' });
+      logisticsService.getStatus.mockResolvedValue({
+        status: 'IN_TRANSIT',
+        events: [],
+      });
 
       await worker.run();
 
@@ -182,7 +191,10 @@ describe('TrackingPollWorker — interval scheduling & polling loop (issue #46)'
       escrowRepository.findShippedWithTracking.mockResolvedValue([
         buildEscrow({ id: 'escrow-1', trackingId: 'TRK-1' }),
       ]);
-      logisticsService.getStatus.mockResolvedValue({ status: 'DELIVERED' });
+      logisticsService.getStatus.mockResolvedValue({
+        status: 'DELIVERED',
+        events: [],
+      });
       contractService.recordDelivery.mockResolvedValue('record-hash');
 
       await worker.run();
@@ -203,7 +215,7 @@ describe('TrackingPollWorker — interval scheduling & polling loop (issue #46)'
         if (trackingId === 'TRK-FAIL') {
           return Promise.reject(new Error('carrier timeout'));
         }
-        return Promise.resolve({ status: 'DELIVERED' });
+        return Promise.resolve({ status: 'DELIVERED', events: [] });
       });
       contractService.recordDelivery.mockResolvedValue('record-hash');
 

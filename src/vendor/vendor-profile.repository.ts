@@ -1,5 +1,9 @@
 import { Injectable } from '@nestjs/common';
-import { PrismaService, VendorProfileRecord } from '../prisma/prisma.service';
+import {
+  PrismaService,
+  VendorProfileRecord,
+  VendorTrackingSettingsRecord,
+} from '../prisma/prisma.service';
 import { CreateVendorProfileDto } from './dto/create-vendor-profile.dto';
 import { UpdateVendorProfileDto } from './dto/update-vendor-profile.dto';
 import { UpdateNotificationPreferencesDto } from './dto/update-notification-preferences.dto';
@@ -68,7 +72,7 @@ export class VendorProfileRepository {
   async updateNotificationPreferences(
     address: string,
     dto: UpdateNotificationPreferencesDto,
-  ): Promise<{ trackingSettings: Record<string, unknown> }> {
+  ): Promise<{ trackingSettings: VendorTrackingSettingsRecord }> {
     // Upsert VendorTrackingSettings to ensure it exists
     const trackingSettings = await this.prisma.vendorTrackingSettings.upsert({
       where: { vendorAddress: address },
@@ -115,18 +119,16 @@ export class VendorProfileRepository {
     });
 
     return {
-      notifyOnDelivery: (settings?.notifyOnDelivery as boolean) ?? true,
-      notifyOnDelay: (settings?.notifyOnDelay as boolean) ?? true,
-      notifyOnException: (settings?.notifyOnException as boolean) ?? true,
-      notificationChannels: (settings?.notificationChannels as string[]) ?? [
-        'EMAIL',
-      ],
-      webhookUrl: (settings?.webhookUrl as string | null) ?? null,
-      enableTracking: (settings?.enableTracking as boolean) ?? true,
-      delayThresholdHours: (settings?.delayThresholdHours as number) ?? 24,
-      deliveryConfirmation: (settings?.deliveryConfirmation as boolean) ?? true,
+      notifyOnDelivery: settings?.notifyOnDelivery ?? true,
+      notifyOnDelay: settings?.notifyOnDelay ?? true,
+      notifyOnException: settings?.notifyOnException ?? true,
+      notificationChannels: settings?.notificationChannels ?? ['EMAIL'],
+      webhookUrl: settings?.webhookUrl ?? null,
+      enableTracking: settings?.enableTracking ?? true,
+      delayThresholdHours: settings?.delayThresholdHours ?? 24,
+      deliveryConfirmation: settings?.deliveryConfirmation ?? true,
       trackingHistoryRetentionDays:
-        (settings?.trackingHistoryRetentionDays as number) ?? 90,
+        settings?.trackingHistoryRetentionDays ?? 90,
     };
   }
 }

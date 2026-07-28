@@ -64,6 +64,11 @@ export class BuyerDisputeService {
       description: dto.description,
       evidenceUrls: dto.evidenceUrls ?? [],
     });
+    // Dispute creation transitions the linked escrow to DISPUTED as a side
+    // effect at the Prisma layer, bypassing this repository's cache — evict
+    // it so a subsequent findById (e.g. a second dispute attempt) sees the
+    // fresh state instead of the stale pre-dispute snapshot.
+    await this.escrowRepository.invalidateCache(escrowId);
 
     await Promise.all([
       this.notificationsService.notifyDisputed(escrow),

@@ -52,48 +52,62 @@ export class StellarWebhookService {
     signature: string | undefined,
     dto: StellarWebhookDto,
   ): Promise<{ received: boolean; skipped?: boolean; reason?: string }> {
-    this.verifySignature(rawBody, signature);
-
-    // --- Idempotency check (DB-backed, survives restarts) --------------------
-    const duplicate = this.prisma
-      ? await this.prisma.processedWebhookEvent.findUnique({
-          where: { operationId: dto.id },
-        })
-      : this.processedIds.has(dto.id);
-    if (duplicate) {
-      this.logger.log(
-        JSON.stringify({
-          msg: 'stellar.webhook.duplicate',
-          operationId: dto.id,
-        }),
-      );
-      return { received: true, skipped: true, reason: 'duplicate' };
-    }
-
-    // Persist before processing so concurrent Horizon retries are blocked.
-    if (this.prisma) {
-      await this.prisma.processedWebhookEvent.create({
-        data: { operationId: dto.id },
-      });
-    } else {
-      this.processedIds.add(dto.id);
-    }
-
     try {
-      await this.processEvent(dto);
-    } catch (err) {
-      // Roll back the cursor so the event can be retried on the next delivery.
+      this.verifySignature(rawBody, signature);
+
+      // --- Idempotency check (DB-backed, survives restarts) ------------------
+      const duplicate = this.prisma
+        ? await this.prisma.processedWebhookEvent.findUnique({
+            where: { operationId: dto.id },
+          })
+        : this.processedIds.has(dto.id);
+      if (duplicate) {
+        this.logger.log(
+          JSON.stringify({
+            msg: 'stellar.webhook.duplicate',
+            operationId: dto.id,
+          }),
+        );
+        return { received: true, skipped: true, reason: 'duplicate' };
+      }
+
+      // Persist before processing so concurrent Horizon retries are blocked.
       if (this.prisma) {
-        await this.prisma.processedWebhookEvent.delete({
-          where: { operationId: dto.id },
+        await this.prisma.processedWebhookEvent.create({
+          data: { operationId: dto.id },
         });
       } else {
-        this.processedIds.delete(dto.id);
+        this.processedIds.add(dto.id);
       }
+
+      try {
+        await this.processEvent(dto);
+      } catch (err) {
+        // Roll back the cursor so the event can be retried on the next delivery.
+        if (this.prisma) {
+          await this.prisma.processedWebhookEvent.delete({
+            where: { operationId: dto.id },
+          });
+        } else {
+          this.processedIds.delete(dto.id);
+        }
+        throw err;
+      }
+
+      return { received: true };
+    } catch (err) {
+      this.logger.error(
+        JSON.stringify({
+          msg: 'stellar.webhook.processing_failed',
+          eventType: dto.type,
+          operationId: dto.id,
+          txHash: dto.transaction_hash,
+          error: err instanceof Error ? err.message : String(err),
+        }),
+        err instanceof Error ? err.stack : undefined,
+      );
       throw err;
     }
-
-    return { received: true };
   }
 
   /**
@@ -119,6 +133,16 @@ export class StellarWebhookService {
       await this.processEvent(dto);
     } catch (err) {
       this.processedIds.delete(dto.id);
+      this.logger.error(
+        JSON.stringify({
+          msg: 'stellar.replay.processing_failed',
+          eventType: dto.type,
+          operationId: dto.id,
+          txHash: dto.transaction_hash,
+          error: err instanceof Error ? err.message : String(err),
+        }),
+        err instanceof Error ? err.stack : undefined,
+      );
       throw err;
     }
 
@@ -203,8 +227,22 @@ export class StellarWebhookService {
   /**
    * Handle an incoming payment operation.
    *
-   * When a buyer sends funds to a vendor's escrow address we look up the
-   * matching escrow by the destination address and confirm the deposit.
+   * Issue #396 – the lookup previously used `findByBuyer(dto.to)` which is
+   * wrong on two counts:
+   *   1. `dto.to` is the *destination* (vendor/recipient) address, not the
+   *      buyer address.  The correct lookup is `findByVendor(dto.to)`.
+   *   2. The filter selected already-FUNDED escrows and wrote FUNDED again
+   *      (no-op).  We must require the escrow to be in CREATED so only
+   *      pending escrows are advanced.
+   *
+   * Additionally, neither the payment amount nor the asset was validated,
+   * allowing partial or wrong-asset payments to fund an escrow silently.
+   * Both are now verified before the state transition.
+   *
+   * Decision on overpayment: reject it.  Accepting a higher amount would
+   * leave excess funds in the contract with no defined reclaim path and
+   * could mask a payment directed to the wrong escrow.  The buyer must
+   * send the exact amount.
    */
   private async handlePayment(dto: StellarWebhookDto): Promise<void> {
     if (!dto.to) {
@@ -213,11 +251,14 @@ export class StellarWebhookService {
       );
     }
 
-    // Find escrows awaiting funding for this destination address
-    const escrows = await this.escrowRepository.findByBuyer(dto.to);
-    const funded = escrows.filter((e) => e.state === 'FUNDED');
+    // dto.to is the Horizon "destination" field – i.e. the vendor's Stellar
+    // address that the buyer paid into.  We therefore look up by vendorAddress.
+    const escrows = await this.escrowRepository.findByVendor(dto.to);
 
-    if (funded.length === 0) {
+    // Only advance escrows that are still awaiting payment.
+    const pending = escrows.filter((e) => e.state === 'CREATED');
+
+    if (pending.length === 0) {
       this.logger.log(
         JSON.stringify({
           msg: 'stellar.webhook.no_matching_escrow',
@@ -228,8 +269,51 @@ export class StellarWebhookService {
       return;
     }
 
-    // Update each matching escrow – in practice there should be at most one
-    for (const escrow of funded) {
+    // In practice there should be at most one CREATED escrow per vendor
+    // address at any given time, but we iterate defensively.
+    for (const escrow of pending) {
+      // ── Amount validation ────────────────────────────────────────────────
+      // The escrow amount is a Prisma Decimal; convert to a plain number for
+      // comparison.  We require an exact match: underpayments leave the escrow
+      // underfunded, and overpayments are rejected (see method-level comment).
+      const expectedAmount = Number(escrow.amount);
+      const receivedAmount =
+        dto.amount !== undefined ? Number(dto.amount) : NaN;
+
+      if (isNaN(receivedAmount) || receivedAmount !== expectedAmount) {
+        this.logger.warn(
+          JSON.stringify({
+            msg: 'stellar.webhook.amount_mismatch',
+            escrowId: escrow.id,
+            expected: expectedAmount,
+            received: dto.amount,
+            txHash: dto.transaction_hash,
+          }),
+        );
+        continue;
+      }
+
+      // ── Asset validation ─────────────────────────────────────────────────
+      // escrow.currency holds the asset code (e.g. "USDC").  Native XLM
+      // payments omit asset_code in the Horizon payload; we treat a missing
+      // asset_code as "XLM" and compare case-insensitively.
+      const expectedAsset = escrow.currency.toUpperCase();
+      const receivedAsset = (dto.asset_code ?? 'XLM').toUpperCase();
+
+      if (receivedAsset !== expectedAsset) {
+        this.logger.warn(
+          JSON.stringify({
+            msg: 'stellar.webhook.asset_mismatch',
+            escrowId: escrow.id,
+            expected: expectedAsset,
+            received: dto.asset_code,
+            txHash: dto.transaction_hash,
+          }),
+        );
+        continue;
+      }
+
+      // ── State transition ─────────────────────────────────────────────────
       await this.escrowRepository.updateState(escrow.id, 'FUNDED');
 
       this.logger.log(

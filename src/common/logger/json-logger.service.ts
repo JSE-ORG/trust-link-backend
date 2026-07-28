@@ -1,7 +1,7 @@
 import { ConsoleLogger, Injectable, LogLevel } from '@nestjs/common';
 
 /**
- * Issue #81 – Structured JSON logging replacing plain console.log.
+ * Issue #81 – Structured JSON logging replacing plain console output.
  *
  * Emits every log entry as a single-line JSON object so that log aggregators
  * (Datadog, CloudWatch, Loki, …) can parse fields without regex heuristics.

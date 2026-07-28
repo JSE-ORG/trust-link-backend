@@ -8,6 +8,11 @@ import {
 import { Transform } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
+/**
+ * Request body for creating or upserting a vendor profile. Contains the
+ * business name and optional contact details. Used by both POST /vendor/profile
+ * and PUT /vendor/profile endpoints.
+ */
 export class CreateVendorProfileDto {
   @ApiProperty({
     description: 'Registered business or trading name of the vendor.',
@@ -18,7 +23,7 @@ export class CreateVendorProfileDto {
   @IsString()
   @MinLength(2, { message: 'Business name must be at least 2 characters long' })
   @MaxLength(100, { message: 'Business name must not exceed 100 characters' })
-  @Transform(({ value }) => value?.trim())
+  @Transform(({ value }: { value: string }) => value?.trim())
   businessName!: string;
 
   @ApiPropertyOptional({
@@ -43,7 +48,8 @@ export class CreateVendorProfileDto {
   @ApiPropertyOptional({
     description: 'Short description of the vendor and what they sell.',
     maxLength: 500,
-    example: 'Authorized reseller of consumer electronics and camera equipment.',
+    example:
+      'Authorized reseller of consumer electronics and camera equipment.',
   })
   @IsOptional()
   @IsString()

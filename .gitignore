@@ -1,8 +1,25 @@
+# Dependencies and build output.
+# Coverage is matched with a trailing slash so any variant is caught —
+# `coverage-full/` was committed once as 181 files of generated HTML.
 /node_modules
+/dist
+coverage*/
+/openapi.json
+.eslintcache
+
+# Local environment. Never commit a real secret.
+# .env.example documents every variable and stays tracked.
+# .env.test holds throwaway values for the test suite and stays tracked.
+.env
+.env.local
+.env.*.local
+
+# OS and editor noise
+.DS_Store
+
+# Local scratch files
 issues.txt
 upload_issues.sh
 WAVE_ISSUES.md
-/dist
-/coverage
 .github/copilot-instructions.md
 /data

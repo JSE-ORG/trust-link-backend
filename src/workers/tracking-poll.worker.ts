@@ -39,28 +39,47 @@ export class TrackingPollWorker implements OnModuleInit, OnApplicationShutdown {
   }
 
   async run(): Promise<void> {
-    const shipments = await this.escrowRepository.findShippedWithTracking();
+    try {
+      const shipments = await this.escrowRepository.findShippedWithTracking();
 
-    for (const escrow of shipments) {
-      if (!escrow.trackingId) {
-        continue;
-      }
-
-      try {
-        const status = await this.logisticsService.getStatus(escrow.trackingId);
-        if (status.status !== 'DELIVERED') {
+      for (const escrow of shipments) {
+        if (!escrow.trackingId) {
           continue;
         }
 
-        const deliveredAt = new Date();
-        await this.escrowRepository.markDelivered(escrow.id, deliveredAt);
-        await this.contractService.recordDelivery(escrow.id);
-      } catch (error) {
-        this.logger.error(
-          `Tracking poll failed for escrow ${escrow.id}`,
-          error instanceof Error ? error.stack : undefined,
-        );
+        try {
+          const status = await this.logisticsService.getStatus(
+            escrow.trackingId,
+          );
+          if (status.status !== 'DELIVERED') {
+            continue;
+          }
+
+          const deliveredAt = new Date();
+          await this.escrowRepository.markDelivered(escrow.id, deliveredAt);
+          await this.contractService.recordDelivery(escrow.id);
+        } catch (error) {
+          this.logger.error(
+            JSON.stringify({
+              msg: 'tracking_poll.escrow_failed',
+              escrowId: escrow.id,
+              trackingId: escrow.trackingId,
+              eventType: 'tracking_poll',
+              error: error instanceof Error ? error.message : String(error),
+            }),
+            error instanceof Error ? error.stack : undefined,
+          );
+        }
       }
+    } catch (error) {
+      this.logger.error(
+        JSON.stringify({
+          msg: 'tracking_poll.worker_failed',
+          eventType: 'tracking_poll',
+          error: error instanceof Error ? error.message : String(error),
+        }),
+        error instanceof Error ? error.stack : undefined,
+      );
     }
   }
 }

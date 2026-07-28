@@ -14,7 +14,7 @@ export class StellarWebhookDto {
   })
   @IsString()
   @IsNotEmpty()
-  type: string;
+  type!: string;
 
   @ApiProperty({
     description: 'Unique identifier of the Horizon operation/event.',
@@ -22,7 +22,7 @@ export class StellarWebhookDto {
   })
   @IsString()
   @IsNotEmpty()
-  id: string;
+  id!: string;
 
   @ApiProperty({
     description: 'Hash of the Stellar transaction the event belongs to.',
@@ -30,7 +30,7 @@ export class StellarWebhookDto {
   })
   @IsString()
   @IsNotEmpty()
-  transaction_hash: string;
+  transaction_hash!: string;
 
   @ApiPropertyOptional({
     description: 'Destination account of the payment, if applicable.',
@@ -65,7 +65,8 @@ export class StellarWebhookDto {
   asset_code?: string;
 
   @ApiPropertyOptional({
-    description: 'Any additional event fields Horizon includes, captured verbatim.',
+    description:
+      'Any additional event fields Horizon includes, captured verbatim.',
     type: 'object',
     additionalProperties: true,
     example: { ledger: 51234567, paging_token: '220267715074457601' },

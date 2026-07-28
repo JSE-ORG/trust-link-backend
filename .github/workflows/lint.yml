@@ -2,19 +2,20 @@ name: Lint
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   pull_request:
 
 jobs:
   lint:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version-file: '.nvmrc'
           cache: 'npm'
 
       - name: Install dependencies
@@ -22,3 +23,5 @@ jobs:
 
       - name: Run ESLint
         run: npm run lint:check
+        env:
+          ESLINT_USE_FLAT_CONFIG: 'true'

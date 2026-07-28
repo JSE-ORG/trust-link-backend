@@ -1,10 +1,10 @@
-/* eslint-disable @typescript-eslint/unbound-method */
 import { NotFoundException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { EscrowService } from '../../src/escrow/escrow.service';
+import { LogisticsStatus } from '../../src/logistics/logistics.service';
 import { EscrowRepository } from '../../src/escrow/escrow.repository';
 import { LogisticsService } from '../../src/logistics/logistics.service';
-import { CacheService } from '../../src/common/cache.service';
+import { CacheService } from '../../src/cache/cache.service';
 import { NotificationsService } from '../../src/notifications/notifications.service';
 import { EscrowRecord } from '../../src/prisma/prisma.service';
 import { S3PresignService } from '../../src/common/services/s3-presign.service';
@@ -69,8 +69,8 @@ describe('EscrowService.getTracking (issue #58)', () => {
   });
 
   it('returns tracking details with status, estimatedDelivery, carrier, and events', async () => {
-    const trackingDetails = {
-      status: 'IN_TRANSIT',
+    const providerResponse = {
+      status: 'IN_TRANSIT' as LogisticsStatus,
       estimatedDelivery: new Date('2026-01-10T00:00:00.000Z'),
       carrier: 'FedEx',
       events: [
@@ -91,28 +91,24 @@ describe('EscrowService.getTracking (issue #58)', () => {
 
     repository.findById.mockResolvedValue(mockEscrow);
     cacheService.get.mockResolvedValue(null);
-    logisticsService.getStatus.mockResolvedValue({
-      status: trackingDetails.status,
-    });
-
-    const expected = {
-      status: trackingDetails.status,
-      estimatedDelivery: undefined,
-      carrier: undefined,
-      events: [],
-    };
+    logisticsService.getStatus.mockResolvedValue(providerResponse);
 
     const result = await service.getTracking('escrow-1');
 
-    expect(result).toEqual(expected);
+    expect(result).toEqual({
+      status: providerResponse.status,
+      estimatedDelivery: providerResponse.estimatedDelivery,
+      carrier: providerResponse.carrier,
+      events: providerResponse.events,
+    });
     expect(logisticsService.getStatus).toHaveBeenCalledWith('TRK-123');
     expect(cacheService.set).toHaveBeenCalledWith(
       'tracking:TRK-123',
       {
-        status: trackingDetails.status,
-        estimatedDelivery: undefined,
-        carrier: undefined,
-        events: [],
+        status: providerResponse.status,
+        estimatedDelivery: providerResponse.estimatedDelivery,
+        carrier: providerResponse.carrier,
+        events: providerResponse.events,
       },
       60,
     );
@@ -154,31 +150,39 @@ describe('EscrowService.getTracking (issue #58)', () => {
   });
 
   it('caches response for 60 seconds', async () => {
-    const trackingDetails = {
-      status: 'PENDING',
+    const providerResponse = {
+      status: 'PENDING' as LogisticsStatus,
+      estimatedDelivery: new Date('2026-01-15T00:00:00.000Z'),
       carrier: 'DHL',
-      events: [],
+      events: [
+        {
+          timestamp: new Date('2026-01-01T08:00:00.000Z'),
+          status: 'PICKED_UP',
+          location: 'Berlin, DE',
+          description: 'Package picked up by DHL',
+        },
+      ],
     };
 
     repository.findById.mockResolvedValue(mockEscrow);
     cacheService.get.mockResolvedValue(null);
-    logisticsService.getStatus.mockResolvedValue(trackingDetails as any);
+    logisticsService.getStatus.mockResolvedValue(providerResponse);
 
     await service.getTracking('escrow-1');
 
     expect(cacheService.set).toHaveBeenCalledWith(
       'tracking:TRK-123',
       {
-        status: trackingDetails.status,
-        estimatedDelivery: undefined,
-        carrier: undefined,
-        events: [],
+        status: providerResponse.status,
+        estimatedDelivery: providerResponse.estimatedDelivery,
+        carrier: providerResponse.carrier,
+        events: providerResponse.events,
       },
       60,
     );
   });
 
-  it('throws NotFoundException when logistics service fails', async () => {
+  it('does not cache a provider failure', async () => {
     repository.findById.mockResolvedValue(mockEscrow);
     cacheService.get.mockResolvedValue(null);
     logisticsService.getStatus.mockRejectedValue(
@@ -188,5 +192,79 @@ describe('EscrowService.getTracking (issue #58)', () => {
     await expect(service.getTracking('escrow-1')).rejects.toThrow(
       NotFoundException,
     );
+
+    expect(cacheService.set).not.toHaveBeenCalled();
+  });
+
+  it('passes through multi-event provider response with carrier and estimated delivery intact', async () => {
+    const providerResponse = {
+      status: 'IN_TRANSIT' as LogisticsStatus,
+      estimatedDelivery: new Date('2026-01-20T00:00:00.000Z'),
+      carrier: 'UPS',
+      events: [
+        {
+          timestamp: new Date('2026-01-01T06:00:00.000Z'),
+          status: 'PICKED_UP',
+          location: 'Memphis, TN',
+          description: 'Package picked up',
+        },
+        {
+          timestamp: new Date('2026-01-02T10:00:00.000Z'),
+          status: 'IN_TRANSIT',
+          location: 'Louisville, KY',
+          description: 'Arrived at sort facility',
+        },
+        {
+          timestamp: new Date('2026-01-03T14:00:00.000Z'),
+          status: 'IN_TRANSIT',
+          location: 'Dallas, TX',
+          description: 'Departed sort facility',
+        },
+      ],
+    };
+
+    repository.findById.mockResolvedValue(mockEscrow);
+    cacheService.get.mockResolvedValue(null);
+    logisticsService.getStatus.mockResolvedValue(providerResponse);
+
+    const result = await service.getTracking('escrow-1');
+
+    expect(result.carrier).toBe('UPS');
+    expect(result.estimatedDelivery).toEqual(
+      new Date('2026-01-20T00:00:00.000Z'),
+    );
+    expect(result.events).toHaveLength(3);
+    expect(result.events[0].status).toBe('PICKED_UP');
+    expect(result.events[1].status).toBe('IN_TRANSIT');
+    expect(result.events[2].status).toBe('IN_TRANSIT');
+  });
+
+  it('returns full shape from cache hit', async () => {
+    const cachedResponse = {
+      status: 'DELIVERED',
+      estimatedDelivery: new Date('2026-01-05T16:00:00.000Z'),
+      carrier: 'FedEx',
+      events: [
+        {
+          timestamp: new Date('2026-01-05T16:00:00.000Z'),
+          status: 'DELIVERED',
+          location: 'Los Angeles, CA',
+          description: 'Package delivered',
+        },
+      ],
+    };
+
+    repository.findById.mockResolvedValue(mockEscrow);
+    cacheService.get.mockResolvedValue(cachedResponse);
+
+    const result = await service.getTracking('escrow-1');
+
+    expect(result.carrier).toBe('FedEx');
+    expect(result.estimatedDelivery).toEqual(
+      new Date('2026-01-05T16:00:00.000Z'),
+    );
+    expect(result.events).toHaveLength(1);
+    expect(result.events[0].status).toBe('DELIVERED');
+    expect(logisticsService.getStatus).not.toHaveBeenCalled();
   });
 });

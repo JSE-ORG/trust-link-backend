@@ -3,6 +3,7 @@ import { DisputeRepository } from '../../src/dispute/dispute.repository';
 import { EscrowRepository } from '../../src/escrow/escrow.repository';
 import { AutoReleaseWorker } from '../../src/workers/auto-release.worker';
 import { ContractService } from '../../src/stellar/contract.service';
+import { EscrowRecord } from '../../src/prisma/prisma.service';
 
 describe('AutoReleaseWorker (issue #10)', () => {
   let worker: AutoReleaseWorker;
@@ -14,6 +15,16 @@ describe('AutoReleaseWorker (issue #10)', () => {
     escrowRepository = {
       findAutoReleaseEligible: jest.fn(),
       markAutoReleaseCompleted: jest.fn(),
+      markAutoReleaseSubmitting: jest
+        .fn()
+        .mockImplementation((id: string) =>
+          Promise.resolve({ id } as EscrowRecord),
+        ),
+      clearAutoReleaseSubmitting: jest
+        .fn()
+        .mockImplementation((id: string) =>
+          Promise.resolve({ id } as EscrowRecord),
+        ),
     } as unknown as jest.Mocked<EscrowRepository>;
     disputeRepository = {
       findByEscrow: jest.fn(),
@@ -41,6 +52,7 @@ describe('AutoReleaseWorker (issue #10)', () => {
         itemName: 'Camera',
         amount: 250,
         currency: 'USDC',
+        itemRef: 'ref-1',
         buyerAddress: 'buyer-1',
         vendorAddress: 'vendor-1',
         state: 'SHIPPED',
@@ -59,7 +71,10 @@ describe('AutoReleaseWorker (issue #10)', () => {
 
     await worker.run(new Date('2026-05-26T00:00:00.000Z'));
 
-    expect(contractService.submitAutoRelease).toHaveBeenCalledWith('escrow-1');
+    expect(contractService.submitAutoRelease).toHaveBeenCalledWith(
+      'escrow-1',
+      expect.any(String),
+    );
     expect(escrowRepository.markAutoReleaseCompleted).toHaveBeenCalledWith(
       'escrow-1',
       'tx-hash',
@@ -73,6 +88,7 @@ describe('AutoReleaseWorker (issue #10)', () => {
         itemName: 'Camera',
         amount: 250,
         currency: 'USDC',
+        itemRef: 'ref-1',
         buyerAddress: 'buyer-1',
         vendorAddress: 'vendor-1',
         state: 'SHIPPED',
@@ -90,6 +106,8 @@ describe('AutoReleaseWorker (issue #10)', () => {
       id: 'dispute-1',
       escrowId: 'escrow-1',
       reason: 'Open dispute',
+      description: '',
+      evidenceUrls: [],
       status: 'OPEN',
       resolvedAt: null,
       createdAt: new Date(),
@@ -99,5 +117,21 @@ describe('AutoReleaseWorker (issue #10)', () => {
     await worker.run();
 
     expect(contractService.submitAutoRelease).not.toHaveBeenCalled();
+  });
+
+  it('catches top-level worker failures so interval handlers do not reject', async () => {
+    escrowRepository.findAutoReleaseEligible.mockRejectedValue(
+      new Error('database unavailable'),
+    );
+    const loggerSpy = jest
+      .spyOn((worker as any).logger, 'error')
+      .mockImplementation();
+
+    await expect(worker.run()).resolves.toBeUndefined();
+
+    expect(loggerSpy).toHaveBeenCalledWith(
+      expect.stringContaining('auto_release.worker_failed'),
+      expect.any(String),
+    );
   });
 });

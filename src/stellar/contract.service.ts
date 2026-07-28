@@ -1,8 +1,11 @@
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import { ContractCallFailedException } from './contract-call-failed.exception';
 import { STELLAR_SERVER } from './stellar.tokens';
+import { DEFAULT_AUTO_RELEASE_MAX_RETRIES } from './contract.constants';
 
 interface StellarServer {
+  /** Loads the current account state (including sequence number) from Horizon. */
+  loadAccount(sourceAddress: string): Promise<{ sequence: string }>;
   submitTransaction(transaction: Record<string, unknown>): Promise<{
     hash?: string;
     status?: string;
@@ -40,18 +43,39 @@ export class ContractService {
     return result.hash;
   }
 
-  /** Submits an auto-release transaction, retrying sequence errors up to the limit. */
-  async submitAutoRelease(escrowId: string, maxRetries = 2): Promise<string> {
+  /**
+   * Submits an auto-release transaction, retrying on Stellar sequence errors.
+   *
+   * On each attempt the source account is re-fetched from Horizon so the
+   * transaction is rebuilt with the current sequence number — a stale sequence
+   * embedded in the XDR is the root cause of every retry failure on tx_bad_seq.
+   *
+   * @param escrowId      Trust-Link escrow identifier embedded in the contract call.
+   * @param sourceAddress Stellar address of the auto-release signing account.
+   * @param maxRetries    Maximum number of additional attempts after the first failure.
+   */
+  async submitAutoRelease(
+    escrowId: string,
+    sourceAddress: string,
+    maxRetries = DEFAULT_AUTO_RELEASE_MAX_RETRIES,
+  ): Promise<string> {
     if (!this.server) {
       throw new ContractCallFailedException('Stellar server is not configured');
     }
 
     let attempt = 0;
     while (attempt <= maxRetries) {
+      // Re-fetch the account before every attempt so the transaction is built
+      // with the current sequence number. Without this, a sequence error on
+      // attempt N causes attempt N+1 to replay the same stale XDR and fail again.
+      const account = await this.server.loadAccount(sourceAddress);
+
       try {
         const result = await this.server.submitTransaction({
           operation: 'autoRelease',
           escrowId,
+          sourceAddress,
+          sequence: account.sequence,
         });
 
         if (result.status === 'ERROR' || result.resultXdr === 'TxFailed') {
