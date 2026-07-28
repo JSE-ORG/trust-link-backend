@@ -646,6 +646,66 @@ export class PrismaService implements OnModuleDestroy {
       }
       return Promise.resolve({ count: 0 });
     },
+    count: ({
+      where,
+    }: {
+      where?: Partial<
+        Pick<
+          EscrowRecord,
+          | 'state'
+          | 'trackingId'
+          | 'vendorAddress'
+          | 'buyerAddress'
+          | 'disputeId'
+          | 'itemRef'
+          | 'autoReleaseTxHash'
+          | 'autoReleaseSubmittedAt'
+        >
+      > & {
+        shippedAt?: { lte: Date };
+        deliveredAt?: { lte: Date } | null;
+        createdAt?: { gte: Date; lte: Date };
+      };
+    } = {}): Promise<number> => {
+      const escrows = [...this.escrows.values()].filter((escrow) => {
+        if (!where) {
+          return true;
+        }
+
+        return Object.entries(where).every(([key, value]) => {
+          if (value === undefined) {
+            return true;
+          }
+
+          if (
+            (key === 'shippedAt' || key === 'deliveredAt') &&
+            typeof value === 'object' &&
+            value !== null &&
+            'lte' in value
+          ) {
+            const { lte } = value;
+            const field =
+              key === 'shippedAt' ? escrow.shippedAt : escrow.deliveredAt;
+            return field !== null && field !== undefined && field <= lte;
+          }
+
+          if (
+            key === 'createdAt' &&
+            typeof value === 'object' &&
+            value !== null &&
+            'gte' in value &&
+            'lte' in value
+          ) {
+            const { gte, lte } = value;
+            return escrow.createdAt >= gte && escrow.createdAt <= lte;
+          }
+
+          return escrow[key as keyof EscrowRecord] === value;
+        });
+      }).filter((e) => (where?.state ? true : e.state !== 'CANCELLED'));
+
+      return Promise.resolve(escrows.length);
+    },
     deleteMany: (): Promise<{ count: number }> => {
       const count = this.escrows.size;
       this.escrows.clear();
