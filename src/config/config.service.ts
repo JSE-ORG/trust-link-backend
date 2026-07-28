@@ -32,6 +32,8 @@ export interface Config {
   GIT_SHA?: string;
   EVIDENCE_UPLOAD_LIMIT?: number;
   EVIDENCE_UPLOAD_TTL?: number;
+  GIGL_API_BASE_URL?: string;
+  GIGL_API_TOKEN?: string;
 }
 
 @Injectable()
@@ -78,6 +80,12 @@ export class ConfigService {
       ),
       LOG_LEVEL: this.nestConfigService.get('LOG_LEVEL', { infer: true }),
       API_BASE_URL: this.nestConfigService.get('API_BASE_URL', { infer: true }),
+      GIGL_API_BASE_URL: this.nestConfigService.get('GIGL_API_BASE_URL', {
+        infer: true,
+      }),
+      GIGL_API_TOKEN: this.nestConfigService.get('GIGL_API_TOKEN', {
+        infer: true,
+      }),
     };
   }
 
