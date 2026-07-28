@@ -104,7 +104,14 @@ const stellarPublicKey = Joi.string().custom((value, helpers) => {
           .valid('TESTNET', 'MAINNET')
           .default('TESTNET'),
         ALLOWED_ORIGINS: Joi.string().optional(),
-        STELLAR_WEBHOOK_SECRET: Joi.string().optional(),
+        STELLAR_WEBHOOK_SECRET: Joi.when('NODE_ENV', {
+          is: 'production',
+          then: Joi.string().required().messages({
+            'any.required':
+              'Config validation error: STELLAR_WEBHOOK_SECRET is required in production',
+          }),
+          otherwise: Joi.string().optional(),
+        }),
         LOG_LEVEL: Joi.string()
           .valid('trace', 'debug', 'info', 'warn', 'error', 'fatal')
           .default('info'),
