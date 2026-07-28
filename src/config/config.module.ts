@@ -1,7 +1,70 @@
 import { Global, Module } from '@nestjs/common';
 import { ConfigModule as NestConfigModule } from '@nestjs/config';
 import * as Joi from 'joi';
+import { Keypair } from '@stellar/stellar-sdk';
 import { ConfigService } from './config.service';
+
+/**
+ * Custom Joi validator for Stellar secret keys.
+ *
+ * Validates by DECODING the key via Keypair.fromSecret, not pattern matching
+ * alone. This catches checksum errors that the pattern /^S[A-Z2-7]{55}$/ cannot
+ * detect.
+ *
+ * Rejects:
+ * - Shape-valid but checksum-invalid keys (e.g. SAAAAAAA...AAAA)
+ * - Public keys supplied where a secret key is expected (G... keys)
+ * - Completely malformed strings
+ */
+const stellarSecretKey = Joi.string().custom((value, helpers) => {
+  // Quick shape check first for better error messages
+  if (!value.startsWith('S')) {
+    return helpers.error('any.invalid', {
+      message:
+        `${helpers.state.key} must be a Stellar secret key ` +
+        `starting with S, got a value starting with '${value[0]}'`,
+    });
+  }
+
+  try {
+    Keypair.fromSecret(value);
+    return value; // valid — checksum passed
+  } catch {
+    return helpers.error('any.invalid', {
+      message:
+        `${helpers.state.key} is not a valid Stellar secret key ` +
+        `— checksum verification failed. ` +
+        `Check the key value in your environment configuration.`,
+    });
+  }
+}, 'Stellar secret key checksum validation');
+
+/**
+ * Custom Joi validator for Stellar public keys (G... addresses).
+ *
+ * Validates by decoding via Keypair.fromPublicKey. Rejects secret keys,
+ * malformed strings, and checksum failures.
+ */
+const stellarPublicKey = Joi.string().custom((value, helpers) => {
+  if (!value.startsWith('G')) {
+    return helpers.error('any.invalid', {
+      message:
+        `${helpers.state.key} must be a Stellar public key ` +
+        `starting with G, got a value starting with '${value[0]}'`,
+    });
+  }
+
+  try {
+    Keypair.fromPublicKey(value);
+    return value; // valid
+  } catch {
+    return helpers.error('any.invalid', {
+      message:
+        `${helpers.state.key} is not a valid Stellar public key ` +
+        `— checksum verification failed.`,
+    });
+  }
+}, 'Stellar public key checksum validation');
 
 @Global()
 @Module({
@@ -11,33 +74,19 @@ import { ConfigService } from './config.service';
         PORT: Joi.number().default(3000),
         DATABASE_URL: Joi.string().required(),
         SEP10_JWT_SECRET: Joi.string().min(32).required(),
-        // Stellar system signer secret key — must start with 'S' (StrKey encoded)
-        SYSTEM_SIGNER_SECRET: Joi.string()
-          .pattern(/^S[A-Z2-7]{55}$/)
-          .required()
-          .messages({
-            'string.pattern.base':
-              'Config validation error: SYSTEM_SIGNER_SECRET must be a valid Stellar secret key (starts with S)',
-            'any.required':
-              'Config validation error: SYSTEM_SIGNER_SECRET is required',
-          }),
+        // Stellar system signer secret key — validated by Keypair.fromSecret for checksum
+        SYSTEM_SIGNER_SECRET: stellarSecretKey.required(),
         // Secret key used to sign SEP-10 challenge transactions. Its public key
         // is what wallets verify against and what a stellar.toml would publish
         // as SIGNING_KEY, so it must be stable across restarts and identical on
         // every replica. Optional: falls back to SYSTEM_SIGNER_SECRET. Set it
         // explicitly to keep web-auth signing separate from transaction signing.
-        SEP10_SIGNING_SECRET: Joi.string()
-          .pattern(/^S[A-Z2-7]{55}$/)
-          .optional()
-          .messages({
-            'string.pattern.base':
-              'Config validation error: SEP10_SIGNING_SECRET must be a valid Stellar secret key (starts with S)',
-          }),
+        SEP10_SIGNING_SECRET: stellarSecretKey.optional(),
         // Soroban smart contract ID for the escrow contract
         CONTRACT_ID: Joi.string().required().messages({
           'any.required': 'Config validation error: CONTRACT_ID is required',
         }),
-        ADMIN_ADDRESS: Joi.string().required(),
+        ADMIN_ADDRESS: stellarPublicKey.required(),
         AUTO_RELEASE_SOURCE_ADDRESS: Joi.string().optional(),
         NODE_ENV: Joi.string()
           .valid('development', 'production', 'test')
@@ -68,7 +117,7 @@ import { ConfigService } from './config.service';
         GIT_SHA: Joi.string().optional(),
       }),
       validationOptions: {
-        abortEarly: true,
+        abortEarly: false,
         allowUnknown: true,
       },
     }),
