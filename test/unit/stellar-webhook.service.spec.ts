@@ -151,12 +151,16 @@ describe('StellarWebhookService (issue #76)', () => {
   it('updates escrow state on a confirmed deposit', async () => {
     configService.get.mockReturnValue(undefined);
     // dto.to = vendor address; amount and asset_code match the escrow fixture.
-    const dto = makeDto({ to: 'GVENDOR001', amount: '100.00', asset_code: 'USDC' });
+    const dto = makeDto({
+      to: 'GVENDOR001',
+      amount: '100.00',
+      asset_code: 'USDC',
+    });
     const raw = Buffer.from(JSON.stringify(dto));
 
     const createdEscrow = makeCreatedEscrow();
 
-    escrowRepository.findByVendor.mockResolvedValue([createdEscrow] as any);
+    escrowRepository.findByVendor.mockResolvedValue([createdEscrow]);
     escrowRepository.updateState.mockResolvedValue({
       ...createdEscrow,
       state: 'FUNDED',

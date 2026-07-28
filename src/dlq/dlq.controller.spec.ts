@@ -1,3 +1,4 @@
+import { ServiceUnavailableException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { DlqController } from './dlq.controller';
 import { DlqService } from './dlq.service';
@@ -55,17 +56,34 @@ describe('DlqController', () => {
     };
   };
 
-  describe('startup', () => {
-    it('throws when AUTO_RELEASE_SOURCE_ADDRESS is unset', async () => {
-      await expect(buildController(undefined)).rejects.toThrow(
-        'AUTO_RELEASE_SOURCE_ADDRESS must be set',
-      );
+  describe('missing AUTO_RELEASE_SOURCE_ADDRESS', () => {
+    // The address is resolved when replay is called, not in the constructor.
+    // `config.module.ts` declares AUTO_RELEASE_SOURCE_ADDRESS optional, so
+    // throwing at construction stopped Nest instantiating the controller and
+    // took the whole application down with it: NestFactory.create failed, so
+    // `npm run start` and `npm run openapi:generate` both broke. Only the
+    // replay endpoint should be unavailable when the address is unset.
+
+    it('still constructs when the address is unset', async () => {
+      await expect(buildController(undefined)).resolves.toBeDefined();
     });
 
-    it('throws when AUTO_RELEASE_SOURCE_ADDRESS is an empty string', async () => {
-      await expect(buildController('')).rejects.toThrow(
-        'AUTO_RELEASE_SOURCE_ADDRESS must be set',
+    it('still constructs when the address is an empty string', async () => {
+      await expect(buildController('')).resolves.toBeDefined();
+    });
+
+    it('rejects replay with 503 when the address is unset', async () => {
+      const { controller, dlq, contract } = await buildController(undefined);
+      dlq.get.mockResolvedValue(autoReleaseRecord);
+      dlq.replay.mockImplementation(async (_id, replay) => {
+        await replay(autoReleaseRecord);
+        return autoReleaseRecord;
+      });
+
+      await expect(controller.replay(autoReleaseRecord.id)).rejects.toThrow(
+        ServiceUnavailableException,
       );
+      expect(contract.submitAutoRelease).not.toHaveBeenCalled();
     });
   });
 

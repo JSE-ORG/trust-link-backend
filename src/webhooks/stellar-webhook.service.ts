@@ -277,7 +277,8 @@ export class StellarWebhookService {
       // comparison.  We require an exact match: underpayments leave the escrow
       // underfunded, and overpayments are rejected (see method-level comment).
       const expectedAmount = Number(escrow.amount);
-      const receivedAmount = dto.amount !== undefined ? Number(dto.amount) : NaN;
+      const receivedAmount =
+        dto.amount !== undefined ? Number(dto.amount) : NaN;
 
       if (isNaN(receivedAmount) || receivedAmount !== expectedAmount) {
         this.logger.warn(
