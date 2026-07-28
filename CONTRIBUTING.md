@@ -183,7 +183,7 @@ It signs tokens with the same algorithm and claim shape as
 the guard. `test/integration/dispute-access.integration-spec.ts` is a worked
 example covering both cases.
 
-If you branched before this landed, rebase onto `main`. Tests that authenticated
+If you branched before this landed, rebase onto `dev`. Tests that authenticated
 with a bare address were migrated across the whole suite, and yours will need
 the same change.
 
@@ -276,10 +276,28 @@ trustlink-backend/
 
 ### Branching
 
+This repository uses two long-lived branches.
+
+| Branch | What it is | Do you branch from it? |
+|---|---|---|
+| `dev` | Default branch. Every pull request targets this. | **Yes** |
+| `main` | Released baseline, promoted from `dev` once green. | No |
+
+Branch from `dev`, and open your pull request against `dev`. A pull request
+targeting `main` will be retargeted or closed.
+
 ```bash
-git checkout main
-git pull upstream main
+git checkout dev
+git pull upstream dev
 git checkout -b feat/your-feature-name
+```
+
+If you opened a pull request before this changed, you do not need to redo
+anything. Rebase onto `dev` and a maintainer will retarget it:
+
+```bash
+git fetch upstream
+git rebase upstream/dev
 ```
 
 | Type | Pattern | Example |
