@@ -114,9 +114,9 @@ export class EscrowService {
 
       const details = {
         status: status.status,
-        estimatedDelivery: undefined,
-        carrier: undefined,
-        events: [],
+        estimatedDelivery: status.estimatedDelivery,
+        carrier: status.carrier,
+        events: status.events,
       };
 
       await this.cacheService?.set(key, details, 60);

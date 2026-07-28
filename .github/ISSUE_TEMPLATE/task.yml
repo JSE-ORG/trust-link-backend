@@ -66,6 +66,6 @@ body:
         ---
         ### Before you start
 
-        - **Setup:** [CONTRIBUTING.md → Development Setup](https://github.com/JSE-ORG/trust-link-backend/blob/main/CONTRIBUTING.md#development-setup). Use **Node 22** (`nvm use`), run `npm ci` rather than `npm install`, and run `npx prisma generate` after installing.
-        - **Tests that authenticate:** use `bearer()` from `test/auth-helper.ts`. A bare Stellar address as a bearer token returns 401. See [Writing Tests That Need Authentication](https://github.com/JSE-ORG/trust-link-backend/blob/main/CONTRIBUTING.md#writing-tests-that-need-authentication).
-        - **Branch from the latest `main`** and rebase before pushing.
+        - **Setup:** [CONTRIBUTING.md → Development Setup](https://github.com/JSE-ORG/trust-link-backend/blob/dev/CONTRIBUTING.md#development-setup). Use **Node 22** (`nvm use`), run `npm ci` rather than `npm install`, and run `npx prisma generate` after installing.
+        - **Tests that authenticate:** use `bearer()` from `test/auth-helper.ts`. A bare Stellar address as a bearer token returns 401. See [Writing Tests That Need Authentication](https://github.com/JSE-ORG/trust-link-backend/blob/dev/CONTRIBUTING.md#writing-tests-that-need-authentication).
+        - **Branch from the latest `dev`** and open your pull request against `dev`, not `main`. `dev` is the default branch. `main` is the released baseline and is not a branching point.

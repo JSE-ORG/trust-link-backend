@@ -1,4 +1,12 @@
-import { Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Param,
+  Post,
+  Query,
+  ServiceUnavailableException,
+  UseGuards,
+} from '@nestjs/common';
 import { JwtGuard } from '../auth/guards/jwt.guard';
 import { AdminGuard } from '../admin/guards/admin.guard';
 import { DlqService } from './dlq.service';
@@ -17,20 +25,32 @@ import { ConfigService } from '../config/config.service';
 @UseGuards(JwtGuard, AdminGuard)
 export class DlqController {
   /** Stellar address of the auto-release signing account used to replay `submitAutoRelease`. */
-  private readonly autoReleaseSourceAddress: string;
-
   constructor(
     private readonly dlq: DlqService,
     private readonly contract: ContractService,
-    config: ConfigService,
-  ) {
-    const address = config.get('AUTO_RELEASE_SOURCE_ADDRESS');
+    private readonly config: ConfigService,
+  ) {}
+
+  /**
+   * Returns the auto-release signing address, or throws if it is not configured.
+   *
+   * Resolved on use rather than in the constructor. `AUTO_RELEASE_SOURCE_ADDRESS`
+   * is declared optional in `config.module.ts`, so throwing at construction made
+   * an optional variable mandatory for the whole application: Nest could not
+   * instantiate this controller, so `NestFactory.create` failed and nothing
+   * booted, including `npm run start` and the OpenAPI generation script.
+   *
+   * Failing here instead keeps the failure proportionate. Only the replay
+   * endpoint is unavailable, and it still fails loudly with a clear message.
+   */
+  private requireAutoReleaseSource(): string {
+    const address = this.config.get<string>('AUTO_RELEASE_SOURCE_ADDRESS');
     if (!address) {
-      throw new Error(
-        'AUTO_RELEASE_SOURCE_ADDRESS must be set to enable DLQ auto-release replay',
+      throw new ServiceUnavailableException(
+        'AUTO_RELEASE_SOURCE_ADDRESS is not configured, so auto-release replay is unavailable.',
       );
     }
-    this.autoReleaseSourceAddress = address;
+    return address;
   }
 
   @Get()
@@ -63,7 +83,7 @@ export class DlqController {
       if (r.operation === 'submitAutoRelease' && r.escrowId) {
         return this.contract.submitAutoRelease(
           r.escrowId,
-          this.autoReleaseSourceAddress,
+          this.requireAutoReleaseSource(),
         );
       }
       throw new Error(

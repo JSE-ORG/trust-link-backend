@@ -2,14 +2,14 @@ import './tracing/tracing.bootstrap';
 import * as Sentry from '@sentry/nestjs';
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
-import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { SwaggerModule } from '@nestjs/swagger';
 import compression from 'compression';
 import * as express from 'express';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { ConfigService } from './config/config.service';
 import { JsonLoggerService } from './common/logger/json-logger.service';
-import { ErrorResponseDto } from './common/dto/error-response.dto';
+import { createOpenApiDocument } from './openapi';
 import { SanitizationPipe } from './common/pipes/sanitization.pipe';
 import { SentryInterceptor } from './common/interceptors/sentry.interceptor';
 import { buildCspConnectSrc } from './common/security/csp.config';
@@ -155,27 +155,7 @@ async function bootstrap(): Promise<void> {
     new SanitizationPipe(),
   );
 
-  const swaggerConfig = new DocumentBuilder()
-    .setTitle('TrustLink API')
-    .setDescription(
-      'REST API for the TrustLink escrow backend. Auto-generated from DTO decorators.',
-    )
-    .setVersion('1.0')
-    .addBearerAuth()
-    .build();
-  const document = SwaggerModule.createDocument(app, swaggerConfig, {
-    extraModels: [ErrorResponseDto],
-  });
-  document.components ??= {};
-  document.components.responses ??= {};
-  document.components.responses.StandardError = {
-    description: 'Standard error response',
-    content: {
-      'application/json': {
-        schema: { $ref: '#/components/schemas/ErrorResponseDto' },
-      },
-    },
-  };
+  const document = createOpenApiDocument(app);
   SwaggerModule.setup('api/docs', app, document);
 
   app.enableShutdownHooks();

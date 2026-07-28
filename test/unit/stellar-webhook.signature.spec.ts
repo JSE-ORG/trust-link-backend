@@ -1,4 +1,7 @@
-import { UnauthorizedException } from '@nestjs/common';
+import {
+  InternalServerErrorException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import * as crypto from 'crypto';
 import { ConfigService } from '../../src/config/config.service';
@@ -15,6 +18,7 @@ import { StellarWebhookService } from '../../src/webhooks/stellar-webhook.servic
  *  - a signature computed over the EXACT raw body bytes is accepted, and
  *  - any deviation (tampered body, wrong secret, malformed/short/long signature,
  *    missing header) is strictly rejected with UnauthorizedException.
+ *  - a missing STELLAR_WEBHOOK_SECRET is rejected with InternalServerErrorException.
  */
 describe('StellarWebhookService — HMAC signature verification (issue #48)', () => {
   let service: StellarWebhookService;
@@ -29,8 +33,9 @@ describe('StellarWebhookService — HMAC signature verification (issue #48)', ()
     type: 'payment',
     id: 'op-sig-001',
     transaction_hash: 'tx-sig-abc',
-    to: 'GBUYER_SIG',
-    from: 'GSENDER_SIG',
+    // dto.to is the vendor's Stellar address (payment destination).
+    to: 'GVENDOR_SIG',
+    from: 'GBUYER_SIG',
     amount: '42.50',
     asset_code: 'USDC',
     ...overrides,
@@ -47,7 +52,8 @@ describe('StellarWebhookService — HMAC signature verification (issue #48)', ()
     } as unknown as jest.Mocked<ConfigService>;
 
     escrowRepository = {
-      findByBuyer: jest.fn().mockResolvedValue([]),
+      // Issue #396: handlePayment now uses findByVendor (dto.to = destination = vendor address).
+      findByVendor: jest.fn().mockResolvedValue([]),
       updateState: jest.fn(),
     } as unknown as jest.Mocked<EscrowRepository>;
 
@@ -60,6 +66,20 @@ describe('StellarWebhookService — HMAC signature verification (issue #48)', ()
     }).compile();
 
     service = moduleRef.get(StellarWebhookService);
+  });
+
+  // ── Configuration error: missing secret ───────────────────────────────────
+
+  describe('missing secret', () => {
+    it('rejects when STELLAR_WEBHOOK_SECRET is not configured', async () => {
+      configService.get.mockReturnValue(undefined);
+      const dto = makeDto();
+      const raw = Buffer.from(JSON.stringify(dto), 'utf8');
+
+      await expect(service.handleEvent(raw, 'irrelevant', dto)).rejects.toThrow(
+        InternalServerErrorException,
+      );
+    });
   });
 
   // ── Valid payloads pass verification cleanly ───────────────────────────────
@@ -237,19 +257,6 @@ describe('StellarWebhookService — HMAC signature verification (issue #48)', ()
       await expect(service.handleEvent(raw, sig, dto)).rejects.toThrow(
         UnauthorizedException,
       );
-    });
-  });
-
-  // ── Verification is skipped only when no secret is configured ──────────────
-
-  it('skips verification when no secret is configured (dev/test convenience)', async () => {
-    configService.get.mockReturnValue(undefined);
-    const dto = makeDto();
-    const raw = Buffer.from(JSON.stringify(dto), 'utf8');
-
-    // Even a clearly bogus signature is accepted because checks are disabled.
-    await expect(service.handleEvent(raw, 'whatever', dto)).resolves.toEqual({
-      received: true,
     });
   });
 });
