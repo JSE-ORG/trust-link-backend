@@ -1,6 +1,11 @@
 import type { INestApplication } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { ErrorResponseDto } from './common/dto/error-response.dto';
+import { LivenessResponseDto } from './common/dto/liveness-response.dto';
+import {
+  ReadinessResponseDto,
+  ReadinessComponentHealthDto,
+} from './common/dto/readiness-response.dto';
 
 /** Builds the API contract shared by the Swagger UI and CI export. */
 export function createOpenApiDocument(app: INestApplication) {
@@ -13,7 +18,12 @@ export function createOpenApiDocument(app: INestApplication) {
     .addBearerAuth()
     .build();
   const document = SwaggerModule.createDocument(app, swaggerConfig, {
-    extraModels: [ErrorResponseDto],
+    extraModels: [
+      ErrorResponseDto,
+      LivenessResponseDto,
+      ReadinessResponseDto,
+      ReadinessComponentHealthDto,
+    ],
   });
   document.components ??= {};
   document.components.responses ??= {};

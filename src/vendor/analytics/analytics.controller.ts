@@ -12,6 +12,7 @@ import {
   ApiResponse,
   ApiBearerAuth,
   ApiQuery,
+  ApiOkResponse,
 } from '@nestjs/swagger';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import type { AuthUser } from '../../auth/auth-user';
@@ -19,6 +20,7 @@ import { JwtGuard } from '../../auth/guards/jwt.guard';
 import { AnalyticsService } from './analytics.service';
 import { ChartDataResponse } from './analytics.dto';
 import { AnalyticsStatsResponse } from './analytics-stats.dto';
+import { ErrorResponseDto } from '../../common/dto/error-response.dto';
 
 @ApiTags('Vendor')
 @ApiBearerAuth()
@@ -40,13 +42,25 @@ export class AnalyticsController {
   @ApiOperation({
     summary: 'Get overall transaction statistics for the authenticated vendor',
   })
-  @ApiResponse({
-    status: 200,
+  @ApiOkResponse({
     description: 'Vendor transaction statistics returned.',
+    type: AnalyticsStatsResponse,
   })
-  @ApiResponse({ status: 401, description: 'Unauthorized.' })
-  @ApiResponse({ status: 429, description: 'Too many requests.' })
-  @ApiResponse({ status: 500, description: 'Internal server error.' })
+  @ApiResponse({
+    status: 401,
+    description: 'Unauthorized.',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 429,
+    description: 'Too many requests.',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 500,
+    description: 'Internal server error.',
+    type: ErrorResponseDto,
+  })
   @Get()
   @HttpCode(HttpStatus.OK)
   async getTransactionStats(
@@ -81,13 +95,25 @@ export class AnalyticsController {
     description: 'IANA timezone for date grouping.',
     example: 'UTC',
   })
-  @ApiResponse({
-    status: 200,
+  @ApiOkResponse({
     description: 'Daily volume chart data returned.',
+    type: ChartDataResponse,
   })
-  @ApiResponse({ status: 401, description: 'Unauthorized.' })
-  @ApiResponse({ status: 429, description: 'Too many requests.' })
-  @ApiResponse({ status: 500, description: 'Internal server error.' })
+  @ApiResponse({
+    status: 401,
+    description: 'Unauthorized.',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 429,
+    description: 'Too many requests.',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 500,
+    description: 'Internal server error.',
+    type: ErrorResponseDto,
+  })
   @Get('chart')
   @HttpCode(HttpStatus.OK)
   async getDailyVolumeChart(

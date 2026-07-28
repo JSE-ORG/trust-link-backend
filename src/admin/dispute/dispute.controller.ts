@@ -12,6 +12,7 @@ import {
   ApiOperation,
   ApiResponse,
   ApiTags,
+  ApiOkResponse,
 } from '@nestjs/swagger';
 import { JwtGuard } from '../../auth/guards/jwt.guard';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
@@ -20,6 +21,10 @@ import { AdminGuard } from '../guards/admin.guard';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { ResolveDisputeDto } from './dto/resolve-dispute.dto';
 import { DisputeService } from './dispute.service';
+import { DisputeResponseDto } from '../../escrow/dto/dispute-response.dto';
+import { AdminDisputesPaginatedResponseDto } from './dto/admin-disputes-paginated-response.dto';
+import { AuditLogEntryDto } from '../stats/dto/audit-log-entry.dto';
+import { ErrorResponseDto } from '../../common/dto/error-response.dto';
 
 @ApiTags('Admin')
 @ApiBearerAuth()
@@ -32,9 +37,30 @@ export class DisputeController {
   ) {}
 
   @ApiOperation({ summary: 'List all disputes (admin only)' })
-  @ApiResponse({ status: 200, description: 'Paginated dispute list returned.' })
-  @ApiResponse({ status: 401, description: 'Unauthorized.' })
-  @ApiResponse({ status: 403, description: 'Admin access required.' })
+  @ApiOkResponse({
+    description: 'Paginated dispute list returned.',
+    type: AdminDisputesPaginatedResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid query parameters.',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Unauthorized.',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Admin access required.',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 500,
+    description: 'Internal server error.',
+    type: ErrorResponseDto,
+  })
   @Get('disputes')
   async getDisputes(
     @Query('status') status?: string,
@@ -51,14 +77,40 @@ export class DisputeController {
   @ApiOperation({
     summary: 'Resolve a dispute by releasing or refunding the escrow',
   })
-  @ApiResponse({
-    status: 200,
+  @ApiOkResponse({
     description: 'Dispute resolved, escrow state updated.',
+    type: DisputeResponseDto,
   })
-  @ApiResponse({ status: 400, description: 'Invalid resolution value.' })
-  @ApiResponse({ status: 401, description: 'Unauthorized.' })
-  @ApiResponse({ status: 403, description: 'Admin access required.' })
-  @ApiResponse({ status: 404, description: 'Escrow not found.' })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid resolution value.',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Unauthorized.',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Admin access required.',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Escrow not found.',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 409,
+    description: 'Conflict — dispute is not in OPEN state.',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 500,
+    description: 'Internal server error.',
+    type: ErrorResponseDto,
+  })
   @Patch('dispute/:id/resolve')
   async resolve(
     @Param('id') id: string,
@@ -77,9 +129,25 @@ export class DisputeController {
   }
 
   @ApiOperation({ summary: 'Get admin audit log entries' })
-  @ApiResponse({ status: 200, description: 'Audit log returned.' })
-  @ApiResponse({ status: 401, description: 'Unauthorized.' })
-  @ApiResponse({ status: 403, description: 'Admin access required.' })
+  @ApiOkResponse({
+    description: 'Audit log returned.',
+    type: [AuditLogEntryDto],
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Unauthorized.',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Admin access required.',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 500,
+    description: 'Internal server error.',
+    type: ErrorResponseDto,
+  })
   @Get('audit-log')
   getAuditLog() {
     return this.auditLogService.findAll();

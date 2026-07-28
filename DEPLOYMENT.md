@@ -85,7 +85,37 @@ docker-compose --profile production down
 
 - **PostgreSQL**: Uses `pg_isready` to verify database connectivity
 - **Redis**: Uses `redis-cli ping` to verify Redis is responding
-- **Application**: Uses `/health` endpoint to verify all dependencies are healthy
+- **Application**: Uses three HTTP endpoints — pick the right one for each job:
+
+| Endpoint          | Semantics    | When to use                                                                                                |
+| ----------------- | ------------ | ---------------------------------------------------------------------------------------------------------- |
+| `GET /health/live`| **Liveness** | Kubernetes/container-orchestrator `livenessProbe`. Always returns 200 if the HTTP stack is up; NO dependency checks. A failure here means "restart the container". Never triggers a restart because an upstream dependency is briefly down. |
+| `GET /health/ready` | **Readiness** | Kubernetes/container-orchestrator `readinessProbe` and load-balancer target-group health. Runs full dependency checks (PostgreSQL + Horizon, Redis reported but optional). Returns 503 when required dependencies are unreachable, so the instance is removed from rotation temporarily. |
+| `GET /health`    | **Legacy**   | Alias for `/health/ready` (readiness semantics). Preserved for backwards compatibility with existing monitors; new deployments should prefer the two endpoints above. |
+
+#### Orchestrator example (Kubernetes probes)
+
+```yaml
+livenessProbe:
+  httpGet:
+    path: /health/live
+    port: http
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  timeoutSeconds: 2
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /health/ready
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 5
+  timeoutSeconds: 2
+  failureThreshold: 3
+```
+
+Load balancers (AWS ALB, GCP LB, nginx, etc.) should poll **`/health/ready`** (not `/health/live`) so an instance with a database outage is taken out of the pool instead of returning 5xx to real users.
 
 The application service waits for both PostgreSQL and Redis to be healthy before starting, preventing crash-loops due to unavailable dependencies.
 
@@ -127,7 +157,9 @@ Never run application instances from a new build against an old schema when the 
 ## Validation Milestones
 
 - The service starts without configuration warnings for required production variables.
-- `GET /health` returns a successful response.
+- `GET /health/live` returns 200 (always, no dependencies touched).
+- `GET /health/ready` returns 200 once database + Horizon are reachable; returns 503 when required dependencies are unavailable.
+- `GET /health` (legacy alias) returns the same status code and body as `GET /health/ready`.
 - `GET /version` returns the expected release version.
 - SEP-10 challenge and verify flows issue tokens.
 - Vendor escrow list queries return within the expected latency budget.
