@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleDestroy, Optional } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 
 // AES-256-GCM ciphertext produced by contact-encryption.util: iv:authTag:ciphertext
 // IV = 12 bytes (24 hex), tag = 16 bytes (32 hex), ciphertext = 1+ hex chars.
@@ -645,6 +645,9 @@ export class PrismaService implements OnModuleDestroy {
       const count = this.escrows.size;
       this.escrows.clear();
       return Promise.resolve({ count });
+    },
+    count: ({ where }: { where?: any } = {}): Promise<number> => {
+      return this.escrow.findMany({ where }).then(r => r.length);
     },
   };
 

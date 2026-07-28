@@ -206,7 +206,7 @@ describe('DlqController', () => {
       );
       const abandonedRecord = {
         ...autoReleaseRecord,
-        status: 'ABANDONED',
+        status: 'ABANDONED' as const,
       };
       dlq.abandon.mockResolvedValue(abandonedRecord);
 

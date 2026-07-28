@@ -86,7 +86,7 @@ const stellarPublicKey = Joi.string().custom((value, helpers) => {
         CONTRACT_ID: Joi.string().required().messages({
           'any.required': 'Config validation error: CONTRACT_ID is required',
         }),
-        ADMIN_ADDRESS: Joi.string().required(),
+        ADMIN_ADDRESS: stellarPublicKey.required(),
         AUTO_RELEASE_SOURCE_ADDRESS: Joi.string()
           .pattern(/^G[A-Z2-7]{55}$/)
           .optional()
