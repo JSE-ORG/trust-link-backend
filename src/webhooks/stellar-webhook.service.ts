@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Injectable,
+  InternalServerErrorException,
   Logger,
   Optional,
   UnauthorizedException,
@@ -157,8 +158,12 @@ export class StellarWebhookService {
    * Verify HMAC-SHA256 signature.
    *
    * Horizon signs the raw body with the shared secret and sends the hex digest
-   * in the `X-Stellar-Signature` header.  When no secret is configured we skip
-   * verification (useful for local development / tests).
+   * in the `X-Stellar-Signature` header. When the secret is not configured the
+   * request is rejected immediately: a missing secret is a server configuration
+   * error, not a valid reason to bypass verification.
+   *
+   * @throws InternalServerErrorException when STELLAR_WEBHOOK_SECRET is unset.
+   * @throws UnauthorizedException when the signature is missing or invalid.
    */
   private verifySignature(
     rawBody: Buffer,
@@ -166,13 +171,15 @@ export class StellarWebhookService {
   ): void {
     const secret = this.configService.get('STELLAR_WEBHOOK_SECRET');
     if (!secret) {
-      this.logger.warn(
+      this.logger.error(
         JSON.stringify({
-          msg: 'stellar.webhook.signature_check_skipped',
-          reason: 'STELLAR_WEBHOOK_SECRET not configured',
+          msg: 'stellar.webhook.config_error',
+          reason: 'STELLAR_WEBHOOK_SECRET is not configured - rejecting webhook request',
         }),
       );
-      return;
+      throw new InternalServerErrorException(
+        'Webhook verification is not configured: STELLAR_WEBHOOK_SECRET is missing',
+      );
     }
 
     if (!signature) {

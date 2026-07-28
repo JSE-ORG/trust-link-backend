@@ -1,4 +1,4 @@
-import { UnauthorizedException } from '@nestjs/common';
+import { InternalServerErrorException, UnauthorizedException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import * as crypto from 'crypto';
 import { ConfigService } from '../../src/config/config.service';
@@ -244,14 +244,13 @@ describe('StellarWebhookService — HMAC signature verification (issue #48)', ()
 
   // ── Verification is skipped only when no secret is configured ──────────────
 
-  it('skips verification when no secret is configured (dev/test convenience)', async () => {
+  it('rejects with InternalServerErrorException when no secret is configured', async () => {
     configService.get.mockReturnValue(undefined);
     const dto = makeDto();
     const raw = Buffer.from(JSON.stringify(dto), 'utf8');
 
-    // Even a clearly bogus signature is accepted because checks are disabled.
-    await expect(service.handleEvent(raw, 'whatever', dto)).resolves.toEqual({
-      received: true,
-    });
+    await expect(service.handleEvent(raw, 'whatever', dto)).rejects.toThrow(
+      InternalServerErrorException,
+    );
   });
 });

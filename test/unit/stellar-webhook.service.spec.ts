@@ -1,4 +1,4 @@
-import { BadRequestException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, InternalServerErrorException, UnauthorizedException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import * as crypto from 'crypto';
 import { ConfigService } from '../../src/config/config.service';
@@ -112,16 +112,32 @@ describe('StellarWebhookService (issue #76)', () => {
     );
   });
 
-  it('skips signature check when STELLAR_WEBHOOK_SECRET is not configured', async () => {
+  it('rejects with InternalServerErrorException when STELLAR_WEBHOOK_SECRET is not configured', async () => {
     configService.get.mockReturnValue(undefined);
     const dto = makeDto();
     const raw = Buffer.from(JSON.stringify(dto));
 
-    escrowRepository.findByVendor.mockResolvedValue([]);
+    await expect(service.handleEvent(raw, undefined, dto)).rejects.toThrow(
+      InternalServerErrorException,
+    );
+  });
 
-    await expect(service.handleEvent(raw, undefined, dto)).resolves.toEqual({
-      received: true,
-    });
+  it('logs a configuration error when STELLAR_WEBHOOK_SECRET is missing', async () => {
+    configService.get.mockReturnValue(undefined);
+    const dto = makeDto();
+    const raw = Buffer.from(JSON.stringify(dto));
+    const loggerSpy = jest
+      .spyOn(service['logger'], 'error')
+      .mockImplementation();
+
+    await expect(service.handleEvent(raw, undefined, dto)).rejects.toThrow(
+      InternalServerErrorException,
+    );
+
+    expect(loggerSpy).toHaveBeenCalledWith(
+      expect.stringContaining('stellar.webhook.config_error'),
+      undefined,
+    );
   });
 
   // ── Idempotency ────────────────────────────────────────────────────────────
