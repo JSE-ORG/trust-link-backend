@@ -27,6 +27,7 @@
                     "db:seed":  "ts-node scripts/db-seed.ts",
                     "db:reset":  "prisma migrate reset --force \u0026\u0026 npm run db:seed",
                     "typecheck":  "tsc --noEmit",
+                    "openapi:generate":  "ts-node scripts/generate-openapi.ts",
                     "validate":  "npm run typecheck \u0026\u0026 npm run lint:check \u0026\u0026 npm run test",
                     "docker:build":  "docker build -t trustlink-backend .",
                     "docker:run":  "docker run -p 3000:3000 trustlink-backend",

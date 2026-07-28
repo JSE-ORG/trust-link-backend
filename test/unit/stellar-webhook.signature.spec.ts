@@ -33,8 +33,9 @@ describe('StellarWebhookService — HMAC signature verification (issue #48)', ()
     type: 'payment',
     id: 'op-sig-001',
     transaction_hash: 'tx-sig-abc',
-    to: 'GBUYER_SIG',
-    from: 'GSENDER_SIG',
+    // dto.to is the vendor's Stellar address (payment destination).
+    to: 'GVENDOR_SIG',
+    from: 'GBUYER_SIG',
     amount: '42.50',
     asset_code: 'USDC',
     ...overrides,
@@ -51,7 +52,8 @@ describe('StellarWebhookService — HMAC signature verification (issue #48)', ()
     } as unknown as jest.Mocked<ConfigService>;
 
     escrowRepository = {
-      findByBuyer: jest.fn().mockResolvedValue([]),
+      // Issue #396: handlePayment now uses findByVendor (dto.to = destination = vendor address).
+      findByVendor: jest.fn().mockResolvedValue([]),
       updateState: jest.fn(),
     } as unknown as jest.Mocked<EscrowRepository>;
 
