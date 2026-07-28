@@ -90,7 +90,9 @@ export class GiglLogisticsService extends LogisticsService {
    * Returns full tracking details for a given tracking ID.
    * Errors from GiglClient propagate unchanged to the caller.
    */
-  override async getTrackingDetails(trackingId: string): Promise<TrackingDetails> {
+  override async getTrackingDetails(
+    trackingId: string,
+  ): Promise<TrackingDetails> {
     if (!this.client) {
       throw new Error(`Logistics service is not configured for ${trackingId}`);
     }

@@ -9,13 +9,15 @@ import { DisputeResponseDto } from '../../escrow/dto/dispute-response.dto';
  */
 export class AdminDisputesPaginatedResponseDto {
   @ApiProperty({
-    description: 'Dispute records for this page, with full escrow and reason context.',
+    description:
+      'Dispute records for this page, with full escrow and reason context.',
     type: [DisputeResponseDto],
   })
   data!: DisputeResponseDto[];
 
   @ApiProperty({
-    description: 'Total disputes matching the current status filter (ignoring pagination).',
+    description:
+      'Total disputes matching the current status filter (ignoring pagination).',
     example: 143,
   })
   total!: number;

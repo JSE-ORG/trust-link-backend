@@ -354,7 +354,10 @@ export class PrismaService implements OnModuleDestroy {
     if (databaseUrl) {
       try {
         const url = new URL(databaseUrl);
-        url.searchParams.set('statement_timeout', process.env.QUERY_TIMEOUT_MS ?? '30000');
+        url.searchParams.set(
+          'statement_timeout',
+          process.env.QUERY_TIMEOUT_MS ?? '30000',
+        );
         url.searchParams.set('connect_timeout', '10');
         this.effectiveDatabaseUrl = url.toString();
       } catch {
@@ -366,8 +369,10 @@ export class PrismaService implements OnModuleDestroy {
   readonly effectiveDatabaseUrl?: string;
 
   // Issue #315: slow query logging middleware
-  private readonly slowQueryThresholdMs =
-    parseInt(process.env.SLOW_QUERY_THRESHOLD_MS ?? '500', 10);
+  private readonly slowQueryThresholdMs = parseInt(
+    process.env.SLOW_QUERY_THRESHOLD_MS ?? '500',
+    10,
+  );
 
   private readonly logger = new Logger('PrismaService');
 
@@ -384,7 +389,7 @@ export class PrismaService implements OnModuleDestroy {
     if (duration > this.slowQueryThresholdMs) {
       this.logger.warn(
         `Slow query: ${model ?? 'unknown'}.${action} took ${duration}ms ` +
-        `(threshold: ${this.slowQueryThresholdMs}ms)`,
+          `(threshold: ${this.slowQueryThresholdMs}ms)`,
       );
     }
     return result;

@@ -6,7 +6,8 @@ import { ApiProperty } from '@nestjs/swagger';
  */
 export class DailyVolumeDataDto {
   @ApiProperty({
-    description: 'Calendar date this data point represents, ISO format (YYYY-MM-DD).',
+    description:
+      'Calendar date this data point represents, ISO format (YYYY-MM-DD).',
     example: '2026-05-01',
   })
   date!: string;
@@ -18,25 +19,29 @@ export class DailyVolumeDataDto {
   totalVolume!: number;
 
   @ApiProperty({
-    description: 'Total number of transactions (escrows) initiated on this day.',
+    description:
+      'Total number of transactions (escrows) initiated on this day.',
     example: 18,
   })
   transactionCount!: number;
 
   @ApiProperty({
-    description: 'Number of transactions on this day that reached a completed state.',
+    description:
+      'Number of transactions on this day that reached a completed state.',
     example: 15,
   })
   completedCount!: number;
 
   @ApiProperty({
-    description: 'Number of transactions on this day that have an open or resolved dispute.',
+    description:
+      'Number of transactions on this day that have an open or resolved dispute.',
     example: 1,
   })
   disputedCount!: number;
 
   @ApiProperty({
-    description: 'Average transaction value on this day, totalVolume / transactionCount.',
+    description:
+      'Average transaction value on this day, totalVolume / transactionCount.',
     example: 2719.49,
   })
   averageTransactionValue!: number;

@@ -20,15 +20,20 @@ import { ConfigService } from './config.service';
  */
 
 // Real valid test fixtures — used by .env.test and SEP10 service tests
-const VALID_SECRET_KEY = 'SAIJDXETR5B7YFPH7SUOISWVBHHSI46JLYFDCWDMEV2L46XAHASPP35C';
-const VALID_PUBLIC_KEY = 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5';
+const VALID_SECRET_KEY =
+  'SAIJDXETR5B7YFPH7SUOISWVBHHSI46JLYFDCWDMEV2L46XAHASPP35C';
+const VALID_PUBLIC_KEY =
+  'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5';
 
 // Another valid secret key for testing SEP10_SIGNING_SECRET separately
-const ANOTHER_VALID_SECRET = 'SDWG7OPXKSKX2JMFVO2C4W37DA56UKOZIUYP34COSENTJ53OIYMYYS4V';
+const ANOTHER_VALID_SECRET =
+  'SDWG7OPXKSKX2JMFVO2C4W37DA56UKOZIUYP34COSENTJ53OIYMYYS4V';
 
 // Shape-valid but checksum-invalid keys (all A's in the checksum part)
-const CHECKSUM_INVALID_SECRET = 'SAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
-const CHECKSUM_INVALID_PUBLIC = 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+const CHECKSUM_INVALID_SECRET =
+  'SAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+const CHECKSUM_INVALID_PUBLIC =
+  'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
 
 // Public key supplied where secret key expected
 const PUBLIC_KEY_AS_SECRET = VALID_PUBLIC_KEY;
@@ -411,7 +416,8 @@ describe('ConfigModule — Stellar Key Validation', () => {
   describe('edge cases and regression tests', () => {
     it('rejects Stellar address with wrong prefix (T... or invalid prefix)', async () => {
       // This should fail because it doesn't start with S or G
-      const invalidPrefix = 'TAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+      const invalidPrefix =
+        'TAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
 
       // This will fail at the shape check level
       await expect(
@@ -435,7 +441,8 @@ describe('ConfigModule — Stellar Key Validation', () => {
 
     it('rejects secret key with invalid Base32 characters', async () => {
       // Contains 'O' which is not in the valid Base32 set [A-Z2-7]
-      const invalidChar = 'SOAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+      const invalidChar =
+        'SOAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
 
       await expect(
         buildConfigService({
@@ -447,7 +454,8 @@ describe('ConfigModule — Stellar Key Validation', () => {
 
     it('rejects public key with invalid Base32 characters', async () => {
       // Contains 'O' which is not in the valid Base32 set [A-Z2-7]
-      const invalidChar = 'GOAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+      const invalidChar =
+        'GOAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
 
       await expect(
         buildConfigService({

@@ -171,12 +171,11 @@ export class StellarWebhookService {
       this.logger.error(
         JSON.stringify({
           msg: 'stellar.webhook.secret_missing',
-          reason: 'STELLAR_WEBHOOK_SECRET is not configured — rejecting request',
+          reason:
+            'STELLAR_WEBHOOK_SECRET is not configured — rejecting request',
         }),
       );
-      throw new InternalServerErrorException(
-        'Webhook secret not configured',
-      );
+      throw new InternalServerErrorException('Webhook secret not configured');
     }
 
     if (!signature) {
