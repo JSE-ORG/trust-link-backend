@@ -26,6 +26,13 @@ import { ConfigService } from './config.service';
           'any.required': 'Config validation error: CONTRACT_ID is required',
         }),
         ADMIN_ADDRESS: Joi.string().required(),
+        AUTO_RELEASE_SOURCE_ADDRESS: Joi.string()
+          .pattern(/^G[A-Z2-7]{55}$/)
+          .optional()
+          .messages({
+            'string.pattern.base':
+              'Config validation error: AUTO_RELEASE_SOURCE_ADDRESS must be a valid Stellar public key (starts with G)',
+          }),
         NODE_ENV: Joi.string()
           .valid('development', 'production', 'test')
           .default('development'),

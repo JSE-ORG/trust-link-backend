@@ -15,6 +15,13 @@ const validationSchema = Joi.object({
   DATABASE_URL: Joi.string().required(),
   SEP10_JWT_SECRET: Joi.string().min(32).required(),
   ADMIN_ADDRESS: Joi.string().required(),
+  AUTO_RELEASE_SOURCE_ADDRESS: Joi.string()
+    .pattern(/^G[A-Z2-7]{55}$/)
+    .optional()
+    .messages({
+      'string.pattern.base':
+        'Config validation error: AUTO_RELEASE_SOURCE_ADDRESS must be a valid Stellar public key (starts with G)',
+    }),
   NODE_ENV: Joi.string()
     .valid('development', 'production', 'test')
     .default('development'),
@@ -37,9 +44,15 @@ const VALID_ENV = {
   STELLAR_NETWORK: 'TESTNET',
 };
 
+const VALID_AUTO_RELEASE_SOURCE_ADDRESS =
+  'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+const INVALID_AUTO_RELEASE_SOURCE_ADDRESS =
+  'SXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX';
+
 const ALL_KNOWN_KEYS = [
   ...Object.keys(VALID_ENV),
   'PORT',
+  'AUTO_RELEASE_SOURCE_ADDRESS',
   'ALLOWED_ORIGINS',
   'STELLAR_WEBHOOK_SECRET',
   'LOG_LEVEL',
@@ -124,5 +137,26 @@ describe('ConfigService', () => {
     expect(service.isTest()).toBe(true);
     expect(service.isDevelopment()).toBe(false);
     expect(service.isProduction()).toBe(false);
+  });
+
+  it('accepts a genuine valid AUTO_RELEASE_SOURCE_ADDRESS', async () => {
+    const service = await buildService({
+      ...VALID_ENV,
+      AUTO_RELEASE_SOURCE_ADDRESS: VALID_AUTO_RELEASE_SOURCE_ADDRESS,
+    });
+    expect(service.get('AUTO_RELEASE_SOURCE_ADDRESS')).toBe(
+      VALID_AUTO_RELEASE_SOURCE_ADDRESS,
+    );
+  });
+
+  it('rejects an invalid AUTO_RELEASE_SOURCE_ADDRESS', async () => {
+    await expect(
+      buildService({
+        ...VALID_ENV,
+        AUTO_RELEASE_SOURCE_ADDRESS: INVALID_AUTO_RELEASE_SOURCE_ADDRESS,
+      }),
+    ).rejects.toThrow(
+      'Config validation error: AUTO_RELEASE_SOURCE_ADDRESS must be a valid Stellar public key (starts with G)',
+    );
   });
 });
