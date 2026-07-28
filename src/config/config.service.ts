@@ -54,6 +54,10 @@ export class ConfigService {
       DATABASE_URL: this.get('DATABASE_URL'),
       SEP10_JWT_SECRET: this.get('SEP10_JWT_SECRET'),
       ADMIN_ADDRESS: this.get('ADMIN_ADDRESS'),
+      AUTO_RELEASE_SOURCE_ADDRESS: this.nestConfigService.get(
+        'AUTO_RELEASE_SOURCE_ADDRESS',
+        { infer: true },
+      ),
       NODE_ENV: this.get('NODE_ENV'),
       SENDGRID_API_KEY: this.nestConfigService.get('SENDGRID_API_KEY', {
         infer: true,
