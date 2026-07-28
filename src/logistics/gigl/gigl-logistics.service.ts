@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import {
   LogisticsService,
   LogisticsStatus,
@@ -59,8 +59,18 @@ function mapTrackingResponse(raw: GiglTrackingResponse): TrackingDetails {
  */
 @Injectable()
 export class GiglLogisticsService extends LogisticsService {
-  constructor(private readonly client: GiglClient) {
+  constructor(
+    @Optional() @Inject(GiglClient) private readonly client?: GiglClient | null,
+  ) {
     super();
+  }
+
+  override onModuleInit(): void {
+    if (!this.client) {
+      this.logger.warn(
+        'Logistics provider is not configured. Real tracking lookups will fail.',
+      );
+    }
   }
 
   /**
@@ -68,7 +78,10 @@ export class GiglLogisticsService extends LogisticsService {
    * Errors from GiglClient (unauthorized, network, provider) propagate
    * unchanged to the caller.
    */
-  async getStatus(trackingId: string): Promise<TrackingDetails> {
+  override async getStatus(trackingId: string): Promise<TrackingDetails> {
+    if (!this.client) {
+      throw new Error(`Logistics service is not configured for ${trackingId}`);
+    }
     const raw = await this.client.fetchTracking(trackingId);
     return mapTrackingResponse(raw);
   }
@@ -77,7 +90,10 @@ export class GiglLogisticsService extends LogisticsService {
    * Returns full tracking details for a given tracking ID.
    * Errors from GiglClient propagate unchanged to the caller.
    */
-  async getTrackingDetails(trackingId: string): Promise<TrackingDetails> {
+  override async getTrackingDetails(trackingId: string): Promise<TrackingDetails> {
+    if (!this.client) {
+      throw new Error(`Logistics service is not configured for ${trackingId}`);
+    }
     const raw = await this.client.fetchTracking(trackingId);
     return mapTrackingResponse(raw);
   }
