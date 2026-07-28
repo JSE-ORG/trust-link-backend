@@ -23,6 +23,14 @@ export class ReadinessComponentHealthDto {
   error?: string;
 }
 
+export class ReadinessDetailsDto {
+  @ApiPropertyOptional({ type: () => ReadinessComponentHealthDto })
+  db?: ReadinessComponentHealthDto;
+
+  @ApiPropertyOptional({ type: () => ReadinessComponentHealthDto })
+  horizon?: ReadinessComponentHealthDto;
+}
+
 /**
  * Response body for the readiness probe at GET /health/ready (and the
  * legacy GET /health alias). A readiness probe answers: "Is this instance
@@ -94,14 +102,7 @@ export class ReadinessResponseDto {
   @ApiPropertyOptional({
     description:
       'Per-component error details. Only populated when at least one required component is down.',
-    type: 'object',
-    properties: {
-      db: { $ref: '#/components/schemas/ReadinessComponentHealthDto' },
-      horizon: { $ref: '#/components/schemas/ReadinessComponentHealthDto' },
-    },
+    type: () => ReadinessDetailsDto,
   })
-  details?: {
-    db?: ReadinessComponentHealthDto;
-    horizon?: ReadinessComponentHealthDto;
-  };
+  details?: ReadinessDetailsDto;
 }

@@ -1,0 +1,23 @@
+
+> @truestlink/trustlink-backend@1.0.0 typecheck
+> tsc --noEmit
+
+src/admin/dispute/dto/admin-disputes-paginated-response.dto.ts(2,36): error TS2307: Cannot find module '../../escrow/dto/dispute-response.dto' or its corresponding type declarations.
+src/common/dto/readiness-response.dto.ts(99,13): error TS2353: Object literal may only specify known properties, and '$ref' does not exist in type 'SchemaObjectMetadata'.
+src/common/dto/readiness-response.dto.ts(100,18): error TS2353: Object literal may only specify known properties, and '$ref' does not exist in type 'SchemaObjectMetadata'.
+src/config/config.module.spec.ts(2,1): error TS6133: 'NestConfigModule' is declared but its value is never read.
+src/config/config.module.spec.ts(3,1): error TS6133: 'Joi' is declared but its value is never read.
+src/config/config.module.spec.ts(134,48): error TS2345: Argument of type '{ SEP10_SIGNING_SECRET: undefined; DATABASE_URL: string; SEP10_JWT_SECRET: string; SYSTEM_SIGNER_SECRET: string; ADMIN_ADDRESS: string; CONTRACT_ID: string; NODE_ENV: string; STELLAR_NETWORK: string; }' is not assignable to parameter of type 'Record<string, string>'.
+  Property 'SEP10_SIGNING_SECRET' is incompatible with index signature.
+    Type 'undefined' is not assignable to type 'string'.
+src/config/config.module.ts(48,7): error TS6133: 'stellarPublicKey' is declared but its value is never read.
+src/dlq/dlq.controller.spec.ts(211,37): error TS2345: Argument of type '{ status: string; id: string; operation: string; escrowId: string | null; errorMessage: string; ledgerFeedback: Record<string, unknown> | null; attempts: number; createdAt: Date; updatedAt: Date; reviewedAt: Date | null; replayedAt: Date | null; lastReplayTxHash: string | null; }' is not assignable to parameter of type 'FailedTransactionRecord | Promise<FailedTransactionRecord>'.
+  Type '{ status: string; id: string; operation: string; escrowId: string | null; errorMessage: string; ledgerFeedback: Record<string, unknown> | null; attempts: number; createdAt: Date; updatedAt: Date; reviewedAt: Date | null; replayedAt: Date | null; lastReplayTxHash: string | null; }' is not assignable to type 'FailedTransactionRecord'.
+    Types of property 'status' are incompatible.
+      Type 'string' is not assignable to type 'FailedTransactionStatus'.
+src/escrow/escrow.repository.ts(168,26): error TS2339: Property 'count' does not exist on type '{ create: ({ data }: { data: EscrowCreateInput; }) => Promise<EscrowRecord>; findUnique: ({ where, }: { where: { id: string; }; }) => Promise<EscrowRecord | null>; ... 4 more ...; deleteMany: () => Promise<...>; }'.
+src/prisma/prisma.service.ts(1,47): error TS6133: 'Optional' is declared but its value is never read.
+src/vendor/analytics/analytics.service.ts(6,29): error TS2724: '"./analytics.dto"' has no exported member named 'DailyVolumeData'. Did you mean 'DailyVolumeDataDto'?
+src/vendor/analytics/analytics.service.ts(9,3): error TS2724: '"./analytics-stats.dto"' has no exported member named 'TransactionStats'. Did you mean 'TransactionStatsDto'?
+src/vendor/analytics/analytics.service.ts(10,3): error TS2724: '"./analytics-stats.dto"' has no exported member named 'ChannelMetrics'. Did you mean 'ChannelMetricsDto'?
+src/vendor/vendor-account-details.integration-spec.ts(6,24): error TS2307: Cannot find module '../auth-helper' or its corresponding type declarations.

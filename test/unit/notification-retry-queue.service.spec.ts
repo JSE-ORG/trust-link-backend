@@ -116,7 +116,7 @@ describe('NotificationRetryQueueService (in-process fallback) (#73)', () => {
     return { service, dispatcher, dlq };
   };
 
-  it('delivers on the first attempt when the dispatcher succeeds', async () => {
+  it('asserts the dispatcher is called exactly once when the first attempt succeeds', async () => {
     const dispatch = jest.fn().mockResolvedValue(undefined);
     const { service, dlq } = setup({ dispatcher: { dispatch } });
     await service.enqueue(makeJob());
@@ -136,7 +136,7 @@ describe('NotificationRetryQueueService (in-process fallback) (#73)', () => {
     expect(dlq).toHaveLength(0);
   });
 
-  it('records to DLQ after attempts are exhausted', async () => {
+  it('asserts the dispatcher is called exactly attempts times when every attempt throws', async () => {
     const dispatch = jest.fn().mockRejectedValue(new Error('always fails'));
     const { service, dispatcher, dlq } = setup({ dispatcher: { dispatch } });
     await service.enqueue(makeJob({ requestId: 'req-1' }));

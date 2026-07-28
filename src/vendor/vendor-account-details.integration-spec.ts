@@ -3,7 +3,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { AppModule } from '../../src/app.module';
 import { PrismaService } from '../../src/prisma/prisma.service';
-import { bearer } from '../auth-helper';
+import { bearer } from '../../test/auth-helper';
 
 describe('Vendor account details (issue #484)', () => {
   let app: INestApplication;

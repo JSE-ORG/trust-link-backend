@@ -3,11 +3,11 @@ import {
   PrismaService,
   VendorTrackingSettingsRecord,
 } from '../../prisma/prisma.service';
-import { ChartDataResponse, DailyVolumeData } from './analytics.dto';
+import { ChartDataResponse, DailyVolumeDataDto as DailyVolumeData } from './analytics.dto';
 import {
   AnalyticsStatsResponse,
-  TransactionStats,
-  ChannelMetrics,
+  TransactionStatsDto as TransactionStats,
+  ChannelMetricsDto as ChannelMetrics,
 } from './analytics-stats.dto';
 
 @Injectable()

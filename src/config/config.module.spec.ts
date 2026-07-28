@@ -1,6 +1,5 @@
 import { Test } from '@nestjs/testing';
-import { ConfigModule as NestConfigModule } from '@nestjs/config';
-import * as Joi from 'joi';
+
 import { Keypair } from '@stellar/stellar-sdk';
 import { ConfigModule } from './config.module';
 import { ConfigService } from './config.service';
@@ -77,7 +76,7 @@ const ALL_KNOWN_KEYS = [
  * Isolates each test by saving/restoring process.env.
  */
 async function buildConfigService(
-  env: Record<string, string>,
+  env: Record<string, string | undefined>,
 ): Promise<ConfigService> {
   // Save and wipe all known keys so tests are fully isolated
   const saved: Record<string, string | undefined> = {};
