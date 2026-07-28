@@ -103,6 +103,11 @@ Key requirements from the SRD:
 > will produce a `package-lock.json` that makes `npm ci` fail in CI with
 > `Missing: ... from lock file`. If you see that error, you are on the wrong
 > Node version.
+>
+> **Keep Node type definitions aligned.** The `@types/node` major in
+> `package.json` must always match the runtime major in `.nvmrc`. Update both
+> together, run `nvm use`, and regenerate `package-lock.json` with `npm install`.
+> Do not merge Dependabot updates that move `@types/node` past the runtime major.
 
 ### First-Time Setup
 
