@@ -140,7 +140,7 @@ describe('TracingInterceptor', () => {
       // workflow + attributes and that the captured function runs.
       const withWorkflowSpanSpy = jest
         .spyOn(tracing, 'withWorkflowSpan')
-        .mockImplementation(async (_workflow: string, fn: () => Promise<unknown>) => fn());
+        .mockImplementation(async (_workflow: string, fn: () => unknown, _attributes?: Record<string, string | number | boolean>) => fn());
 
       const context = createMockContext('POST', '/escrow/create');
       const next = createMockCallHandler('created');
@@ -173,7 +173,7 @@ describe('TracingInterceptor', () => {
       // the interceptor still creates a fresh workflow span via the tracer.
       const withWorkflowSpanSpy = jest
         .spyOn(tracing, 'withWorkflowSpan')
-        .mockImplementation(async (_workflow: string, fn: () => Promise<unknown>) => fn());
+        .mockImplementation(async (_workflow: string, fn: () => unknown, _attributes?: Record<string, string | number | boolean>) => fn());
 
       const context = createMockContext('GET', '/vendor/escrows');
       const next = createMockCallHandler([{ id: 1 }]);
