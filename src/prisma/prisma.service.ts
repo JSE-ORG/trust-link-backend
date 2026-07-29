@@ -212,6 +212,16 @@ export interface CursorRecord {
   updatedAt: Date;
 }
 
+// Issues #498, #499 — persisted, encrypted provider credentials (e.g. the
+// logistics API key), keyed by provider name so a rotation survives a
+// restart and propagates across replicas.
+export interface ProviderCredentialRecord {
+  provider: string;
+  encryptedKey: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 export type FailedTransactionStatus =
   'PENDING_REVIEW' | 'REPLAYED' | 'ABANDONED';
 
@@ -1310,6 +1320,7 @@ export class PrismaService implements OnModuleDestroy {
     await this.processedWebhookEvent.deleteMany();
     this.vendorTrackingSettingsStore.clear();
     this.failedTransactionStore.clear();
+    this.providerCredentialStore.clear();
     this.escrowId = 1;
     this.disputeId = 1;
     this.notificationId = 1;
@@ -1440,6 +1451,48 @@ export class PrismaService implements OnModuleDestroy {
       };
       this.failedTransactionStore.set(where.id, updated);
       return Promise.resolve({ ...updated });
+    },
+  };
+
+  private providerCredentialStore = new Map<string, ProviderCredentialRecord>();
+
+  providerCredential = {
+    findUnique: ({
+      where,
+    }: {
+      where: { provider: string };
+    }): Promise<ProviderCredentialRecord | null> => {
+      const record = this.providerCredentialStore.get(where.provider);
+      return Promise.resolve(record ? { ...record } : null);
+    },
+    upsert: ({
+      where,
+      update,
+      create,
+    }: {
+      where: { provider: string };
+      update: { encryptedKey: string };
+      create: { provider: string; encryptedKey: string };
+    }): Promise<ProviderCredentialRecord> => {
+      const existing = this.providerCredentialStore.get(where.provider);
+      if (existing) {
+        const updated: ProviderCredentialRecord = {
+          ...existing,
+          encryptedKey: update.encryptedKey,
+          updatedAt: new Date(),
+        };
+        this.providerCredentialStore.set(where.provider, updated);
+        return Promise.resolve({ ...updated });
+      }
+      const now = new Date();
+      const record: ProviderCredentialRecord = {
+        provider: create.provider,
+        encryptedKey: create.encryptedKey,
+        createdAt: now,
+        updatedAt: now,
+      };
+      this.providerCredentialStore.set(record.provider, record);
+      return Promise.resolve({ ...record });
     },
   };
 }
