@@ -349,7 +349,7 @@ export class PrismaService implements OnModuleDestroy {
   // databaseUrl is accepted so the module can pass the pool-tuned URL from
   // ConfigService. The in-memory store does not use it, but a real PrismaClient
   // replacement should forward it to `new PrismaClient({ datasources: { db: { url } } })`.
-  constructor(readonly databaseUrl?: string) {
+  constructor(@Optional() readonly databaseUrl?: string) {
     // Issue #316: apply statement_timeout to prevent long-running queries
     if (databaseUrl) {
       try {
@@ -446,7 +446,7 @@ export class PrismaService implements OnModuleDestroy {
         ...data,
         id: data.id ?? String(this.escrowId++),
         itemRef: data.itemRef ?? '',
-        state: data.state ?? 'FUNDED',
+        state: data.state ?? 'CREATED',
         trackingId: data.trackingId ?? null,
         shippedAt: data.shippedAt ?? null,
         deliveredAt: data.deliveredAt ?? null,
@@ -645,6 +645,25 @@ export class PrismaService implements OnModuleDestroy {
         return Promise.resolve({ count: 1 });
       }
       return Promise.resolve({ count: 0 });
+    },
+    count: ({
+      where,
+    }: {
+      where?: Partial<
+        Pick<
+          EscrowRecord,
+          | 'state'
+          | 'trackingId'
+          | 'vendorAddress'
+          | 'buyerAddress'
+          | 'disputeId'
+          | 'itemRef'
+          | 'autoReleaseTxHash'
+          | 'autoReleaseSubmittedAt'
+        >
+      >;
+    } = {}): Promise<number> => {
+      return this.escrow.findMany({ where }).then((records) => records.length);
     },
     deleteMany: (): Promise<{ count: number }> => {
       const count = this.escrows.size;

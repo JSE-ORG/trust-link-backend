@@ -148,7 +148,6 @@ export class EscrowService {
     }
 
     const escrow = await this.escrowRepository.create(dto, vendorAddress);
-    await this.notificationsService.notifyFunded(escrow);
     return {
       ...escrow,
       paymentUrl: this.buildPaymentUrl(escrow.id),

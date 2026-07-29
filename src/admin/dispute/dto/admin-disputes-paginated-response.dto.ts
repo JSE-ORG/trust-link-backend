@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { DisputeResponseDto } from '../../escrow/dto/dispute-response.dto';
+import { DisputeResponseDto } from '../../../escrow/dto/dispute-response.dto';
 
 /**
  * Paginated wrapper for the admin disputes listing at GET /admin/disputes.

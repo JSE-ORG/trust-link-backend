@@ -9,6 +9,7 @@ import {
 import * as crypto from 'crypto';
 import { ConfigService } from '../config/config.service';
 import { EscrowRepository } from '../escrow/escrow.repository';
+import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { StellarWebhookDto } from './dto/stellar-webhook.dto';
 
@@ -33,6 +34,7 @@ export class StellarWebhookService {
   constructor(
     private readonly configService: ConfigService,
     private readonly escrowRepository: EscrowRepository,
+    private readonly notificationsService: NotificationsService,
     @Optional()
     private readonly prisma?: PrismaService,
   ) {}
@@ -317,7 +319,11 @@ export class StellarWebhookService {
       }
 
       // ── State transition ─────────────────────────────────────────────────
-      await this.escrowRepository.updateState(escrow.id, 'FUNDED');
+      const updatedEscrow = await this.escrowRepository.updateState(
+        escrow.id,
+        'FUNDED',
+      );
+      await this.notificationsService.notifyFunded(updatedEscrow);
 
       this.logger.log(
         JSON.stringify({
