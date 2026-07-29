@@ -47,6 +47,31 @@ describe('Cancelled escrow state cleanup E2E (issue #300)', () => {
       .mockResolvedValue('tx-hash-cancel-001');
   });
 
+  /** Creates an escrow and transitions it to FUNDED state in the DB. */
+  async function createFundedEscrow(opts: {
+    itemName: string;
+    itemRef: string;
+    amount: number;
+  }) {
+    const res = await request(app.getHttpServer())
+      .post('/escrow')
+      .set('Authorization', bearer(VENDOR_ADDRESS))
+      .set('Idempotency-Key', crypto.randomUUID())
+      .send({
+        ...opts,
+        currency: 'USDC',
+        buyerAddress: BUYER_ADDRESS,
+      })
+      .expect(201);
+
+    const escrowId: string = res.body.id;
+    await prisma.escrow.update({
+      where: { id: escrowId },
+      data: { state: 'FUNDED' },
+    });
+    return escrowId;
+  }
+
   afterEach(async () => {
     jest.restoreAllMocks();
     await app.close();
@@ -160,21 +185,11 @@ describe('Cancelled escrow state cleanup E2E (issue #300)', () => {
 
   describe('Cancel from FUNDED state (PATCH /escrow/:id/cancel)', () => {
     it('cancels a FUNDED escrow and verifies CANCELLED state on GET', async () => {
-      const createRes = await request(app.getHttpServer())
-        .post('/escrow')
-        .set('Authorization', bearer(VENDOR_ADDRESS))
-        .set('Idempotency-Key', crypto.randomUUID())
-        .send({
-          itemName: 'Test Item Funded Cancel',
-          itemRef: 'cancel-funded-001',
-          amount: 250,
-          currency: 'USDC',
-          buyerAddress: BUYER_ADDRESS,
-        })
-        .expect(201);
-
-      const escrowId: string = createRes.body.id;
-      expect(createRes.body.state).toBe('FUNDED');
+      const escrowId = await createFundedEscrow({
+        itemName: 'Test Item Funded Cancel',
+        itemRef: 'cancel-funded-001',
+        amount: 250,
+      });
 
       const cancelRes = await request(app.getHttpServer())
         .patch(`/escrow/${escrowId}/cancel`)
@@ -192,20 +207,11 @@ describe('Cancelled escrow state cleanup E2E (issue #300)', () => {
     });
 
     it('records CANCELLED event in escrow event history after cancel from FUNDED', async () => {
-      const createRes = await request(app.getHttpServer())
-        .post('/escrow')
-        .set('Authorization', bearer(VENDOR_ADDRESS))
-        .set('Idempotency-Key', crypto.randomUUID())
-        .send({
-          itemName: 'Test Item Funded Events',
-          itemRef: 'cancel-funded-events-001',
-          amount: 300,
-          currency: 'USDC',
-          buyerAddress: BUYER_ADDRESS,
-        })
-        .expect(201);
-
-      const escrowId: string = createRes.body.id;
+      const escrowId = await createFundedEscrow({
+        itemName: 'Test Item Funded Events',
+        itemRef: 'cancel-funded-events-001',
+        amount: 300,
+      });
 
       await request(app.getHttpServer())
         .patch(`/escrow/${escrowId}/cancel`)
@@ -222,20 +228,11 @@ describe('Cancelled escrow state cleanup E2E (issue #300)', () => {
     });
 
     it('allows vendor to cancel a FUNDED escrow', async () => {
-      const createRes = await request(app.getHttpServer())
-        .post('/escrow')
-        .set('Authorization', bearer(VENDOR_ADDRESS))
-        .set('Idempotency-Key', crypto.randomUUID())
-        .send({
-          itemName: 'Vendor Funded Cancel',
-          itemRef: 'cancel-funded-vendor-001',
-          amount: 175,
-          currency: 'USDC',
-          buyerAddress: BUYER_ADDRESS,
-        })
-        .expect(201);
-
-      const escrowId: string = createRes.body.id;
+      const escrowId = await createFundedEscrow({
+        itemName: 'Vendor Funded Cancel',
+        itemRef: 'cancel-funded-vendor-001',
+        amount: 175,
+      });
 
       const cancelRes = await request(app.getHttpServer())
         .patch(`/escrow/${escrowId}/cancel`)
@@ -277,20 +274,11 @@ describe('Cancelled escrow state cleanup E2E (issue #300)', () => {
     });
 
     it('rejects cancel from FUNDED state via DELETE (wrong endpoint)', async () => {
-      const createRes = await request(app.getHttpServer())
-        .post('/escrow')
-        .set('Authorization', bearer(VENDOR_ADDRESS))
-        .set('Idempotency-Key', crypto.randomUUID())
-        .send({
-          itemName: 'Wrong Endpoint Cancel Funded',
-          itemRef: 'cancel-wrong-endpoint-funded-001',
-          amount: 100,
-          currency: 'USDC',
-          buyerAddress: BUYER_ADDRESS,
-        })
-        .expect(201);
-
-      const escrowId: string = createRes.body.id;
+      const escrowId = await createFundedEscrow({
+        itemName: 'Wrong Endpoint Cancel Funded',
+        itemRef: 'cancel-wrong-endpoint-funded-001',
+        amount: 100,
+      });
 
       await request(app.getHttpServer())
         .delete(`/escrow/${escrowId}`)
@@ -299,20 +287,11 @@ describe('Cancelled escrow state cleanup E2E (issue #300)', () => {
     });
 
     it('rejects cancellation by unauthorized address', async () => {
-      const createRes = await request(app.getHttpServer())
-        .post('/escrow')
-        .set('Authorization', bearer(VENDOR_ADDRESS))
-        .set('Idempotency-Key', crypto.randomUUID())
-        .send({
-          itemName: 'Unauthorized Cancel',
-          itemRef: 'cancel-unauthorized-001',
-          amount: 100,
-          currency: 'USDC',
-          buyerAddress: BUYER_ADDRESS,
-        })
-        .expect(201);
-
-      const escrowId: string = createRes.body.id;
+      const escrowId = await createFundedEscrow({
+        itemName: 'Unauthorized Cancel',
+        itemRef: 'cancel-unauthorized-001',
+        amount: 100,
+      });
 
       await request(app.getHttpServer())
         .patch(`/escrow/${escrowId}/cancel`)
@@ -321,20 +300,11 @@ describe('Cancelled escrow state cleanup E2E (issue #300)', () => {
     });
 
     it('rejects cancellation without authentication', async () => {
-      const createRes = await request(app.getHttpServer())
-        .post('/escrow')
-        .set('Authorization', bearer(VENDOR_ADDRESS))
-        .set('Idempotency-Key', crypto.randomUUID())
-        .send({
-          itemName: 'No Auth Cancel',
-          itemRef: 'cancel-no-auth-001',
-          amount: 100,
-          currency: 'USDC',
-          buyerAddress: BUYER_ADDRESS,
-        })
-        .expect(201);
-
-      const escrowId: string = createRes.body.id;
+      const escrowId = await createFundedEscrow({
+        itemName: 'No Auth Cancel',
+        itemRef: 'cancel-no-auth-001',
+        amount: 100,
+      });
 
       await request(app.getHttpServer())
         .patch(`/escrow/${escrowId}/cancel`)
@@ -342,20 +312,11 @@ describe('Cancelled escrow state cleanup E2E (issue #300)', () => {
     });
 
     it('rejects cancellation of an already cancelled escrow', async () => {
-      const createRes = await request(app.getHttpServer())
-        .post('/escrow')
-        .set('Authorization', bearer(VENDOR_ADDRESS))
-        .set('Idempotency-Key', crypto.randomUUID())
-        .send({
-          itemName: 'Double Cancel',
-          itemRef: 'cancel-double-001',
-          amount: 100,
-          currency: 'USDC',
-          buyerAddress: BUYER_ADDRESS,
-        })
-        .expect(201);
-
-      const escrowId: string = createRes.body.id;
+      const escrowId = await createFundedEscrow({
+        itemName: 'Double Cancel',
+        itemRef: 'cancel-double-001',
+        amount: 100,
+      });
 
       await request(app.getHttpServer())
         .patch(`/escrow/${escrowId}/cancel`)
@@ -369,20 +330,11 @@ describe('Cancelled escrow state cleanup E2E (issue #300)', () => {
     });
 
     it('rejects cancellation of a SHIPPED escrow', async () => {
-      const createRes = await request(app.getHttpServer())
-        .post('/escrow')
-        .set('Authorization', bearer(VENDOR_ADDRESS))
-        .set('Idempotency-Key', crypto.randomUUID())
-        .send({
-          itemName: 'Shipped Cancel',
-          itemRef: 'cancel-shipped-001',
-          amount: 100,
-          currency: 'USDC',
-          buyerAddress: BUYER_ADDRESS,
-        })
-        .expect(201);
-
-      const escrowId: string = createRes.body.id;
+      const escrowId = await createFundedEscrow({
+        itemName: 'Shipped Cancel',
+        itemRef: 'cancel-shipped-001',
+        amount: 100,
+      });
 
       await request(app.getHttpServer())
         .patch(`/escrow/${escrowId}/ship`)

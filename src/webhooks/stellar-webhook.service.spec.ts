@@ -120,7 +120,7 @@ describe('StellarWebhookService – handlePayment (issue #396)', () => {
 
     service = module.get(StellarWebhookService);
     escrowRepository = module.get(EscrowRepository);
-    notificationsService = module.get(NotificationsService) as any;
+    notificationsService = module.get(NotificationsService);
 
     // Silence logger output during tests but capture calls for assertions.
 

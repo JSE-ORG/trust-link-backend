@@ -13,6 +13,12 @@ import {
 jest.mock('axios');
 const mockedAxios = axios as jest.Mocked<typeof axios>;
 
+// Restore the real isAxiosError check so GiglClient can properly classify
+// network errors vs provider errors vs non-Axios errors.
+mockedAxios.isAxiosError.mockImplementation(
+  (err: any) => err?.isAxiosError === true,
+);
+
 describe('LogisticsService & LogisticsModule (issue #479)', () => {
   let service: LogisticsService;
   let mockAxiosInstance: { get: jest.Mock };

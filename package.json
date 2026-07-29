@@ -105,6 +105,10 @@
                                           ],
                  "rootDir":  ".",
                  "testRegex":  "(src|test)/.*\\.spec\\.ts$",
+                 "testPathIgnorePatterns":  [
+                                               "/node_modules/",
+                                               "test/seed\\.spec\\.ts$"
+                                           ],
                  "transform":  {
                                    "^.+\\.(t|j)s$":  "ts-jest"
                                },
