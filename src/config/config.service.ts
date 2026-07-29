@@ -14,6 +14,7 @@ export interface Config {
   TWILIO_ACCOUNT_SID?: string;
   TWILIO_AUTH_TOKEN?: string;
   STELLAR_NETWORK: 'TESTNET' | 'MAINNET';
+  STELLAR_HORIZON_URL?: string;
   ALLOWED_ORIGINS?: string;
   STELLAR_WEBHOOK_SECRET?: string;
   LOG_LEVEL?: string;

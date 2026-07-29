@@ -5,6 +5,7 @@ import { EventReplayService } from './event-replay.service';
 import { BlockchainListenerService } from './blockchain-listener.service';
 import { CursorService } from './cursor.service';
 import { SorobanPollerService } from './soroban-poller.service';
+import { HorizonService } from './horizon.service';
 import { WebhooksModule } from '../webhooks/webhooks.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { EscrowModule } from '../escrow/escrow.module';
@@ -27,8 +28,14 @@ import { DlqModule } from '../dlq/dlq.module';
     BlockchainListenerService,
     CursorService,
     SorobanPollerService,
+    HorizonService,
     { provide: STELLAR_SERVER, useValue: undefined },
   ],
-  exports: [ContractService, BlockchainListenerService, CursorService],
+  exports: [
+    ContractService,
+    BlockchainListenerService,
+    CursorService,
+    HorizonService,
+  ],
 })
 export class StellarModule {}
