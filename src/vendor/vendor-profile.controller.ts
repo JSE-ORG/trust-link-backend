@@ -9,12 +9,8 @@ import {
   Put,
   UseGuards,
 } from '@nestjs/common';
-import {
-  ApiBearerAuth,
-  ApiOperation,
-  ApiResponse,
-  ApiTags,
-} from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { AuthUser } from '../auth/auth-user';
 import { JwtGuard } from '../auth/guards/jwt.guard';
@@ -44,6 +40,7 @@ export class VendorProfileController {
   @ApiResponse({ status: 201, description: 'Vendor profile created.' })
   @ApiResponse({ status: 400, description: 'Invalid profile data.' })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
+  @Throttle({ auth: { limit: 10, ttl: 60000 } })
   @Post()
   @HttpCode(HttpStatus.CREATED)
   create(@Body() dto: CreateVendorProfileDto, @CurrentUser() user: AuthUser) {
@@ -63,6 +60,7 @@ export class VendorProfileController {
   @ApiResponse({ status: 200, description: 'Vendor profile returned.' })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   @ApiResponse({ status: 404, description: 'Profile not found.' })
+  @Throttle({ auth: { limit: 20, ttl: 60000 } })
   @Get()
   get(@CurrentUser() user: AuthUser) {
     return this.vendorProfileService.getProfile(user.address);
@@ -83,6 +81,7 @@ export class VendorProfileController {
   @ApiResponse({ status: 200, description: 'Vendor profile upserted.' })
   @ApiResponse({ status: 400, description: 'Invalid profile data.' })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
+  @Throttle({ auth: { limit: 10, ttl: 60000 } })
   @Put()
   @HttpCode(HttpStatus.OK)
   upsert(@Body() dto: CreateVendorProfileDto, @CurrentUser() user: AuthUser) {
@@ -103,6 +102,7 @@ export class VendorProfileController {
   @ApiResponse({ status: 200, description: 'Vendor profile updated.' })
   @ApiResponse({ status: 400, description: 'Invalid update payload.' })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
+  @Throttle({ auth: { limit: 10, ttl: 60000 } })
   @Patch()
   update(@Body() dto: UpdateVendorProfileDto, @CurrentUser() user: AuthUser) {
     return this.vendorProfileService.updateProfile(user.address, dto);
@@ -122,6 +122,7 @@ export class VendorProfileController {
     description: 'Notification preferences returned.',
   })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
+  @Throttle({ auth: { limit: 20, ttl: 60000 } })
   @Get('notifications')
   getNotifications(@CurrentUser() user: AuthUser) {
     return this.vendorProfileService.getNotificationPreferences(user.address);
@@ -144,6 +145,7 @@ export class VendorProfileController {
   })
   @ApiResponse({ status: 400, description: 'Invalid preferences payload.' })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
+  @Throttle({ auth: { limit: 10, ttl: 60000 } })
   @Patch('notifications')
   @HttpCode(HttpStatus.OK)
   updateNotifications(

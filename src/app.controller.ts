@@ -7,6 +7,7 @@ import {
   Res,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import type { Response } from 'express';
 import { AppService } from './app.service';
 import { getAppVersion } from './common/version';
@@ -61,6 +62,7 @@ export class AppController {
 
   @ApiOperation({ summary: 'Root endpoint — welcome message' })
   @ApiResponse({ status: 200, description: 'Service welcome message.' })
+  @Throttle({ public: { limit: 100, ttl: 60000 } })
   @Get()
   getHello(): string {
     return this.appService.getHello();
@@ -81,6 +83,7 @@ export class AppController {
   })
   @ApiResponse({ status: 200, description: 'All components healthy.' })
   @ApiResponse({ status: 503, description: 'One or more components are down.' })
+  @SkipThrottle({ public: true }) // Health checks should never be throttled.
   @Get('health')
   async getHealth(@Res() res: Response): Promise<Response<HealthBody>> {
     const start = Date.now();
@@ -151,6 +154,7 @@ export class AppController {
    */
   @ApiOperation({ summary: 'Get current application version and environment' })
   @ApiResponse({ status: 200, description: 'Version information returned.' })
+  @Throttle({ public: { limit: 100, ttl: 60000 } })
   @Get('version')
   @HttpCode(HttpStatus.OK)
   getVersion() {
