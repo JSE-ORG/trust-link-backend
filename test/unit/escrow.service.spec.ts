@@ -5,7 +5,7 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import { NotificationsService } from '../../src/notifications/notifications.service';
+import https://github.com/JSE-ORG/trust-link-backend/pull/583/conflict?name=test%252Funit%252Fescrow.service.spec.ts&ancestor_oid=4aecad21d4c8c93ccff3ac31d2482698925613f8&base_oid=5e59d44a73cbf14bdd59b06864ce64e281af5ccf&head_oid=e109c784b18ea461494a318263f44c1603b67224{ NotificationsService } from '../../src/notifications/notifications.service';
 import { EscrowRecord } from '../../src/prisma/prisma.service';
 import { EscrowRepository } from '../../src/escrow/escrow.repository';
 import { EscrowService } from '../../src/escrow/escrow.service';
@@ -186,9 +186,11 @@ describe('EscrowService.handleShipment (issue #16)', () => {
   // Additional tests for cancellation, updateBuyerContact, and viewer projection
   describe('additional EscrowService behaviors (issue #409)', () => {
     it('cancelEscrow allows buyer, vendor, admin and rejects strangers', async () => {
-      const escrow = { ...fundedEscrow } as EscrowRecord;
+      const escrow = { ...fundedEscrow };
       repository.findById.mockResolvedValue(escrow);
-      repository.markCancelled = jest.fn().mockResolvedValue({ ...escrow, state: 'CANCELLED' });
+      repository.markCancelled = jest
+        .fn()
+        .mockResolvedValue({ ...escrow, state: 'CANCELLED' });
 
       // buyer allowed
       await expect(
@@ -224,20 +226,32 @@ describe('EscrowService.handleShipment (issue #16)', () => {
     it('cancelPendingEscrow authorizes buyer/vendor/admin and consults chain state', async () => {
       const escrow = { ...fundedEscrow, state: 'CREATED' } as EscrowRecord;
       repository.findById.mockResolvedValue(escrow);
-      const contractService = { getEscrowState: jest.fn(), cancelEscrowOnChain: jest.fn() } as unknown as ContractService;
+      const contractService = {
+        getEscrowState: jest.fn(),
+        cancelEscrowOnChain: jest.fn(),
+      } as unknown as ContractService;
 
       // replace module service instance with one that has contract hooks
       (service as any).contractService = contractService;
-      repository.markCancelled = jest.fn().mockResolvedValue({ ...escrow, state: 'CANCELLED' });
+      repository.markCancelled = jest
+        .fn()
+        .mockResolvedValue({ ...escrow, state: 'CANCELLED' });
 
       // chain reports FUNDED: should call cancelEscrowOnChain then markCancelled
-      (contractService.getEscrowState as jest.Mock).mockResolvedValue({ exists: true, state: 'FUNDED' });
-      (contractService.cancelEscrowOnChain as jest.Mock).mockResolvedValue('tx-123');
+      (contractService.getEscrowState as jest.Mock).mockResolvedValue({
+        exists: true,
+        state: 'FUNDED',
+      });
+      (contractService.cancelEscrowOnChain as jest.Mock).mockResolvedValue(
+        'tx-123',
+      );
 
       await expect(
         service.cancelPendingEscrow(escrow.id, escrow.vendorAddress, false),
       ).resolves.toHaveProperty('state', 'CANCELLED');
-      expect(contractService.cancelEscrowOnChain).toHaveBeenCalledWith(escrow.id);
+      expect(contractService.cancelEscrowOnChain).toHaveBeenCalledWith(
+        escrow.id,
+      );
 
       // stranger rejected
       repository.findById.mockResolvedValue(escrow);
@@ -247,7 +261,10 @@ describe('EscrowService.handleShipment (issue #16)', () => {
 
       // chain reports non-CREATED non-FUNDED -> conflict
       repository.findById.mockResolvedValue({ ...escrow, state: 'CREATED' });
-      (contractService.getEscrowState as jest.Mock).mockResolvedValue({ exists: true, state: 'SHIPPED' });
+      (contractService.getEscrowState as jest.Mock).mockResolvedValue({
+        exists: true,
+        state: 'SHIPPED',
+      });
       await expect(
         service.cancelPendingEscrow(escrow.id, escrow.vendorAddress, false),
       ).rejects.toThrow(ConflictException);
@@ -263,13 +280,23 @@ describe('EscrowService.handleShipment (issue #16)', () => {
     });
 
     it('getEscrowForViewer sets isBuyer and isVendor flags and omits viewer when no caller', async () => {
-      const escrow = { ...fundedEscrow, buyerContactEmail: 'a:b:c', buyerContactPhone: 'd:e:f' } as EscrowRecord;
+      const escrow = {
+        ...fundedEscrow,
+        buyerContactEmail: 'a:b:c',
+        buyerContactPhone: 'd:e:f',
+      } as EscrowRecord;
       repository.findById.mockResolvedValue(escrow);
 
-      const withBuyer = await service.getEscrowForViewer(escrow.id, escrow.buyerAddress);
+      const withBuyer = await service.getEscrowForViewer(
+        escrow.id,
+        escrow.buyerAddress,
+      );
       expect(withBuyer.viewer).toEqual({ isBuyer: true, isVendor: false });
 
-      const withVendor = await service.getEscrowForViewer(escrow.id, escrow.vendorAddress);
+      const withVendor = await service.getEscrowForViewer(
+        escrow.id,
+        escrow.vendorAddress,
+      );
       expect(withVendor.viewer).toEqual({ isBuyer: false, isVendor: true });
 
       const noViewer = await service.getEscrowForViewer(escrow.id);

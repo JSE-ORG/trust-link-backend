@@ -9,11 +9,15 @@ import { WebhooksModule } from '../webhooks/webhooks.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { EscrowModule } from '../escrow/escrow.module';
 import { ConfigModule } from '../config/config.module';
+import { DlqModule } from '../dlq/dlq.module';
 
 @Module({
   imports: [
     forwardRef(() => WebhooksModule),
     forwardRef(() => EscrowModule),
+    // Issue #554: SorobanPollerService dead-letters events it can't apply
+    // via DlqService. See dlq.module.ts for the forwardRef on the other side.
+    forwardRef(() => DlqModule),
     PrismaModule,
     ConfigModule,
   ],

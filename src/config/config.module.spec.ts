@@ -98,9 +98,14 @@ async function buildConfigService(
   });
 
   jest.resetModules();
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
+
+  // Must be a dynamic require, not a static import: this needs to
+  // re-evaluate the module fresh after jest.resetModules() above (to
+  // re-run its load-time env validation against the env mutated in this
+  // test), and a static import is hoisted/cached so it would never see that.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { ConfigModule: LocalConfigModule } = require('./config.module');
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- see above
   const { ConfigService: LocalConfigService } = require('./config.service');
 
   try {

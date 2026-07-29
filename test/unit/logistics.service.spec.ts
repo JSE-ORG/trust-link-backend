@@ -7,10 +7,33 @@ import { GiglLogisticsService } from '../../src/logistics/gigl/gigl-logistics.se
 import {
   GiglClient,
   GiglNetworkError,
+  GiglUnauthorizedError,
   GiglProviderError,
 } from '../../src/logistics/gigl/gigl.client';
 
-jest.mock('axios');
+// Issue #552: a bare `jest.mock('axios')` auto-mocks the entire module,
+// which replaces `axios.isAxiosError` with a `jest.fn()` that returns
+// `undefined`. GiglClient.fetchTracking's whole error-mapping branch is
+// gated on `axios.isAxiosError(err)`, so with the auto-mock that branch is
+// never taken and every fixture error re-throws as a bare Error regardless
+// of what `isAxiosError`/`response`/`code` was set on it. Spreading the
+// real module through keeps `isAxiosError` (and everything else) genuine
+// while still letting `axios.create` be mocked per-test.
+jest.mock('axios', () => {
+  const actual = jest.requireActual('axios');
+  // `create` is mocked at both the top level and under `default` — with
+  // esModuleInterop, `import axios from 'axios'` may resolve to either
+  // depending on how ts-jest/babel interop picks it up here, and both must
+  // be the *same* jest.fn() so `mockedAxios.create.mockReturnValue(...)` in
+  // beforeEach reliably controls whichever one `axios` actually is.
+  const mockCreate = jest.fn();
+  return {
+    __esModule: true,
+    ...actual,
+    create: mockCreate,
+    default: { ...actual, create: mockCreate },
+  };
+});
 const mockedAxios = axios as jest.Mocked<typeof axios>;
 
 describe('LogisticsService & LogisticsModule (issue #479)', () => {
@@ -264,6 +287,40 @@ describe('LogisticsService & LogisticsModule (issue #479)', () => {
       await expect(giglService.getStatus('TRK-404')).rejects.toThrow(
         /HTTP 404/,
       );
+    });
+
+    it('handles 401 response (unauthorized)', async () => {
+      const unauthorizedError = new Error('Unauthorized') as any;
+      unauthorizedError.isAxiosError = true;
+      unauthorizedError.response = { status: 401 };
+
+      mockAxiosInstance.get.mockRejectedValue(unauthorizedError);
+
+      const giglClient = new GiglClient({
+        baseUrl: 'https://api.gigl.com/v1',
+        apiToken: 'test-token',
+      });
+      const giglService = new GiglLogisticsService(giglClient);
+
+      await expect(giglService.getStatus('TRK-401')).rejects.toThrow(
+        GiglUnauthorizedError,
+      );
+    });
+
+    it('propagates a non-Axios error unchanged', async () => {
+      const plainError = new Error('something else broke entirely');
+
+      mockAxiosInstance.get.mockRejectedValue(plainError);
+
+      const giglClient = new GiglClient({
+        baseUrl: 'https://api.gigl.com/v1',
+        apiToken: 'test-token',
+      });
+      const giglService = new GiglLogisticsService(giglClient);
+
+      // Issue #552 acceptance criteria: must be the *same* error, not
+      // wrapped/reclassified as one of the Gigl* error types.
+      await expect(giglService.getStatus('TRK-OTHER')).rejects.toBe(plainError);
     });
 
     it('fails clearly and logs warning at startup when unconfigured', async () => {

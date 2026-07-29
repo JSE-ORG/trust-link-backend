@@ -100,11 +100,15 @@ describe('DlqService (#74)', () => {
 
       prismaMock.failedTransaction.findMany.mockResolvedValue([mockRecord]);
       prismaMock.failedTransaction.count.mockResolvedValue(1);
-      expect((await service.list({ status: 'PENDING_REVIEW' })).data).toHaveLength(1);
+      expect(
+        (await service.list({ status: 'PENDING_REVIEW' })).data,
+      ).toHaveLength(1);
 
       prismaMock.failedTransaction.findMany.mockResolvedValue([a]);
       prismaMock.failedTransaction.count.mockResolvedValue(1);
-      expect((await service.list({ status: 'ABANDONED' })).data).toHaveLength(1);
+      expect((await service.list({ status: 'ABANDONED' })).data).toHaveLength(
+        1,
+      );
 
       prismaMock.failedTransaction.findMany.mockResolvedValue([
         { ...mockRecord, operation: 'recordDelivery' },
