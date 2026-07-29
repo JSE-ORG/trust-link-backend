@@ -37,6 +37,8 @@ export interface Config {
   SOROBAN_RPC_URL?: string;
   /** Always present: the config schema applies a validated default of 5000. */
   SOROBAN_POLL_INTERVAL_MS: number;
+  /** Always present: the config schema applies a validated default of 4000. */
+  SOROBAN_RPC_TIMEOUT_MS: number;
   CONTRACT_ID?: string;
 }
 

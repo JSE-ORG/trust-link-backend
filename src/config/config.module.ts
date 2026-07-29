@@ -203,6 +203,9 @@ export const configValidationSchema = Joi.object({
       'number.min':
         'Config validation error: SOROBAN_POLL_INTERVAL_MS must be at least 1000ms — lower values flood the RPC endpoint',
     }),
+  // Per-request timeout for Soroban RPC calls. Keep it below
+  // SOROBAN_POLL_INTERVAL_MS so a hung request cannot span poll cycles.
+  SOROBAN_RPC_TIMEOUT_MS: Joi.number().integer().min(100).default(4000),
 });
 
 @Global()

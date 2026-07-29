@@ -58,6 +58,8 @@ export class SorobanPollerService implements OnModuleInit, OnModuleDestroy {
 
   /** Poll interval in ms. Validated and defaulted (5000) by the config schema. */
   private readonly pollIntervalMs: number;
+  /** Per-request RPC timeout in ms. Validated and defaulted (4000) by the config schema. */
+  private readonly rpcTimeoutMs: number;
   private readonly rpcUrl: string;
   private readonly contractId: string;
 
@@ -70,6 +72,7 @@ export class SorobanPollerService implements OnModuleInit, OnModuleDestroy {
     this.rpcUrl = this.resolveRpcUrl();
     this.contractId = this.config.get('CONTRACT_ID') ?? '';
     this.pollIntervalMs = this.config.get('SOROBAN_POLL_INTERVAL_MS');
+    this.rpcTimeoutMs = this.config.get('SOROBAN_RPC_TIMEOUT_MS');
   }
 
   onModuleInit(): void {
@@ -126,10 +129,17 @@ export class SorobanPollerService implements OnModuleInit, OnModuleDestroy {
         await this.cursorService.set(lastPagingToken);
       }
     } catch (err) {
-      this.logger.error(
-        'SorobanPollerService: poll cycle failed',
-        err instanceof Error ? err.stack : String(err),
-      );
+      const message = err instanceof Error ? err.message : String(err);
+      if (message.includes('timed out')) {
+        // Logged distinctly from other failures: the request was aborted by
+        // our own timeout, and the next tick will retry normally.
+        this.logger.warn(`SorobanPollerService: ${message}`);
+      } else {
+        this.logger.error(
+          'SorobanPollerService: poll cycle failed',
+          err instanceof Error ? err.stack : String(err),
+        );
+      }
     } finally {
       this.polling = false;
     }
@@ -140,44 +150,74 @@ export class SorobanPollerService implements OnModuleInit, OnModuleDestroy {
    * Resumes from the persisted cursor when one is available.
    */
   private async fetchEvents(cursor?: string): Promise<SorobanRpcEvent[]> {
-    const body = {
-      jsonrpc: '2.0',
-      id: 1,
-      method: 'getEvents',
-      params: {
-        filters: [
-          {
-            type: 'contract',
-            contractIds: [this.contractId],
-          },
-        ],
-        ...(cursor ? { cursor } : { startLedger: 1 }),
-        limit: 100,
-      },
-    };
-
-    const response = await fetch(this.rpcUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+    const result = await this.rpcRequest<GetEventsResponse>('getEvents', {
+      filters: [
+        {
+          type: 'contract',
+          contractIds: [this.contractId],
+        },
+      ],
+      ...(cursor ? { cursor } : { startLedger: 1 }),
+      limit: 100,
     });
 
-    if (!response.ok) {
-      throw new Error(
-        `Soroban RPC responded with HTTP ${response.status}: ${response.statusText}`,
-      );
+    return result?.events ?? [];
+  }
+
+  /**
+   * Issue a JSON-RPC request bounded by SOROBAN_RPC_TIMEOUT_MS, following the
+   * AbortController pattern used by checkHorizon in app.controller.ts.
+   * Without the abort, a request that never settles would leave the `polling`
+   * guard set forever and silently stop event ingestion while the process
+   * still reports healthy.
+   */
+  private async rpcRequest<T>(
+    method: string,
+    params: Record<string, unknown>,
+  ): Promise<T | undefined> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.rpcTimeoutMs);
+
+    try {
+      const response = await fetch(this.rpcUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        throw new Error(
+          `Soroban RPC responded with HTTP ${response.status}: ${response.statusText}`,
+        );
+      }
+
+      const json = (await response.json()) as {
+        result?: T;
+        error?: { message: string };
+      };
+
+      if (json.error) {
+        throw new Error(`Soroban RPC error: ${json.error.message}`);
+      }
+
+      return json.result;
+    } catch (err) {
+      // Node's fetch rejects with a DOMException (which is not an Error
+      // subclass) when aborted, so match on the name rather than the class.
+      const isAbort =
+        typeof err === 'object' &&
+        err !== null &&
+        (err as { name?: unknown }).name === 'AbortError';
+      if (isAbort) {
+        throw new Error(
+          `Soroban RPC request "${method}" timed out after ${this.rpcTimeoutMs}ms`,
+        );
+      }
+      throw err;
+    } finally {
+      clearTimeout(timeout);
     }
-
-    const json = (await response.json()) as {
-      result?: GetEventsResponse;
-      error?: { message: string };
-    };
-
-    if (json.error) {
-      throw new Error(`Soroban RPC error: ${json.error.message}`);
-    }
-
-    return json.result?.events ?? [];
   }
 
   /**
