@@ -108,7 +108,9 @@ describe('ContractService', () => {
     it('wraps non-sequence errors in ContractCallFailedException without retrying', async () => {
       const server = makeServer();
       server.loadAccount.mockResolvedValue({ sequence: '1' });
-      server.submitTransaction.mockRejectedValue(new Error('connection refused'));
+      server.submitTransaction.mockRejectedValue(
+        new Error('connection refused'),
+      );
 
       const svc = new ContractService(server);
 
@@ -123,7 +125,6 @@ describe('ContractService', () => {
     it('re-throws ContractCallFailedException immediately without retrying', async () => {
       const server = makeServer();
       server.loadAccount.mockResolvedValue({ sequence: '1' });
-      const cause = new ContractCallFailedException('bad result');
       server.submitTransaction.mockResolvedValue({ status: 'ERROR' });
 
       const svc = new ContractService(server);
@@ -142,9 +143,9 @@ describe('ContractService', () => {
 
       const svc = new ContractService(server);
 
-      await expect(
-        svc.submitAutoRelease(ESCROW, SOURCE),
-      ).rejects.toThrow('Missing transaction hash');
+      await expect(svc.submitAutoRelease(ESCROW, SOURCE)).rejects.toThrow(
+        'Missing transaction hash',
+      );
     });
   });
 
@@ -184,9 +185,9 @@ describe('ContractService', () => {
       server.submitTransaction.mockResolvedValue({});
 
       const svc = new ContractService(server);
-      await expect(
-        svc.resolveDispute(ESCROW, 'RELEASE'),
-      ).rejects.toThrow('Missing transaction hash');
+      await expect(svc.resolveDispute(ESCROW, 'RELEASE')).rejects.toThrow(
+        'Missing transaction hash',
+      );
     });
   });
 
@@ -249,9 +250,9 @@ describe('ContractService', () => {
       server.submitTransaction.mockResolvedValue({ resultXdr: 'TxFailed' });
 
       const svc = new ContractService(server);
-      await expect(
-        svc.cancelEscrowOnChain(ESCROW),
-      ).rejects.toBeInstanceOf(ContractCallFailedException);
+      await expect(svc.cancelEscrowOnChain(ESCROW)).rejects.toBeInstanceOf(
+        ContractCallFailedException,
+      );
     });
   });
 

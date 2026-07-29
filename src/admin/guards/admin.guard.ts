@@ -27,7 +27,11 @@ export class AdminGuard implements CanActivate {
     const request = context.switchToHttp().getRequest<RequestWithUser>();
     const adminAddress = this.configService.get<string>('ADMIN_ADDRESS');
 
-    if (!request.user || !adminAddress || request.user.address !== adminAddress) {
+    if (
+      !request.user ||
+      !adminAddress ||
+      request.user.address !== adminAddress
+    ) {
       throw new ForbiddenException('Admin access required');
     }
 

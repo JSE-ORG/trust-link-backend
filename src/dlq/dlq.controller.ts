@@ -7,7 +7,12 @@ import {
   ServiceUnavailableException,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiQuery,
+  ApiTags,
+} from '@nestjs/swagger';
 import { JwtGuard } from '../auth/guards/jwt.guard';
 import { AdminGuard } from '../admin/guards/admin.guard';
 import { DlqService } from './dlq.service';
@@ -57,11 +62,33 @@ export class DlqController {
   }
 
   @ApiOperation({ summary: 'List failed transactions (admin DLQ)' })
-  @ApiQuery({ name: 'status', required: false, description: 'Filter by transaction status' })
-  @ApiQuery({ name: 'operation', required: false, description: 'Filter by operation name' })
-  @ApiQuery({ name: 'escrowId', required: false, description: 'Filter by escrow ID' })
-  @ApiQuery({ name: 'page', required: false, type: Number, description: 'Page number (default 1)' })
-  @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Maximum records per page (default 20, max 100)' })
+  @ApiQuery({
+    name: 'status',
+    required: false,
+    description: 'Filter by transaction status',
+  })
+  @ApiQuery({
+    name: 'operation',
+    required: false,
+    description: 'Filter by operation name',
+  })
+  @ApiQuery({
+    name: 'escrowId',
+    required: false,
+    description: 'Filter by escrow ID',
+  })
+  @ApiQuery({
+    name: 'page',
+    required: false,
+    type: Number,
+    description: 'Page number (default 1)',
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+    description: 'Maximum records per page (default 20, max 100)',
+  })
   @Get()
   list(
     @Query('status') status?: FailedTransactionStatus,
