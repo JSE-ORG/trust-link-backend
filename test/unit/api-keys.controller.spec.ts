@@ -25,34 +25,25 @@ describe('ApiKeysController (issue #410)', () => {
       controllers: [ApiKeysController],
       providers: [
         { provide: LogisticsService, useValue: logisticsService },
-        JwtGuard,
+        // Mock JwtGuard to set req.user based on auth header
+        {
+          provide: JwtGuard,
+          useValue: {
+            canActivate: jest.fn().mockImplementation((ctx) => {
+              const req = ctx.switchToHttp().getRequest();
+              const auth = req.headers.authorization ?? '';
+              req.user = auth.startsWith('Bearer ')
+                ? { address: ADMIN, role: 'admin' }
+                : { address: 'non-admin', role: undefined };
+              return true;
+            }),
+          },
+        },
+        // Use real AdminGuard (depends on ConfigService)
         AdminGuard,
         { provide: ConfigService, useValue: { get: jest.fn().mockReturnValue(ADMIN) } },
       ],
-    })
-      .overrideProvider(JwtGuard)
-      .useValue({
-        canActivate: jest.fn().mockImplementation((ctx) => {
-          const req = ctx.switchToHttp().getRequest();
-          const auth = req.headers.authorization ?? '';
-          // Use Bearer prefix to distinguish admin vs non-admin callers
-          req.user = auth.startsWith('Bearer ')
-            ? { address: ADMIN, role: 'admin' }
-            : { address: 'non-admin', role: undefined };
-          return true;
-        }),
-      })
-      .overrideProvider(AdminGuard)
-      .useValue({
-        canActivate: jest.fn().mockImplementation((ctx) => {
-          const req = ctx.switchToHttp().getRequest();
-          if (!req.user || req.user.role !== 'admin') {
-            throw new ForbiddenException('Admin role required');
-          }
-          return true;
-        }),
-      })
-      .compile();
+    }).compile();
 
     app = moduleRef.createNestApplication();
     app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
@@ -95,7 +86,7 @@ describe('ApiKeysController (issue #410)', () => {
 
   it('rotates existing encrypted key via reencryptCredential without leaking secrets', async () => {
     // Provide an existing encrypted key; spy on reencryptCredential
-    const util = await import('../../src/common/sanitization/credential-encryption.util');
+    const util = jest.requireActual('../../src/common/sanitization/credential-encryption.util');
     const spy = jest.spyOn(util, 'reencryptCredential').mockReturnValue('reencrypted:val');
 
     logisticsService.getEncryptedApiKey.mockReturnValue('old:enc:key');
