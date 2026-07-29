@@ -134,7 +134,7 @@ async function bootstrap(): Promise<void> {
       maxAge: 86400,
     });
   } else {
-    if (configService.isProduction()) {
+    if (isProduction) {
       app.enableCors({ origin: false });
     } else {
       app.enableCors({ origin: true });
