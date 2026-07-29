@@ -535,10 +535,6 @@ export class PrismaService implements OnModuleDestroy {
         });
       });
 
-      if (!where?.state) {
-        escrows = escrows.filter((e) => e.state !== 'CANCELLED');
-      }
-
       if (orderBy) {
         const [field, dir] = Object.entries(orderBy)[0] as [
           keyof EscrowRecord,

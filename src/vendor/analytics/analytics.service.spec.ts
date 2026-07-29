@@ -156,6 +156,27 @@ describe('AnalyticsService', () => {
       expect(result.summary.averageDaily).toBe(0);
     });
 
+    it('uses default days=30 and timezone=UTC when called with vendor address only', async () => {
+      // Calling with no optional args exercises the default-arg branches.
+      // With no escrows the summary must be zeroed and the data array must
+      // contain exactly 30 daily entries (today minus 29 days → today).
+      const result = await service.getDailyVolumeChart('0xVendorDefaults');
+
+      expect(result.data.length).toBe(30);
+      expect(result.summary.totalVolume).toBe(0);
+      expect(result.summary.totalTransactions).toBe(0);
+      expect(result.summary.averageDaily).toBe(0);
+
+      // Every entry should be a zero-filled day
+      for (const day of result.data) {
+        expect(day.transactionCount).toBe(0);
+        expect(day.totalVolume).toBe(0);
+        expect(day.completedCount).toBe(0);
+        expect(day.disputedCount).toBe(0);
+        expect(day.averageTransactionValue).toBe(0);
+      }
+    });
+
     it('should calculate correct aggregations', async () => {
       const vendorAddress = '0xVendorABC';
       const days = 3;
@@ -415,13 +436,6 @@ describe('AnalyticsService', () => {
        *   4 COMPLETED → completionRate = 4/10 * 100 = 40
        *   2 DISPUTED  → disputeRate    = 2/10 * 100 = 20
        *   4 FUNDED    → active
-       *
-       * NOTE: The in-memory PrismaService mock silently drops CANCELLED
-       * escrows from findMany when no explicit `state` filter is given
-       * (line 539 in prisma.service.ts). In a real Postgres environment
-       * CANCELLED rows would be included. Tests here validate the
-       * in-memory mock behaviour; a separate integration test is needed
-       * to verify the Postgres path counts CANCELLED escrows correctly.
        */
       const vendorAddress = '0xVendorMixed';
       const scenarios: Array<{ state: EscrowState; amount: number }> = [
@@ -578,6 +592,70 @@ describe('AnalyticsService', () => {
       expect(result.lastUpdated).toMatch(
         /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/,
       );
+    });
+
+    it('counts CANCELLED escrows in cancelledTransactions and totalTransactions', async () => {
+      /**
+       * A cancelled escrow is not active, completed, or disputed, but it
+       * must still appear in totalTransactions, totalVolume, and
+       * cancelledTransactions so vendor revenue figures are accurate.
+       *
+       * 3 escrows total:
+       *   1 COMPLETED  → completedTransactions = 1
+       *   1 CANCELLED  → cancelledTransactions = 1
+       *   1 FUNDED     → activeTransactions    = 1
+       *
+       * completionRate = 1/3 * 100 ≈ 33.33...
+       * disputeRate    = 0/3 * 100 = 0
+       * totalVolume    = 100 + 50 + 200 = 350
+       * averageValue   = 350 / 3 ≈ 116.67
+       */
+      const vendorAddress = '0xVendorWithCancelled';
+
+      await prisma.escrow.create({
+        data: {
+          vendorAddress,
+          itemName: 'Completed Item',
+          amount: 100,
+          currency: 'USD',
+          buyerAddress: '0xBuyerC1',
+          state: 'COMPLETED',
+        },
+      });
+
+      await prisma.escrow.create({
+        data: {
+          vendorAddress,
+          itemName: 'Cancelled Item',
+          amount: 50,
+          currency: 'USD',
+          buyerAddress: '0xBuyerC2',
+          state: 'CANCELLED',
+        },
+      });
+
+      await prisma.escrow.create({
+        data: {
+          vendorAddress,
+          itemName: 'Funded Item',
+          amount: 200,
+          currency: 'USD',
+          buyerAddress: '0xBuyerC3',
+          state: 'FUNDED',
+        },
+      });
+
+      const result = await service.getTransactionStats(vendorAddress);
+
+      expect(result.stats.totalTransactions).toBe(3);
+      expect(result.stats.cancelledTransactions).toBe(1);
+      expect(result.stats.completedTransactions).toBe(1);
+      expect(result.stats.activeTransactions).toBe(1);
+      expect(result.stats.disputedTransactions).toBe(0);
+      expect(result.stats.totalVolume).toBe(350);
+      expect(result.stats.averageTransactionValue).toBeCloseTo(350 / 3, 5);
+      expect(result.stats.completionRate).toBeCloseTo((1 / 3) * 100, 5);
+      expect(result.stats.disputeRate).toBe(0);
     });
   });
 
