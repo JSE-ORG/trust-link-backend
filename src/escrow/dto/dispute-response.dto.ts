@@ -22,7 +22,8 @@ export class DisputeResponseDto {
   escrowId!: string;
 
   @ApiProperty({
-    description: 'Short reason category the buyer selected when opening the dispute.',
+    description:
+      'Short reason category the buyer selected when opening the dispute.',
     enum: [
       'ITEM_NOT_AS_DESCRIBED',
       'ITEM_NOT_RECEIVED',

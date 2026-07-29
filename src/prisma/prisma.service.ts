@@ -359,12 +359,15 @@ export class PrismaService {
   // databaseUrl is accepted so the module can pass the pool-tuned URL from
   // ConfigService. The in-memory store does not use it, but a real PrismaClient
   // replacement should forward it to `new PrismaClient({ datasources: { db: { url } } })`.
-  constructor(readonly databaseUrl?: string) {
+  constructor(@Optional() readonly databaseUrl?: string) {
     // Issue #316: apply statement_timeout to prevent long-running queries
     if (databaseUrl) {
       try {
         const url = new URL(databaseUrl);
-        url.searchParams.set('statement_timeout', process.env.QUERY_TIMEOUT_MS ?? '30000');
+        url.searchParams.set(
+          'statement_timeout',
+          process.env.QUERY_TIMEOUT_MS ?? '30000',
+        );
         url.searchParams.set('connect_timeout', '10');
         this.effectiveDatabaseUrl = url.toString();
       } catch {
@@ -376,8 +379,10 @@ export class PrismaService {
   readonly effectiveDatabaseUrl?: string;
 
   // Issue #315: slow query logging middleware
-  private readonly slowQueryThresholdMs =
-    parseInt(process.env.SLOW_QUERY_THRESHOLD_MS ?? '500', 10);
+  private readonly slowQueryThresholdMs = parseInt(
+    process.env.SLOW_QUERY_THRESHOLD_MS ?? '500',
+    10,
+  );
 
   private readonly logger = new Logger('PrismaService');
 
@@ -394,7 +399,7 @@ export class PrismaService {
     if (duration > this.slowQueryThresholdMs) {
       this.logger.warn(
         `Slow query: ${model ?? 'unknown'}.${action} took ${duration}ms ` +
-        `(threshold: ${this.slowQueryThresholdMs}ms)`,
+          `(threshold: ${this.slowQueryThresholdMs}ms)`,
       );
     }
     return result;
@@ -451,7 +456,7 @@ export class PrismaService {
         ...data,
         id: data.id ?? String(this.escrowId++),
         itemRef: data.itemRef ?? '',
-        state: data.state ?? 'FUNDED',
+        state: data.state ?? 'CREATED',
         trackingId: data.trackingId ?? null,
         shippedAt: data.shippedAt ?? null,
         deliveredAt: data.deliveredAt ?? null,
@@ -650,6 +655,25 @@ export class PrismaService {
         return Promise.resolve({ count: 1 });
       }
       return Promise.resolve({ count: 0 });
+    },
+    count: ({
+      where,
+    }: {
+      where?: Partial<
+        Pick<
+          EscrowRecord,
+          | 'state'
+          | 'trackingId'
+          | 'vendorAddress'
+          | 'buyerAddress'
+          | 'disputeId'
+          | 'itemRef'
+          | 'autoReleaseTxHash'
+          | 'autoReleaseSubmittedAt'
+        >
+      >;
+    } = {}): Promise<number> => {
+      return this.escrow.findMany({ where }).then((records) => records.length);
     },
     deleteMany: (): Promise<{ count: number }> => {
       const count = this.escrows.size;

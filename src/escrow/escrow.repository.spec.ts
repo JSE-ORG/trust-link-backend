@@ -177,9 +177,9 @@ describe('EscrowRepository', () => {
 
       expect(events).toHaveLength(1);
       expect(events[0]).toMatchObject({
-        event: 'FUNDED',
+        event: 'CREATED',
         fromState: null,
-        toState: 'FUNDED',
+        toState: 'CREATED',
       });
     });
 
@@ -189,8 +189,8 @@ describe('EscrowRepository', () => {
       await prisma.escrowEvent.create({
         data: {
           escrowId: escrow.id,
-          fromState: 'FUNDED',
-          toState: 'SHIPPED',
+          fromState: 'CREATED',
+          toState: 'FUNDED',
         },
       });
 
@@ -198,20 +198,27 @@ describe('EscrowRepository', () => {
 
       expect(events).toHaveLength(2);
       expect(events[0]).toMatchObject({
-        event: 'FUNDED',
+        event: 'CREATED',
         fromState: null,
-        toState: 'FUNDED',
+        toState: 'CREATED',
       });
       expect(events[1]).toMatchObject({
-        event: 'SHIPPED',
-        fromState: 'FUNDED',
-        toState: 'SHIPPED',
+        event: 'FUNDED',
+        fromState: 'CREATED',
+        toState: 'FUNDED',
       });
     });
 
     it('includes DISPUTED transition for a disputed escrow', async () => {
       const escrow = await repo.create(makeDto(), 'vendor-disputed');
 
+      await prisma.escrowEvent.create({
+        data: {
+          escrowId: escrow.id,
+          fromState: 'CREATED',
+          toState: 'FUNDED',
+        },
+      });
       await prisma.escrowEvent.create({
         data: {
           escrowId: escrow.id,
@@ -222,8 +229,8 @@ describe('EscrowRepository', () => {
 
       const events = await repo.findEvents(escrow.id);
 
-      expect(events).toHaveLength(2);
-      expect(events[1]).toMatchObject({
+      expect(events).toHaveLength(3);
+      expect(events[2]).toMatchObject({
         event: 'DISPUTED',
         fromState: 'FUNDED',
         toState: 'DISPUTED',
@@ -233,6 +240,13 @@ describe('EscrowRepository', () => {
     it('returns all transitions for an escrow taken through full lifecycle', async () => {
       const escrow = await repo.create(makeDto(), 'vendor-lifecycle');
 
+      await prisma.escrowEvent.create({
+        data: {
+          escrowId: escrow.id,
+          fromState: 'CREATED',
+          toState: 'FUNDED',
+        },
+      });
       await prisma.escrowEvent.create({
         data: {
           escrowId: escrow.id,
@@ -257,8 +271,9 @@ describe('EscrowRepository', () => {
 
       const events = await repo.findEvents(escrow.id);
 
-      expect(events).toHaveLength(4);
+      expect(events).toHaveLength(5);
       expect(events.map((e) => e.event)).toEqual([
+        'CREATED',
         'FUNDED',
         'SHIPPED',
         'DELIVERED',

@@ -8,7 +8,8 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
  */
 export class EscrowEventEntryDto {
   @ApiProperty({
-    description: 'The lifecycle event/state name (e.g. CREATED, SHIPPED, DELIVERED).',
+    description:
+      'The lifecycle event/state name (e.g. CREATED, SHIPPED, DELIVERED).',
     example: 'SHIPPED',
   })
   event!: string;

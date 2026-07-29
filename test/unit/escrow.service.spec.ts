@@ -122,9 +122,10 @@ describe('EscrowService.handleShipment (issue #16)', () => {
       currency: 'USDC',
       buyerAddress: 'buyer-address',
     };
-    const createdEscrow = {
+    const createdEscrow: EscrowRecord = {
       ...fundedEscrow,
       id: 'escrow-2',
+      state: 'CREATED',
     };
     repository.findByVendorAndItem.mockResolvedValue(null);
     repository.create.mockResolvedValue(createdEscrow);
@@ -139,7 +140,7 @@ describe('EscrowService.handleShipment (issue #16)', () => {
       }),
     );
     expect(repository.create).toHaveBeenCalledWith(createDto, 'vendor-address');
-    expect(notifications.notifyFunded).toHaveBeenCalledWith(createdEscrow);
+    expect(notifications.notifyFunded).not.toHaveBeenCalled();
   });
 
   it('throws ConflictException for duplicate escrow references', async () => {
