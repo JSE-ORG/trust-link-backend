@@ -2,6 +2,7 @@ import { INestApplication, Logger, ValidationPipe } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { EscrowRepository } from '../src/escrow/escrow.repository';
 import { AutoReleaseWorker } from '../src/workers/auto-release.worker';
 import { ContractService } from '../src/stellar/contract.service';
 
@@ -12,7 +13,7 @@ import { ContractService } from '../src/stellar/contract.service';
  * interleave at every `await` point. Both workers call findAutoReleaseEligible()
  * before either has finished processing, so both receive the same eligible escrow
  * in their snapshot. The collision guard relies on:
- *   1. The in-memory check: `escrow.state === 'COMPLETED' || escrow.autoReleaseTxHash`
+ *   1. The in-memory check: `escrow.state === 'RELEASED' || escrow.autoReleaseTxHash`
  *      (stale snapshot — does NOT protect against concurrent runs that fetched
  *       the list before the first write completed).
  *   2. The DB-level guard: findAutoReleaseEligible filters autoReleaseTxHash: null,
@@ -30,6 +31,7 @@ import { ContractService } from '../src/stellar/contract.service';
 describe('Auto-Release Worker — concurrent collision detection (issues #302/#307/#308)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
+  let escrowRepository: EscrowRepository;
   let worker: AutoReleaseWorker;
   let contractService: ContractService;
 
@@ -45,6 +47,7 @@ describe('Auto-Release Worker — concurrent collision detection (issues #302/#3
     await app.init();
 
     prisma = app.get(PrismaService);
+    escrowRepository = app.get(EscrowRepository);
     worker = app.get(AutoReleaseWorker);
     contractService = app.get(ContractService);
 
@@ -64,10 +67,12 @@ describe('Auto-Release Worker — concurrent collision detection (issues #302/#3
   /**
    * Helper: create a single escrow that is eligible for auto-release.
    * deliveredAt is 50 hours ago (well past the 48-hour threshold).
+   * Goes through SHIPPED create → markDelivered transition so the final
+   * state matches what markDelivered produces in production.
    */
   async function createEligibleEscrow(suffix: string) {
     const pastDelivery = new Date(Date.now() - 50 * 60 * 60 * 1000);
-    return prisma.escrow.create({
+    const base = await prisma.escrow.create({
       data: {
         itemName: `Concurrent Item ${suffix}`,
         itemRef: `concurrent-item-${suffix}`,
@@ -78,10 +83,9 @@ describe('Auto-Release Worker — concurrent collision detection (issues #302/#3
         state: 'SHIPPED',
         trackingId: `TRK-CONCURRENT-${suffix}`,
         shippedAt: new Date(Date.now() - 60 * 60 * 60 * 1000),
-        deliveredAt: pastDelivery,
-        deliveryRecordedAt: pastDelivery,
       },
     });
+    return escrowRepository.markDelivered(base.id, pastDelivery);
   }
 
   it('calls submitAutoRelease exactly once when two workers race for the same eligible escrow', async () => {
@@ -114,8 +118,8 @@ describe('Auto-Release Worker — concurrent collision detection (issues #302/#3
     expect(after).not.toBeNull();
     expect(after!.autoReleaseTxHash).toBe(TX_HASH);
     expect(after!.autoReleaseSubmittedAt).toBeTruthy();
-    // State is set to COMPLETED by markAutoReleaseCompleted.
-    expect(after!.state).toBe('COMPLETED');
+    // State is set to RELEASED by markAutoReleased.
+    expect(after!.state).toBe('RELEASED');
   });
 
   it('does not double-process an escrow when the second run starts after the first has already committed', async () => {
@@ -128,7 +132,7 @@ describe('Auto-Release Worker — concurrent collision detection (issues #302/#3
     // First run completes fully before the second starts.
     await worker.run();
 
-    // Escrow should now be COMPLETED and excluded from the second run's
+    // Escrow should now be RELEASED and excluded from the second run's
     // eligible query (autoReleaseTxHash is no longer null).
     await worker.run();
 
@@ -136,7 +140,7 @@ describe('Auto-Release Worker — concurrent collision detection (issues #302/#3
 
     const after = await prisma.escrow.findUnique({ where: { id: escrow.id } });
     expect(after!.autoReleaseTxHash).toBe(TX_HASH);
-    expect(after!.state).toBe('COMPLETED');
+    expect(after!.state).toBe('RELEASED');
   });
 
   it('skips an escrow mid-loop when a sibling concurrent worker has already written autoReleaseTxHash to the DB', async () => {
@@ -164,7 +168,7 @@ describe('Auto-Release Worker — concurrent collision detection (issues #302/#3
 
     const after = await prisma.escrow.findUnique({ where: { id: escrow.id } });
     expect(after!.autoReleaseTxHash).toBe(TX_HASH);
-    expect(after!.state).toBe('COMPLETED');
+    expect(after!.state).toBe('RELEASED');
   });
 
   it('processes multiple independent escrows exactly once each under concurrent workers', async () => {
@@ -196,9 +200,9 @@ describe('Auto-Release Worker — concurrent collision detection (issues #302/#3
 
     // Each escrow must be in a terminal auto-release state.
     expect(afterA!.autoReleaseTxHash).not.toBeNull();
-    expect(afterA!.state).toBe('COMPLETED');
+    expect(afterA!.state).toBe('RELEASED');
     expect(afterB!.autoReleaseTxHash).not.toBeNull();
-    expect(afterB!.state).toBe('COMPLETED');
+    expect(afterB!.state).toBe('RELEASED');
   });
 
   // Note: with the atomic markAutoReleaseSubmitting claim in place, only the
@@ -231,7 +235,7 @@ describe('Auto-Release Worker — concurrent collision detection (issues #302/#3
     });
     expect(afterFailure!.autoReleaseTxHash).toBeNull();
     expect(afterFailure!.autoReleaseSubmittedAt).toBeNull();
-    expect(afterFailure!.state).toBe('SHIPPED');
+    expect(afterFailure!.state).toBe('DELIVERED');
 
     // The claim was released on failure — the next poll cycle retries and
     // this time succeeds.
@@ -240,6 +244,6 @@ describe('Auto-Release Worker — concurrent collision detection (issues #302/#3
 
     const after = await prisma.escrow.findUnique({ where: { id: escrow.id } });
     expect(after!.autoReleaseTxHash).toBe(TX_HASH);
-    expect(after!.state).toBe('COMPLETED');
+    expect(after!.state).toBe('RELEASED');
   });
 });

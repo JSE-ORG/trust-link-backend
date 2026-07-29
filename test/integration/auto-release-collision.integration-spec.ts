@@ -1,9 +1,90 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { ConfigService } from '../../src/config/config.service';
 import { PrismaService } from '../../src/prisma/prisma.service';
 import { EscrowRepository } from '../../src/escrow/escrow.repository';
-import { AutoReleaseService } from '../../src/escrow/auto-release.service';
+import { DisputeRepository } from '../../src/dispute/dispute.repository';
+import { AutoReleaseWorker } from '../../src/workers/auto-release.worker';
 import { ContractService } from '../../src/stellar/contract.service';
 import { CacheService } from '../../src/cache/cache.service';
+
+const TEST_SOURCE_ADDRESS =
+  'GA4LQSEGF5UFRB2Q5GFF3S5PEHEGRD547VC6O7RURA37HZ4P4UL6W33C';
+
+function makeConfigService(): Partial<ConfigService> {
+  return {
+    get: jest.fn((key: string) => {
+      if (key === 'AUTO_RELEASE_SOURCE_ADDRESS') {
+        return TEST_SOURCE_ADDRESS;
+      }
+      return undefined as any;
+    }) as ConfigService['get'],
+  };
+}
+
+async function createDeliveredEscrow(
+  prisma: PrismaService,
+  repository: EscrowRepository,
+  overrides: Partial<{
+    itemRef: string;
+    itemName: string;
+    amount: number;
+    buyerAddress: string;
+    vendorAddress: string;
+    trackingId: string;
+    deliveredAt: Date;
+    shippedAt: Date;
+    state: 'DELIVERED' | 'SHIPPED';
+    autoReleaseTxHash: string | null;
+    disputeId: string | null;
+  }>,
+) {
+  const {
+    itemRef,
+    itemName,
+    amount,
+    buyerAddress,
+    vendorAddress,
+    trackingId,
+    deliveredAt,
+    shippedAt,
+    autoReleaseTxHash,
+    disputeId,
+  } = overrides;
+
+  const base = await prisma.escrow.create({
+    data: {
+      itemName: itemName ?? 'Escrow',
+      itemRef: itemRef ?? 'ref-default',
+      amount: amount ?? 250,
+      currency: 'USDC',
+      buyerAddress: buyerAddress ?? 'buyer-1',
+      vendorAddress: vendorAddress ?? 'vendor-1',
+      state: 'SHIPPED',
+      trackingId: trackingId ?? 'TRK-DEFAULT',
+      shippedAt: shippedAt ?? new Date(Date.now() - 60 * 60 * 60 * 1000),
+    },
+  });
+
+  const finalDeliveredAt =
+    deliveredAt ?? new Date(Date.now() - 10 * 24 * 60 * 60 * 1000);
+
+  let escrow = await repository.markDelivered(base.id, finalDeliveredAt);
+
+  if (autoReleaseTxHash) {
+    escrow = await prisma.escrow.update({
+      where: { id: escrow.id },
+      data: { autoReleaseTxHash },
+    });
+  }
+  if (disputeId) {
+    escrow = await prisma.escrow.update({
+      where: { id: escrow.id },
+      data: { disputeId },
+    });
+  }
+
+  return escrow;
+}
 
 /**
  * Issue #277 — Integration tests for concurrent auto-release collision detection.
@@ -16,7 +97,7 @@ describe('Auto-release collision detection (issue #277)', () => {
   let prisma: PrismaService;
   let escrowRepository: EscrowRepository;
   let contractService: jest.Mocked<ContractService>;
-  let service: AutoReleaseService;
+  let worker: AutoReleaseWorker;
 
   const pastDelivery = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000);
 
@@ -25,12 +106,17 @@ describe('Auto-release collision detection (issue #277)', () => {
       providers: [
         PrismaService,
         EscrowRepository,
-        AutoReleaseService,
+        DisputeRepository,
+        AutoReleaseWorker,
         {
           provide: ContractService,
           useValue: {
             submitAutoRelease: jest.fn(),
           },
+        },
+        {
+          provide: ConfigService,
+          useValue: makeConfigService(),
         },
         {
           provide: CacheService,
@@ -47,7 +133,7 @@ describe('Auto-release collision detection (issue #277)', () => {
     escrowRepository = moduleRef.get(EscrowRepository);
     contractService =
       moduleRef.get<jest.Mocked<ContractService>>(ContractService);
-    service = moduleRef.get(AutoReleaseService);
+    worker = moduleRef.get(AutoReleaseWorker);
 
     await prisma.reset();
   });
@@ -61,20 +147,12 @@ describe('Auto-release collision detection (issue #277)', () => {
 
   describe('markAutoReleaseSubmitting', () => {
     it('claims the escrow and returns the record on first call', async () => {
-      const escrow = await prisma.escrow.create({
-        data: {
-          itemName: 'Camera',
-          itemRef: 'camera-lock-001',
-          amount: 250,
-          currency: 'USDC',
-          buyerAddress: 'buyer-1',
-          vendorAddress: 'vendor-1',
-          state: 'SHIPPED',
-          trackingId: 'TRK-001',
-          shippedAt: new Date(Date.now() - 60 * 60 * 60 * 1000),
-          deliveredAt: pastDelivery,
-          deliveryRecordedAt: pastDelivery,
-        },
+      const escrow = await createDeliveredEscrow(prisma, escrowRepository, {
+        itemName: 'Camera',
+        itemRef: 'camera-lock-001',
+        amount: 250,
+        trackingId: 'TRK-001',
+        deliveredAt: pastDelivery,
       });
 
       const result = await escrowRepository.markAutoReleaseSubmitting(
@@ -87,20 +165,14 @@ describe('Auto-release collision detection (issue #277)', () => {
     });
 
     it('returns null when the lock is already held', async () => {
-      const escrow = await prisma.escrow.create({
-        data: {
-          itemName: 'Laptop',
-          itemRef: 'laptop-lock-001',
-          amount: 1200,
-          currency: 'USDC',
-          buyerAddress: 'buyer-2',
-          vendorAddress: 'vendor-2',
-          state: 'SHIPPED',
-          trackingId: 'TRK-002',
-          shippedAt: new Date(Date.now() - 60 * 60 * 60 * 1000),
-          deliveredAt: pastDelivery,
-          deliveryRecordedAt: pastDelivery,
-        },
+      const escrow = await createDeliveredEscrow(prisma, escrowRepository, {
+        itemName: 'Laptop',
+        itemRef: 'laptop-lock-001',
+        amount: 1200,
+        buyerAddress: 'buyer-2',
+        vendorAddress: 'vendor-2',
+        trackingId: 'TRK-002',
+        deliveredAt: pastDelivery,
       });
 
       // First claim succeeds
@@ -121,20 +193,14 @@ describe('Auto-release collision detection (issue #277)', () => {
     });
 
     it('allows re-claiming after lock is cleared', async () => {
-      const escrow = await prisma.escrow.create({
-        data: {
-          itemName: 'Tablet',
-          itemRef: 'tablet-lock-001',
-          amount: 400,
-          currency: 'USDC',
-          buyerAddress: 'buyer-3',
-          vendorAddress: 'vendor-3',
-          state: 'SHIPPED',
-          trackingId: 'TRK-003',
-          shippedAt: new Date(Date.now() - 60 * 60 * 60 * 1000),
-          deliveredAt: pastDelivery,
-          deliveryRecordedAt: pastDelivery,
-        },
+      const escrow = await createDeliveredEscrow(prisma, escrowRepository, {
+        itemName: 'Tablet',
+        itemRef: 'tablet-lock-001',
+        amount: 400,
+        buyerAddress: 'buyer-3',
+        vendorAddress: 'vendor-3',
+        trackingId: 'TRK-003',
+        deliveredAt: pastDelivery,
       });
 
       // Claim
@@ -152,36 +218,30 @@ describe('Auto-release collision detection (issue #277)', () => {
     });
   });
 
-  // ── Concurrent auto-release via AutoReleaseService ────────────────────────
+  // ── Concurrent auto-release via AutoReleaseWorker ─────────────────────────
 
-  describe('concurrent AutoReleaseService.run()', () => {
+  describe('concurrent AutoReleaseWorker.run()', () => {
     it('only submits one transaction when two workers race on the same escrow', async () => {
-      const escrow = await prisma.escrow.create({
-        data: {
-          itemName: 'Camera',
-          itemRef: 'camera-concurrent-001',
-          amount: 250,
-          currency: 'USDC',
-          buyerAddress: 'buyer-1',
-          vendorAddress: 'vendor-1',
-          state: 'SHIPPED',
-          trackingId: 'TRK-001',
-          shippedAt: new Date(Date.now() - 60 * 60 * 60 * 1000),
-          deliveredAt: pastDelivery,
-          deliveryRecordedAt: pastDelivery,
-        },
+      const escrow = await createDeliveredEscrow(prisma, escrowRepository, {
+        itemName: 'Camera',
+        itemRef: 'camera-concurrent-001',
+        amount: 250,
+        buyerAddress: 'buyer-1',
+        vendorAddress: 'vendor-1',
+        trackingId: 'TRK-001',
+        deliveredAt: pastDelivery,
       });
 
       contractService.submitAutoRelease.mockResolvedValue('tx-hash-1');
 
       // Run two concurrent workers
-      await Promise.all([service.run(), service.run()]);
+      await Promise.all([worker.run(), worker.run()]);
 
       // Only one submission should have occurred
       expect(contractService.submitAutoRelease).toHaveBeenCalledTimes(1);
       expect(contractService.submitAutoRelease).toHaveBeenCalledWith(
         escrow.id,
-        expect.any(String),
+        TEST_SOURCE_ADDRESS,
       );
 
       // Escrow state should be consistent
@@ -193,20 +253,14 @@ describe('Auto-release collision detection (issue #277)', () => {
     });
 
     it('releases the lock on failure so the next cycle can retry', async () => {
-      const escrow = await prisma.escrow.create({
-        data: {
-          itemName: 'Monitor',
-          itemRef: 'monitor-fail-001',
-          amount: 300,
-          currency: 'USDC',
-          buyerAddress: 'buyer-4',
-          vendorAddress: 'vendor-4',
-          state: 'SHIPPED',
-          trackingId: 'TRK-004',
-          shippedAt: new Date(Date.now() - 60 * 60 * 60 * 1000),
-          deliveredAt: pastDelivery,
-          deliveryRecordedAt: pastDelivery,
-        },
+      const escrow = await createDeliveredEscrow(prisma, escrowRepository, {
+        itemName: 'Monitor',
+        itemRef: 'monitor-fail-001',
+        amount: 300,
+        buyerAddress: 'buyer-4',
+        vendorAddress: 'vendor-4',
+        trackingId: 'TRK-004',
+        deliveredAt: pastDelivery,
       });
 
       // First call fails, second succeeds
@@ -215,16 +269,16 @@ describe('Auto-release collision detection (issue #277)', () => {
         .mockResolvedValueOnce('tx-hash-2');
 
       // First run: fails and releases lock
-      await service.run();
+      await worker.run();
 
       const afterFirst = await prisma.escrow.findUnique({
         where: { id: escrow.id },
       });
-      expect(afterFirst!.state).toBe('SHIPPED');
+      expect(afterFirst!.state).toBe('DELIVERED');
       expect(afterFirst!.autoReleaseSubmittedAt).toBeNull();
 
       // Second run: retries and succeeds
-      await service.run();
+      await worker.run();
 
       const afterSecond = await prisma.escrow.findUnique({
         where: { id: escrow.id },
@@ -234,43 +288,33 @@ describe('Auto-release collision detection (issue #277)', () => {
     });
 
     it('processes multiple escrows concurrently without collision', async () => {
-      const escrow1 = await prisma.escrow.create({
-        data: {
-          itemName: 'Camera',
-          itemRef: 'camera-multi-001',
-          amount: 250,
-          currency: 'USDC',
-          buyerAddress: 'buyer-1',
-          vendorAddress: 'vendor-1',
-          state: 'SHIPPED',
-          trackingId: 'TRK-001',
-          shippedAt: new Date(Date.now() - 60 * 60 * 60 * 1000),
-          deliveredAt: pastDelivery,
-          deliveryRecordedAt: pastDelivery,
-        },
+      const escrow1 = await createDeliveredEscrow(prisma, escrowRepository, {
+        itemName: 'Camera',
+        itemRef: 'camera-multi-001',
+        amount: 250,
+        buyerAddress: 'buyer-1',
+        vendorAddress: 'vendor-1',
+        trackingId: 'TRK-001',
+        shippedAt: new Date(Date.now() - 60 * 60 * 60 * 1000),
+        deliveredAt: pastDelivery,
       });
 
-      const escrow2 = await prisma.escrow.create({
-        data: {
-          itemName: 'Laptop',
-          itemRef: 'laptop-multi-001',
-          amount: 1200,
-          currency: 'USDC',
-          buyerAddress: 'buyer-2',
-          vendorAddress: 'vendor-2',
-          state: 'SHIPPED',
-          trackingId: 'TRK-002',
-          shippedAt: new Date(Date.now() - 55 * 60 * 60 * 1000),
-          deliveredAt: pastDelivery,
-          deliveryRecordedAt: pastDelivery,
-        },
+      const escrow2 = await createDeliveredEscrow(prisma, escrowRepository, {
+        itemName: 'Laptop',
+        itemRef: 'laptop-multi-001',
+        amount: 1200,
+        buyerAddress: 'buyer-2',
+        vendorAddress: 'vendor-2',
+        trackingId: 'TRK-002',
+        shippedAt: new Date(Date.now() - 55 * 60 * 60 * 1000),
+        deliveredAt: pastDelivery,
       });
 
       contractService.submitAutoRelease
         .mockResolvedValueOnce('tx-hash-a')
         .mockResolvedValueOnce('tx-hash-b');
 
-      await service.run();
+      await worker.run();
 
       // Both escrows should be released
       expect(contractService.submitAutoRelease).toHaveBeenCalledTimes(2);
@@ -289,43 +333,31 @@ describe('Auto-release collision detection (issue #277)', () => {
     });
 
     it('skips escrows that are already auto-released', async () => {
-      await prisma.escrow.create({
-        data: {
-          itemName: 'Headphones',
-          itemRef: 'headphones-skip-001',
-          amount: 80,
-          currency: 'USDC',
-          buyerAddress: 'buyer-5',
-          vendorAddress: 'vendor-5',
-          state: 'SHIPPED',
-          trackingId: 'TRK-005',
-          shippedAt: new Date(Date.now() - 60 * 60 * 60 * 1000),
-          deliveredAt: pastDelivery,
-          deliveryRecordedAt: pastDelivery,
-          autoReleaseTxHash: 'existing-tx-hash',
-        },
+      await createDeliveredEscrow(prisma, escrowRepository, {
+        itemName: 'Headphones',
+        itemRef: 'headphones-skip-001',
+        amount: 80,
+        buyerAddress: 'buyer-5',
+        vendorAddress: 'vendor-5',
+        trackingId: 'TRK-005',
+        deliveredAt: pastDelivery,
+        autoReleaseTxHash: 'existing-tx-hash',
       });
 
-      await service.run();
+      await worker.run();
 
       expect(contractService.submitAutoRelease).not.toHaveBeenCalled();
     });
 
     it('skips escrows with active disputes', async () => {
-      const escrow = await prisma.escrow.create({
-        data: {
-          itemName: 'Phone',
-          itemRef: 'phone-dispute-001',
-          amount: 800,
-          currency: 'USDC',
-          buyerAddress: 'buyer-6',
-          vendorAddress: 'vendor-6',
-          state: 'SHIPPED',
-          trackingId: 'TRK-006',
-          shippedAt: new Date(Date.now() - 60 * 60 * 60 * 1000),
-          deliveredAt: pastDelivery,
-          deliveryRecordedAt: pastDelivery,
-        },
+      const escrow = await createDeliveredEscrow(prisma, escrowRepository, {
+        itemName: 'Phone',
+        itemRef: 'phone-dispute-001',
+        amount: 800,
+        buyerAddress: 'buyer-6',
+        vendorAddress: 'vendor-6',
+        trackingId: 'TRK-006',
+        deliveredAt: pastDelivery,
       });
 
       await prisma.dispute.create({
@@ -337,7 +369,7 @@ describe('Auto-release collision detection (issue #277)', () => {
         },
       });
 
-      await service.run();
+      await worker.run();
 
       expect(contractService.submitAutoRelease).not.toHaveBeenCalled();
     });
