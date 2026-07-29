@@ -1,6 +1,14 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
 import { ConfigService } from '../config/config.service';
-import { BlockchainListenerService, RawSorobanEvent } from './blockchain-listener.service';
+import {
+  BlockchainListenerService,
+  RawSorobanEvent,
+} from './blockchain-listener.service';
 import { CursorService } from './cursor.service';
 import { EscrowService } from '../escrow/escrow.service';
 
@@ -17,6 +25,13 @@ import { EscrowService } from '../escrow/escrow.service';
  *   "Dispute" + "Raised" → "DisputeRaised"
  *   "Auto"   + "Released"→ "AutoReleased"
  */
+
+/**
+ * Public testnet RPC endpoint, used only outside production when
+ * SOROBAN_RPC_URL is unset. Production deployments must configure the URL
+ * explicitly — config validation enforces this at startup.
+ */
+const DEFAULT_TESTNET_RPC_URL = 'https://soroban-testnet.stellar.org';
 
 /** Minimal shape of a Soroban RPC getEvents response entry. */
 interface SorobanRpcEvent {
@@ -59,9 +74,9 @@ export class SorobanPollerService implements OnModuleInit, OnModuleDestroy {
   }
 
   onModuleInit(): void {
-    if (!this.rpcUrl || !this.contractId) {
+    if (!this.contractId) {
       this.logger.warn(
-        'SorobanPollerService: SOROBAN_RPC_URL or CONTRACT_ID not set — poller disabled',
+        'SorobanPollerService: CONTRACT_ID not set — poller disabled',
       );
       return;
     }
@@ -97,7 +112,9 @@ export class SorobanPollerService implements OnModuleInit, OnModuleDestroy {
         return;
       }
 
-      this.logger.debug(`SorobanPollerService: received ${rawEvents.length} event(s)`);
+      this.logger.debug(
+        `SorobanPollerService: received ${rawEvents.length} event(s)`,
+      );
 
       let lastPagingToken: string | undefined;
 
@@ -193,8 +210,10 @@ export class SorobanPollerService implements OnModuleInit, OnModuleDestroy {
     if (!parsed) return;
 
     // Derive the event name from both topic symbols.
-    const topic0 = typeof parsed.topics[0] === 'string' ? parsed.topics[0] : null;
-    const topic1 = typeof parsed.topics[1] === 'string' ? parsed.topics[1] : null;
+    const topic0 =
+      typeof parsed.topics[0] === 'string' ? parsed.topics[0] : null;
+    const topic1 =
+      typeof parsed.topics[1] === 'string' ? parsed.topics[1] : null;
 
     if (!topic0 || !topic1) {
       this.logger.warn(
@@ -220,7 +239,8 @@ export class SorobanPollerService implements OnModuleInit, OnModuleDestroy {
       await this.escrowService.syncStateFromChain({
         eventType,
         escrowId,
-        trackingId: typeof data?.trackingId === 'string' ? data.trackingId : undefined,
+        trackingId:
+          typeof data?.trackingId === 'string' ? data.trackingId : undefined,
         txHash: typeof data?.txHash === 'string' ? data.txHash : undefined,
         reason: typeof data?.reason === 'string' ? data.reason : undefined,
       });
@@ -232,14 +252,26 @@ export class SorobanPollerService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  /** Resolve Soroban RPC URL: SOROBAN_RPC_URL env var, or fall back to the public testnet endpoint. */
+  /**
+   * Resolve the Soroban RPC URL. An explicitly configured SOROBAN_RPC_URL
+   * always wins. Without one, production refuses to start rather than guess
+   * an endpoint, and every other environment falls back to the public
+   * testnet RPC with a clear log line saying so.
+   */
   private resolveRpcUrl(): string {
     const configured = this.config.get('SOROBAN_RPC_URL');
     if (configured) return configured;
 
-    const network = this.config.get('STELLAR_NETWORK');
-    return network === 'MAINNET'
-      ? 'https://mainnet.stellar.validationcloud.io/v1/soroban/rpc'
-      : 'https://soroban-testnet.stellar.org';
+    if (this.config.isProduction()) {
+      // Backstop only: config validation already rejects this at startup.
+      throw new Error(
+        'SOROBAN_RPC_URL is required in production — refusing to fall back to a default RPC endpoint',
+      );
+    }
+
+    this.logger.warn(
+      `SorobanPollerService: SOROBAN_RPC_URL not set — defaulting to public testnet RPC ${DEFAULT_TESTNET_RPC_URL}`,
+    );
+    return DEFAULT_TESTNET_RPC_URL;
   }
 }
