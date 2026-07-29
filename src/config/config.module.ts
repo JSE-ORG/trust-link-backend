@@ -121,7 +121,7 @@ const stellarPublicKey = Joi.string().custom((value, helpers) => {
         SENTRY_DSN: Joi.when('NODE_ENV', {
           is: 'production',
           then: Joi.string().uri().required(),
-          otherwise: Joi.string().uri().optional(),
+          otherwise: Joi.string().uri().allow('').optional(),
         }),
         GIT_SHA: Joi.string().optional(),
       }),

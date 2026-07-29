@@ -23,7 +23,7 @@ function makeConfigService(
   } as unknown as jest.Mocked<ConfigService>;
 }
 
-describe('AdminGuard (issue #284)', () => {
+describe('AdminGuard (issue #520)', () => {
   describe('when ADMIN_ADDRESS is configured', () => {
     let guard: AdminGuard;
 
@@ -31,17 +31,22 @@ describe('AdminGuard (issue #284)', () => {
       guard = new AdminGuard(makeConfigService(ADMIN_ADDRESS));
     });
 
-    it('returns true for a user with role=admin whose address matches ADMIN_ADDRESS', () => {
+    it('returns true for a user whose address matches ADMIN_ADDRESS', () => {
       const ctx = makeContext({ address: ADMIN_ADDRESS, role: 'admin' });
       expect(guard.canActivate(ctx)).toBe(true);
     });
 
-    it('throws ForbiddenException when the user has role=admin but address does not match ADMIN_ADDRESS', () => {
+    it('returns true for matching ADMIN_ADDRESS even without explicit role', () => {
+      const ctx = makeContext({ address: ADMIN_ADDRESS });
+      expect(guard.canActivate(ctx)).toBe(true);
+    });
+
+    it('throws ForbiddenException when user has role=admin but address does not match ADMIN_ADDRESS', () => {
       const ctx = makeContext({ address: OTHER_ADDRESS, role: 'admin' });
       expect(() => guard.canActivate(ctx)).toThrow(ForbiddenException);
     });
 
-    it('throws ForbiddenException when the user has the wrong role and a non-admin address', () => {
+    it('throws ForbiddenException when user has non-admin address', () => {
       const ctx = makeContext({ address: OTHER_ADDRESS, role: 'vendor' });
       expect(() => guard.canActivate(ctx)).toThrow(ForbiddenException);
     });
@@ -56,19 +61,26 @@ describe('AdminGuard (issue #284)', () => {
       expect(() => guard.canActivate(ctx)).toThrow(ForbiddenException);
     });
 
-    it('includes the message "Admin role required" when user is missing', () => {
-      const ctx = makeContext(undefined);
-      expect(() => guard.canActivate(ctx)).toThrow('Admin role required');
-    });
+    it('uses single denial message "Admin access required" for all denials', () => {
+      const cases = [
+        undefined,
+        null,
+        { address: OTHER_ADDRESS },
+        { address: OTHER_ADDRESS, role: 'admin' },
+        { address: OTHER_ADDRESS, role: 'vendor' },
+      ];
 
-    it('throws ForbiddenException when address matches but role is not admin', () => {
-      const ctx = makeContext({ address: ADMIN_ADDRESS, role: 'vendor' });
-      // address matches but role is not admin — first check fails, but address check passes;
-      // however the guard requires BOTH role=admin AND address match, so it throws.
-      // Actually by reading guard logic: isAdminRole=false, isAdminAddress=true → does NOT
-      // throw on first check (!isAdminRole && !isAdminAddress = false). Then adminAddress
-      // is set and isAdminAddress=true → does NOT throw second check. Returns true.
-      expect(guard.canActivate(ctx)).toBe(true);
+      for (const user of cases) {
+        const ctx = makeContext(user);
+        let caught: ForbiddenException | null = null;
+        try {
+          guard.canActivate(ctx);
+        } catch (e) {
+          caught = e as ForbiddenException;
+        }
+        expect(caught).toBeInstanceOf(ForbiddenException);
+        expect((caught!.getResponse() as any).message).toBe('Admin access required');
+      }
     });
   });
 
@@ -79,51 +91,9 @@ describe('AdminGuard (issue #284)', () => {
       guard = new AdminGuard(makeConfigService(undefined));
     });
 
-    it('returns true for a user with role=admin', () => {
+    it('throws ForbiddenException even for a user claiming role=admin when ADMIN_ADDRESS is unconfigured', () => {
       const ctx = makeContext({ address: OTHER_ADDRESS, role: 'admin' });
-      expect(guard.canActivate(ctx)).toBe(true);
-    });
-
-    it('throws ForbiddenException for a non-admin user', () => {
-      const ctx = makeContext({ address: OTHER_ADDRESS, role: 'vendor' });
       expect(() => guard.canActivate(ctx)).toThrow(ForbiddenException);
-    });
-
-    it('throws ForbiddenException when user is missing', () => {
-      const ctx = makeContext(undefined);
-      expect(() => guard.canActivate(ctx)).toThrow(ForbiddenException);
-    });
-  });
-
-  describe('ForbiddenException message content', () => {
-    it('reports "Admin role required" for missing user', () => {
-      const guard = new AdminGuard(makeConfigService(ADMIN_ADDRESS));
-      const ctx = makeContext(undefined);
-      let caught: ForbiddenException | null = null;
-      try {
-        guard.canActivate(ctx);
-      } catch (e) {
-        caught = e as ForbiddenException;
-      }
-      expect(caught).toBeInstanceOf(ForbiddenException);
-      expect((caught!.getResponse() as any).message).toBe(
-        'Admin role required',
-      );
-    });
-
-    it('reports "Admin access required" for admin-role user with wrong address', () => {
-      const guard = new AdminGuard(makeConfigService(ADMIN_ADDRESS));
-      const ctx = makeContext({ address: OTHER_ADDRESS, role: 'admin' });
-      let caught: ForbiddenException | null = null;
-      try {
-        guard.canActivate(ctx);
-      } catch (e) {
-        caught = e as ForbiddenException;
-      }
-      expect(caught).toBeInstanceOf(ForbiddenException);
-      expect((caught!.getResponse() as any).message).toBe(
-        'Admin access required',
-      );
     });
   });
 });
