@@ -13,6 +13,17 @@ import {
 jest.mock('axios');
 const mockedAxios = axios as jest.Mocked<typeof axios>;
 
+// jest.mock('axios') mocks the entire module, including axios.isAxiosError.
+// The auto-mock returns undefined for isAxiosError, which would cause the
+// GiglClient error handling (which relies on isAxiosError) to never trigger
+// and just re-throw the original Error. We patch it to match the real check.
+beforeAll(() => {
+  mockedAxios.isAxiosError.mockImplementation(
+    (err: any): err is import('axios').AxiosError =>
+      typeof err === 'object' && err !== null && err.isAxiosError === true,
+  );
+});
+
 describe('LogisticsService & LogisticsModule (issue #479)', () => {
   let service: LogisticsService;
   let mockAxiosInstance: { get: jest.Mock };

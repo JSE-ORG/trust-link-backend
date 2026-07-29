@@ -6,6 +6,7 @@ import { LogisticsService } from '../../src/logistics/logistics.service';
 import { JwtGuard } from '../../src/auth/guards/jwt.guard';
 import { AdminGuard } from '../../src/admin/guards/admin.guard';
 import { ConfigService } from '../../src/config/config.service';
+import { RotateApiKeyDto } from '../../src/admin/api-keys/dto/rotate-api-key.dto';
 
 describe('ApiKeysController (issue #410)', () => {
   let app: INestApplication;
@@ -88,9 +89,8 @@ describe('ApiKeysController (issue #410)', () => {
     expect(JSON.stringify(res.body)).not.toContain('old:enc:key');
 
     spy.mockRestore();
-import { ApiKeysController } from '../../src/admin/api-keys/api-keys.controller';
-import { LogisticsService } from '../../src/logistics/logistics.service';
-import { RotateApiKeyDto } from '../../src/admin/api-keys/dto/rotate-api-key.dto';
+  });
+});
 
 describe('ApiKeysController (issue #498)', () => {
   function buildDto(key: string): RotateApiKeyDto {

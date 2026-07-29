@@ -1,4 +1,3 @@
-import { Test } from '@jest/globals';
 import { PrismaService } from '../../src/prisma/prisma.service';
 
 describe('PrismaService in-memory stores (issue #411)', () => {
