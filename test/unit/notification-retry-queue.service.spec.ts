@@ -97,21 +97,28 @@ describe('NotificationRetryQueueService (in-process fallback) (#73)', () => {
     overrides: {
       dispatcher?: NotificationChannelDispatcher;
       backoff?: NotificationRetryBackoff;
+      prisma?: { notification: { update: jest.Mock } };
     } = {},
   ) => {
     const dispatcher: NotificationChannelDispatcher = overrides.dispatcher ?? {
       dispatch: jest.fn(),
     };
     const dlq: NotificationDeadLetterRecord[] = [];
-    const service = new NotificationRetryQueueService({
-      backoff: overrides.backoff ?? {
-        attempts: 3,
-        delay: 1,
-        maxDelayMs: 10,
+    const service = new NotificationRetryQueueService(
+      {
+        backoff: overrides.backoff ?? {
+          attempts: 3,
+          delay: 1,
+          maxDelayMs: 10,
+        },
+        deadLetterSink: { record: (entry) => void dlq.push(entry) },
+        scheduleDelayed: synchronousScheduler,
       },
-      deadLetterSink: { record: (entry) => void dlq.push(entry) },
-      scheduleDelayed: synchronousScheduler,
-    });
+      // The real PrismaService is an in-memory fake; a minimal mock with
+      // notification.update is all the retry runner touches, and it lets
+      // us assert the per-attempt failure state that #490 restored.
+      overrides.prisma as unknown as never,
+    );
     service.registerDispatcher('EMAIL', dispatcher);
     return { service, dispatcher, dlq };
   };
@@ -151,6 +158,70 @@ describe('NotificationRetryQueueService (in-process fallback) (#73)', () => {
       requestId: 'req-1',
     });
     expect(dlq[0].failedAt).toBeInstanceOf(Date);
+  });
+
+  it('records per-attempt failure state (retryCount, failedAt, lastError) on every failing attempt (#490)', async () => {
+    const dispatch = jest
+      .fn()
+      .mockRejectedValueOnce(new Error('boom'))
+      .mockRejectedValueOnce(new Error('still down'))
+      .mockRejectedValueOnce(new Error('provider unavailable'));
+    const update = jest.fn().mockResolvedValue(undefined);
+    const { service, dlq } = setup({
+      dispatcher: { dispatch },
+      prisma: { notification: { update } },
+    });
+
+    await service.enqueue(makeJob({ notificationId: 'notif-1' }));
+
+    expect(dispatch).toHaveBeenCalledTimes(3);
+
+    // One failure write per attempt, each carrying the attempt number and
+    // the provider error message for that attempt.
+    const failureWrites = update.mock.calls
+      .map(([arg]) => arg)
+      .filter((arg) => arg.data.lastError !== undefined);
+    expect(failureWrites).toHaveLength(3);
+    failureWrites.forEach((arg) => {
+      expect(arg.where).toEqual({ id: 'notif-1' });
+      expect(arg.data.failedAt).toBeInstanceOf(Date);
+    });
+    expect(failureWrites.map((arg) => arg.data.retryCount)).toEqual([1, 2, 3]);
+    expect(failureWrites.map((arg) => arg.data.lastError)).toEqual([
+      'boom',
+      'still down',
+      'provider unavailable',
+    ]);
+
+    // The last recorded failure state reflects three attempts and the
+    // final provider error — the state operators inspect after exhaustion.
+    const lastFailure = failureWrites[failureWrites.length - 1];
+    expect(lastFailure.data.retryCount).toBe(3);
+    expect(lastFailure.data.lastError).toBe('provider unavailable');
+
+    // The terminal status write still happens after attempts are exhausted.
+    const statusWrites = update.mock.calls
+      .map(([arg]) => arg)
+      .filter((arg) => arg.data.status === 'FAILED');
+    expect(statusWrites).toHaveLength(1);
+
+    expect(dlq).toHaveLength(1);
+    expect(dlq[0].lastError).toBe('provider unavailable');
+  });
+
+  it('a failing status write does not abort the retry loop (#490)', async () => {
+    const dispatch = jest.fn().mockRejectedValue(new Error('always fails'));
+    const update = jest.fn().mockRejectedValue(new Error('db down'));
+    const { service, dlq } = setup({
+      dispatcher: { dispatch },
+      prisma: { notification: { update } },
+    });
+
+    await service.enqueue(makeJob({ notificationId: 'notif-2' }));
+
+    // The loop ran to exhaustion despite every DB write rejecting.
+    expect(dispatch).toHaveBeenCalledTimes(3);
+    expect(dlq).toHaveLength(1);
   });
 
   it('uses a unique requestId per enqueue when none is supplied', async () => {
