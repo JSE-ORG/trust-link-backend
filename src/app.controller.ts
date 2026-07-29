@@ -6,7 +6,12 @@ import {
   Logger,
   Res,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiOkResponse,
+  ApiResponse,
+} from '@nestjs/swagger';
 import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import type { Response } from 'express';
 import { AppService } from './app.service';
@@ -175,29 +180,6 @@ export class AppController {
   }
 
   /**
-   * Returns the application version and environment information.
-   *
-   * @returns Version string, package name, and current environment
-   * @authentication None (public endpoint)
-   */
-  @ApiOperation({ summary: 'Get current application version and environment' })
-  @ApiOkResponse({ description: 'Version information returned.' })
-  @ApiResponse({
-    status: 500,
-    description: 'Internal server error.',
-    type: ErrorResponseDto,
-  })
-  @Get('version')
-  @HttpCode(HttpStatus.OK)
-  getVersion() {
-    return {
-      version: getAppVersion(),
-      name: '@truestlink/trustlink-backend',
-      environment: this.configService.get('NODE_ENV'),
-    };
-  }
-
-  /**
    * Shared implementation used by both GET /health and GET /health/ready.
    * Runs the three dependency checks concurrently, composes the response
    * body, and returns 200/503 based on the combined status of required
@@ -270,6 +252,15 @@ export class AppController {
       name: '@truestlink/trustlink-backend',
       environment: this.configService.get('NODE_ENV'),
     };
+  }
+
+  private async checkAllDependencies(): Promise<DependencyCheckResults> {
+    const [db, horizon, redis] = await Promise.all([
+      this.checkDatabase(),
+      this.checkHorizon(),
+      this.checkRedis(),
+    ]);
+    return { db, horizon, redis };
   }
 
   private async checkDatabase(): Promise<ComponentHealth> {
