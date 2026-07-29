@@ -1,11 +1,11 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
-import { APP_GUARD } from '@nestjs/core';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { ApiKeysController } from '../../src/admin/api-keys/api-keys.controller';
 import { LogisticsService } from '../../src/logistics/logistics.service';
 import { JwtGuard } from '../../src/auth/guards/jwt.guard';
 import { AdminGuard } from '../../src/admin/guards/admin.guard';
+import { ConfigService } from '../../src/config/config.service';
 import { RotateApiKeyDto } from '../../src/admin/api-keys/dto/rotate-api-key.dto';
 
 describe('ApiKeysController (issue #410)', () => {
@@ -21,20 +21,13 @@ describe('ApiKeysController (issue #410)', () => {
       setEncryptedApiKey: jest.fn(),
     };
 
-    // Manually mock JwtGuard + AdminGuard at the module level via APP_GUARD
-    const mockGuard = {
+    const mockJwtGuard = {
       canActivate: jest.fn().mockImplementation((ctx) => {
         const req = ctx.switchToHttp().getRequest();
         const auth = req.headers.authorization ?? '';
         req.user = auth.startsWith('Bearer ')
           ? { address: ADMIN, role: 'admin' }
           : { address: 'non-admin', role: undefined };
-
-        // Simulate AdminGuard logic inline so we don't fight Nest DI
-        if (!req.user || req.user.role !== 'admin') {
-          const { ForbiddenException } = require('@nestjs/common');
-          throw new ForbiddenException('Admin role required');
-        }
         return true;
       }),
     };
@@ -43,10 +36,11 @@ describe('ApiKeysController (issue #410)', () => {
       controllers: [ApiKeysController],
       providers: [
         { provide: LogisticsService, useValue: logisticsService },
-        { provide: APP_GUARD, useValue: mockGuard },
-        // These satisfy @UseGuards(JwtGuard, AdminGuard) on the controller
-        { provide: JwtGuard, useValue: { canActivate: () => true } },
-        { provide: AdminGuard, useValue: { canActivate: () => true } },
+        // Mock JwtGuard to set req.user based on auth header
+        { provide: JwtGuard, useValue: mockJwtGuard },
+        // Real AdminGuard needs ConfigService — provide a mock
+        AdminGuard,
+        { provide: ConfigService, useValue: { get: jest.fn().mockReturnValue(ADMIN) } },
       ],
     }).compile();
 
