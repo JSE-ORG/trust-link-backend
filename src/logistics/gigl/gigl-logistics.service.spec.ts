@@ -299,12 +299,12 @@ describe('GiglLogisticsService', () => {
     });
 
     it('fails clearly and logs a warning when constructed without a client', async () => {
-      const unconfiguredService = new GiglLogisticsService(null as any);
+      const unconfiguredService = new GiglLogisticsService(null);
       const loggerSpy = jest
         .spyOn((unconfiguredService as any).logger, 'warn')
         .mockImplementation();
 
-      unconfiguredService.onModuleInit();
+      await unconfiguredService.onModuleInit();
 
       expect(loggerSpy).toHaveBeenCalledWith(
         expect.stringContaining('Logistics provider is not configured'),

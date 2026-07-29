@@ -17,11 +17,12 @@ import { ConfigService } from './config.service';
  * - Completely malformed strings
  */
 const stellarSecretKey = Joi.string().custom((value, helpers) => {
+  const keyName = helpers.state.path ? helpers.state.path.join('.') : 'key';
   // Quick shape check first for better error messages
   if (!value.startsWith('S')) {
-    return helpers.error('any.invalid', {
-      message:
-        `${helpers.state.key} must be a Stellar secret key ` +
+    return helpers.message({
+      custom:
+        `${keyName} must be a Stellar secret key ` +
         `starting with S, got a value starting with '${value[0]}'`,
     });
   }
@@ -30,9 +31,9 @@ const stellarSecretKey = Joi.string().custom((value, helpers) => {
     Keypair.fromSecret(value);
     return value; // valid — checksum passed
   } catch {
-    return helpers.error('any.invalid', {
-      message:
-        `${helpers.state.key} is not a valid Stellar secret key ` +
+    return helpers.message({
+      custom:
+        `${keyName} is an invalid Stellar secret key ` +
         `— checksum verification failed. ` +
         `Check the key value in your environment configuration.`,
     });
@@ -46,10 +47,11 @@ const stellarSecretKey = Joi.string().custom((value, helpers) => {
  * malformed strings, and checksum failures.
  */
 const stellarPublicKey = Joi.string().custom((value, helpers) => {
+  const keyName = helpers.state.path ? helpers.state.path.join('.') : 'key';
   if (!value.startsWith('G')) {
-    return helpers.error('any.invalid', {
-      message:
-        `${helpers.state.key} must be a Stellar public key ` +
+    return helpers.message({
+      custom:
+        `${keyName} must be a Stellar public key ` +
         `starting with G, got a value starting with '${value[0]}'`,
     });
   }
@@ -58,9 +60,9 @@ const stellarPublicKey = Joi.string().custom((value, helpers) => {
     Keypair.fromPublicKey(value);
     return value; // valid
   } catch {
-    return helpers.error('any.invalid', {
-      message:
-        `${helpers.state.key} is not a valid Stellar public key ` +
+    return helpers.message({
+      custom:
+        `${keyName} is an invalid Stellar public key ` +
         `— checksum verification failed.`,
     });
   }
@@ -86,14 +88,8 @@ const stellarPublicKey = Joi.string().custom((value, helpers) => {
         CONTRACT_ID: Joi.string().required().messages({
           'any.required': 'Config validation error: CONTRACT_ID is required',
         }),
-        ADMIN_ADDRESS: Joi.string().required(),
-        AUTO_RELEASE_SOURCE_ADDRESS: Joi.string()
-          .pattern(/^G[A-Z2-7]{55}$/)
-          .optional()
-          .messages({
-            'string.pattern.base':
-              'Config validation error: AUTO_RELEASE_SOURCE_ADDRESS must be a valid Stellar public key (starts with G)',
-          }),
+        ADMIN_ADDRESS: stellarPublicKey.required(),
+        AUTO_RELEASE_SOURCE_ADDRESS: stellarPublicKey.optional(),
         NODE_ENV: Joi.string()
           .valid('development', 'production', 'test')
           .default('development'),

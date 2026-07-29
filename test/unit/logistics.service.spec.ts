@@ -43,14 +43,120 @@ describe('LogisticsService & LogisticsModule (issue #479)', () => {
       );
     });
 
-    it('logs warning at startup when unconfigured', () => {
+    it('logs warning at startup when unconfigured', async () => {
       const loggerSpy = jest
         .spyOn((service as any).logger, 'warn')
         .mockImplementation();
-      service.onModuleInit();
+      await service.onModuleInit();
       expect(loggerSpy).toHaveBeenCalledWith(
         expect.stringContaining('Logistics provider is not configured'),
       );
+    });
+  });
+
+  describe('Rotation and persistence (issues #498, #499)', () => {
+    /** Minimal in-memory stand-in for the ProviderCredential Prisma model. */
+    function createFakePrisma() {
+      const store = new Map<
+        string,
+        { provider: string; encryptedKey: string }
+      >();
+      return {
+        providerCredential: {
+          findUnique: jest.fn(
+            async ({ where: { provider } }: any) => store.get(provider) ?? null,
+          ),
+          upsert: jest.fn(
+            async ({ where: { provider }, update, create }: any) => {
+              const existing = store.get(provider);
+              const record = existing
+                ? { ...existing, ...update }
+                : { provider, ...create };
+              store.set(provider, record);
+              return record;
+            },
+          ),
+        },
+        __store: store,
+      };
+    }
+
+    it('rotates to the submitted key on first set (nothing previously stored)', async () => {
+      const prisma = createFakePrisma();
+      const svc = new LogisticsService(prisma as any);
+
+      expect(svc.getApiKey()).toBeNull();
+      await svc.rotateApiKey('first-key');
+
+      expect(svc.getApiKey()).toBe('first-key');
+      expect(prisma.providerCredential.upsert).toHaveBeenCalled();
+    });
+
+    it('rotates to the submitted key when a key already exists, and the stored value actually changes', async () => {
+      const prisma = createFakePrisma();
+      const svc = new LogisticsService(prisma as any);
+
+      await svc.rotateApiKey('old-key');
+      const encryptedAfterFirst = svc.getEncryptedApiKey();
+      expect(svc.getApiKey()).toBe('old-key');
+
+      await svc.rotateApiKey('new-key');
+      const encryptedAfterSecond = svc.getEncryptedApiKey();
+
+      // The rotated key must actually be used, not the old one re-encrypted.
+      expect(svc.getApiKey()).toBe('new-key');
+      expect(encryptedAfterSecond).not.toBe(encryptedAfterFirst);
+    });
+
+    it('persists the rotated key so a freshly constructed service instance loads it (issue #499)', async () => {
+      const prisma = createFakePrisma();
+      const svc1 = new LogisticsService(prisma as any);
+      await svc1.rotateApiKey('rotated-secret');
+
+      const svc2 = new LogisticsService(prisma as any);
+      await svc2.onModuleInit();
+
+      expect(svc2.getApiKey()).toBe('rotated-secret');
+    });
+
+    it('falls back to the GIGL_API_TOKEN environment variable when nothing is persisted', async () => {
+      const prisma = createFakePrisma();
+      const originalToken = process.env.GIGL_API_TOKEN;
+      process.env.GIGL_API_TOKEN = 'env-fallback-token';
+
+      try {
+        const svc = new LogisticsService(prisma as any);
+        await svc.onModuleInit();
+        expect(svc.getApiKey()).toBe('env-fallback-token');
+      } finally {
+        if (originalToken === undefined) {
+          delete process.env.GIGL_API_TOKEN;
+        } else {
+          process.env.GIGL_API_TOKEN = originalToken;
+        }
+      }
+    });
+
+    it('prefers the persisted key over the environment variable', async () => {
+      const prisma = createFakePrisma();
+      const originalToken = process.env.GIGL_API_TOKEN;
+      process.env.GIGL_API_TOKEN = 'env-fallback-token';
+
+      try {
+        const svc1 = new LogisticsService(prisma as any);
+        await svc1.rotateApiKey('rotated-secret');
+
+        const svc2 = new LogisticsService(prisma as any);
+        await svc2.onModuleInit();
+
+        expect(svc2.getApiKey()).toBe('rotated-secret');
+      } finally {
+        if (originalToken === undefined) {
+          delete process.env.GIGL_API_TOKEN;
+        } else {
+          process.env.GIGL_API_TOKEN = originalToken;
+        }
+      }
     });
   });
 
@@ -178,7 +284,7 @@ describe('LogisticsService & LogisticsModule (issue #479)', () => {
         .spyOn((logisticsService as any).logger, 'warn')
         .mockImplementation();
 
-      logisticsService.onModuleInit();
+      await logisticsService.onModuleInit();
 
       expect(loggerSpy).toHaveBeenCalledWith(
         expect.stringContaining('Logistics provider is not configured'),

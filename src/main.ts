@@ -13,6 +13,7 @@ import { createOpenApiDocument } from './openapi';
 import { SanitizationPipe } from './common/pipes/sanitization.pipe';
 import { SentryInterceptor } from './common/interceptors/sentry.interceptor';
 import { buildCspConnectSrc } from './common/security/csp.config';
+import { CORS_ALLOWED_HEADERS } from './common/security/cors.config';
 
 const bootstrapLogger = new JsonLoggerService('Bootstrap');
 
@@ -121,13 +122,7 @@ async function bootstrap(): Promise<void> {
         }
       },
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-      allowedHeaders: [
-        'Origin',
-        'X-Requested-With',
-        'Content-Type',
-        'Accept',
-        'Authorization',
-      ],
+      allowedHeaders: CORS_ALLOWED_HEADERS,
       credentials: true,
       maxAge: 86400,
     });

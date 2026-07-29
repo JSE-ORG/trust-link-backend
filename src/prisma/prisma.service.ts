@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleDestroy, Optional } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 
 // AES-256-GCM ciphertext produced by contact-encryption.util: iv:authTag:ciphertext
 // IV = 12 bytes (24 hex), tag = 16 bytes (32 hex), ciphertext = 1+ hex chars.
@@ -212,6 +212,16 @@ export interface CursorRecord {
   updatedAt: Date;
 }
 
+// Issues #498, #499 — persisted, encrypted provider credentials (e.g. the
+// logistics API key), keyed by provider name so a rotation survives a
+// restart and propagates across replicas.
+export interface ProviderCredentialRecord {
+  provider: string;
+  encryptedKey: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 export type FailedTransactionStatus =
   'PENDING_REVIEW' | 'REPLAYED' | 'ABANDONED';
 
@@ -345,16 +355,19 @@ type VendorTrackingSettingsUpdateInput = Partial<
 >;
 
 @Injectable()
-export class PrismaService implements OnModuleDestroy {
+export class PrismaService {
   // databaseUrl is accepted so the module can pass the pool-tuned URL from
   // ConfigService. The in-memory store does not use it, but a real PrismaClient
   // replacement should forward it to `new PrismaClient({ datasources: { db: { url } } })`.
-  constructor(readonly databaseUrl?: string) {
+  constructor(@Optional() readonly databaseUrl?: string) {
     // Issue #316: apply statement_timeout to prevent long-running queries
     if (databaseUrl) {
       try {
         const url = new URL(databaseUrl);
-        url.searchParams.set('statement_timeout', process.env.QUERY_TIMEOUT_MS ?? '30000');
+        url.searchParams.set(
+          'statement_timeout',
+          process.env.QUERY_TIMEOUT_MS ?? '30000',
+        );
         url.searchParams.set('connect_timeout', '10');
         this.effectiveDatabaseUrl = url.toString();
       } catch {
@@ -366,8 +379,10 @@ export class PrismaService implements OnModuleDestroy {
   readonly effectiveDatabaseUrl?: string;
 
   // Issue #315: slow query logging middleware
-  private readonly slowQueryThresholdMs =
-    parseInt(process.env.SLOW_QUERY_THRESHOLD_MS ?? '500', 10);
+  private readonly slowQueryThresholdMs = parseInt(
+    process.env.SLOW_QUERY_THRESHOLD_MS ?? '500',
+    10,
+  );
 
   private readonly logger = new Logger('PrismaService');
 
@@ -384,7 +399,7 @@ export class PrismaService implements OnModuleDestroy {
     if (duration > this.slowQueryThresholdMs) {
       this.logger.warn(
         `Slow query: ${model ?? 'unknown'}.${action} took ${duration}ms ` +
-        `(threshold: ${this.slowQueryThresholdMs}ms)`,
+          `(threshold: ${this.slowQueryThresholdMs}ms)`,
       );
     }
     return result;
@@ -441,7 +456,7 @@ export class PrismaService implements OnModuleDestroy {
         ...data,
         id: data.id ?? String(this.escrowId++),
         itemRef: data.itemRef ?? '',
-        state: data.state ?? 'FUNDED',
+        state: data.state ?? 'CREATED',
         trackingId: data.trackingId ?? null,
         shippedAt: data.shippedAt ?? null,
         deliveredAt: data.deliveredAt ?? null,
@@ -640,6 +655,25 @@ export class PrismaService implements OnModuleDestroy {
         return Promise.resolve({ count: 1 });
       }
       return Promise.resolve({ count: 0 });
+    },
+    count: ({
+      where,
+    }: {
+      where?: Partial<
+        Pick<
+          EscrowRecord,
+          | 'state'
+          | 'trackingId'
+          | 'vendorAddress'
+          | 'buyerAddress'
+          | 'disputeId'
+          | 'itemRef'
+          | 'autoReleaseTxHash'
+          | 'autoReleaseSubmittedAt'
+        >
+      >;
+    } = {}): Promise<number> => {
+      return this.escrow.findMany({ where }).then((records) => records.length);
     },
     deleteMany: (): Promise<{ count: number }> => {
       const count = this.escrows.size;
@@ -1298,8 +1332,23 @@ export class PrismaService implements OnModuleDestroy {
     return date.toLocaleDateString('en-CA', { timeZone: timezone });
   }
 
-  /** Clears all in-memory Prisma test data and resets generated IDs. */
+  /**
+   * Clears all in-memory Prisma test data and resets generated IDs.
+   *
+   * Test-only. This truncates every store, so it must never be reachable from
+   * a running process outside the test environment. It used to also run from
+   * `onModuleDestroy`, which meant every graceful shutdown (including
+   * production SIGTERM handling via `app.enableShutdownHooks()`) wiped the
+   * data. `onModuleDestroy` no longer calls this; the guard below is the
+   * remaining backstop against any other accidental call path (issue #509).
+   */
   async reset(): Promise<void> {
+    if (process.env.NODE_ENV !== 'test') {
+      throw new Error(
+        'PrismaService.reset() is a test-only helper and refuses to run ' +
+          `outside NODE_ENV=test (current: ${process.env.NODE_ENV ?? 'undefined'}).`,
+      );
+    }
     await this.refreshToken.deleteMany();
     await this.nonce.deleteMany();
     await this.vendorProfile.deleteMany();
@@ -1310,17 +1359,13 @@ export class PrismaService implements OnModuleDestroy {
     await this.processedWebhookEvent.deleteMany();
     this.vendorTrackingSettingsStore.clear();
     this.failedTransactionStore.clear();
+    this.providerCredentialStore.clear();
     this.escrowId = 1;
     this.disputeId = 1;
     this.notificationId = 1;
     this.refreshTokenId = 1;
     this.nonceId = 1;
     this.escrowEventId = 1;
-  }
-
-  /** Clears in-memory data when the Nest module is destroyed. */
-  async onModuleDestroy(): Promise<void> {
-    await this.reset();
   }
 
   private cursorStore = new Map<string, CursorRecord>();
@@ -1440,6 +1485,48 @@ export class PrismaService implements OnModuleDestroy {
       };
       this.failedTransactionStore.set(where.id, updated);
       return Promise.resolve({ ...updated });
+    },
+  };
+
+  private providerCredentialStore = new Map<string, ProviderCredentialRecord>();
+
+  providerCredential = {
+    findUnique: ({
+      where,
+    }: {
+      where: { provider: string };
+    }): Promise<ProviderCredentialRecord | null> => {
+      const record = this.providerCredentialStore.get(where.provider);
+      return Promise.resolve(record ? { ...record } : null);
+    },
+    upsert: ({
+      where,
+      update,
+      create,
+    }: {
+      where: { provider: string };
+      update: { encryptedKey: string };
+      create: { provider: string; encryptedKey: string };
+    }): Promise<ProviderCredentialRecord> => {
+      const existing = this.providerCredentialStore.get(where.provider);
+      if (existing) {
+        const updated: ProviderCredentialRecord = {
+          ...existing,
+          encryptedKey: update.encryptedKey,
+          updatedAt: new Date(),
+        };
+        this.providerCredentialStore.set(where.provider, updated);
+        return Promise.resolve({ ...updated });
+      }
+      const now = new Date();
+      const record: ProviderCredentialRecord = {
+        provider: create.provider,
+        encryptedKey: create.encryptedKey,
+        createdAt: now,
+        updatedAt: now,
+      };
+      this.providerCredentialStore.set(record.provider, record);
+      return Promise.resolve({ ...record });
     },
   };
 }

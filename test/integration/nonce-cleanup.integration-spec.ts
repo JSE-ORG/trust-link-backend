@@ -5,51 +5,35 @@
  * - Removes expired nonces
  * - Preserves active nonces
  * - Runs without errors on empty table
+ *
+ * Issue #501: this used to exercise `Sep10Service.cleanupExpiredNonces`, which
+ * duplicated `NonceCleanupService` on the same `@Cron('0 0 * * *')` schedule
+ * against the same table. `NonceCleanupService` is now the single cleanup
+ * path, so the test exercises it directly.
  */
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
-import { Sep10Service } from '../../src/auth/sep10/sep10.service';
-import { ConfigService } from '../../src/config/config.service';
+import { NonceCleanupService } from '../../src/auth/sep10/nonce-cleanup.service';
 import { PrismaService } from '../../src/prisma/prisma.service';
-import { TEST_SIGNING_SECRET } from '../auth-helper';
 
-describe('Nonce cleanup integration (issue #274)', () => {
+describe('Nonce cleanup integration (issue #274, #501)', () => {
   let app: INestApplication;
-  let sep10Service: Sep10Service;
+  let nonceCleanupService: NonceCleanupService;
   let prisma: PrismaService;
 
   beforeAll(async () => {
-    const mockConfigService = {
-      get: jest.fn((key: string) => {
-        switch (key) {
-          case 'STELLAR_NETWORK':
-            return 'TESTNET';
-          case 'SYSTEM_SIGNER_SECRET':
-            return TEST_SIGNING_SECRET;
-          case 'SEP10_JWT_SECRET':
-            return 'integration-test-secret-key-for-jwt-32chars';
-          default:
-            return undefined;
-        }
-      }),
-    } as unknown as ConfigService;
-
     prisma = new PrismaService();
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
       providers: [
-        Sep10Service,
-        { provide: ConfigService, useValue: mockConfigService },
+        NonceCleanupService,
         { provide: PrismaService, useValue: prisma },
       ],
     }).compile();
 
     app = moduleFixture.createNestApplication();
-    app.useGlobalPipes(
-      new ValidationPipe({ whitelist: true, transform: true }),
-    );
     await app.init();
-    sep10Service = moduleFixture.get(Sep10Service);
+    nonceCleanupService = moduleFixture.get(NonceCleanupService);
   });
 
   afterAll(async () => {
@@ -98,7 +82,7 @@ describe('Nonce cleanup integration (issue #274)', () => {
       },
     });
 
-    await sep10Service.cleanupExpiredNonces();
+    await nonceCleanupService.cleanupExpiredNonces();
 
     const expired1 = await prisma.nonce.findUnique({
       where: { nonce: 'expired-1' },
@@ -117,7 +101,9 @@ describe('Nonce cleanup integration (issue #274)', () => {
   });
 
   it('handles empty nonce table', async () => {
-    await expect(sep10Service.cleanupExpiredNonces()).resolves.not.toThrow();
+    await expect(
+      nonceCleanupService.cleanupExpiredNonces(),
+    ).resolves.not.toThrow();
   });
 
   it('does not affect nonces that expire exactly at now', async () => {
@@ -134,7 +120,7 @@ describe('Nonce cleanup integration (issue #274)', () => {
       },
     });
 
-    await sep10Service.cleanupExpiredNonces();
+    await nonceCleanupService.cleanupExpiredNonces();
 
     const nonce = await prisma.nonce.findUnique({
       where: { nonce: 'expires-now' },

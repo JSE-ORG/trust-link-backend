@@ -46,6 +46,7 @@ export class EscrowRepository {
         id: randomUUID(),
         ...dto,
         vendorAddress,
+        state: 'CREATED',
       },
     });
   }
