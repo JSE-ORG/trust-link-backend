@@ -70,11 +70,15 @@ export class DlqController {
     @Query('status') status?: FailedTransactionStatus,
     @Query('operation') operation?: string,
     @Query('escrowId') escrowId?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
   ) {
     const query: ListFailedTransactionsQuery = {};
     if (status) query.status = status;
     if (operation) query.operation = operation;
     if (escrowId) query.escrowId = escrowId;
+    if (page) query.page = parseInt(page, 10);
+    if (limit) query.limit = parseInt(limit, 10);
     return this.dlq.list(query);
   }
 

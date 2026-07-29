@@ -46,6 +46,7 @@ export class EscrowRepository {
         id: randomUUID(),
         ...dto,
         vendorAddress,
+        state: 'CREATED',
       },
     });
   }
@@ -158,17 +159,17 @@ export class EscrowRepository {
       sort === 'amount' ? { amount: order } : { createdAt: order };
     const skip = (page - 1) * limit;
 
-    const [data, all] = await Promise.all([
+    const [data, total] = await Promise.all([
       this.prisma.escrow.findMany({
         where,
         orderBy,
         skip,
         take: limit,
       }),
-      this.prisma.escrow.findMany({ where }),
+      this.prisma.escrow.count({ where }),
     ]);
 
-    return { data, total: all.length };
+    return { data, total };
   }
 
   /**
@@ -356,6 +357,7 @@ export class EscrowRepository {
   async findEvents(escrowId: string): Promise<EventsResult> {
     const rawEvents = await this.prisma.escrowEvent.findMany({
       where: { escrowId },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
     });
 
     return rawEvents.map((e) => ({

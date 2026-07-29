@@ -101,4 +101,32 @@ describe('EscrowRepository (issue #13)', () => {
     expect(updated.state).toBe('COMPLETED');
     expect(updated.autoReleaseTxHash).toBe('tx-hash');
   });
+
+  it('orders event history oldest-first and breaks timestamp ties by id', async () => {
+    const findMany = jest.spyOn(prisma.escrowEvent, 'findMany');
+    jest.useFakeTimers().setSystemTime(new Date('2026-07-29T12:00:00.000Z'));
+    await prisma.escrowEvent.create({
+      data: { escrowId: 'escrow-1', toState: 'FUNDED' },
+    });
+    await prisma.escrowEvent.create({
+      data: { escrowId: 'escrow-1', fromState: 'FUNDED', toState: 'SHIPPED' },
+    });
+    jest.setSystemTime(new Date('2026-07-29T13:00:00.000Z'));
+    await prisma.escrowEvent.create({
+      data: { escrowId: 'escrow-1', fromState: 'SHIPPED', toState: 'COMPLETED' },
+    });
+
+    const events = await repository.findEvents('escrow-1');
+
+    expect(events.map((event) => event.toState)).toEqual([
+      'FUNDED',
+      'SHIPPED',
+      'COMPLETED',
+    ]);
+    expect(findMany).toHaveBeenCalledWith({
+      where: { escrowId: 'escrow-1' },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+    });
+    jest.useRealTimers();
+  });
 });

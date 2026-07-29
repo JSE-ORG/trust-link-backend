@@ -469,403 +469,32 @@ export class PrismaService implements OnModuleDestroy {
     },
     findMany: ({
       where,
-      select,
       orderBy,
-      skip,
-      take,
-      cursor,
-    }: {
-      where?: Partial<
-        Pick<
-          EscrowRecord,
-          | 'state'
-          | 'trackingId'
-          | 'vendorAddress'
-          | 'buyerAddress'
-          | 'disputeId'
-          | 'itemRef'
-          | 'autoReleaseTxHash'
-          | 'autoReleaseSubmittedAt'
-        >
-      > & {
-        shippedAt?: { lte: Date };
-        deliveredAt?: { lte: Date } | null;
-        createdAt?: { gte: Date; lte: Date };
-      };
-      select?: Partial<Record<keyof EscrowRecord, boolean>>;
-      orderBy?: Partial<Record<keyof EscrowRecord, 'asc' | 'desc'>>;
-      skip?: number;
-      take?: number;
-      cursor?: { id: string };
-    } = {}): Promise<EscrowRecord[]> => {
-      let escrows = [...this.escrows.values()].filter((escrow) => {
-        if (!where) {
-          return true;
-        }
-
-        return Object.entries(where).every(([key, value]) => {
-          if (value === undefined) {
-            return true;
-          }
-
-          if (
-            (key === 'shippedAt' || key === 'deliveredAt') &&
-            typeof value === 'object' &&
-            value !== null &&
-            'lte' in value
-          ) {
-            const { lte } = value;
-            const field =
-              key === 'shippedAt' ? escrow.shippedAt : escrow.deliveredAt;
-            return field !== null && field !== undefined && field <= lte;
-          }
-
-          if (
-            key === 'createdAt' &&
-            typeof value === 'object' &&
-            value !== null &&
-            'gte' in value &&
-            'lte' in value
-          ) {
-            const { gte, lte } = value;
-            return escrow.createdAt >= gte && escrow.createdAt <= lte;
-          }
-
-          return escrow[key as keyof EscrowRecord] === value;
-        });
-      });
-
-      if (!where?.state) {
-        escrows = escrows.filter((e) => e.state !== 'CANCELLED');
-      }
-
-      if (orderBy) {
-        const [field, dir] = Object.entries(orderBy)[0] as [
-          keyof EscrowRecord,
-          'asc' | 'desc',
-        ];
-        escrows = [...escrows].sort((a, b) => {
-          const aVal = a[field];
-          const bVal = b[field];
-          if (typeof aVal === 'number' && typeof bVal === 'number') {
-            return dir === 'asc' ? aVal - bVal : bVal - aVal;
-          }
-          if (aVal instanceof Date && bVal instanceof Date) {
-            return dir === 'asc'
-              ? aVal.getTime() - bVal.getTime()
-              : bVal.getTime() - aVal.getTime();
-          }
-          return 0;
-        });
-      }
-
-      if (cursor && cursor.id) {
-        const cursorIndex = escrows.findIndex((e) => e.id === cursor.id);
-        if (cursorIndex >= 0) {
-          const effectiveSkip = cursorIndex + (skip ?? 1);
-          escrows = escrows.slice(effectiveSkip);
-        }
-      } else if (skip !== undefined) {
-        escrows = escrows.slice(skip);
-      }
-      if (take !== undefined) escrows = escrows.slice(0, take);
-
-      if (select) {
-        return Promise.resolve(
-          escrows.map((escrow): EscrowRecord => {
-            const selected: Record<string, unknown> = {};
-            for (const key of Object.keys(select) as Array<
-              keyof EscrowRecord
-            >) {
-              selected[key] = escrow[key];
-            }
-            return selected as unknown as EscrowRecord;
-          }),
-        );
-      }
-
-      return Promise.resolve(escrows.map((escrow) => ({ ...escrow })));
-    },
-    update: ({
-      where,
-      data,
-    }: {
-      where: { id: string };
-      data: EscrowUpdateInput;
-    }): Promise<EscrowRecord> => {
-      assertEncryptedContact('buyerContactEmail', data.buyerContactEmail);
-      assertEncryptedContact('buyerContactPhone', data.buyerContactPhone);
-      const existing = this.escrows.get(where.id);
-      if (!existing) {
-        throw new Error(`Escrow ${where.id} not found`);
-      }
-      const updated = { ...existing, ...data, updatedAt: new Date() };
-      this.escrows.set(where.id, updated);
-      if (data.state !== undefined && data.state !== existing.state) {
-        this.recordEscrowEvent(where.id, existing.state, data.state);
-      }
-      return Promise.resolve({ ...updated });
-    },
-    findFirst: ({
-      where,
-      orderBy,
-    }: {
-      where?: Partial<
-        Pick<
-          EscrowRecord,
-          'vendorAddress' | 'buyerAddress' | 'state' | 'itemRef' | 'disputeId'
-        >
-      >;
-      orderBy?: Partial<Record<keyof EscrowRecord, 'asc' | 'desc'>>;
-    } = {}): Promise<EscrowRecord | null> => {
-      return this.escrow
-        .findMany({ where, orderBy })
-        .then((records) => records[0] ?? null);
-    },
-    updateMany: ({
-      where,
-      data,
-    }: {
-      where: { id: string; autoReleaseSubmittedAt?: Date | null };
-      data: { autoReleaseSubmittedAt: Date };
-    }): Promise<{ count: number }> => {
-      const escrow = this.escrows.get(where.id);
-      if (
-        escrow &&
-        (where.autoReleaseSubmittedAt === undefined ||
-          escrow.autoReleaseSubmittedAt === where.autoReleaseSubmittedAt)
-      ) {
-        const updated = { ...escrow, ...data, updatedAt: new Date() };
-        this.escrows.set(where.id, updated);
-        return Promise.resolve({ count: 1 });
-      }
-      return Promise.resolve({ count: 0 });
-    },
-    deleteMany: (): Promise<{ count: number }> => {
-      const count = this.escrows.size;
-      this.escrows.clear();
-      return Promise.resolve({ count });
-    },
-  };
-
-  dispute = {
-    create: ({
-      data,
-    }: {
-      data: DisputeCreateInput;
-    }): Promise<DisputeRecord> => {
-      const now = new Date();
-      const dispute: DisputeRecord = {
-        ...data,
-        id: data.id ?? String(this.disputeId++),
-        description: data.description ?? '',
-        status: data.status ?? 'OPEN',
-        evidenceUrls: data.evidenceUrls ?? [],
-        resolvedAt: data.resolvedAt ?? null,
-        createdAt: now,
-        updatedAt: now,
-      };
-
-      this.disputes.set(dispute.id, dispute);
-
-      const escrow = this.escrows.get(dispute.escrowId);
-      if (escrow) {
-        this.escrows.set(dispute.escrowId, {
-          ...escrow,
-          state: 'DISPUTED',
-          disputeId: dispute.id,
-          updatedAt: now,
-        });
-        if (escrow.state !== 'DISPUTED') {
-          this.recordEscrowEvent(dispute.escrowId, escrow.state, 'DISPUTED');
-        }
-      }
-
-      return Promise.resolve({ ...dispute });
-    },
-    findUnique: ({
-      where,
-    }: {
-      where: { id: string };
-    }): Promise<DisputeRecord | null> => {
-      const dispute = this.disputes.get(where.id);
-      return Promise.resolve(dispute ? { ...dispute } : null);
-    },
-    findMany: ({
-      where,
-    }: {
-      where?: Partial<Pick<DisputeRecord, 'escrowId' | 'status'>>;
-    } = {}): Promise<DisputeRecord[]> => {
-      const disputes = [...this.disputes.values()].filter((dispute) => {
-        if (!where) {
-          return true;
-        }
-
-        return Object.entries(where).every(([key, value]) => {
-          if (value === undefined) {
-            return true;
-          }
-
-          return dispute[key as keyof DisputeRecord] === value;
-        });
-      });
-
-      return Promise.resolve(disputes.map((dispute) => ({ ...dispute })));
-    },
-    update: ({
-      where,
-      data,
-    }: {
-      where: { id: string };
-      data: DisputeUpdateInput;
-    }): Promise<DisputeRecord> => {
-      const existing = this.disputes.get(where.id);
-      if (!existing) {
-        throw new Error(`Dispute ${where.id} not found`);
-      }
-
-      const updated = { ...existing, ...data, updatedAt: new Date() };
-      this.disputes.set(where.id, updated);
-      return Promise.resolve({ ...updated });
-    },
-    findFirst: ({
-      where,
-    }: {
-      where?: Partial<Pick<DisputeRecord, 'escrowId' | 'status'>>;
-    } = {}): Promise<DisputeRecord | null> => {
-      return this.dispute
-        .findMany({ where })
-        .then((records) => records[0] ?? null);
-    },
-    deleteMany: (): Promise<{ count: number }> => {
-      const count = this.disputes.size;
-      this.disputes.clear();
-      return Promise.resolve({ count });
-    },
-  };
-
-  notification = {
-    create: ({
-      data,
-    }: {
-      data: NotificationCreateInput;
-    }): Promise<NotificationRecord> => {
-      const now = new Date();
-      const notification: NotificationRecord = {
-        status: data.status ?? 'PENDING',
-        retryCount: data.retryCount ?? 0,
-        sentAt: data.sentAt ?? null,
-        failedAt: data.failedAt ?? null,
-        lastError: data.lastError ?? null,
-        providerMessageId: data.providerMessageId ?? null,
-        attemptCount: data.attemptCount ?? 0,
-        lastResponseCode: data.lastResponseCode ?? null,
-        ...data,
-        id: data.id ?? String(this.notificationId++),
-        createdAt: now,
-        updatedAt: now,
-      };
-      this.notifications.set(notification.id, notification);
-      return Promise.resolve({ ...notification });
-    },
-    update: ({
-      where,
-      data,
-    }: {
-      where: { id: string };
-      data: NotificationUpdateInput;
-    }): Promise<NotificationRecord> => {
-      const existing = this.notifications.get(where.id);
-      if (!existing) {
-        return Promise.reject(
-          new Error(`Notification with id ${where.id} not found`),
-        );
-      }
-      const updated: NotificationRecord = {
-        ...existing,
-        ...data,
-        updatedAt: new Date(),
-      };
-      this.notifications.set(where.id, updated);
-      return Promise.resolve({ ...updated });
-    },
-    findMany: (): Promise<NotificationRecord[]> =>
-      Promise.resolve(
-        [...this.notifications.values()].map((notification) => ({
-          ...notification,
-        })),
-      ),
-    deleteMany: (): Promise<{ count: number }> => {
-      const count = this.notifications.size;
-      this.notifications.clear();
-      return Promise.resolve({ count });
-    },
-  };
-
-  processedWebhookEvent = {
-    findUnique: ({
-      where,
-    }: {
-      where: { operationId: string };
-    }): Promise<ProcessedWebhookEventRecord | null> => {
-      const event = this.webhookEvents.get(where.operationId);
-      return Promise.resolve(event ? { ...event } : null);
-    },
-    create: ({
-      data,
-    }: {
-      data: { operationId: string };
-    }): Promise<ProcessedWebhookEventRecord> => {
-      const event: ProcessedWebhookEventRecord = {
-        operationId: data.operationId,
-        processedAt: new Date(),
-      };
-      this.webhookEvents.set(data.operationId, event);
-      return Promise.resolve({ ...event });
-    },
-    delete: ({
-      where,
-    }: {
-      where: { operationId: string };
-    }): Promise<ProcessedWebhookEventRecord | null> => {
-      const event = this.webhookEvents.get(where.operationId) ?? null;
-      this.webhookEvents.delete(where.operationId);
-      return Promise.resolve(event ? { ...event } : null);
-    },
-    deleteMany: (): Promise<{ count: number }> => {
-      const count = this.webhookEvents.size;
-      this.webhookEvents.clear();
-      return Promise.resolve({ count });
-    },
-  };
-
-  escrowEvent = {
-    create: ({
-      data,
-    }: {
-      data: Omit<EscrowEventRecord, 'id' | 'createdAt'> & {
-        fromState?: EscrowState | null;
-      };
-    }): Promise<EscrowEventRecord> => {
-      const event: EscrowEventRecord = {
-        ...data,
-        id: String(this.escrowEventId++),
-        fromState: data.fromState ?? null,
-        createdAt: new Date(),
-      };
-      this.escrowEvents.set(event.id, event);
-      return Promise.resolve({ ...event });
-    },
-    findMany: ({
-      where,
     }: {
       where?: Partial<Pick<EscrowEventRecord, 'escrowId'>>;
+      orderBy?: Array<Partial<Record<'createdAt' | 'id', 'asc' | 'desc'>>>;
     } = {}): Promise<EscrowEventRecord[]> => {
       const events = [...this.escrowEvents.values()]
         .filter(
           (event) => !where?.escrowId || event.escrowId === where.escrowId,
         )
-        .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+        .sort((a, b) => {
+          for (const clause of orderBy ?? [{ createdAt: 'asc' }]) {
+            const [field, direction] = Object.entries(clause)[0] as [
+              'createdAt' | 'id',
+              'asc' | 'desc',
+            ];
+            const left =
+              field === 'createdAt' ? a.createdAt.getTime() : a.id;
+            const right =
+              field === 'createdAt' ? b.createdAt.getTime() : b.id;
+            const comparison = left < right ? -1 : left > right ? 1 : 0;
+            if (comparison !== 0) {
+              return direction === 'asc' ? comparison : -comparison;
+            }
+          }
+          return 0;
+        });
       return Promise.resolve(events.map((event) => ({ ...event })));
     },
     deleteMany: (): Promise<{ count: number }> => {
@@ -1298,8 +927,23 @@ export class PrismaService implements OnModuleDestroy {
     return date.toLocaleDateString('en-CA', { timeZone: timezone });
   }
 
-  /** Clears all in-memory Prisma test data and resets generated IDs. */
+  /**
+   * Clears all in-memory Prisma test data and resets generated IDs.
+   *
+   * Test-only. This truncates every store, so it must never be reachable from
+   * a running process outside the test environment. It used to also run from
+   * `onModuleDestroy`, which meant every graceful shutdown (including
+   * production SIGTERM handling via `app.enableShutdownHooks()`) wiped the
+   * data. `onModuleDestroy` no longer calls this; the guard below is the
+   * remaining backstop against any other accidental call path (issue #509).
+   */
   async reset(): Promise<void> {
+    if (process.env.NODE_ENV !== 'test') {
+      throw new Error(
+        'PrismaService.reset() is a test-only helper and refuses to run ' +
+          `outside NODE_ENV=test (current: ${process.env.NODE_ENV ?? 'undefined'}).`,
+      );
+    }
     await this.refreshToken.deleteMany();
     await this.nonce.deleteMany();
     await this.vendorProfile.deleteMany();
@@ -1310,17 +954,13 @@ export class PrismaService implements OnModuleDestroy {
     await this.processedWebhookEvent.deleteMany();
     this.vendorTrackingSettingsStore.clear();
     this.failedTransactionStore.clear();
+    this.providerCredentialStore.clear();
     this.escrowId = 1;
     this.disputeId = 1;
     this.notificationId = 1;
     this.refreshTokenId = 1;
     this.nonceId = 1;
     this.escrowEventId = 1;
-  }
-
-  /** Clears in-memory data when the Nest module is destroyed. */
-  async onModuleDestroy(): Promise<void> {
-    await this.reset();
   }
 
   private cursorStore = new Map<string, CursorRecord>();
@@ -1440,6 +1080,48 @@ export class PrismaService implements OnModuleDestroy {
       };
       this.failedTransactionStore.set(where.id, updated);
       return Promise.resolve({ ...updated });
+    },
+  };
+
+  private providerCredentialStore = new Map<string, ProviderCredentialRecord>();
+
+  providerCredential = {
+    findUnique: ({
+      where,
+    }: {
+      where: { provider: string };
+    }): Promise<ProviderCredentialRecord | null> => {
+      const record = this.providerCredentialStore.get(where.provider);
+      return Promise.resolve(record ? { ...record } : null);
+    },
+    upsert: ({
+      where,
+      update,
+      create,
+    }: {
+      where: { provider: string };
+      update: { encryptedKey: string };
+      create: { provider: string; encryptedKey: string };
+    }): Promise<ProviderCredentialRecord> => {
+      const existing = this.providerCredentialStore.get(where.provider);
+      if (existing) {
+        const updated: ProviderCredentialRecord = {
+          ...existing,
+          encryptedKey: update.encryptedKey,
+          updatedAt: new Date(),
+        };
+        this.providerCredentialStore.set(where.provider, updated);
+        return Promise.resolve({ ...updated });
+      }
+      const now = new Date();
+      const record: ProviderCredentialRecord = {
+        provider: create.provider,
+        encryptedKey: create.encryptedKey,
+        createdAt: now,
+        updatedAt: now,
+      };
+      this.providerCredentialStore.set(record.provider, record);
+      return Promise.resolve({ ...record });
     },
   };
 }

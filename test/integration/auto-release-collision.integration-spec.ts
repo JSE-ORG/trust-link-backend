@@ -4,6 +4,7 @@ import { EscrowRepository } from '../../src/escrow/escrow.repository';
 import { AutoReleaseService } from '../../src/escrow/auto-release.service';
 import { ContractService } from '../../src/stellar/contract.service';
 import { CacheService } from '../../src/cache/cache.service';
+import { ConfigService } from '../../src/config/config.service';
 
 /**
  * Issue #277 — Integration tests for concurrent auto-release collision detection.
@@ -38,6 +39,12 @@ describe('Auto-release collision detection (issue #277)', () => {
             get: jest.fn(),
             set: jest.fn(),
             del: jest.fn(),
+          },
+        },
+        {
+          provide: ConfigService,
+          useValue: {
+            get: jest.fn((key: string) => process.env[key]),
           },
         },
       ],
