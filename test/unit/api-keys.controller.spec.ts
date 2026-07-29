@@ -88,9 +88,8 @@ describe('ApiKeysController (issue #410)', () => {
     expect(JSON.stringify(res.body)).not.toContain('old:enc:key');
 
     spy.mockRestore();
-import { ApiKeysController } from '../../src/admin/api-keys/api-keys.controller';
-import { LogisticsService } from '../../src/logistics/logistics.service';
-import { RotateApiKeyDto } from '../../src/admin/api-keys/dto/rotate-api-key.dto';
+  });
+});
 
 describe('ApiKeysController (issue #498)', () => {
   function buildDto(key: string): RotateApiKeyDto {
