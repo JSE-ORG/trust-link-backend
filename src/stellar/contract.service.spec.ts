@@ -13,7 +13,7 @@ function makeServer() {
   };
 }
 
-const SOURCE = 'GAUTORELEASE000000000000000000000000000000000000000000000';
+const SOURCE = 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5';
 const ESCROW = 'escrow-abc';
 
 describe('ContractService', () => {
@@ -123,7 +123,6 @@ describe('ContractService', () => {
     it('re-throws ContractCallFailedException immediately without retrying', async () => {
       const server = makeServer();
       server.loadAccount.mockResolvedValue({ sequence: '1' });
-      const cause = new ContractCallFailedException('bad result');
       server.submitTransaction.mockResolvedValue({ status: 'ERROR' });
 
       const svc = new ContractService(server);
@@ -269,6 +268,136 @@ describe('ContractService', () => {
       await expect(svc.recordDelivery(ESCROW)).rejects.toThrow(
         'Stellar server is not configured',
       );
+    });
+  });
+
+  describe('Soroban RPC lifecycle (Issue #478)', () => {
+    function makeSorobanRpcServer() {
+      return {
+        getAccount: jest.fn().mockResolvedValue({
+          sequenceNumber: () => '10',
+          accountId: () => SOURCE,
+        }),
+        simulateTransaction: jest
+          .fn()
+          .mockResolvedValue({ transactionData: {} }),
+        prepareTransaction: jest.fn().mockImplementation((tx) => Promise.resolve(tx)),
+        sendTransaction: jest.fn().mockResolvedValue({
+          status: 'PENDING',
+          hash: 'soroban-hash-1',
+        }),
+        getTransaction: jest.fn().mockResolvedValue({ status: 'SUCCESS' }),
+        pollTransaction: jest.fn().mockResolvedValue({ status: 'SUCCESS' }),
+      };
+    }
+
+    it('executes successful Soroban contract invocation flow', async () => {
+      const server = makeSorobanRpcServer();
+      const svc = new ContractService(server as any);
+
+      const disputeHash = await svc.resolveDispute(ESCROW, 'RELEASE');
+      expect(disputeHash).toBe('soroban-hash-1');
+      expect(server.getAccount).toHaveBeenCalledWith(SOURCE);
+      expect(server.simulateTransaction).toHaveBeenCalled();
+      expect(server.prepareTransaction).toHaveBeenCalled();
+      expect(server.sendTransaction).toHaveBeenCalled();
+      expect(server.pollTransaction).toHaveBeenCalledWith('soroban-hash-1');
+
+      const releaseHash = await svc.submitAutoRelease(ESCROW, SOURCE);
+      expect(releaseHash).toBe('soroban-hash-1');
+
+      const cancelHash = await svc.cancelEscrowOnChain(ESCROW);
+      expect(cancelHash).toBe('soroban-hash-1');
+
+      const deliveryHash = await svc.recordDelivery(ESCROW);
+      expect(deliveryHash).toBe('soroban-hash-1');
+    });
+
+    it('handles simulation failure', async () => {
+      const server = makeSorobanRpcServer();
+      server.simulateTransaction.mockResolvedValue({
+        error: 'Host error: ContractError(101)',
+      });
+
+      const svc = new ContractService(server as any);
+      await expect(svc.resolveDispute(ESCROW, 'RELEASE')).rejects.toThrow(
+        ContractCallFailedException,
+      );
+    });
+
+    it('handles transaction preparation failure', async () => {
+      const server = makeSorobanRpcServer();
+      server.prepareTransaction.mockRejectedValue(
+        new Error('Resource limits exceeded'),
+      );
+
+      const svc = new ContractService(server as any);
+      await expect(svc.resolveDispute(ESCROW, 'RELEASE')).rejects.toThrow(
+        ContractCallFailedException,
+      );
+    });
+
+    it('handles submission error status', async () => {
+      const server = makeSorobanRpcServer();
+      server.sendTransaction.mockResolvedValue({
+        status: 'ERROR',
+        errorResultXdr: 'tx_failed',
+      });
+
+      const svc = new ContractService(server as any);
+      await expect(svc.resolveDispute(ESCROW, 'RELEASE')).rejects.toThrow(
+        ContractCallFailedException,
+      );
+    });
+
+    it('handles polling failure and decodes contract error', async () => {
+      const server = makeSorobanRpcServer();
+      server.sendTransaction.mockResolvedValue({
+        status: 'PENDING',
+        hash: 'soroban-hash-poll-fail',
+      });
+      server.pollTransaction.mockResolvedValue({
+        status: 'FAILED',
+        resultXdr: 'Error(Contract, #404)',
+      });
+
+      const svc = new ContractService(server as any);
+      await expect(svc.resolveDispute(ESCROW, 'RELEASE')).rejects.toThrow(
+        ContractCallFailedException,
+      );
+    });
+
+    it('retries on sequence error and re-fetches account on each attempt', async () => {
+      const server = makeSorobanRpcServer();
+      server.sendTransaction
+        .mockResolvedValueOnce({
+          status: 'ERROR',
+          errorResultXdr: 'tx_bad_seq',
+        })
+        .mockResolvedValueOnce({
+          status: 'PENDING',
+          hash: 'soroban-retry-success-hash',
+        });
+
+      const svc = new ContractService(server as any);
+      const hash = await svc.submitAutoRelease(ESCROW, SOURCE, 2);
+
+      expect(hash).toBe('soroban-retry-success-hash');
+      expect(server.getAccount).toHaveBeenCalledTimes(2);
+    });
+
+    it('simulates getEscrowState with Soroban RPC', async () => {
+      const server = makeSorobanRpcServer();
+      const svc = new ContractService(server as any);
+
+      const resultOk = await svc.getEscrowState(ESCROW);
+      expect(resultOk).toEqual({ state: 'CREATED', exists: true });
+
+      server.simulateTransaction.mockResolvedValue({
+        error: 'Contract error',
+      });
+      const resultFail = await svc.getEscrowState(ESCROW);
+      expect(resultFail).toEqual({ state: 'UNKNOWN', exists: false });
     });
   });
 });
