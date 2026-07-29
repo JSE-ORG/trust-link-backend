@@ -28,7 +28,8 @@ export class AuditLogEntryDto {
   action!: string;
 
   @ApiProperty({
-    description: 'Type of entity the action was performed against (escrow, vendor, dispute, etc.).',
+    description:
+      'Type of entity the action was performed against (escrow, vendor, dispute, etc.).',
     example: 'escrow',
   })
   entityType!: string;

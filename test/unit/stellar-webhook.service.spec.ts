@@ -8,6 +8,7 @@ import { Test } from '@nestjs/testing';
 import * as crypto from 'crypto';
 import { ConfigService } from '../../src/config/config.service';
 import { EscrowRepository } from '../../src/escrow/escrow.repository';
+import { NotificationsService } from '../../src/notifications/notifications.service';
 import { StellarWebhookDto } from '../../src/webhooks/dto/stellar-webhook.dto';
 import { StellarWebhookService } from '../../src/webhooks/stellar-webhook.service';
 
@@ -15,6 +16,7 @@ describe('StellarWebhookService (issue #76)', () => {
   let service: StellarWebhookService;
   let configService: jest.Mocked<ConfigService>;
   let escrowRepository: jest.Mocked<EscrowRepository>;
+  let notificationsService: jest.Mocked<NotificationsService>;
 
   const SECRET = 'test-webhook-secret';
 
@@ -70,11 +72,16 @@ describe('StellarWebhookService (issue #76)', () => {
       updateState: jest.fn(),
     } as unknown as jest.Mocked<EscrowRepository>;
 
+    notificationsService = {
+      notifyFunded: jest.fn(),
+    } as unknown as jest.Mocked<NotificationsService>;
+
     const moduleRef = await Test.createTestingModule({
       providers: [
         StellarWebhookService,
         { provide: ConfigService, useValue: configService },
         { provide: EscrowRepository, useValue: escrowRepository },
+        { provide: NotificationsService, useValue: notificationsService },
       ],
     }).compile();
 
@@ -179,6 +186,10 @@ describe('StellarWebhookService (issue #76)', () => {
       'escrow-1',
       'FUNDED',
     );
+    expect(notificationsService.notifyFunded).toHaveBeenCalledWith({
+      ...createdEscrow,
+      state: 'FUNDED',
+    });
   });
 
   it('does nothing when no matching escrow is found', async () => {

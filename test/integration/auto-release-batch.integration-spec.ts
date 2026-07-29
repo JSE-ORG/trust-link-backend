@@ -5,6 +5,7 @@ import { DisputeRepository } from '../../src/dispute/dispute.repository';
 import { AutoReleaseWorker } from '../../src/workers/auto-release.worker';
 import { ContractService } from '../../src/stellar/contract.service';
 import { CacheService } from '../../src/cache/cache.service';
+import { ConfigService } from '../../src/config/config.service';
 
 /**
  * Integration tests for auto-release worker batch processing with partial failures.
@@ -41,6 +42,12 @@ describe('Auto-release batch processing with partial failures', () => {
             get: jest.fn(),
             set: jest.fn(),
             del: jest.fn(),
+          },
+        },
+        {
+          provide: ConfigService,
+          useValue: {
+            get: jest.fn((key: string) => process.env[key]),
           },
         },
       ],

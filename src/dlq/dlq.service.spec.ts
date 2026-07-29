@@ -11,6 +11,7 @@ describe('DlqService', () => {
       findMany: jest.Mock;
       findUnique: jest.Mock;
       update: jest.Mock;
+      count: jest.Mock;
     };
   };
 
@@ -36,6 +37,7 @@ describe('DlqService', () => {
         findMany: jest.fn(),
         findUnique: jest.fn(),
         update: jest.fn(),
+        count: jest.fn(),
       },
     };
 
@@ -73,31 +75,53 @@ describe('DlqService', () => {
   });
 
   describe('list', () => {
-    it('should return all records when no query filters', async () => {
+    it('should return paginated records when no query filters', async () => {
       prismaMock.failedTransaction.findMany.mockResolvedValue([mockRecord]);
+      prismaMock.failedTransaction.count.mockResolvedValue(1);
 
       const result = await service.list();
-      expect(result).toHaveLength(1);
-      expect(result[0].id).toBe('test-id-1');
+      expect(result.data).toHaveLength(1);
+      expect(result.data[0].id).toBe('test-id-1');
+      expect(result.total).toBe(1);
+      expect(result.page).toBe(1);
+      expect(result.limit).toBe(20);
+      expect(prismaMock.failedTransaction.findMany).toHaveBeenCalledWith({
+        where: {},
+        orderBy: { createdAt: 'desc' },
+        skip: 0,
+        take: 20,
+      });
     });
 
     it('should filter by status', async () => {
       prismaMock.failedTransaction.findMany.mockResolvedValue([mockRecord]);
+      prismaMock.failedTransaction.count.mockResolvedValue(1);
 
       await service.list({ status: 'PENDING_REVIEW' });
       expect(prismaMock.failedTransaction.findMany).toHaveBeenCalledWith({
         where: { status: 'PENDING_REVIEW' },
         orderBy: { createdAt: 'desc' },
+        skip: 0,
+        take: 20,
       });
     });
 
-    it('should filter by operation', async () => {
+    it('should filter by operation and support custom pagination', async () => {
       prismaMock.failedTransaction.findMany.mockResolvedValue([]);
+      prismaMock.failedTransaction.count.mockResolvedValue(0);
 
-      await service.list({ operation: 'submitTransaction' });
+      const result = await service.list({
+        operation: 'submitTransaction',
+        page: 2,
+        limit: 10,
+      });
+      expect(result.page).toBe(2);
+      expect(result.limit).toBe(10);
       expect(prismaMock.failedTransaction.findMany).toHaveBeenCalledWith({
         where: { operation: 'submitTransaction' },
         orderBy: { createdAt: 'desc' },
+        skip: 10,
+        take: 10,
       });
     });
   });
