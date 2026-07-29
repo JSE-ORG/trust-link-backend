@@ -35,7 +35,8 @@ export interface Config {
   GIGL_API_BASE_URL?: string;
   GIGL_API_TOKEN?: string;
   SOROBAN_RPC_URL?: string;
-  SOROBAN_POLL_INTERVAL_MS?: number;
+  /** Always present: the config schema applies a validated default of 5000. */
+  SOROBAN_POLL_INTERVAL_MS: number;
   CONTRACT_ID?: string;
 }
 

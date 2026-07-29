@@ -111,4 +111,59 @@ describe('Soroban configuration validation', () => {
       expect(error).toBeUndefined();
     });
   });
+
+  describe('SOROBAN_POLL_INTERVAL_MS', () => {
+    it('rejects a non-numeric value with a clear message', () => {
+      const { error } = validate({
+        ...BASE_ENV,
+        SOROBAN_POLL_INTERVAL_MS: 'abc',
+      });
+      expect(error).toBeDefined();
+      expect(error?.message).toContain('SOROBAN_POLL_INTERVAL_MS');
+      expect(error?.message).toContain('integer number of milliseconds');
+    });
+
+    it('rejects zero, which would make setInterval fire continuously', () => {
+      const { error } = validate({
+        ...BASE_ENV,
+        SOROBAN_POLL_INTERVAL_MS: '0',
+      });
+      expect(error).toBeDefined();
+      expect(error?.message).toContain('SOROBAN_POLL_INTERVAL_MS');
+      expect(error?.message).toContain('at least 1000ms');
+    });
+
+    it('rejects values below the 1000ms minimum', () => {
+      const { error } = validate({
+        ...BASE_ENV,
+        SOROBAN_POLL_INTERVAL_MS: '500',
+      });
+      expect(error).toBeDefined();
+      expect(error?.message).toContain('at least 1000ms');
+    });
+
+    it('rejects non-integer values', () => {
+      const { error } = validate({
+        ...BASE_ENV,
+        SOROBAN_POLL_INTERVAL_MS: '1500.5',
+      });
+      expect(error).toBeDefined();
+      expect(error?.message).toContain('SOROBAN_POLL_INTERVAL_MS');
+    });
+
+    it('defaults to 5000 when unset', () => {
+      const { error, value } = validate(BASE_ENV);
+      expect(error).toBeUndefined();
+      expect(value.SOROBAN_POLL_INTERVAL_MS).toBe(5000);
+    });
+
+    it('accepts a valid interval and coerces it to a number', () => {
+      const { error, value } = validate({
+        ...BASE_ENV,
+        SOROBAN_POLL_INTERVAL_MS: '10000',
+      });
+      expect(error).toBeUndefined();
+      expect(value.SOROBAN_POLL_INTERVAL_MS).toBe(10000);
+    });
+  });
 });

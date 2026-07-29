@@ -189,6 +189,20 @@ export const configValidationSchema = Joi.object({
           'STELLAR_NETWORK is MAINNET (no default mainnet endpoint exists)',
       }),
     }),
+  // Poll cadence for the Soroban event poller. Validated here so a
+  // non-numeric or too-small value fails at startup instead of producing
+  // setInterval(fn, NaN), which fires as fast as the event loop allows and
+  // floods the RPC endpoint. The default lives here, nowhere else.
+  SOROBAN_POLL_INTERVAL_MS: Joi.number()
+    .integer()
+    .min(1000)
+    .default(5000)
+    .messages({
+      'number.base':
+        'Config validation error: SOROBAN_POLL_INTERVAL_MS must be an integer number of milliseconds',
+      'number.min':
+        'Config validation error: SOROBAN_POLL_INTERVAL_MS must be at least 1000ms — lower values flood the RPC endpoint',
+    }),
 });
 
 @Global()

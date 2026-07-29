@@ -56,7 +56,7 @@ export class SorobanPollerService implements OnModuleInit, OnModuleDestroy {
   private timer: ReturnType<typeof setInterval> | null = null;
   private polling = false;
 
-  /** Default poll interval in milliseconds (5 s). Configurable via SOROBAN_POLL_INTERVAL_MS. */
+  /** Poll interval in ms. Validated and defaulted (5000) by the config schema. */
   private readonly pollIntervalMs: number;
   private readonly rpcUrl: string;
   private readonly contractId: string;
@@ -69,8 +69,7 @@ export class SorobanPollerService implements OnModuleInit, OnModuleDestroy {
   ) {
     this.rpcUrl = this.resolveRpcUrl();
     this.contractId = this.config.get('CONTRACT_ID') ?? '';
-    const intervalEnv = this.config.get('SOROBAN_POLL_INTERVAL_MS');
-    this.pollIntervalMs = intervalEnv ? Number(intervalEnv) : 5_000;
+    this.pollIntervalMs = this.config.get('SOROBAN_POLL_INTERVAL_MS');
   }
 
   onModuleInit(): void {
