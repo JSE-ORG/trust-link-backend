@@ -7,6 +7,16 @@ import {
   ReadinessComponentHealthDto,
 } from './common/dto/readiness-response.dto';
 
+export function setupOpenApiUi(
+  app: INestApplication,
+  document: ReturnType<typeof createOpenApiDocument>,
+  isProduction: boolean,
+): void {
+  if (!isProduction) {
+    SwaggerModule.setup('api/docs', app, document);
+  }
+}
+
 /** Builds the API contract shared by the Swagger UI and CI export. */
 export function createOpenApiDocument(app: INestApplication) {
   const swaggerConfig = new DocumentBuilder()

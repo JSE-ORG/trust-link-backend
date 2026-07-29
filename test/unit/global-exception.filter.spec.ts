@@ -9,12 +9,13 @@ import {
 } from '@nestjs/common';
 import { GlobalExceptionFilter } from '../../src/common/filters/global-exception.filter';
 import { ConfigService } from '../../src/config/config.service';
+import { StandardErrorResponse } from '../../src/common/dto/error-response.dto';
 
 // ── helpers ────────────────────────────────────────────────────────────────
 
 interface MockResponse {
   statusCode: number | null;
-  body: unknown;
+  body: StandardErrorResponse | null;
   status: jest.Mock;
   json: jest.Mock;
 }
@@ -27,10 +28,18 @@ function buildResponse(): MockResponse {
     json: jest.fn(),
   };
   res.status.mockReturnValue(res);
-  res.json.mockImplementation((b) => {
+  res.json.mockImplementation((b: StandardErrorResponse) => {
     res.body = b;
   });
   return res;
+}
+
+interface MockRequest {
+  url: string;
+  requestId?: string;
+  method: string;
+  ip: string;
+  headers: Record<string, string>;
 }
 
 function buildHost(
@@ -38,13 +47,13 @@ function buildHost(
   url = '/test',
   requestId?: string,
 ): ArgumentsHost {
-  const req = {
+  const req: MockRequest = {
     url,
     requestId,
     method: 'GET',
     ip: '127.0.0.1',
     headers: { 'user-agent': 'jest-test' },
-  } as any;
+  };
   return {
     switchToHttp: () => ({
       getResponse: () => res,
@@ -86,7 +95,7 @@ describe('GlobalExceptionFilter (issue #286)', () => {
       });
       filter.catch(prismaError, host);
       expect(res.status).toHaveBeenCalledWith(HttpStatus.CONFLICT);
-      const body = res.body as any;
+      const body = res.body as StandardErrorResponse;
       expect(body.statusCode).toBe(HttpStatus.CONFLICT);
       expect(body.message).toBe('A record with this data already exists');
       expect(body.error).toBe('ConflictError');
@@ -98,7 +107,7 @@ describe('GlobalExceptionFilter (issue #286)', () => {
       });
       filter.catch(prismaError, host);
       expect(res.status).toHaveBeenCalledWith(HttpStatus.NOT_FOUND);
-      const body = res.body as any;
+      const body = res.body as StandardErrorResponse;
       expect(body.statusCode).toBe(HttpStatus.NOT_FOUND);
       expect(body.message).toBe('Record not found');
       expect(body.error).toBe('NotFoundError');
@@ -110,7 +119,7 @@ describe('GlobalExceptionFilter (issue #286)', () => {
       });
       filter.catch(prismaError, host);
       expect(res.status).toHaveBeenCalledWith(HttpStatus.INTERNAL_SERVER_ERROR);
-      const body = res.body as any;
+      const body = res.body as StandardErrorResponse;
       expect(body.statusCode).toBe(HttpStatus.INTERNAL_SERVER_ERROR);
       expect(body.error).toBe('DatabaseError');
     });
@@ -121,20 +130,20 @@ describe('GlobalExceptionFilter (issue #286)', () => {
       const exception = new HttpException('Not here', HttpStatus.NOT_FOUND);
       filter.catch(exception, host);
       expect(res.status).toHaveBeenCalledWith(HttpStatus.NOT_FOUND);
-      const body = res.body as any;
+      const body = res.body as StandardErrorResponse;
       expect(body.statusCode).toBe(HttpStatus.NOT_FOUND);
     });
 
     it('sets the error field to the exception class name', () => {
       const exception = new HttpException('Forbidden', HttpStatus.FORBIDDEN);
       filter.catch(exception, host);
-      const body = res.body as any;
+      const body = res.body as StandardErrorResponse;
       expect(body.error).toBe('HttpException');
     });
 
     it('includes path and timestamp in the response', () => {
       filter.catch(new HttpException('gone', HttpStatus.GONE), host);
-      const body = res.body as any;
+      const body = res.body as StandardErrorResponse;
       expect(body.path).toBe('/api/test');
       expect(body.timestamp).toBeDefined();
     });
@@ -144,19 +153,22 @@ describe('GlobalExceptionFilter (issue #286)', () => {
     it('returns 400 for BadRequestException', () => {
       filter.catch(new BadRequestException('Invalid input'), host);
       expect(res.status).toHaveBeenCalledWith(HttpStatus.BAD_REQUEST);
-      const body = res.body as any;
+      const body = res.body as StandardErrorResponse;
       expect(body.statusCode).toBe(HttpStatus.BAD_REQUEST);
     });
 
     it('includes the exception message in the response body', () => {
       filter.catch(new BadRequestException('Field X is required'), host);
-      const body = res.body as any;
-      expect(body.message).toContain('Field X is required');
+      const body = res.body as StandardErrorResponse;
+      const message = Array.isArray(body.message)
+        ? body.message.join(' ')
+        : body.message;
+      expect(message).toContain('Field X is required');
     });
 
     it('sets error to BadRequestException', () => {
       filter.catch(new BadRequestException('bad'), host);
-      const body = res.body as any;
+      const body = res.body as StandardErrorResponse;
       expect(body.error).toBe('BadRequestException');
     });
   });
@@ -165,7 +177,7 @@ describe('GlobalExceptionFilter (issue #286)', () => {
     it('returns 500 for a plain Error object', () => {
       filter.catch(new Error('Something went wrong'), host);
       expect(res.status).toHaveBeenCalledWith(HttpStatus.INTERNAL_SERVER_ERROR);
-      const body = res.body as any;
+      const body = res.body as StandardErrorResponse;
       expect(body.statusCode).toBe(HttpStatus.INTERNAL_SERVER_ERROR);
       expect(body.error).toBe('InternalServerError');
     });
@@ -187,7 +199,7 @@ describe('GlobalExceptionFilter (issue #286)', () => {
       const prodRes = buildResponse();
       const prodHost = buildHost(prodRes);
       prodFilter.catch(new Error('secret detail'), prodHost);
-      const body = prodRes.body as any;
+      const body = prodRes.body as StandardErrorResponse;
       expect(body.message).toBe('Internal server error');
     });
   });
@@ -195,7 +207,7 @@ describe('GlobalExceptionFilter (issue #286)', () => {
   describe('response shape', () => {
     it('always includes statusCode, timestamp, and path', () => {
       filter.catch(new Error('any'), host);
-      const body = res.body as any;
+      const body = res.body as StandardErrorResponse;
       expect(body).toHaveProperty('statusCode');
       expect(body).toHaveProperty('timestamp');
       expect(body).toHaveProperty('path');
@@ -204,7 +216,7 @@ describe('GlobalExceptionFilter (issue #286)', () => {
     it('attaches the requestId from the request when present', () => {
       const hostWithId = buildHost(res, '/api/x', 'req-abc-123');
       filter.catch(new Error('oops'), hostWithId);
-      const body = res.body as any;
+      const body = res.body as StandardErrorResponse;
       expect(body.requestId).toBe('req-abc-123');
     });
   });

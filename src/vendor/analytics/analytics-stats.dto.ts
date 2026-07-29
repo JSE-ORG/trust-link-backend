@@ -6,13 +6,15 @@ import { ApiProperty } from '@nestjs/swagger';
  */
 export class TransactionStatsDto {
   @ApiProperty({
-    description: 'Total transaction amount in the base currency across all escrows ever created by this vendor.',
+    description:
+      'Total transaction amount in the base currency across all escrows ever created by this vendor.',
     example: 1248950.5,
   })
   totalVolume!: number;
 
   @ApiProperty({
-    description: 'Sum of amounts currently held in active (non-terminal) escrows.',
+    description:
+      'Sum of amounts currently held in active (non-terminal) escrows.',
     example: 87300.25,
   })
   activeVolume!: number;
@@ -61,7 +63,8 @@ export class TransactionStatsDto {
   averageTransactionValue!: number;
 
   @ApiProperty({
-    description: 'Count of escrows cancelled before funding or at the buyer/vendor request.',
+    description:
+      'Count of escrows cancelled before funding or at the buyer/vendor request.',
     example: 9,
   })
   cancelledTransactions!: number;
@@ -109,7 +112,8 @@ export class ChannelMetricsDto {
  */
 export class AnalyticsStatsResponse {
   @ApiProperty({
-    description: 'Rolled-up transaction statistics for the authenticated vendor.',
+    description:
+      'Rolled-up transaction statistics for the authenticated vendor.',
   })
   stats!: TransactionStatsDto;
 

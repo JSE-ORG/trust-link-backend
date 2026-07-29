@@ -133,7 +133,7 @@ export class AnalyticsService {
       const dateKey = this.formatDateInTimezone(currentDate, timezone);
 
       if (dailyMap.has(dateKey)) {
-        result.push(dailyMap.get(dateKey)!);
+        result.push(dailyMap.get(dateKey));
       } else {
         result.push({
           date: dateKey,

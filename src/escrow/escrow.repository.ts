@@ -46,6 +46,7 @@ export class EscrowRepository {
         id: randomUUID(),
         ...dto,
         vendorAddress,
+        state: 'CREATED',
       },
     });
   }
@@ -356,6 +357,7 @@ export class EscrowRepository {
   async findEvents(escrowId: string): Promise<EventsResult> {
     const rawEvents = await this.prisma.escrowEvent.findMany({
       where: { escrowId },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
     });
 
     return rawEvents.map((e) => ({

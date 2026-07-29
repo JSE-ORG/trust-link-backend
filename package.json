@@ -20,12 +20,13 @@
                     "test:debug":  "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
                     "test:e2e":  "jest --config ./test/jest-e2e.json",
                     "check-coverage":  "node scripts/check_coverage.js",
+                    "check-test-match":  "node scripts/check_test_match.js",
                     "db:generate":  "prisma generate",
                     "db:push":  "prisma db push",
                     "db:migrate":  "prisma migrate deploy",
                     "db:studio":  "prisma studio",
                     "db:seed":  "ts-node scripts/db-seed.ts",
-                    "db:reset":  "prisma migrate reset --force \u0026\u0026 npm run db:seed",
+                    "db:reset":  "prisma migrate reset --force && npm run db:seed",
                     "typecheck":  "tsc --noEmit",
                     "validate":  "npm run typecheck \u0026\u0026 npm run lint:check \u0026\u0026 npm run test",
                     "docker:build":  "docker build -t trustlink-backend .",
@@ -108,12 +109,14 @@
                  "transform":  {
                                    "^.+\\.(t|j)s$":  "ts-jest"
                                },
-                 "collectCoverageFrom":  [
-                                             "src/**/*.ts",
-                                             "!src/**/*.spec.ts",
-                                             "!src/**/*.d.ts",
-                                             "!src/main.ts"
-                                         ],
+                "collectCoverageFrom":  [
+                                            "src/**/*.ts",
+                                            "!src/**/*.spec.ts",
+                                            "!src/**/*-spec.ts",
+                                            "!src/**/*.e2e-spec.ts",
+                                            "!src/**/*.d.ts",
+                                            "!src/main.ts"
+                                        ],
                  "coverageDirectory":  "coverage",
                  "coverageReporters":  [
                                            "text",

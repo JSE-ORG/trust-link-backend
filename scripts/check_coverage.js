@@ -25,16 +25,33 @@ const COVERAGE_SUMMARY = path.resolve(
   '../coverage/coverage-summary.json',
 );
 
-const DEFAULT_MIN_PERCENT = 70;
-const MIN_PERCENT = Number(
-  process.env.COVERAGE_MIN_LINES ?? DEFAULT_MIN_PERCENT,
+const DEFAULT_MIN_LINES = 70;
+const DEFAULT_MIN_BRANCHES = 64;
+const DEFAULT_MIN_FUNCTIONS = 65;
+
+const MIN_LINES = Number(
+  process.env.COVERAGE_MIN_LINES ?? DEFAULT_MIN_LINES,
+);
+const MIN_BRANCHES = Number(
+  process.env.COVERAGE_MIN_BRANCHES ?? DEFAULT_MIN_BRANCHES,
+);
+const MIN_FUNCTIONS = Number(
+  process.env.COVERAGE_MIN_FUNCTIONS ?? DEFAULT_MIN_FUNCTIONS,
 );
 
-if (!Number.isFinite(MIN_PERCENT)) {
-  console.error(
-    `COVERAGE_MIN_LINES must be a number, received "${process.env.COVERAGE_MIN_LINES}"`,
-  );
-  process.exit(2);
+const envChecks = [
+  { name: 'COVERAGE_MIN_LINES', value: MIN_LINES },
+  { name: 'COVERAGE_MIN_BRANCHES', value: MIN_BRANCHES },
+  { name: 'COVERAGE_MIN_FUNCTIONS', value: MIN_FUNCTIONS },
+];
+
+for (const check of envChecks) {
+  if (!Number.isFinite(check.value)) {
+    console.error(
+      `${check.name} must be a number, received "${check.value}"`,
+    );
+    process.exit(2);
+  }
 }
 
 if (!fs.existsSync(COVERAGE_SUMMARY)) {
@@ -45,18 +62,31 @@ if (!fs.existsSync(COVERAGE_SUMMARY)) {
 
 const summary = JSON.parse(fs.readFileSync(COVERAGE_SUMMARY, 'utf8'));
 const total = summary.total || summary[''] || {};
-const linesPct = total.lines && total.lines.pct ? total.lines.pct : 0;
 
-console.log(`Lines coverage: ${linesPct}% (required ${MIN_PERCENT}%)`);
+const metrics = [
+  { key: 'lines', label: 'Lines', min: MIN_LINES, env: 'COVERAGE_MIN_LINES' },
+  { key: 'branches', label: 'Branches', min: MIN_BRANCHES, env: 'COVERAGE_MIN_BRANCHES' },
+  { key: 'functions', label: 'Functions', min: MIN_FUNCTIONS, env: 'COVERAGE_MIN_FUNCTIONS' },
+];
 
-if (linesPct < MIN_PERCENT) {
-  console.error(
-    `Coverage threshold not met. Lines coverage dropped by ${(
-      MIN_PERCENT - linesPct
-    ).toFixed(2)} points below the floor.`,
-  );
+let hasFailure = false;
+
+for (const m of metrics) {
+  const pct = total[m.key] && typeof total[m.key].pct === 'number' ? total[m.key].pct : 0;
+  console.log(`${m.label} coverage: ${pct}% (required ${m.min}%)`);
+
+  if (pct < m.min) {
+    const diff = (m.min - pct).toFixed(2);
+    console.error(
+      `Coverage threshold not met for ${m.label}. Measured ${pct}% which fell ${diff} points below the required floor of ${m.min}%. Override with ${m.env}.`,
+    );
+    hasFailure = true;
+  }
+}
+
+if (hasFailure) {
   process.exit(1);
 }
 
-console.log('Coverage threshold met');
+console.log('All coverage thresholds met');
 process.exit(0);

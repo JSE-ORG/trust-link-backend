@@ -7,6 +7,7 @@ import {
 } from '../logistics.service';
 import { GiglClient } from './gigl.client';
 import { GiglTrackingEvent, GiglTrackingResponse } from './gigl.types';
+import { PrismaService } from '../../prisma/prisma.service';
 
 /**
  * Maps the raw `current_status` string from GIGL to the internal
@@ -61,11 +62,13 @@ function mapTrackingResponse(raw: GiglTrackingResponse): TrackingDetails {
 export class GiglLogisticsService extends LogisticsService {
   constructor(
     @Optional() @Inject(GiglClient) private readonly client?: GiglClient | null,
+    @Optional() @Inject(PrismaService) prisma?: PrismaService,
   ) {
-    super();
+    super(prisma);
   }
 
-  override onModuleInit(): void {
+  override async onModuleInit(): Promise<void> {
+    await super.onModuleInit();
     if (!this.client) {
       this.logger.warn(
         'Logistics provider is not configured. Real tracking lookups will fail.',
@@ -90,7 +93,9 @@ export class GiglLogisticsService extends LogisticsService {
    * Returns full tracking details for a given tracking ID.
    * Errors from GiglClient propagate unchanged to the caller.
    */
-  override async getTrackingDetails(trackingId: string): Promise<TrackingDetails> {
+  override async getTrackingDetails(
+    trackingId: string,
+  ): Promise<TrackingDetails> {
     if (!this.client) {
       throw new Error(`Logistics service is not configured for ${trackingId}`);
     }

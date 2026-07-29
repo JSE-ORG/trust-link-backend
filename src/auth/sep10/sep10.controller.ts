@@ -14,7 +14,7 @@ import {
   ApiProperty,
 } from '@nestjs/swagger';
 import { IsString, MinLength } from 'class-validator';
-import { SkipThrottle } from '@nestjs/throttler';
+import { Throttle } from '@nestjs/throttler';
 import { IsStellarAddress } from '../../common/validators/stellar-address.validator';
 import { Sep10Service } from './sep10.service';
 
@@ -52,6 +52,7 @@ class RefreshTokenDto {
 }
 
 @ApiTags('Auth')
+@Throttle({ auth: { ttl: 60000, limit: 10 } })
 @Controller('auth')
 export class Sep10Controller {
   constructor(private readonly sep10Service: Sep10Service) {}
@@ -77,7 +78,6 @@ export class Sep10Controller {
   @ApiResponse({ status: 400, description: 'Invalid public key.' })
   @Post('challenge')
   @HttpCode(HttpStatus.OK)
-  @SkipThrottle({ public: true })
   async challengePost(@Body() dto: ChallengeRequestDto) {
     return {
       transaction: await this.sep10Service.buildChallenge(dto.publicKey, 900),
