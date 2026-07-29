@@ -57,16 +57,16 @@ describe('GET /vendor/analytics/chart (issue #290)', () => {
     amount: number,
     createdAt: Date,
   ): Promise<void> {
-    const escrow = await prisma.escrow.create({
+    await prisma.escrow.create({
       data: {
         itemName: 'Test item',
         amount,
         currency: 'USDC',
         buyerAddress: 'GBUYER001',
         vendorAddress,
+        createdAt,
       },
     });
-    (prisma as any).escrows.set(escrow.id, { ...escrow, createdAt });
   }
 
   // ── Empty chart ──────────────────────────────────────────────────────────

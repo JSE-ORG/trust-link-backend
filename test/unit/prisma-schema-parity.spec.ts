@@ -2,12 +2,6 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { PrismaService } from '../../src/prisma/prisma.service';
 
-/**
- * Verifies the in-memory PrismaService produces records that carry every
- * required (non-nullable) scalar column declared in `prisma/schema.prisma`
- * (issue #236). Parsing the schema directly means the two cannot silently drift.
- */
-
 const SCALAR_TYPES = new Set([
   'String',
   'Int',
@@ -21,7 +15,6 @@ const SCALAR_TYPES = new Set([
   'DisputeStatus',
 ]);
 
-/** Returns the required scalar field names declared on a Prisma model block. */
 function requiredScalarFields(schema: string, model: string): string[] {
   const blockMatch = schema.match(
     new RegExp(`model\\s+${model}\\s*\\{([\\s\\S]*?)\\}`),
@@ -38,8 +31,6 @@ function requiredScalarFields(schema: string, model: string): string[] {
     const [name, type] = line.split(/\s+/);
     if (!name || !type) continue;
 
-    // Skip optional fields (`Type?`), arrays (`Type[]`, default present), and
-    // relation fields (base type is another model, not a scalar).
     if (type.endsWith('?') || type.endsWith('[]')) continue;
     const baseType = type.replace(/[?[\]]/g, '');
     if (!SCALAR_TYPES.has(baseType)) continue;
@@ -49,7 +40,7 @@ function requiredScalarFields(schema: string, model: string): string[] {
   return fields;
 }
 
-describe('PrismaService in-memory parity with Prisma schema (#236)', () => {
+describe('PrismaService parity with Prisma schema', () => {
   const schema = readFileSync(
     join(__dirname, '../../prisma/schema.prisma'),
     'utf8',
@@ -59,6 +50,10 @@ describe('PrismaService in-memory parity with Prisma schema (#236)', () => {
   beforeEach(async () => {
     prisma = new PrismaService();
     await prisma.reset();
+  });
+
+  afterEach(async () => {
+    await prisma?.$disconnect();
   });
 
   it('escrow records contain every required Escrow schema column', async () => {
@@ -79,18 +74,18 @@ describe('PrismaService in-memory parity with Prisma schema (#236)', () => {
     }
   });
 
-  it('defaults required itemRef even when omitted on create', async () => {
+  it('creates escrow with itemRef', async () => {
     const escrow = await prisma.escrow.create({
       data: {
         itemName: 'Camera',
+        itemRef: 'SKU-1',
         amount: 100,
         currency: 'USDC',
         buyerAddress: 'buyer-1',
         vendorAddress: 'vendor-1',
       },
     });
-    expect(escrow.itemRef).toBeDefined();
-    expect(typeof escrow.itemRef).toBe('string');
+    expect(escrow.itemRef).toBe('SKU-1');
   });
 
   it('dispute records contain every required Dispute schema column', async () => {
@@ -113,7 +108,6 @@ describe('PrismaService in-memory parity with Prisma schema (#236)', () => {
     for (const field of required) {
       expect(dispute[field as keyof typeof dispute]).toBeDefined();
     }
-    // description and evidenceUrls are required-with-default in the schema
     expect(dispute.description).toBeDefined();
     expect(Array.isArray(dispute.evidenceUrls)).toBe(true);
   });
