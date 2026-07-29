@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleDestroy, Optional } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 
 // AES-256-GCM ciphertext produced by contact-encryption.util: iv:authTag:ciphertext
 // IV = 12 bytes (24 hex), tag = 16 bytes (32 hex), ciphertext = 1+ hex chars.
@@ -355,7 +355,7 @@ type VendorTrackingSettingsUpdateInput = Partial<
 >;
 
 @Injectable()
-export class PrismaService implements OnModuleDestroy {
+export class PrismaService {
   // databaseUrl is accepted so the module can pass the pool-tuned URL from
   // ConfigService. The in-memory store does not use it, but a real PrismaClient
   // replacement should forward it to `new PrismaClient({ datasources: { db: { url } } })`.
@@ -1308,8 +1308,23 @@ export class PrismaService implements OnModuleDestroy {
     return date.toLocaleDateString('en-CA', { timeZone: timezone });
   }
 
-  /** Clears all in-memory Prisma test data and resets generated IDs. */
+  /**
+   * Clears all in-memory Prisma test data and resets generated IDs.
+   *
+   * Test-only. This truncates every store, so it must never be reachable from
+   * a running process outside the test environment. It used to also run from
+   * `onModuleDestroy`, which meant every graceful shutdown (including
+   * production SIGTERM handling via `app.enableShutdownHooks()`) wiped the
+   * data. `onModuleDestroy` no longer calls this; the guard below is the
+   * remaining backstop against any other accidental call path (issue #509).
+   */
   async reset(): Promise<void> {
+    if (process.env.NODE_ENV !== 'test') {
+      throw new Error(
+        'PrismaService.reset() is a test-only helper and refuses to run ' +
+          `outside NODE_ENV=test (current: ${process.env.NODE_ENV ?? 'undefined'}).`,
+      );
+    }
     await this.refreshToken.deleteMany();
     await this.nonce.deleteMany();
     await this.vendorProfile.deleteMany();
@@ -1327,11 +1342,6 @@ export class PrismaService implements OnModuleDestroy {
     this.refreshTokenId = 1;
     this.nonceId = 1;
     this.escrowEventId = 1;
-  }
-
-  /** Clears in-memory data when the Nest module is destroyed. */
-  async onModuleDestroy(): Promise<void> {
-    await this.reset();
   }
 
   private cursorStore = new Map<string, CursorRecord>();
