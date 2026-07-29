@@ -9,7 +9,7 @@ describe('PrismaService in-memory stores (issue #411)', () => {
   });
 
   it('assertEncryptedContact throws when plaintext email or phone is written', async () => {
-    await expect(
+    expect(() =>
       prisma.escrow.create({
         data: {
           itemName: 'Item',
@@ -21,10 +21,10 @@ describe('PrismaService in-memory stores (issue #411)', () => {
           buyerContactEmail: 'plain@example.com',
         },
       }),
-    ).rejects.toThrow(/must be encrypted/);
+    ).toThrow(/must be encrypted/);
 
     // phone plaintext
-    await expect(
+    expect(() =>
       prisma.escrow.create({
         data: {
           itemName: 'Item',
@@ -35,7 +35,7 @@ describe('PrismaService in-memory stores (issue #411)', () => {
           buyerContactPhone: '+1234567890',
         },
       }),
-    ).rejects.toThrow(/must be encrypted/);
+    ).toThrow(/must be encrypted/);
   });
 
   it('create/findUnique/findMany/update for escrow and updateMany behavior', async () => {
