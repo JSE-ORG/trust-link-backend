@@ -1,4 +1,7 @@
-import { encryptContact, decryptContact } from '../../src/common/sanitization/contact-encryption.util';
+import {
+  encryptContact,
+  decryptContact,
+} from '../../src/common/sanitization/contact-encryption.util';
 
 describe('contact-encryption.util', () => {
   const GOOD_KEY = 'a'.repeat(64); // 32 bytes hex
@@ -77,10 +80,14 @@ describe('contact-encryption.util', () => {
   });
 
   it('malformed stored string throws informative error', () => {
-    expect(() => decryptContact('not-valid')).toThrow('Invalid encrypted contact format.');
+    expect(() => decryptContact('not-valid')).toThrow(
+      'Invalid encrypted contact format.',
+    );
     // wrong lengths for iv/tag
     const bad = ['00', '11', 'aa'].join(':');
-    expect(() => decryptContact(bad)).toThrow('Malformed encrypted contact: wrong IV or tag length.');
+    expect(() => decryptContact(bad)).toThrow(
+      'Malformed encrypted contact: wrong IV or tag length.',
+    );
   });
 
   it('missing CONTACT_ENCRYPTION_KEY throws a clear error', () => {
@@ -91,6 +98,8 @@ describe('contact-encryption.util', () => {
 
   it('invalid CONTACT_ENCRYPTION_KEY length throws a clear error', () => {
     process.env.CONTACT_ENCRYPTION_KEY = 'deadbeef'; // too short
-    expect(() => encryptContact('x')).toThrow(/must be exactly 64 hex characters/);
+    expect(() => encryptContact('x')).toThrow(
+      /must be exactly 64 hex characters/,
+    );
   });
 });

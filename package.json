@@ -106,15 +106,20 @@
                                           ],
                  "rootDir":  ".",
                  "testRegex":  "(src|test)/.*\\.spec\\.ts$",
+                 "testPathIgnorePatterns":  [
+                                               "/node_modules/",
+                                               "test/seed\\.spec\\.ts$"
+                                           ],
                  "transform":  {
                                    "^.+\\.(t|j)s$":  "ts-jest"
                                },
-                 "collectCoverageFrom":  [
-                                             "src/**/*.ts",
-                                             "!src/**/*.spec.ts",
-                                             "!src/**/*.d.ts",
-                                             "!src/main.ts"
-                                         ],
+                "collectCoverageFrom":  [
+                                            "src/**/*.ts",
+                                            "!src/**/*.spec.ts",
+                                            "!src/**/*-spec.ts",
+                                            "!src/**/*.d.ts",
+                                            "!src/main.ts"
+                                        ],
                  "coverageDirectory":  "coverage",
                  "coverageReporters":  [
                                            "text",

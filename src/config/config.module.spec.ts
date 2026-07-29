@@ -98,10 +98,8 @@ async function buildConfigService(
   });
 
   jest.resetModules();
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const { ConfigModule: LocalConfigModule } = require('./config.module');
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const { ConfigService: LocalConfigService } = require('./config.service');
+  const { ConfigModule: LocalConfigModule } = await import('./config.module');
+  const { ConfigService: LocalConfigService } = await import('./config.service');
 
   try {
     const moduleRef = await Test.createTestingModule({

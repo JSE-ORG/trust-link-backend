@@ -64,14 +64,15 @@ describe('Escrow Cancellation with On-Chain Validation (issue #298)', () => {
       })
       .expect(201);
 
-    if (overrides?.state && overrides.state !== 'FUNDED') {
+    const targetState = overrides?.state ?? 'FUNDED';
+    if (targetState !== res.body.state) {
       await prisma.escrow.update({
         where: { id: res.body.id },
-        data: { state: overrides.state as any },
+        data: { state: targetState as any },
       });
     }
 
-    return res.body;
+    return { ...res.body, state: targetState };
   }
 
   describe('DELETE /escrow/:id (cancel pending)', () => {

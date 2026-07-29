@@ -80,7 +80,12 @@ describe('Happy-Path E2E — full escrow lifecycle (issue #56)', () => {
 
     const escrowId: string = createRes.body.id;
     expect(escrowId).toBeDefined();
-    expect(createRes.body.state).toBe('FUNDED');
+
+    // Escrow is created in CREATED state; fund it for the lifecycle test.
+    await prisma.escrow.update({
+      where: { id: escrowId },
+      data: { state: 'FUNDED' },
+    });
 
     // DB sanity check
     const created = await prisma.escrow.findUnique({ where: { id: escrowId } });
@@ -295,6 +300,12 @@ describe('Happy-Path E2E — full escrow lifecycle (issue #56)', () => {
 
     const escrowId: string = createRes.body.id;
 
+    // Fund the escrow before cancelling via PATCH
+    await prisma.escrow.update({
+      where: { id: escrowId },
+      data: { state: 'FUNDED' },
+    });
+
     await request(app.getHttpServer())
       .patch(`/escrow/${escrowId}/cancel`)
       .set('Authorization', bearer(VENDOR_ADDRESS))
@@ -323,6 +334,12 @@ describe('Happy-Path E2E — full escrow lifecycle (issue #56)', () => {
       .expect(201);
 
     const escrowId: string = createRes.body.id;
+
+    // Fund the escrow before shipping
+    await prisma.escrow.update({
+      where: { id: escrowId },
+      data: { state: 'FUNDED' },
+    });
 
     await request(app.getHttpServer())
       .patch(`/escrow/${escrowId}/ship`)

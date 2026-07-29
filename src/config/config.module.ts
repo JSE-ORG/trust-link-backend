@@ -16,7 +16,7 @@ import { ConfigService } from './config.service';
  * - Public keys supplied where a secret key is expected (G... keys)
  * - Completely malformed strings
  */
-const stellarSecretKey = Joi.string().custom((value, helpers) => {
+const stellarSecretKey = Joi.string().custom((value: string, helpers) => {
   const keyName = helpers.state.path ? helpers.state.path.join('.') : 'key';
   // Quick shape check first for better error messages
   if (!value.startsWith('S')) {
@@ -46,7 +46,7 @@ const stellarSecretKey = Joi.string().custom((value, helpers) => {
  * Validates by decoding via Keypair.fromPublicKey. Rejects secret keys,
  * malformed strings, and checksum failures.
  */
-const stellarPublicKey = Joi.string().custom((value, helpers) => {
+const stellarPublicKey = Joi.string().custom((value: string, helpers) => {
   const keyName = helpers.state.path ? helpers.state.path.join('.') : 'key';
   if (!value.startsWith('G')) {
     return helpers.message({
