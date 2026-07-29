@@ -1,6 +1,6 @@
 import { Test } from '@nestjs/testing';
 import { Keypair } from '@stellar/stellar-sdk';
-import { ConfigService } from './config.service';
+import type { ConfigService } from './config.service';
 
 /**
  * ConfigModule validation tests — Stellar key checksum validation.
@@ -177,7 +177,7 @@ describe('ConfigModule — Stellar Key Validation', () => {
           ...VALID_ENV,
           SYSTEM_SIGNER_SECRET: CHECKSUM_INVALID_SECRET,
         });
-        fail('Expected validation to throw');
+        throw new Error('Expected validation to throw');
       } catch (error) {
         const message = (error as Error).message;
         expect(message).toContain('SYSTEM_SIGNER_SECRET');
@@ -190,7 +190,7 @@ describe('ConfigModule — Stellar Key Validation', () => {
           ...VALID_ENV,
           SEP10_SIGNING_SECRET: CHECKSUM_INVALID_SECRET,
         });
-        fail('Expected validation to throw');
+        throw new Error('Expected validation to throw');
       } catch (error) {
         const message = (error as Error).message;
         expect(message).toContain('SEP10_SIGNING_SECRET');
@@ -203,7 +203,7 @@ describe('ConfigModule — Stellar Key Validation', () => {
           ...VALID_ENV,
           SYSTEM_SIGNER_SECRET: CHECKSUM_INVALID_SECRET,
         });
-        fail('Expected validation to throw');
+        throw new Error('Expected validation to throw');
       } catch (error) {
         const message = (error as Error).message;
         expect(message.toLowerCase()).toContain('invalid');
@@ -217,7 +217,7 @@ describe('ConfigModule — Stellar Key Validation', () => {
           ...VALID_ENV,
           SYSTEM_SIGNER_SECRET: CHECKSUM_INVALID_SECRET,
         });
-        fail('Expected validation to throw');
+        throw new Error('Expected validation to throw');
       } catch (error) {
         const message = (error as Error).message;
         expect(message.toLowerCase()).toContain('checksum');
@@ -250,7 +250,7 @@ describe('ConfigModule — Stellar Key Validation', () => {
           ...VALID_ENV,
           SYSTEM_SIGNER_SECRET: PUBLIC_KEY_AS_SECRET,
         });
-        fail('Expected validation to throw');
+        throw new Error('Expected validation to throw');
       } catch (error) {
         const message = (error as Error).message;
         expect(message).toContain('SYSTEM_SIGNER_SECRET');
@@ -294,7 +294,7 @@ describe('ConfigModule — Stellar Key Validation', () => {
           ...VALID_ENV,
           ADMIN_ADDRESS: RANDOM_STRING,
         });
-        fail('Expected validation to throw');
+        throw new Error('Expected validation to throw');
       } catch (error) {
         const message = (error as Error).message;
         expect(message).toContain('ADMIN_ADDRESS');
@@ -307,7 +307,7 @@ describe('ConfigModule — Stellar Key Validation', () => {
           ...VALID_ENV,
           ADMIN_ADDRESS: SECRET_KEY_AS_PUBLIC,
         });
-        fail('Expected validation to throw');
+        throw new Error('Expected validation to throw');
       } catch (error) {
         const message = (error as Error).message;
         expect(message).toContain('ADMIN_ADDRESS');
@@ -411,7 +411,7 @@ describe('ConfigModule — Stellar Key Validation', () => {
           SEP10_SIGNING_SECRET: RANDOM_STRING,
           ADMIN_ADDRESS: CHECKSUM_INVALID_PUBLIC,
         });
-        fail('Expected validation to throw');
+        throw new Error('Expected validation to throw');
       } catch (error) {
         const message = (error as Error).message;
         // With abortEarly: false, should include all field names

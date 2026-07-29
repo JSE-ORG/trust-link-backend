@@ -1,5 +1,20 @@
-import { EscrowState, DisputeStatus } from '@prisma/client';
-import { PrismaService, NotificationType } from '../src/prisma/prisma.service';
+import {
+  NotificationType,
+  PrismaService,
+} from '../src/prisma/prisma.service';
+
+type EscrowState =
+  | 'CREATED'
+  | 'FUNDED'
+  | 'SHIPPED'
+  | 'DELIVERED'
+  | 'COMPLETED'
+  | 'RELEASED'
+  | 'DISPUTED'
+  | 'REFUNDED'
+  | 'CANCELLED';
+
+type DisputeState = 'OPEN' | 'UNDER_REVIEW' | 'RESOLVED' | 'CANCELLED' | 'ABANDONED';
 
 // Deterministic Stellar-like public keys for vendors and buyers
 const VENDORS = [
@@ -26,11 +41,11 @@ async function seedEscrows(
   p: PrismaService,
 ): Promise<{ created: number; updated: number; ids: string[] }> {
   const states: EscrowState[] = [
-    EscrowState.CREATED,
-    EscrowState.FUNDED,
-    EscrowState.SHIPPED,
-    EscrowState.DELIVERED,
-    EscrowState.COMPLETED,
+    'CREATED',
+    'FUNDED',
+    'SHIPPED',
+    'DELIVERED',
+    'COMPLETED',
   ];
 
   const escrowRefs: string[] = [];
@@ -60,15 +75,15 @@ async function seedEscrows(
           vendorAddress,
           state,
           trackingId:
-            state === EscrowState.SHIPPED ||
-            state === EscrowState.DELIVERED ||
-            state === EscrowState.COMPLETED
+            state === 'SHIPPED' ||
+            state === 'DELIVERED' ||
+            state === 'COMPLETED'
               ? `TRK-${2000 + i}`
               : null,
           shippedAt:
-            state === EscrowState.SHIPPED ||
-            state === EscrowState.DELIVERED ||
-            state === EscrowState.COMPLETED
+            state === 'SHIPPED' ||
+            state === 'DELIVERED' ||
+            state === 'COMPLETED'
               ? new Date()
               : null,
         },
@@ -85,10 +100,10 @@ async function seedDisputes(
   p: PrismaService,
   escrowIds: string[],
 ): Promise<{ created: number; updated: number }> {
-  const disputes = [
-    { escrowId: escrowIds[0], status: DisputeStatus.OPEN, reason: 'Item not received' },
-    { escrowId: escrowIds[1], status: DisputeStatus.OPEN, reason: 'Damaged packaging' },
-    { escrowId: escrowIds[2], status: DisputeStatus.RESOLVED, reason: 'Defective item, resolved by refund' },
+  const disputes: { escrowId: string; status: DisputeState; reason: string }[] = [
+    { escrowId: escrowIds[0], status: 'OPEN', reason: 'Item not received' },
+    { escrowId: escrowIds[1], status: 'OPEN', reason: 'Damaged packaging' },
+    { escrowId: escrowIds[2], status: 'RESOLVED', reason: 'Defective item, resolved by refund' },
   ];
 
   let created = 0;

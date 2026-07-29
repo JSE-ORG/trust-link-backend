@@ -1,5 +1,6 @@
 import { ServiceUnavailableException } from '@nestjs/common';
-import { Test, TestingModule } from '@nestjs/testing';
+import { Test } from '@nestjs/testing';
+import type { TestingModule } from '@nestjs/testing';
 import { DlqController } from './dlq.controller';
 import { DlqService } from './dlq.service';
 import { ContractService } from '../stellar/contract.service';

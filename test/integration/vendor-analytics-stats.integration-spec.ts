@@ -9,7 +9,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { AppModule } from '../../src/app.module';
 import { PrismaService } from '../../src/prisma/prisma.service';
-import { EscrowState } from '@prisma/client';
+import { EscrowState } from '../../src/prisma/prisma.service';
 import { bearer } from '../auth-helper';
 
 describe('GET /vendor/analytics (issue #289)', () => {
