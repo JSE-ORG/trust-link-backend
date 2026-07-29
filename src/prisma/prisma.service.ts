@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 
 // AES-256-GCM ciphertext produced by contact-encryption.util: iv:authTag:ciphertext
 // IV = 12 bytes (24 hex), tag = 16 bytes (32 hex), ciphertext = 1+ hex chars.
@@ -727,10 +727,20 @@ export class PrismaService {
     },
     findMany: ({
       where,
+      skip,
+      take,
+      orderBy,
     }: {
-      where?: Partial<Pick<DisputeRecord, 'escrowId' | 'status'>>;
+      where?: Partial<Pick<DisputeRecord, 'escrowId' | 'status'>> & {
+        status?:
+          | DisputeState
+          | { in?: DisputeState[] };
+      };
+      skip?: number;
+      take?: number;
+      orderBy?: Partial<Record<keyof DisputeRecord, 'asc' | 'desc'>>;
     } = {}): Promise<DisputeRecord[]> => {
-      const disputes = [...this.disputes.values()].filter((dispute) => {
+      let disputes = [...this.disputes.values()].filter((dispute) => {
         if (!where) {
           return true;
         }
@@ -740,11 +750,65 @@ export class PrismaService {
             return true;
           }
 
+          // Support `in` operator
+          if (
+            typeof value === 'object' &&
+            value !== null &&
+            'in' in value
+          ) {
+            const { in: inValues } = value as { in?: DisputeState[] };
+            return inValues?.includes(dispute[key as keyof DisputeRecord] as DisputeState) ?? false;
+          }
+
           return dispute[key as keyof DisputeRecord] === value;
         });
       });
 
+      if (orderBy) {
+        const [field, dir] = Object.entries(orderBy)[0] as [
+          keyof DisputeRecord,
+          'asc' | 'desc',
+        ];
+        disputes = [...disputes].sort((a, b) => {
+          const aVal = a[field];
+          const bVal = b[field];
+          if (aVal instanceof Date && bVal instanceof Date) {
+            return dir === 'asc'
+              ? aVal.getTime() - bVal.getTime()
+              : bVal.getTime() - aVal.getTime();
+          }
+          if (typeof aVal === 'string' && typeof bVal === 'string') {
+            return dir === 'asc'
+              ? aVal.localeCompare(bVal)
+              : bVal.localeCompare(aVal);
+          }
+          return 0;
+        });
+      }
+
+      if (skip !== undefined) {
+        disputes = disputes.slice(skip);
+      }
+      if (take !== undefined) {
+        disputes = disputes.slice(0, take);
+      }
+
       return Promise.resolve(disputes.map((dispute) => ({ ...dispute })));
+    },
+    /**
+     * Returns the count of disputes matching the given where clause.
+     * Supports `in` operator for status filtering.
+     */
+    count: ({
+      where,
+    }: {
+      where?: Partial<Pick<DisputeRecord, 'escrowId' | 'status'>> & {
+        status?:
+          | DisputeState
+          | { in?: DisputeState[] };
+      };
+    } = {}): Promise<number> => {
+      return this.dispute.findMany({ where }).then((records) => records.length);
     },
     update: ({
       where,

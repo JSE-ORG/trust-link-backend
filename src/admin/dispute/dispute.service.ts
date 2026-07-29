@@ -20,6 +20,12 @@ export class DisputeService {
     private readonly prisma: PrismaService,
   ) {}
 
+  /**
+   * Returns a paginated, deterministically ordered list of disputes.
+   *
+   * `page` defaults to 1 and is clamped to a minimum of 1.
+   * `limit` defaults to 20, clamped to a minimum of 1 and a maximum of 100.
+   */
   async getDisputes(query: {
     status?: string;
     page?: number;
@@ -30,17 +36,24 @@ export class DisputeService {
     page: number;
     limit: number;
   }> {
-    const page = query.page ?? 1;
-    const limit = query.limit ?? 20;
-    const allDisputes = await this.prisma.dispute.findMany({
-      where: query.status
-        ? { status: query.status as DisputeState }
-        : undefined,
-    });
+    const page = Math.max(1, query.page ?? 1);
+    const limit = Math.min(100, Math.max(1, query.limit ?? 20));
+    const skip = (page - 1) * limit;
 
-    const total = allDisputes.length;
-    const start = (page - 1) * limit;
-    const data = allDisputes.slice(start, start + limit);
+    const where = query.status
+      ? { status: query.status as DisputeState }
+      : undefined;
+
+    const [data, total] = await Promise.all([
+      this.prisma.dispute.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.dispute.count({ where }),
+    ]);
+
     return { data, total, page, limit };
   }
 
