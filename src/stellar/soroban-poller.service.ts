@@ -33,6 +33,22 @@ import { EscrowService } from '../escrow/escrow.service';
  */
 const DEFAULT_TESTNET_RPC_URL = 'https://soroban-testnet.stellar.org';
 
+/**
+ * How many ledgers behind the current one a fresh deployment starts polling
+ * from. Soroban RPC nodes retain only a short window of events (~24h), so
+ * asking for the genesis ledger is rejected outright; starting just behind
+ * "now" keeps the first request inside the retention window.
+ */
+const START_LEDGER_MARGIN = 10;
+
+/**
+ * Prefix marking a persisted cursor that holds a start ledger rather than an
+ * RPC paging token. getEvents takes the two as different parameters, and the
+ * chosen start ledger must be persisted immediately so a restart resumes from
+ * the same point instead of skipping forward to a new "now".
+ */
+const LEDGER_CURSOR_PREFIX = 'ledger:';
+
 /** Minimal shape of a Soroban RPC getEvents response entry. */
 interface SorobanRpcEvent {
   id: string;
@@ -107,7 +123,18 @@ export class SorobanPollerService implements OnModuleInit, OnModuleDestroy {
     this.polling = true;
 
     try {
-      const cursor = await this.cursorService.get();
+      let cursor = await this.cursorService.get();
+      if (!cursor) {
+        const startLedger = await this.resolveStartLedger();
+        cursor = `${LEDGER_CURSOR_PREFIX}${startLedger}`;
+        // Persist before the first fetch so a restart resumes from this
+        // ledger instead of computing a new starting point and skipping the
+        // gap.
+        await this.cursorService.set(cursor);
+        this.logger.log(
+          `SorobanPollerService: no cursor stored — starting from ledger ${startLedger}`,
+        );
+      }
       const rawEvents = await this.fetchEvents(cursor);
 
       if (rawEvents.length === 0) {
@@ -147,9 +174,11 @@ export class SorobanPollerService implements OnModuleInit, OnModuleDestroy {
 
   /**
    * Fetch contract events from the Soroban RPC `getEvents` endpoint.
-   * Resumes from the persisted cursor when one is available.
+   * A `ledger:`-prefixed cursor (written on first run) is sent as
+   * `startLedger`; anything else is an RPC paging token and is sent as
+   * `cursor`.
    */
-  private async fetchEvents(cursor?: string): Promise<SorobanRpcEvent[]> {
+  private async fetchEvents(cursor: string): Promise<SorobanRpcEvent[]> {
     const result = await this.rpcRequest<GetEventsResponse>('getEvents', {
       filters: [
         {
@@ -157,11 +186,49 @@ export class SorobanPollerService implements OnModuleInit, OnModuleDestroy {
           contractIds: [this.contractId],
         },
       ],
-      ...(cursor ? { cursor } : { startLedger: 1 }),
+      ...(cursor.startsWith(LEDGER_CURSOR_PREFIX)
+        ? { startLedger: Number(cursor.slice(LEDGER_CURSOR_PREFIX.length)) }
+        : { cursor }),
       limit: 100,
     });
 
     return result?.events ?? [];
+  }
+
+  /**
+   * Choose the first ledger to poll from when no cursor is stored.
+   *
+   * Starting from "now" (minus a small safety margin) is a documented
+   * decision: events emitted before the backend was first deployed are
+   * intentionally never read. Operators can override the starting point with
+   * SOROBAN_START_LEDGER to replay from a known ledger after an outage, as
+   * long as it is still inside the node's retention window.
+   */
+  private async resolveStartLedger(): Promise<number> {
+    const configured = this.config.get('SOROBAN_START_LEDGER');
+    if (configured) {
+      this.logger.log(
+        `SorobanPollerService: using configured SOROBAN_START_LEDGER ${configured}`,
+      );
+      return Number(configured);
+    }
+
+    const latest = await this.getLatestLedger();
+    return Math.max(1, latest - START_LEDGER_MARGIN);
+  }
+
+  /** Current ledger sequence from the Soroban RPC `getLatestLedger` endpoint. */
+  private async getLatestLedger(): Promise<number> {
+    const result = await this.rpcRequest<{ sequence: number }>(
+      'getLatestLedger',
+      {},
+    );
+    if (!result || typeof result.sequence !== 'number') {
+      throw new Error(
+        'Soroban RPC getLatestLedger returned no ledger sequence',
+      );
+    }
+    return result.sequence;
   }
 
   /**
@@ -198,6 +265,14 @@ export class SorobanPollerService implements OnModuleInit, OnModuleDestroy {
       };
 
       if (json.error) {
+        // A start ledger outside the node's short retention window is a
+        // configuration/replay problem, not a transient network failure —
+        // keep the two distinguishable in the logs.
+        if (/start.?ledger|ledger range|retention/i.test(json.error.message)) {
+          throw new Error(
+            `Soroban RPC retention error — requested ledger is outside the node's retention window: ${json.error.message}`,
+          );
+        }
         throw new Error(`Soroban RPC error: ${json.error.message}`);
       }
 

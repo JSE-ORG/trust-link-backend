@@ -206,6 +206,10 @@ export const configValidationSchema = Joi.object({
   // Per-request timeout for Soroban RPC calls. Keep it below
   // SOROBAN_POLL_INTERVAL_MS so a hung request cannot span poll cycles.
   SOROBAN_RPC_TIMEOUT_MS: Joi.number().integer().min(100).default(4000),
+  // Optional replay point: with no stored cursor the poller starts a small
+  // margin behind the current ledger. Set this to replay from a known ledger
+  // after an outage instead.
+  SOROBAN_START_LEDGER: Joi.number().integer().min(1).optional(),
 });
 
 @Global()

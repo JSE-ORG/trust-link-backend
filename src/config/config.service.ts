@@ -39,6 +39,7 @@ export interface Config {
   SOROBAN_POLL_INTERVAL_MS: number;
   /** Always present: the config schema applies a validated default of 4000. */
   SOROBAN_RPC_TIMEOUT_MS: number;
+  SOROBAN_START_LEDGER?: number;
   CONTRACT_ID?: string;
 }
 

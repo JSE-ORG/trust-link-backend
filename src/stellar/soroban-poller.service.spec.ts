@@ -68,6 +68,18 @@ function jsonResponse(payload: unknown): Response {
   } as unknown as Response;
 }
 
+/** Parse the JSON-RPC body of the nth fetch call. */
+function bodyOfCall(
+  fetchMock: jest.Mock,
+  index: number,
+): { method: string; params: Record<string, unknown> } {
+  const init = fetchMock.mock.calls[index][1] as RequestInit;
+  return JSON.parse(init.body as string) as {
+    method: string;
+    params: Record<string, unknown>;
+  };
+}
+
 /**
  * A fetch implementation that never settles on its own and only rejects with
  * an AbortError once the request's signal fires — models a hung RPC endpoint.
@@ -186,7 +198,7 @@ describe('SorobanPollerService', () => {
           .mockResolvedValue(
             jsonResponse({ result: { events: [], latestLedger: 100 } }),
           );
-        global.fetch = fetchMock as unknown as typeof fetch;
+        global.fetch = fetchMock;
 
         const firstCycle = service.poll();
         await jest.advanceTimersByTimeAsync(4001);
@@ -215,12 +227,137 @@ describe('SorobanPollerService', () => {
         .mockResolvedValue(
           jsonResponse({ result: { events: [], latestLedger: 100 } }),
         );
-      global.fetch = fetchMock as unknown as typeof fetch;
+      global.fetch = fetchMock;
 
       await service.poll();
 
       const init = fetchMock.mock.calls[0][1] as RequestInit;
       expect(init.signal).toBeInstanceOf(AbortSignal);
+    });
+  });
+
+  describe('cursor resolution and request body', () => {
+    it('with no stored cursor, starts just behind the latest ledger and persists that choice immediately', async () => {
+      const mocks = makeMocks();
+      mocks.cursorService.get.mockResolvedValue(undefined);
+      const { service } = makeService(makeConfig(), mocks);
+
+      const fetchMock = jest
+        .fn()
+        // First call: getLatestLedger.
+        .mockResolvedValueOnce(jsonResponse({ result: { sequence: 1000 } }))
+        // Second call: getEvents.
+        .mockResolvedValueOnce(
+          jsonResponse({ result: { events: [], latestLedger: 1000 } }),
+        );
+      global.fetch = fetchMock;
+
+      await service.poll();
+
+      expect(bodyOfCall(fetchMock, 0).method).toBe('getLatestLedger');
+
+      const events = bodyOfCall(fetchMock, 1);
+      expect(events.method).toBe('getEvents');
+      expect(events.params.startLedger).toBe(990);
+      expect(events.params.startLedger).not.toBe(1);
+      expect(events.params).not.toHaveProperty('cursor');
+
+      // Persisted before a restart could skip forward to a new "now".
+      expect(mocks.cursorService.set).toHaveBeenCalledWith('ledger:990');
+    });
+
+    it('with a stored paging-token cursor, resumes via the cursor parameter', async () => {
+      const mocks = makeMocks();
+      mocks.cursorService.get.mockResolvedValue('PAGING_TOKEN');
+      const { service } = makeService(makeConfig(), mocks);
+
+      const fetchMock = jest
+        .fn()
+        .mockResolvedValue(
+          jsonResponse({ result: { events: [], latestLedger: 1000 } }),
+        );
+      global.fetch = fetchMock;
+
+      await service.poll();
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const events = bodyOfCall(fetchMock, 0);
+      expect(events.method).toBe('getEvents');
+      expect(events.params.cursor).toBe('PAGING_TOKEN');
+      expect(events.params).not.toHaveProperty('startLedger');
+    });
+
+    it('with a persisted ledger cursor, resumes via startLedger', async () => {
+      const mocks = makeMocks();
+      mocks.cursorService.get.mockResolvedValue('ledger:500');
+      const { service } = makeService(makeConfig(), mocks);
+
+      const fetchMock = jest
+        .fn()
+        .mockResolvedValue(
+          jsonResponse({ result: { events: [], latestLedger: 1000 } }),
+        );
+      global.fetch = fetchMock;
+
+      await service.poll();
+
+      const events = bodyOfCall(fetchMock, 0);
+      expect(events.params.startLedger).toBe(500);
+      expect(events.params).not.toHaveProperty('cursor');
+    });
+
+    it('honours SOROBAN_START_LEDGER as an operator replay point without asking for the latest ledger', async () => {
+      const mocks = makeMocks();
+      mocks.cursorService.get.mockResolvedValue(undefined);
+      const { service } = makeService(
+        makeConfig({ SOROBAN_START_LEDGER: 12345 }),
+        mocks,
+      );
+
+      const fetchMock = jest
+        .fn()
+        .mockResolvedValue(
+          jsonResponse({ result: { events: [], latestLedger: 99999 } }),
+        );
+      global.fetch = fetchMock;
+
+      await service.poll();
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const events = bodyOfCall(fetchMock, 0);
+      expect(events.method).toBe('getEvents');
+      expect(events.params.startLedger).toBe(12345);
+      expect(mocks.cursorService.set).toHaveBeenCalledWith('ledger:12345');
+    });
+  });
+
+  describe('RPC error classification', () => {
+    it('flags a retention-window error distinctly', async () => {
+      const { service } = makeService(makeConfig());
+      global.fetch = jest.fn().mockResolvedValue(
+        jsonResponse({
+          error: {
+            message: 'startLedger must be within the ledger range: 100 - 200',
+          },
+        }),
+      );
+
+      await expect(service['fetchEvents']('ledger:1')).rejects.toThrow(
+        /retention window/,
+      );
+    });
+
+    it('reports other RPC errors without the retention label', async () => {
+      const { service } = makeService(makeConfig());
+      global.fetch = jest
+        .fn()
+        .mockResolvedValue(
+          jsonResponse({ error: { message: 'internal server error' } }),
+        );
+
+      await expect(service['fetchEvents']('PAGING_TOKEN')).rejects.toThrow(
+        /^Soroban RPC error: internal server error$/,
+      );
     });
   });
 });
