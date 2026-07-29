@@ -43,7 +43,9 @@ describe('TrackingPollWorker — interval scheduling & polling loop (issue #46)'
   beforeEach(async () => {
     escrowRepository = {
       findShippedWithTracking: jest.fn(),
-      claimDelivery: jest.fn().mockResolvedValue({ id: 'escrow-1', state: 'SHIPPED' }),
+      claimDelivery: jest
+        .fn()
+        .mockResolvedValue({ id: 'escrow-1', state: 'SHIPPED' }),
       markDelivered: jest.fn(),
       clearDeliveryClaim: jest.fn(),
     } as unknown as jest.Mocked<EscrowRepository>;
