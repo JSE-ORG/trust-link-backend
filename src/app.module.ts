@@ -70,19 +70,8 @@ import { WorkersModule } from './workers/workers.module';
       inject: [ConfigService],
       useFactory: (config: ConfigService) => [
         {
-          name: 'auth',
-          ttl: Number(config.get('AUTH_CHALLENGE_WINDOW')) || 60000,
-          limit: Number(config.get('AUTH_CHALLENGE_LIMIT')) || 10,
-        },
-        {
-          name: 'public',
-          ttl: Number(config.get('PUBLIC_WINDOW')) || 60000,
-          limit: Number(config.get('PUBLIC_LIMIT')) || 60,
-        },
-        {
-          name: 'evidence-upload',
-          ttl: Number(config.get('EVIDENCE_UPLOAD_TTL')) || 60000,
-          limit: Number(config.get('EVIDENCE_UPLOAD_LIMIT')) || 10,
+          ttl: config.get<number>('PUBLIC_WINDOW') ?? 60000,
+          limit: config.get<number>('PUBLIC_LIMIT') ?? 60,
         },
       ],
     }),

@@ -33,7 +33,7 @@ import { OpenDisputeDto } from './dto/open-dispute.dto';
 import { UpdateBuyerContactDto } from './dto/update-buyer-contact.dto';
 import { EscrowService } from './escrow.service';
 import { BuyerDisputeService } from './buyer-dispute.service';
-import { SkipThrottle, Throttle } from '@nestjs/throttler';
+import { Throttle } from '@nestjs/throttler';
 import { EscrowResponseDto } from './dto/escrow-response.dto';
 import { EscrowWithPaymentUrlResponseDto } from './dto/escrow-with-payment-url-response.dto';
 import { EvidenceUploadResponseDto } from './dto/evidence-upload.dto';
@@ -44,7 +44,6 @@ import { DisputeResponseDto } from './dto/dispute-response.dto';
 import { ErrorResponseDto } from '../common/dto/error-response.dto';
 
 @ApiTags('Escrow')
-@SkipThrottle({ auth: true }) // Skip auth limit for escrow endpoints
 @Controller('escrow')
 export class EscrowController {
   constructor(
@@ -158,6 +157,7 @@ export class EscrowController {
   @Post('evidence-upload')
   @HttpCode(HttpStatus.CREATED)
   @UseGuards(JwtGuard)
+  @Throttle({ 'evidence-upload': { ttl: 60000, limit: 10 } })
   evidenceUpload(
     @Query('fileName') fileName: string,
     @CurrentUser() user: AuthUser,
