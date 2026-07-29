@@ -516,22 +516,17 @@ Closes #
 
 ## Testing
 
-```bash
-# Unit tests
-npm run test
+### Test Suites
 
-# Watch mode (during development)
-npm run test:watch
+The repository maintains three test suites with strict filename regex boundaries, commands, and CI workflows:
 
-# Integration tests (requires a real DB — uses a separate test DB)
-npm run test:integration
+| Suite | Filename Pattern | Command | CI Workflow | Selection Rule |
+|---|---|---|---|---|
+| **Unit** | `(src\|test)/.*\.spec\.ts$` | `npm test` / `npm run test:cov` | `test.yml` / `ci.yml` | Use for isolated unit testing of a single service or function with all dependencies mocked. |
+| **Integration** | `test/integration/.*\.integration-spec\.ts$` | `npm run test:integration` | `integration-test.yml` | Use for testing module component interactions against a database under `test/integration/`. |
+| **E2E** | `.*\.e2e-spec\.ts$` | `npm run test:e2e` | `e2e-test.yml` | Use for full HTTP request/response cycle testing using supertest against a bootstrapped NestJS app. |
 
-# E2E tests (requires full stack)
-npm run test:e2e
-
-# Coverage report
-npm run test:cov
-```
+Run `npm run check-test-match` to verify that all test files match one of the three Jest configurations. Spec files matching none of these patterns will fail CI validation.
 
 ### Test Layers
 
