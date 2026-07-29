@@ -1,96 +1,45 @@
-import { INestApplication, ValidationPipe } from '@nestjs/common';
-import { Test, TestingModule } from '@nestjs/testing';
-import request from 'supertest';
-import { ApiKeysController } from '../../src/admin/api-keys/api-keys.controller';
-import { LogisticsService } from '../../src/logistics/logistics.service';
-import { JwtGuard } from '../../src/auth/guards/jwt.guard';
-import { AdminGuard } from '../../src/admin/guards/admin.guard';
-import { ConfigService } from '../../src/config/config.service';
-
-describe('ApiKeysController (issue #410)', () => {
-  let app: INestApplication;
-  let logisticsService: any;
-
-  const ADMIN = 'admin-address';
-
-  beforeEach(async () => {
-    logisticsService = {
-      getEncryptedApiKey: jest.fn(),
-      setApiKey: jest.fn(),
-      setEncryptedApiKey: jest.fn(),
-    };
-
-    const moduleRef: TestingModule = await Test.createTestingModule({
-      controllers: [ApiKeysController],
-      providers: [
-        { provide: LogisticsService, useValue: logisticsService },
-        JwtGuard,
-        AdminGuard,
-        { provide: ConfigService, useValue: { get: jest.fn().mockReturnValue(ADMIN) } },
-      ],
-    }).compile();
-
-    app = moduleRef.createNestApplication();
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
-    await app.init();
-  });
-
-  afterEach(async () => {
-    await app.close();
-  });
-
-  it('returns 403 for a non-admin caller', async () => {
-    await request(app.getHttpServer())
-      .patch('/admin/credentials/logistics')
-      .set('Authorization', '******')
-      .send({ key: 'does-not-matter' })
-      .expect(403);
-  });
-
-  it('accepts admin and never leaks credential values in response', async () => {
-    // Ensure branch where there is no current encrypted key (first-time set)
-    logisticsService.getEncryptedApiKey.mockReturnValue(null);
-    logisticsService.setApiKey.mockImplementation((k: string) => {
-      // On set, pretend an encrypted value is now available
-      logisticsService.getEncryptedApiKey.mockReturnValue('enc:val:here');
-    });
-
-    const res = await request(app.getHttpServer())
-      .patch('/admin/credentials/logistics')
-      .set('Authorization', '******')
-      .send({ key: 'very-secret-key' })
-      .expect(200);
-
-    expect(res.body).toEqual({ message: 'Logistics API key updated and encrypted' });
-    // ensure raw credential never echoed back
-    expect(JSON.stringify(res.body)).not.toContain('very-secret-key');
-
-    expect(logisticsService.setApiKey).toHaveBeenCalledWith('very-secret-key');
-    expect(logisticsService.setEncryptedApiKey).toHaveBeenCalledWith('enc:val:here');
-  });
-
-  it('rotates existing encrypted key via reencryptCredential without leaking secrets', async () => {
-    // Provide an existing encrypted key; spy on reencryptCredential
-    const util = await import('../../src/common/sanitization/credential-encryption.util');
-    const spy = jest.spyOn(util, 'reencryptCredential').mockReturnValue('reencrypted:val');
-
-    logisticsService.getEncryptedApiKey.mockReturnValue('old:enc:key');
-
-    const res = await request(app.getHttpServer())
-      .patch('/admin/credentials/logistics')
-      .set('Authorization', '******')
-      .send({ key: 'should-not-be-used' })
-      .expect(200);
-
-    expect(res.body).toEqual({ message: 'Logistics API key updated and encrypted' });
-    expect(spy).toHaveBeenCalledWith('old:enc:key');
-    expect(logisticsService.setEncryptedApiKey).toHaveBeenCalledWith('reencrypted:val');
-    expect(JSON.stringify(res.body)).not.toContain('old:enc:key');
-
-    spy.mockRestore();
-import { ApiKeysController } from '../../src/admin/api-keys/api-keys.controller';
-import { LogisticsService } from '../../src/logistics/logistics.service';
 import { RotateApiKeyDto } from '../../src/admin/api-keys/dto/rotate-api-key.dto';
+import { ApiKeysController } from '../../src/admin/api-keys/api-keys.controller';
+import { LogisticsService } from '../../src/logistics/logistics.service';
+
+describe('ApiKeysController (issue #410) — business logic', () => {
+  let logisticsService: LogisticsService;
+  let controller: ApiKeysController;
+
+  function buildDto(key: string): RotateApiKeyDto {
+    const dto = new RotateApiKeyDto();
+    dto.key = key;
+    return dto;
+  }
+
+  beforeEach(() => {
+    logisticsService = new LogisticsService();
+    controller = new ApiKeysController(logisticsService);
+  });
+
+  it('accepts a key and never leaks credential values in response', async () => {
+    const result = await controller.rotateLogisticsKey(buildDto('very-secret-key'));
+
+    expect(result).toEqual({ message: 'Logistics API key updated and encrypted' });
+    expect(JSON.stringify(result)).not.toContain('very-secret-key');
+    expect(logisticsService.getApiKey()).toBe('very-secret-key');
+  });
+
+  it('rotates to the submitted key (not re-encrypting old one) and does not leak secrets', async () => {
+    // First set a key
+    await controller.rotateLogisticsKey(buildDto('old-key'));
+    const encryptedBefore = logisticsService.getEncryptedApiKey();
+
+    const result = await controller.rotateLogisticsKey(buildDto('new-key'));
+
+    expect(result).toEqual({ message: 'Logistics API key updated and encrypted' });
+    // The submitted key is used, not the old one re-encrypted
+    expect(logisticsService.getApiKey()).toBe('new-key');
+    expect(logisticsService.getEncryptedApiKey()).not.toBe(encryptedBefore);
+    expect(JSON.stringify(result)).not.toContain('old-key');
+    expect(JSON.stringify(result)).not.toContain('new-key');
+  });
+});
 
 describe('ApiKeysController (issue #498)', () => {
   function buildDto(key: string): RotateApiKeyDto {

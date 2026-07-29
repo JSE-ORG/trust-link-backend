@@ -505,6 +505,7 @@ export class PrismaService {
       > & {
         shippedAt?: { lte: Date };
         deliveredAt?: { lte: Date } | null;
+        deliveryRecordedAt?: Date | null;
         createdAt?: { gte: Date; lte: Date };
       };
       select?: Partial<Record<keyof EscrowRecord, boolean>>;
@@ -544,6 +545,13 @@ export class PrismaService {
           ) {
             const { gte, lte } = value;
             return escrow.createdAt >= gte && escrow.createdAt <= lte;
+          }
+
+          if (
+            key === 'deliveryRecordedAt' &&
+            (value === null || value === undefined)
+          ) {
+            return escrow.deliveryRecordedAt === value;
           }
 
           return escrow[key as keyof EscrowRecord] === value;
@@ -671,9 +679,104 @@ export class PrismaService {
           | 'autoReleaseTxHash'
           | 'autoReleaseSubmittedAt'
         >
-      >;
+      > & {
+        deliveryRecordedAt?: Date | null;
+      };
     } = {}): Promise<number> => {
       return this.escrow.findMany({ where }).then((records) => records.length);
+    },
+    aggregate: ({
+      _sum,
+      _avg,
+      _count,
+    }: {
+      _sum?: { amount?: boolean };
+      _avg?: { amount?: boolean };
+      _count?: { vendorAddress?: boolean; buyerAddress?: boolean };
+    } = {}): Promise<{
+      _sum?: { amount: number | null };
+      _avg?: { amount: number | null };
+      _count?: { vendorAddress: number; buyerAddress: number };
+    }> => {
+      // Mirror the CANCELLED filter that escrow.findMany applies by default
+      const allEscrows = [...this.escrows.values()].filter(
+        (e) => e.state !== 'CANCELLED',
+      );
+
+      const result: Record<string, unknown> = {};
+
+      if (_sum?.amount) {
+        const sum = allEscrows.reduce(
+          (s, e) => s + Number(e.amount),
+          0,
+        );
+        result._sum = { amount: sum };
+      }
+
+      if (_avg?.amount) {
+        const sum = allEscrows.reduce(
+          (s, e) => s + Number(e.amount),
+          0,
+        );
+        const avg = allEscrows.length > 0 ? sum / allEscrows.length : 0;
+        result._avg = { amount: avg };
+      }
+
+      if (_count?.vendorAddress) {
+        const unique = new Set(allEscrows.map((e) => e.vendorAddress)).size;
+        result._count = { ...(result._count as Record<string, number> ?? {}), vendorAddress: unique };
+      }
+
+      if (_count?.buyerAddress) {
+        const unique = new Set(allEscrows.map((e) => e.buyerAddress)).size;
+        result._count = { ...(result._count as Record<string, number> ?? {}), buyerAddress: unique };
+      }
+
+      return Promise.resolve(result as {
+        _sum?: { amount: number | null };
+        _avg?: { amount: number | null };
+        _count?: { vendorAddress: number; buyerAddress: number };
+      });
+    },
+    groupBy: ({
+      by,
+      _count,
+    }: {
+      by: string[];
+      _count?: boolean;
+    }): Promise<
+      Array<
+        Record<string, unknown> & { _count?: number }
+      >
+    > => {
+      // Mirror the CANCELLED filter that escrow.findMany applies by default
+      const allEscrows = [...this.escrows.values()].filter(
+        (e) => e.state !== 'CANCELLED',
+      );
+      const groups = new Map<string, EscrowRecord[]>();
+
+      for (const escrow of allEscrows) {
+        const groupKey = by.map((field) => escrow[field as keyof EscrowRecord]).join('|');
+        if (!groups.has(groupKey)) {
+          groups.set(groupKey, []);
+        }
+        groups.get(groupKey)!.push(escrow);
+      }
+
+      const result: Array<Record<string, unknown> & { _count?: number }> = [];
+      for (const [groupKey, records] of groups.entries()) {
+        const group: Record<string, unknown> = {};
+        const keys = groupKey.split('|');
+        for (let i = 0; i < by.length; i++) {
+          group[by[i]] = (records[0] as Record<string, unknown>)[by[i]];
+        }
+        if (_count) {
+          group._count = records.length;
+        }
+        result.push(group);
+      }
+
+      return Promise.resolve(result);
     },
     deleteMany: (): Promise<{ count: number }> => {
       const count = this.escrows.size;
@@ -727,10 +830,18 @@ export class PrismaService {
     },
     findMany: ({
       where,
+      orderBy,
+      skip,
+      take,
     }: {
-      where?: Partial<Pick<DisputeRecord, 'escrowId' | 'status'>>;
+      where?: Partial<Pick<DisputeRecord, 'escrowId' | 'status'>> & {
+        status?: DisputeState | { in?: DisputeState[] };
+      };
+      orderBy?: Partial<Record<keyof DisputeRecord, 'asc' | 'desc'>>;
+      skip?: number;
+      take?: number;
     } = {}): Promise<DisputeRecord[]> => {
-      const disputes = [...this.disputes.values()].filter((dispute) => {
+      let disputes = [...this.disputes.values()].filter((dispute) => {
         if (!where) {
           return true;
         }
@@ -740,9 +851,53 @@ export class PrismaService {
             return true;
           }
 
+          // Support { in: [...] } for status filtering
+          if (
+            key === 'status' &&
+            typeof value === 'object' &&
+            value !== null &&
+            'in' in value
+          ) {
+            return (value as { in: DisputeState[] }).in.includes(
+              dispute.status,
+            );
+          }
+
           return dispute[key as keyof DisputeRecord] === value;
         });
       });
+
+      if (orderBy) {
+        const [field, dir] = Object.entries(orderBy)[0] as [
+          keyof DisputeRecord,
+          'asc' | 'desc',
+        ];
+        disputes = [...disputes].sort((a, b) => {
+          const aVal = a[field];
+          const bVal = b[field];
+          if (aVal instanceof Date && bVal instanceof Date) {
+            return dir === 'asc'
+              ? aVal.getTime() - bVal.getTime()
+              : bVal.getTime() - aVal.getTime();
+          }
+          if (typeof aVal === 'number' && typeof bVal === 'number') {
+            return dir === 'asc' ? aVal - bVal : bVal - aVal;
+          }
+          if (typeof aVal === 'string' && typeof bVal === 'string') {
+            return dir === 'asc'
+              ? aVal.localeCompare(bVal)
+              : bVal.localeCompare(aVal);
+          }
+          return 0;
+        });
+      }
+
+      if (skip !== undefined) {
+        disputes = disputes.slice(skip);
+      }
+      if (take !== undefined) {
+        disputes = disputes.slice(0, take);
+      }
 
       return Promise.resolve(disputes.map((dispute) => ({ ...dispute })));
     },
@@ -770,6 +925,17 @@ export class PrismaService {
       return this.dispute
         .findMany({ where })
         .then((records) => records[0] ?? null);
+    },
+    count: ({
+      where,
+    }: {
+      where?: Partial<Pick<DisputeRecord, 'escrowId' | 'status'>> & {
+        status?: DisputeState | { in?: DisputeState[] };
+      };
+    } = {}): Promise<number> => {
+      return this.dispute
+        .findMany({ where })
+        .then((records) => records.length);
     },
     deleteMany: (): Promise<{ count: number }> => {
       const count = this.disputes.size;
