@@ -270,6 +270,16 @@ describe('GiglLogisticsService', () => {
       );
     });
 
+    it('propagates GiglProviderError when the upstream returns HTTP 404', async () => {
+      const error = new GiglProviderError('TRK-404', 404);
+      client.fetchTracking.mockRejectedValue(error);
+
+      await expect(service.getStatus('TRK-404')).rejects.toThrow(
+        GiglProviderError,
+      );
+      await expect(service.getStatus('TRK-404')).rejects.toThrow(/HTTP 404/);
+    });
+
     it('propagates GiglProviderError when the upstream returns HTTP 500', async () => {
       const error = new GiglProviderError('TRK-ERR', 500);
       client.fetchTracking.mockRejectedValue(error);
@@ -289,17 +299,25 @@ describe('GiglLogisticsService', () => {
       );
     });
 
-    it('propagates GiglInvalidResponseError when the upstream returns a malformed body', async () => {
-      const error = new GiglInvalidResponseError(
-        'TRK-SHAPE',
-        'response body is missing one or more required fields',
-      );
-      client.fetchTracking.mockRejectedValue(error);
+    it('fails clearly and logs a warning when constructed without a client', async () => {
+      const unconfiguredService = new GiglLogisticsService(null);
+      const loggerSpy = jest
+        .spyOn((unconfiguredService as any).logger, 'warn')
+        .mockImplementation();
 
-      await expect(service.getStatus('TRK-SHAPE')).rejects.toThrow(
-        GiglInvalidResponseError,
+      await unconfiguredService.onModuleInit();
+
+      expect(loggerSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Logistics provider is not configured'),
       );
-      await expect(service.getStatus('TRK-SHAPE')).rejects.toThrow(/malformed/i);
+
+      await expect(
+        unconfiguredService.getStatus('TRK-NO-CLIENT'),
+      ).rejects.toThrow('Logistics service is not configured');
+
+      await expect(
+        unconfiguredService.getTrackingDetails('TRK-NO-CLIENT'),
+      ).rejects.toThrow('Logistics service is not configured');
     });
   });
 

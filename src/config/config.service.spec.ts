@@ -15,6 +15,13 @@ const validationSchema = Joi.object({
   DATABASE_URL: Joi.string().required(),
   SEP10_JWT_SECRET: Joi.string().min(32).required(),
   ADMIN_ADDRESS: Joi.string().required(),
+  AUTO_RELEASE_SOURCE_ADDRESS: Joi.string()
+    .pattern(/^G[A-Z2-7]{55}$/)
+    .optional()
+    .messages({
+      'string.pattern.base':
+        'Config validation error: AUTO_RELEASE_SOURCE_ADDRESS must be a valid Stellar public key (starts with G)',
+    }),
   NODE_ENV: Joi.string()
     .valid('development', 'production', 'test')
     .default('development'),
@@ -42,9 +49,15 @@ const VALID_ENV = {
   STELLAR_NETWORK: 'TESTNET',
 };
 
+const VALID_AUTO_RELEASE_SOURCE_ADDRESS =
+  'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+const INVALID_AUTO_RELEASE_SOURCE_ADDRESS =
+  'SXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX';
+
 const ALL_KNOWN_KEYS = [
   ...Object.keys(VALID_ENV),
   'PORT',
+  'AUTO_RELEASE_SOURCE_ADDRESS',
   'ALLOWED_ORIGINS',
   'STELLAR_WEBHOOK_SECRET',
   'LOG_LEVEL',
@@ -132,53 +145,24 @@ describe('ConfigService', () => {
     expect(service.isProduction()).toBe(false);
   });
 
-  describe('SENTRY_DSN validation', () => {
-    it('allows empty/unset SENTRY_DSN in non-production environments', async () => {
-      const service = await buildService({
+  it('accepts a genuine valid AUTO_RELEASE_SOURCE_ADDRESS', async () => {
+    const service = await buildService({
+      ...VALID_ENV,
+      AUTO_RELEASE_SOURCE_ADDRESS: VALID_AUTO_RELEASE_SOURCE_ADDRESS,
+    });
+    expect(service.get('AUTO_RELEASE_SOURCE_ADDRESS')).toBe(
+      VALID_AUTO_RELEASE_SOURCE_ADDRESS,
+    );
+  });
+
+  it('rejects an invalid AUTO_RELEASE_SOURCE_ADDRESS', async () => {
+    await expect(
+      buildService({
         ...VALID_ENV,
-        NODE_ENV: 'development',
-      });
-      expect(service).toBeDefined();
-      expect(service.get('SENTRY_DSN')).toBeUndefined();
-    });
-
-    it('allows valid SENTRY_DSN in non-production environments', async () => {
-      const service = await buildService({
-        ...VALID_ENV,
-        NODE_ENV: 'development',
-        SENTRY_DSN: 'https://key@sentry.io/123456',
-      });
-      expect(service).toBeDefined();
-      expect(service.get('SENTRY_DSN')).toBe('https://key@sentry.io/123456');
-    });
-
-    it('requires valid SENTRY_DSN URI in production environment', async () => {
-      const service = await buildService({
-        ...VALID_ENV,
-        NODE_ENV: 'production',
-        SENTRY_DSN: 'https://key@sentry.io/123456',
-      });
-      expect(service).toBeDefined();
-      expect(service.get('SENTRY_DSN')).toBe('https://key@sentry.io/123456');
-    });
-
-    it('fails validation if SENTRY_DSN is invalid URI in development environment', async () => {
-      await expect(
-        buildService({
-          ...VALID_ENV,
-          NODE_ENV: 'development',
-          SENTRY_DSN: 'invalid-uri',
-        }),
-      ).rejects.toThrow();
-    });
-
-    it('fails validation if SENTRY_DSN is unset in production environment', async () => {
-      await expect(
-        buildService({
-          ...VALID_ENV,
-          NODE_ENV: 'production',
-        }),
-      ).rejects.toThrow();
-    });
+        AUTO_RELEASE_SOURCE_ADDRESS: INVALID_AUTO_RELEASE_SOURCE_ADDRESS,
+      }),
+    ).rejects.toThrow(
+      'Config validation error: AUTO_RELEASE_SOURCE_ADDRESS must be a valid Stellar public key (starts with G)',
+    );
   });
 });

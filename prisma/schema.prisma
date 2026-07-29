@@ -260,3 +260,13 @@ model FailedTransaction {
   @@index([escrowId])
   @@index([createdAt])
 }
+
+// Issues #498, #499 - Persistent storage for rotated provider credentials
+// (e.g. the logistics API key), so a rotation survives restarts and
+// propagates across replicas instead of living only in process memory.
+model ProviderCredential {
+  provider     String   @id
+  encryptedKey String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}

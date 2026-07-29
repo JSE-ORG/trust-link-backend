@@ -16,14 +16,14 @@ import { ConfigService } from './config.service';
  * - Public keys supplied where a secret key is expected (G... keys)
  * - Completely malformed strings
  */
-const stellarSecretKey = Joi.string().custom((value: string, helpers) => {
-  const keyName =
-    helpers.state.path && helpers.state.path.length > 0
-      ? helpers.state.path.join('.')
-      : helpers.state.key || 'Key';
+const stellarSecretKey = Joi.string().custom((value, helpers) => {
+  const keyName = helpers.state.path ? helpers.state.path.join('.') : 'key';
+  // Quick shape check first for better error messages
   if (!value.startsWith('S')) {
     return helpers.message({
-      custom: `${keyName} is an invalid Stellar secret key — must start with S, got a value starting with '${value[0]}'`,
+      custom:
+        `${keyName} must be a Stellar secret key ` +
+        `starting with S, got a value starting with '${value[0]}'`,
     });
   }
 
@@ -32,19 +32,27 @@ const stellarSecretKey = Joi.string().custom((value: string, helpers) => {
     return value; // valid — checksum passed
   } catch {
     return helpers.message({
-      custom: `${keyName} is an invalid Stellar secret key — checksum verification failed. Check the key value in your environment configuration.`,
+      custom:
+        `${keyName} is an invalid Stellar secret key ` +
+        `— checksum verification failed. ` +
+        `Check the key value in your environment configuration.`,
     });
   }
 }, 'Stellar secret key checksum validation');
 
-const stellarPublicKey = Joi.string().custom((value: string, helpers) => {
-  const keyName =
-    helpers.state.path && helpers.state.path.length > 0
-      ? helpers.state.path.join('.')
-      : helpers.state.key || 'Key';
+/**
+ * Custom Joi validator for Stellar public keys (G... addresses).
+ *
+ * Validates by decoding via Keypair.fromPublicKey. Rejects secret keys,
+ * malformed strings, and checksum failures.
+ */
+const stellarPublicKey = Joi.string().custom((value, helpers) => {
+  const keyName = helpers.state.path ? helpers.state.path.join('.') : 'key';
   if (!value.startsWith('G')) {
     return helpers.message({
-      custom: `${keyName} is an invalid Stellar public key — must start with G, got a value starting with '${value[0]}'`,
+      custom:
+        `${keyName} must be a Stellar public key ` +
+        `starting with G, got a value starting with '${value[0]}'`,
     });
   }
 
@@ -53,7 +61,9 @@ const stellarPublicKey = Joi.string().custom((value: string, helpers) => {
     return value; // valid
   } catch {
     return helpers.message({
-      custom: `${keyName} is an invalid Stellar public key — checksum verification failed.`,
+      custom:
+        `${keyName} is an invalid Stellar public key ` +
+        `— checksum verification failed.`,
     });
   }
 }, 'Stellar public key checksum validation');
@@ -80,7 +90,7 @@ const stellarPublicKey = Joi.string().custom((value: string, helpers) => {
           'any.required': 'Config validation error: CONTRACT_ID is required',
         }),
         ADMIN_ADDRESS: stellarPublicKey.required(),
-        AUTO_RELEASE_SOURCE_ADDRESS: Joi.string().optional(),
+        AUTO_RELEASE_SOURCE_ADDRESS: stellarPublicKey.optional(),
         NODE_ENV: Joi.string()
           .valid('development', 'production', 'test')
           .default('development'),
@@ -91,7 +101,14 @@ const stellarPublicKey = Joi.string().custom((value: string, helpers) => {
           .valid('TESTNET', 'MAINNET')
           .default('TESTNET'),
         ALLOWED_ORIGINS: Joi.string().optional(),
-        STELLAR_WEBHOOK_SECRET: Joi.string().optional(),
+        STELLAR_WEBHOOK_SECRET: Joi.when('NODE_ENV', {
+          is: 'production',
+          then: Joi.string().required().messages({
+            'any.required':
+              'Config validation error: STELLAR_WEBHOOK_SECRET is required in production',
+          }),
+          otherwise: Joi.string().optional(),
+        }),
         LOG_LEVEL: Joi.string()
           .valid('trace', 'debug', 'info', 'warn', 'error', 'fatal')
           .default('info'),

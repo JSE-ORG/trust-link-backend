@@ -55,7 +55,7 @@ describe('POST /escrow integration (issue #20)', () => {
         amount: 75,
         vendorAddress: VENDOR,
         buyerAddress: BUYER,
-        state: 'FUNDED',
+        state: 'CREATED',
         paymentUrl: expect.stringContaining('/pay/'),
       }),
     );
@@ -166,7 +166,7 @@ describe('POST /escrow integration (issue #20)', () => {
       .get('/vendor/escrows')
       .set('Authorization', bearer(VENDOR))
       .query({
-        state: 'FUNDED',
+        state: 'CREATED',
         sort: 'amount',
         order: 'desc',
         page: 1,

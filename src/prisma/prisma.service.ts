@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleDestroy, Optional } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 
 // AES-256-GCM ciphertext produced by contact-encryption.util: iv:authTag:ciphertext
 // IV = 12 bytes (24 hex), tag = 16 bytes (32 hex), ciphertext = 1+ hex chars.
@@ -170,9 +170,54 @@ export interface EscrowEventRecord {
   createdAt: Date;
 }
 
+export interface VendorAccountDetailsRecord {
+  id: string;
+  vendorAddress: string;
+  businessLicense: string | null;
+  taxId: string | null;
+  bankAccountNumber: string | null;
+  bankRoutingNumber: string | null;
+  paymentMethods: string[];
+  preferredCurrency: string;
+  billingAddress: string | null;
+  billingCity: string | null;
+  billingState: string | null;
+  billingCountry: string | null;
+  billingPostalCode: string | null;
+  shippingAddress: string | null;
+  shippingCity: string | null;
+  shippingState: string | null;
+  shippingCountry: string | null;
+  shippingPostalCode: string | null;
+  websiteUrl: string | null;
+  socialMediaLinks: string[];
+  businessHours: string | null;
+  timezone: string;
+  language: string;
+  verificationStatus: string;
+  verifiedAt: Date | null;
+  kycStatus: string;
+  kycCompletedAt: Date | null;
+  riskScore: number;
+  complianceNotes: string | null;
+  customFields: Record<string, unknown> | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 export interface CursorRecord {
   id: string;
   cursorValue: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// Issues #498, #499 — persisted, encrypted provider credentials (e.g. the
+// logistics API key), keyed by provider name so a rotation survives a
+// restart and propagates across replicas.
+export interface ProviderCredentialRecord {
+  provider: string;
+  encryptedKey: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -310,7 +355,7 @@ type VendorTrackingSettingsUpdateInput = Partial<
 >;
 
 @Injectable()
-export class PrismaService implements OnModuleDestroy {
+export class PrismaService {
   // databaseUrl is accepted so the module can pass the pool-tuned URL from
   // ConfigService. The in-memory store does not use it, but a real PrismaClient
   // replacement should forward it to `new PrismaClient({ datasources: { db: { url } } })`.
@@ -368,6 +413,10 @@ export class PrismaService implements OnModuleDestroy {
     string,
     VendorTrackingSettingsRecord
   >();
+  private vendorAccountDetailsStore = new Map<
+    string,
+    VendorAccountDetailsRecord
+  >();
   private webhookEvents = new Map<string, ProcessedWebhookEventRecord>();
   private refreshTokens = new Map<string, RefreshTokenRecord>();
   private nonces = new Map<string, NonceRecord>();
@@ -407,7 +456,7 @@ export class PrismaService implements OnModuleDestroy {
         ...data,
         id: data.id ?? String(this.escrowId++),
         itemRef: data.itemRef ?? '',
-        state: data.state ?? 'FUNDED',
+        state: data.state ?? 'CREATED',
         trackingId: data.trackingId ?? null,
         shippedAt: data.shippedAt ?? null,
         deliveredAt: data.deliveredAt ?? null,
@@ -606,6 +655,25 @@ export class PrismaService implements OnModuleDestroy {
         return Promise.resolve({ count: 1 });
       }
       return Promise.resolve({ count: 0 });
+    },
+    count: ({
+      where,
+    }: {
+      where?: Partial<
+        Pick<
+          EscrowRecord,
+          | 'state'
+          | 'trackingId'
+          | 'vendorAddress'
+          | 'buyerAddress'
+          | 'disputeId'
+          | 'itemRef'
+          | 'autoReleaseTxHash'
+          | 'autoReleaseSubmittedAt'
+        >
+      >;
+    } = {}): Promise<number> => {
+      return this.escrow.findMany({ where }).then((records) => records.length);
     },
     deleteMany: (): Promise<{ count: number }> => {
       const count = this.escrows.size;
@@ -1121,6 +1189,74 @@ export class PrismaService implements OnModuleDestroy {
     },
   };
 
+  vendorAccountDetails = {
+    findUnique: ({
+      where,
+    }: {
+      where: { vendorAddress: string };
+    }): Promise<VendorAccountDetailsRecord | null> => {
+      const details = this.vendorAccountDetailsStore.get(where.vendorAddress);
+      return Promise.resolve(details ? { ...details } : null);
+    },
+    upsert: ({
+      where,
+      create,
+      update,
+    }: {
+      where: { vendorAddress: string };
+      create: Partial<VendorAccountDetailsRecord>;
+      update: Partial<VendorAccountDetailsRecord>;
+    }): Promise<VendorAccountDetailsRecord> => {
+      const existing = this.vendorAccountDetailsStore.get(where.vendorAddress);
+      const now = new Date();
+      if (existing) {
+        const updated = {
+          ...existing,
+          ...update,
+          updatedAt: now,
+        };
+        this.vendorAccountDetailsStore.set(where.vendorAddress, updated);
+        return Promise.resolve({ ...updated });
+      }
+      const created: VendorAccountDetailsRecord = {
+        id: `account-${where.vendorAddress}`,
+        vendorAddress: where.vendorAddress,
+        businessLicense: create.businessLicense ?? null,
+        taxId: create.taxId ?? null,
+        bankAccountNumber: create.bankAccountNumber ?? null,
+        bankRoutingNumber: create.bankRoutingNumber ?? null,
+        paymentMethods: create.paymentMethods ?? [],
+        preferredCurrency: create.preferredCurrency ?? 'USD',
+        billingAddress: create.billingAddress ?? null,
+        billingCity: create.billingCity ?? null,
+        billingState: create.billingState ?? null,
+        billingCountry: create.billingCountry ?? null,
+        billingPostalCode: create.billingPostalCode ?? null,
+        shippingAddress: create.shippingAddress ?? null,
+        shippingCity: create.shippingCity ?? null,
+        shippingState: create.shippingState ?? null,
+        shippingCountry: create.shippingCountry ?? null,
+        shippingPostalCode: create.shippingPostalCode ?? null,
+        websiteUrl: create.websiteUrl ?? null,
+        socialMediaLinks: create.socialMediaLinks ?? [],
+        businessHours: create.businessHours ?? null,
+        timezone: create.timezone ?? 'UTC',
+        language: create.language ?? 'en',
+        verificationStatus: create.verificationStatus ?? 'PENDING',
+        verifiedAt: create.verifiedAt ?? null,
+        kycStatus: create.kycStatus ?? 'NOT_STARTED',
+        kycCompletedAt: create.kycCompletedAt ?? null,
+        riskScore: create.riskScore ?? 0,
+        complianceNotes: create.complianceNotes ?? null,
+        customFields: create.customFields ?? null,
+        createdAt: now,
+        updatedAt: now,
+      };
+      this.vendorAccountDetailsStore.set(where.vendorAddress, created);
+      return Promise.resolve({ ...created });
+    },
+  };
+
   /**
    * Mock implementation of Prisma's $queryRaw for testing.
    * Supports basic aggregation queries for the analytics service.
@@ -1196,8 +1332,23 @@ export class PrismaService implements OnModuleDestroy {
     return date.toLocaleDateString('en-CA', { timeZone: timezone });
   }
 
-  /** Clears all in-memory Prisma test data and resets generated IDs. */
+  /**
+   * Clears all in-memory Prisma test data and resets generated IDs.
+   *
+   * Test-only. This truncates every store, so it must never be reachable from
+   * a running process outside the test environment. It used to also run from
+   * `onModuleDestroy`, which meant every graceful shutdown (including
+   * production SIGTERM handling via `app.enableShutdownHooks()`) wiped the
+   * data. `onModuleDestroy` no longer calls this; the guard below is the
+   * remaining backstop against any other accidental call path (issue #509).
+   */
   async reset(): Promise<void> {
+    if (process.env.NODE_ENV !== 'test') {
+      throw new Error(
+        'PrismaService.reset() is a test-only helper and refuses to run ' +
+          `outside NODE_ENV=test (current: ${process.env.NODE_ENV ?? 'undefined'}).`,
+      );
+    }
     await this.refreshToken.deleteMany();
     await this.nonce.deleteMany();
     await this.vendorProfile.deleteMany();
@@ -1208,17 +1359,13 @@ export class PrismaService implements OnModuleDestroy {
     await this.processedWebhookEvent.deleteMany();
     this.vendorTrackingSettingsStore.clear();
     this.failedTransactionStore.clear();
+    this.providerCredentialStore.clear();
     this.escrowId = 1;
     this.disputeId = 1;
     this.notificationId = 1;
     this.refreshTokenId = 1;
     this.nonceId = 1;
     this.escrowEventId = 1;
-  }
-
-  /** Clears in-memory data when the Nest module is destroyed. */
-  async onModuleDestroy(): Promise<void> {
-    await this.reset();
   }
 
   private cursorStore = new Map<string, CursorRecord>();
@@ -1338,6 +1485,48 @@ export class PrismaService implements OnModuleDestroy {
       };
       this.failedTransactionStore.set(where.id, updated);
       return Promise.resolve({ ...updated });
+    },
+  };
+
+  private providerCredentialStore = new Map<string, ProviderCredentialRecord>();
+
+  providerCredential = {
+    findUnique: ({
+      where,
+    }: {
+      where: { provider: string };
+    }): Promise<ProviderCredentialRecord | null> => {
+      const record = this.providerCredentialStore.get(where.provider);
+      return Promise.resolve(record ? { ...record } : null);
+    },
+    upsert: ({
+      where,
+      update,
+      create,
+    }: {
+      where: { provider: string };
+      update: { encryptedKey: string };
+      create: { provider: string; encryptedKey: string };
+    }): Promise<ProviderCredentialRecord> => {
+      const existing = this.providerCredentialStore.get(where.provider);
+      if (existing) {
+        const updated: ProviderCredentialRecord = {
+          ...existing,
+          encryptedKey: update.encryptedKey,
+          updatedAt: new Date(),
+        };
+        this.providerCredentialStore.set(where.provider, updated);
+        return Promise.resolve({ ...updated });
+      }
+      const now = new Date();
+      const record: ProviderCredentialRecord = {
+        provider: create.provider,
+        encryptedKey: create.encryptedKey,
+        createdAt: now,
+        updatedAt: now,
+      };
+      this.providerCredentialStore.set(record.provider, record);
+      return Promise.resolve({ ...record });
     },
   };
 }

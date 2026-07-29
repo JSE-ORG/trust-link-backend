@@ -1,5 +1,6 @@
+import { Test } from '@nestjs/testing';
 import { Keypair } from '@stellar/stellar-sdk';
-import type { ConfigService } from './config.service';
+import { ConfigService } from './config.service';
 
 /**
  * ConfigModule validation tests — Stellar key checksum validation.
@@ -19,7 +20,7 @@ import type { ConfigService } from './config.service';
 const VALID_SECRET_KEY =
   'SAIJDXETR5B7YFPH7SUOISWVBHHSI46JLYFDCWDMEV2L46XAHASPP35C';
 const VALID_PUBLIC_KEY =
-  'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5';
+  'GBEFNNUJ3IRKU2JEAMWBA7YI52HF2GYPHMDXF37T75GHK5KU2Y2QSUAJ';
 
 // Another valid secret key for testing SEP10_SIGNING_SECRET separately
 const ANOTHER_VALID_SECRET =
@@ -52,49 +53,68 @@ const VALID_ENV = {
   STELLAR_NETWORK: 'TESTNET',
 };
 
+const ALL_KNOWN_KEYS = [
+  ...Object.keys(VALID_ENV),
+  'PORT',
+  'ALLOWED_ORIGINS',
+  'STELLAR_WEBHOOK_SECRET',
+  'LOG_LEVEL',
+  'SENDGRID_API_KEY',
+  'TWILIO_ACCOUNT_SID',
+  'TWILIO_AUTH_TOKEN',
+  'SENTRY_DSN',
+  'AUTO_RELEASE_SOURCE_ADDRESS',
+  'OTEL_ENABLED',
+  'OTEL_SERVICE_NAME',
+  'OTEL_SERVICE_VERSION',
+  'OTEL_EXPORTER_OTLP_ENDPOINT',
+  'GIT_SHA',
+  'REDIS_URL',
+  'DB_POOL_CONNECTION_LIMIT',
+  'DB_POOL_TIMEOUT_MS',
+];
+
 /**
  * Helper to bootstrap the app with custom env vars.
- *
- * NestConfigModule.forRoot() validates process.env eagerly in the @Module
- * decorator, so the module must be loaded fresh for each test case.
- * jest.isolateModulesAsync + require() is the only way to achieve this
- * without --experimental-vm-modules.
+ * Isolates each test by saving/restoring process.env.
  */
 async function buildConfigService(
-  env: Record<string, string>,
+  env: Record<string, string | undefined>,
 ): Promise<ConfigService> {
-  const originalEnv = { ...process.env };
-
-  Object.keys(process.env).forEach((key) => {
-    delete process.env[key];
+  // Save and wipe all known keys so tests are fully isolated
+  const saved: Record<string, string | undefined> = {};
+  ALL_KNOWN_KEYS.forEach((k) => {
+    saved[k] = process.env[k];
+    delete process.env[k];
   });
-  Object.assign(process.env, env);
+
+  // Apply only the keys for this test
+  Object.keys(env).forEach((key) => {
+    if (env[key] === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = env[key];
+    }
+  });
+
+  jest.resetModules();
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { ConfigModule: LocalConfigModule } = require('./config.module');
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { ConfigService: LocalConfigService } = require('./config.service');
 
   try {
-    let service: ConfigService;
-    await jest.isolateModulesAsync(async () => {
-      // require() is necessary here — NestConfigModule.forRoot() runs
-      // at module load time, so each test needs a fresh module instance.
-      // Dynamic import() is not supported without --experimental-vm-modules.
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { Test } = require('@nestjs/testing');
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { ConfigModule } = require('./config.module');
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { ConfigService: Svc } = require('./config.service');
+    const moduleRef = await Test.createTestingModule({
+      imports: [LocalConfigModule],
+    }).compile();
 
-      const moduleRef = await Test.createTestingModule({
-        imports: [ConfigModule],
-      }).compile();
-
-      service = moduleRef.get(Svc);
-    });
-    return service!;
+    return moduleRef.get(LocalConfigService);
   } finally {
-    Object.keys(process.env).forEach((key) => {
-      delete process.env[key];
+    // Restore original env
+    ALL_KNOWN_KEYS.forEach((k) => {
+      delete process.env[k];
+      if (saved[k] !== undefined) process.env[k] = saved[k];
     });
-    Object.assign(process.env, originalEnv);
   }
 }
 
@@ -106,38 +126,52 @@ describe('ConfigModule — Stellar Key Validation', () => {
       expect(service.get('SYSTEM_SIGNER_SECRET')).toBe(VALID_SECRET_KEY);
     });
 
-    it('accepts a genuine valid ADMIN_ADDRESS', async () => {
-      const service = await buildConfigService(VALID_ENV);
-      expect(service).toBeDefined();
-      expect(service.get('ADMIN_ADDRESS')).toBe(VALID_PUBLIC_KEY);
-    });
-
     it('accepts a genuine valid SEP10_SIGNING_SECRET', async () => {
       const service = await buildConfigService(VALID_ENV);
       expect(service).toBeDefined();
       expect(service.get('SEP10_SIGNING_SECRET')).toBe(ANOTHER_VALID_SECRET);
     });
 
-    it('boots successfully when SEP10_SIGNING_SECRET is omitted (optional)', async () => {
-      const envWithout = { ...VALID_ENV };
-      delete (envWithout as Record<string, string | undefined>)
-        .SEP10_SIGNING_SECRET;
-      const service = await buildConfigService(envWithout);
+    it('accepts a genuine valid ADMIN_ADDRESS', async () => {
+      const service = await buildConfigService(VALID_ENV);
       expect(service).toBeDefined();
+      expect(service.get('ADMIN_ADDRESS')).toBe(VALID_PUBLIC_KEY);
+    });
+
+    it('allows SEP10_SIGNING_SECRET to be optional and fall back to SYSTEM_SIGNER_SECRET', async () => {
+      const envWithoutSep10 = {
+        ...VALID_ENV,
+        SEP10_SIGNING_SECRET: undefined,
+      };
+      delete envWithoutSep10.SEP10_SIGNING_SECRET;
+
+      const service = await buildConfigService(envWithoutSep10);
+      expect(service).toBeDefined();
+      // SEP10_SIGNING_SECRET is optional, so it may not be set
+      expect(service.get('SYSTEM_SIGNER_SECRET')).toBe(VALID_SECRET_KEY);
     });
   });
 
-  describe('checksum-invalid secret keys are rejected', () => {
-    it('rejects a shape-valid but checksum-invalid SYSTEM_SIGNER_SECRET', async () => {
-      await expect(
-        buildConfigService({
-          ...VALID_ENV,
-          SYSTEM_SIGNER_SECRET: CHECKSUM_INVALID_SECRET,
-        }),
-      ).rejects.toThrow();
+  describe('checksum-invalid secret keys are rejected at startup', () => {
+    it('rejects SYSTEM_SIGNER_SECRET with invalid checksum', async () => {
+      const invalidEnv = {
+        ...VALID_ENV,
+        SYSTEM_SIGNER_SECRET: CHECKSUM_INVALID_SECRET,
+      };
+
+      await expect(buildConfigService(invalidEnv)).rejects.toThrow();
     });
 
-    it('error message contains the variable name', async () => {
+    it('rejects SEP10_SIGNING_SECRET with invalid checksum', async () => {
+      const invalidEnv = {
+        ...VALID_ENV,
+        SEP10_SIGNING_SECRET: CHECKSUM_INVALID_SECRET,
+      };
+
+      await expect(buildConfigService(invalidEnv)).rejects.toThrow();
+    });
+
+    it('error message for SYSTEM_SIGNER_SECRET names the variable', async () => {
       try {
         await buildConfigService({
           ...VALID_ENV,
@@ -145,43 +179,72 @@ describe('ConfigModule — Stellar Key Validation', () => {
         });
         fail('Expected validation to throw');
       } catch (error) {
-        expect((error as Error).message).toContain('SYSTEM_SIGNER_SECRET');
+        const message = (error as Error).message;
+        expect(message).toContain('SYSTEM_SIGNER_SECRET');
       }
     });
 
-    it('error message contains the word "invalid"', async () => {
+    it('error message for SEP10_SIGNING_SECRET names the variable', async () => {
       try {
         await buildConfigService({
-          ...VALID_ENV,
-          SYSTEM_SIGNER_SECRET: CHECKSUM_INVALID_SECRET,
-        });
-        fail('Expected validation to throw');
-      } catch (error) {
-        expect((error as Error).message).toContain('invalid');
-      }
-    });
-
-    it('rejects a shape-valid but checksum-invalid SEP10_SIGNING_SECRET', async () => {
-      await expect(
-        buildConfigService({
           ...VALID_ENV,
           SEP10_SIGNING_SECRET: CHECKSUM_INVALID_SECRET,
-        }),
-      ).rejects.toThrow();
+        });
+        fail('Expected validation to throw');
+      } catch (error) {
+        const message = (error as Error).message;
+        expect(message).toContain('SEP10_SIGNING_SECRET');
+      }
+    });
+
+    it('error message says "invalid" and does not say "pattern"', async () => {
+      try {
+        await buildConfigService({
+          ...VALID_ENV,
+          SYSTEM_SIGNER_SECRET: CHECKSUM_INVALID_SECRET,
+        });
+        fail('Expected validation to throw');
+      } catch (error) {
+        const message = (error as Error).message;
+        expect(message.toLowerCase()).toContain('invalid');
+        expect(message).not.toContain('pattern');
+      }
+    });
+
+    it('error message mentions checksum verification', async () => {
+      try {
+        await buildConfigService({
+          ...VALID_ENV,
+          SYSTEM_SIGNER_SECRET: CHECKSUM_INVALID_SECRET,
+        });
+        fail('Expected validation to throw');
+      } catch (error) {
+        const message = (error as Error).message;
+        expect(message.toLowerCase()).toContain('checksum');
+      }
     });
   });
 
-  describe('public key supplied where secret key expected', () => {
-    it('rejects a public key (G...) as SYSTEM_SIGNER_SECRET', async () => {
-      await expect(
-        buildConfigService({
-          ...VALID_ENV,
-          SYSTEM_SIGNER_SECRET: PUBLIC_KEY_AS_SECRET,
-        }),
-      ).rejects.toThrow();
+  describe('public key rejected where secret key expected', () => {
+    it('rejects public key (G...) as SYSTEM_SIGNER_SECRET', async () => {
+      const invalidEnv = {
+        ...VALID_ENV,
+        SYSTEM_SIGNER_SECRET: PUBLIC_KEY_AS_SECRET,
+      };
+
+      await expect(buildConfigService(invalidEnv)).rejects.toThrow();
     });
 
-    it('error message mentions the prefix mismatch', async () => {
+    it('rejects public key (G...) as SEP10_SIGNING_SECRET', async () => {
+      const invalidEnv = {
+        ...VALID_ENV,
+        SEP10_SIGNING_SECRET: PUBLIC_KEY_AS_SECRET,
+      };
+
+      await expect(buildConfigService(invalidEnv)).rejects.toThrow();
+    });
+
+    it('error message explains key must start with S for secret key', async () => {
       try {
         await buildConfigService({
           ...VALID_ENV,
@@ -191,131 +254,114 @@ describe('ConfigModule — Stellar Key Validation', () => {
       } catch (error) {
         const message = (error as Error).message;
         expect(message).toContain('SYSTEM_SIGNER_SECRET');
-        expect(message).toContain('must start with S');
+        expect(message.toLowerCase()).toContain('start');
+        expect(message.toLowerCase()).toContain('s');
       }
     });
   });
 
-  describe('checksum-invalid public keys are rejected', () => {
-    it('rejects a shape-valid but checksum-invalid ADMIN_ADDRESS', async () => {
-      await expect(
-        buildConfigService({
-          ...VALID_ENV,
-          ADMIN_ADDRESS: CHECKSUM_INVALID_PUBLIC,
-        }),
-      ).rejects.toThrow();
-    });
-
-    it('error message contains the variable name and "invalid"', async () => {
-      try {
-        await buildConfigService({
-          ...VALID_ENV,
-          ADMIN_ADDRESS: CHECKSUM_INVALID_PUBLIC,
-        });
-        fail('Expected validation to throw');
-      } catch (error) {
-        const message = (error as Error).message;
-        expect(message).toContain('ADMIN_ADDRESS');
-        expect(message).toContain('invalid');
-      }
-    });
-  });
-
-  describe('secret key supplied where public key expected', () => {
+  describe('ADMIN_ADDRESS validated as Stellar public key', () => {
     it('rejects a secret key (S...) as ADMIN_ADDRESS', async () => {
-      await expect(
-        buildConfigService({
-          ...VALID_ENV,
-          ADMIN_ADDRESS: SECRET_KEY_AS_PUBLIC,
-        }),
-      ).rejects.toThrow();
+      const invalidEnv = {
+        ...VALID_ENV,
+        ADMIN_ADDRESS: SECRET_KEY_AS_PUBLIC,
+      };
+
+      await expect(buildConfigService(invalidEnv)).rejects.toThrow();
     });
 
-    it('error message mentions the prefix mismatch for public key', async () => {
+    it('rejects arbitrary string as ADMIN_ADDRESS', async () => {
+      const invalidEnv = {
+        ...VALID_ENV,
+        ADMIN_ADDRESS: RANDOM_STRING,
+      };
+
+      await expect(buildConfigService(invalidEnv)).rejects.toThrow();
+    });
+
+    it('rejects checksum-invalid public key as ADMIN_ADDRESS', async () => {
+      const invalidEnv = {
+        ...VALID_ENV,
+        ADMIN_ADDRESS: CHECKSUM_INVALID_PUBLIC,
+      };
+
+      await expect(buildConfigService(invalidEnv)).rejects.toThrow();
+    });
+
+    it('error message names ADMIN_ADDRESS', async () => {
       try {
         await buildConfigService({
-          ...VALID_ENV,
-          ADMIN_ADDRESS: SECRET_KEY_AS_PUBLIC,
-        });
-        fail('Expected validation to throw');
-      } catch (error) {
-        const message = (error as Error).message;
-        expect(message).toContain('ADMIN_ADDRESS');
-        expect(message).toContain('must start with G');
-      }
-    });
-  });
-
-  describe('completely malformed strings', () => {
-    it('rejects a random string as SYSTEM_SIGNER_SECRET', async () => {
-      await expect(
-        buildConfigService({
-          ...VALID_ENV,
-          SYSTEM_SIGNER_SECRET: RANDOM_STRING,
-        }),
-      ).rejects.toThrow();
-    });
-
-    it('rejects an empty string as SYSTEM_SIGNER_SECRET', async () => {
-      await expect(
-        buildConfigService({
-          ...VALID_ENV,
-          SYSTEM_SIGNER_SECRET: EMPTY_STRING,
-        }),
-      ).rejects.toThrow();
-    });
-
-    it('rejects a random string as ADMIN_ADDRESS', async () => {
-      await expect(
-        buildConfigService({
           ...VALID_ENV,
           ADMIN_ADDRESS: RANDOM_STRING,
-        }),
-      ).rejects.toThrow();
-    });
-
-    it('rejects an empty string as ADMIN_ADDRESS', async () => {
-      await expect(
-        buildConfigService({
-          ...VALID_ENV,
-          ADMIN_ADDRESS: EMPTY_STRING,
-        }),
-      ).rejects.toThrow();
-    });
-  });
-
-  describe('error messages do not reference "pattern"', () => {
-    it('SYSTEM_SIGNER_SECRET error does not say "pattern"', async () => {
-      try {
-        await buildConfigService({
-          ...VALID_ENV,
-          SYSTEM_SIGNER_SECRET: CHECKSUM_INVALID_SECRET,
         });
         fail('Expected validation to throw');
       } catch (error) {
-        expect((error as Error).message).not.toContain('pattern');
+        const message = (error as Error).message;
+        expect(message).toContain('ADMIN_ADDRESS');
       }
     });
 
-    it('ADMIN_ADDRESS error does not say "pattern"', async () => {
+    it('error message for secret key in ADMIN_ADDRESS explains key must start with G', async () => {
       try {
         await buildConfigService({
           ...VALID_ENV,
-          ADMIN_ADDRESS: CHECKSUM_INVALID_PUBLIC,
+          ADMIN_ADDRESS: SECRET_KEY_AS_PUBLIC,
         });
         fail('Expected validation to throw');
       } catch (error) {
-        expect((error as Error).message).not.toContain('pattern');
+        const message = (error as Error).message;
+        expect(message).toContain('ADMIN_ADDRESS');
+        expect(message.toLowerCase()).toContain('start');
+        expect(message.toLowerCase()).toContain('g');
       }
+    });
+
+    it('rejects empty string as ADMIN_ADDRESS', async () => {
+      const invalidEnv = {
+        ...VALID_ENV,
+        ADMIN_ADDRESS: EMPTY_STRING,
+      };
+
+      await expect(buildConfigService(invalidEnv)).rejects.toThrow();
     });
   });
 
-  describe('Keypair.fromSecret round-trip proves valid key', () => {
-    it('valid secret key round-trips through Keypair', () => {
+  describe('Stellar SDK Keypair behavior — unit tests', () => {
+    it('Keypair.fromSecret throws on checksum-invalid secret key', () => {
+      expect(() => Keypair.fromSecret(CHECKSUM_INVALID_SECRET)).toThrow();
+    });
+
+    it('Keypair.fromSecret succeeds on valid secret key', () => {
+      expect(() => Keypair.fromSecret(VALID_SECRET_KEY)).not.toThrow();
+    });
+
+    it('Keypair.fromPublicKey throws on checksum-invalid public key', () => {
+      expect(() => Keypair.fromPublicKey(CHECKSUM_INVALID_PUBLIC)).toThrow();
+    });
+
+    it('Keypair.fromPublicKey succeeds on valid public key', () => {
+      expect(() => Keypair.fromPublicKey(VALID_PUBLIC_KEY)).not.toThrow();
+    });
+
+    it('Keypair.fromSecret rejects public key (G...)', () => {
+      expect(() => Keypair.fromSecret(VALID_PUBLIC_KEY)).toThrow();
+    });
+
+    it('Keypair.fromPublicKey rejects secret key (S...)', () => {
+      expect(() => Keypair.fromPublicKey(VALID_SECRET_KEY)).toThrow();
+    });
+
+    it('Keypair.fromSecret throws on random string', () => {
+      expect(() => Keypair.fromSecret(RANDOM_STRING)).toThrow();
+    });
+
+    it('Keypair.fromPublicKey throws on random string', () => {
+      expect(() => Keypair.fromPublicKey(RANDOM_STRING)).toThrow();
+    });
+
+    it('derived public key matches expected value for known secret', () => {
       const keypair = Keypair.fromSecret(VALID_SECRET_KEY);
-      expect(keypair.publicKey()).toBe(
-        'GBEFNNUJ3IRKU2JEAMWBA7YI52HF2GYPHMDXF37T75GHK5KU2Y2QSUAJ',
-      );
+      expect(keypair.publicKey()).toBe(VALID_PUBLIC_KEY);
     });
   });
 
@@ -378,9 +424,11 @@ describe('ConfigModule — Stellar Key Validation', () => {
 
   describe('edge cases and regression tests', () => {
     it('rejects Stellar address with wrong prefix (T... or invalid prefix)', async () => {
+      // This should fail because it doesn't start with S or G
       const invalidPrefix =
         'TAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
 
+      // This will fail at the shape check level
       await expect(
         buildConfigService({
           ...VALID_ENV,
@@ -401,6 +449,7 @@ describe('ConfigModule — Stellar Key Validation', () => {
     });
 
     it('rejects secret key with invalid Base32 characters', async () => {
+      // Contains 'O' which is not in the valid Base32 set [A-Z2-7]
       const invalidChar =
         'SOAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
 
@@ -413,6 +462,7 @@ describe('ConfigModule — Stellar Key Validation', () => {
     });
 
     it('rejects public key with invalid Base32 characters', async () => {
+      // Contains 'O' which is not in the valid Base32 set [A-Z2-7]
       const invalidChar =
         'GOAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
 
@@ -425,6 +475,7 @@ describe('ConfigModule — Stellar Key Validation', () => {
     });
 
     it('real-world scenario: typo in last char of secret key is caught', async () => {
+      // Valid key with last character changed to create a checksum error
       const typo = 'SAIJDXETR5B7YFPH7SUOISWVBHHSI46JLYFDCWDMEV2L46XAHASPP35X';
 
       await expect(

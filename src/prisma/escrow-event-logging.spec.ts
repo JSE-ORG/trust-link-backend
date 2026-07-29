@@ -20,18 +20,20 @@ describe('Escrow state-transition logging (#71/#72)', () => {
     prisma = new PrismaService();
   });
 
-  it('records the initial FUNDED creation event', async () => {
+  it('records the initial CREATED creation event', async () => {
     const escrow = await prisma.escrow.create({ data: baseEscrow });
 
     const events = await prisma.escrowEvent.findMany({
       where: { escrowId: escrow.id },
     });
     expect(events).toHaveLength(1);
-    expect(events[0]).toMatchObject({ fromState: null, toState: 'FUNDED' });
+    expect(events[0]).toMatchObject({ fromState: null, toState: 'CREATED' });
   });
 
   it('records a transition with from/to state on every state change', async () => {
-    const escrow = await prisma.escrow.create({ data: baseEscrow });
+    const escrow = await prisma.escrow.create({
+      data: { ...baseEscrow, state: 'FUNDED' },
+    });
     await prisma.escrow.update({
       where: { id: escrow.id },
       data: { state: 'SHIPPED' },
@@ -52,7 +54,9 @@ describe('Escrow state-transition logging (#71/#72)', () => {
   });
 
   it('does not record an event when the update leaves state unchanged', async () => {
-    const escrow = await prisma.escrow.create({ data: baseEscrow });
+    const escrow = await prisma.escrow.create({
+      data: { ...baseEscrow, state: 'FUNDED' },
+    });
     await prisma.escrow.update({
       where: { id: escrow.id },
       data: { trackingId: 'TRACK-1' },
@@ -69,7 +73,9 @@ describe('Escrow state-transition logging (#71/#72)', () => {
   });
 
   it('records a DISPUTED transition when a dispute is opened', async () => {
-    const escrow = await prisma.escrow.create({ data: baseEscrow });
+    const escrow = await prisma.escrow.create({
+      data: { ...baseEscrow, state: 'FUNDED' },
+    });
     await prisma.dispute.create({
       data: { escrowId: escrow.id, reason: 'item not received' },
     });
@@ -86,6 +92,7 @@ describe('Escrow state-transition logging (#71/#72)', () => {
   it('logs the full lifecycle driven through EscrowRepository', async () => {
     const repo = new EscrowRepository(prisma);
     const escrow = await repo.create(baseEscrow, baseEscrow.vendorAddress);
+    await repo.updateState(escrow.id, 'FUNDED');
     await repo.markShipped(escrow.id, 'TRACK-1');
     await repo.markCompleted(escrow.id);
 
@@ -93,6 +100,7 @@ describe('Escrow state-transition logging (#71/#72)', () => {
       where: { escrowId: escrow.id },
     });
     expect(events.map((e) => e.toState)).toEqual([
+      'CREATED',
       'FUNDED',
       'SHIPPED',
       'COMPLETED',

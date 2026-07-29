@@ -17,10 +17,16 @@ describe('POST /webhooks/stellar (issue #294)', () => {
   let prisma: PrismaService;
 
   const BUYER_ADDR = 'GWEBHOOKBUYER001';
+  const WEBHOOK_SECRET = 'test-webhook-integration-secret';
+
+  const sign = (body: Buffer, secret: string): string =>
+    crypto.createHmac('sha256', secret).update(body).digest('hex');
 
   jest.setTimeout(30000);
 
   beforeEach(async () => {
+    process.env.STELLAR_WEBHOOK_SECRET = WEBHOOK_SECRET;
+
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
@@ -60,6 +66,7 @@ describe('POST /webhooks/stellar (issue #294)', () => {
   });
 
   afterEach(async () => {
+    delete process.env.STELLAR_WEBHOOK_SECRET;
     await app.close();
   });
 
@@ -80,9 +87,13 @@ describe('POST /webhooks/stellar (issue #294)', () => {
 
   it('processes a valid webhook and returns received: true', async () => {
     const payload = makeWebhookPayload();
+    const body = Buffer.from(JSON.stringify(payload), 'utf8');
+    const sig = sign(body, WEBHOOK_SECRET);
 
     const res = await request(app.getHttpServer())
       .post('/webhooks/stellar')
+      .set('Content-Type', 'application/json')
+      .set('x-stellar-signature', sig)
       .send(payload)
       .expect(200);
 
@@ -92,9 +103,13 @@ describe('POST /webhooks/stellar (issue #294)', () => {
   it('records the processed event in ProcessedWebhookEvent table', async () => {
     const opId = `op-record-${Date.now()}`;
     const payload = makeWebhookPayload({ id: opId });
+    const body = Buffer.from(JSON.stringify(payload), 'utf8');
+    const sig = sign(body, WEBHOOK_SECRET);
 
     await request(app.getHttpServer())
       .post('/webhooks/stellar')
+      .set('Content-Type', 'application/json')
+      .set('x-stellar-signature', sig)
       .send(payload)
       .expect(200);
 
@@ -110,9 +125,13 @@ describe('POST /webhooks/stellar (issue #294)', () => {
   it('skips duplicate webhook events (idempotency)', async () => {
     const opId = `op-dup-${Date.now()}`;
     const payload = makeWebhookPayload({ id: opId });
+    const body = Buffer.from(JSON.stringify(payload), 'utf8');
+    const sig = sign(body, WEBHOOK_SECRET);
 
     const res1 = await request(app.getHttpServer())
       .post('/webhooks/stellar')
+      .set('Content-Type', 'application/json')
+      .set('x-stellar-signature', sig)
       .send(payload)
       .expect(200);
 
@@ -120,6 +139,8 @@ describe('POST /webhooks/stellar (issue #294)', () => {
 
     const res2 = await request(app.getHttpServer())
       .post('/webhooks/stellar')
+      .set('Content-Type', 'application/json')
+      .set('x-stellar-signature', sig)
       .send(payload)
       .expect(200);
 
@@ -131,9 +152,13 @@ describe('POST /webhooks/stellar (issue #294)', () => {
   it('tracks duplicate events in ProcessedWebhookEvent table', async () => {
     const opId = `op-dup-track-${Date.now()}`;
     const payload = makeWebhookPayload({ id: opId });
+    const body = Buffer.from(JSON.stringify(payload), 'utf8');
+    const sig = sign(body, WEBHOOK_SECRET);
 
     await request(app.getHttpServer())
       .post('/webhooks/stellar')
+      .set('Content-Type', 'application/json')
+      .set('x-stellar-signature', sig)
       .send(payload)
       .expect(200);
 
@@ -150,9 +175,13 @@ describe('POST /webhooks/stellar (issue #294)', () => {
     const payload = makeWebhookPayload({
       to: 'GUNKNOWN0000000000000000000000000000000',
     });
+    const body = Buffer.from(JSON.stringify(payload), 'utf8');
+    const sig = sign(body, WEBHOOK_SECRET);
 
     const res = await request(app.getHttpServer())
       .post('/webhooks/stellar')
+      .set('Content-Type', 'application/json')
+      .set('x-stellar-signature', sig)
       .send(payload)
       .expect(200);
 
@@ -167,9 +196,13 @@ describe('POST /webhooks/stellar (issue #294)', () => {
       to: undefined,
       from: 'GSENDER001',
     });
+    const body = Buffer.from(JSON.stringify(payload), 'utf8');
+    const sig = sign(body, WEBHOOK_SECRET);
 
     const res = await request(app.getHttpServer())
       .post('/webhooks/stellar')
+      .set('Content-Type', 'application/json')
+      .set('x-stellar-signature', sig)
       .send(payload)
       .expect(200);
 
@@ -179,9 +212,15 @@ describe('POST /webhooks/stellar (issue #294)', () => {
   // ── Missing required fields ───────────────────────────────────────────────
 
   it('returns 400 when payload is missing required fields', async () => {
+    const invalidPayload = { type: 'payment' };
+    const body = Buffer.from(JSON.stringify(invalidPayload), 'utf8');
+    const sig = sign(body, WEBHOOK_SECRET);
+
     await request(app.getHttpServer())
       .post('/webhooks/stellar')
-      .send({ type: 'payment' })
+      .set('Content-Type', 'application/json')
+      .set('x-stellar-signature', sig)
+      .send(invalidPayload)
       .expect(400);
   });
 });

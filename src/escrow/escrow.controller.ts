@@ -20,6 +20,8 @@ import {
   ApiResponse,
   ApiBearerAuth,
   ApiQuery,
+  ApiOkResponse,
+  ApiCreatedResponse,
 } from '@nestjs/swagger';
 import { isUUID } from 'class-validator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -32,6 +34,14 @@ import { UpdateBuyerContactDto } from './dto/update-buyer-contact.dto';
 import { EscrowService } from './escrow.service';
 import { BuyerDisputeService } from './buyer-dispute.service';
 import { SkipThrottle, Throttle } from '@nestjs/throttler';
+import { EscrowResponseDto } from './dto/escrow-response.dto';
+import { EscrowWithPaymentUrlResponseDto } from './dto/escrow-with-payment-url-response.dto';
+import { EvidenceUploadResponseDto } from './dto/evidence-upload.dto';
+import { TrackingResponseDto } from './dto/tracking-response.dto';
+import { BuyerContactUpdateResponseDto } from './dto/buyer-contact-update-response.dto';
+import { EscrowEventEntryDto } from './dto/escrow-event-entry.dto';
+import { DisputeResponseDto } from './dto/dispute-response.dto';
+import { ErrorResponseDto } from '../common/dto/error-response.dto';
 
 @ApiTags('Escrow')
 @SkipThrottle({ auth: true }) // Skip auth limit for escrow endpoints
@@ -56,11 +66,35 @@ export class EscrowController {
    * @rateLimit 10 requests per 60 seconds
    */
   @ApiOperation({ summary: 'Create a new escrow transaction' })
-  @ApiResponse({ status: 201, description: 'Escrow created successfully.' })
-  @ApiResponse({ status: 400, description: 'Validation error.' })
-  @ApiResponse({ status: 401, description: 'Unauthorized.' })
-  @ApiResponse({ status: 429, description: 'Too many requests.' })
-  @ApiResponse({ status: 500, description: 'Internal server error.' })
+  @ApiCreatedResponse({
+    description: 'Escrow created successfully.',
+    type: EscrowWithPaymentUrlResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Validation error.',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Unauthorized.',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 409,
+    description: 'Conflict — duplicate item reference.',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 429,
+    description: 'Too many requests.',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 500,
+    description: 'Internal server error.',
+    type: ErrorResponseDto,
+  })
   @ApiBearerAuth()
   @Post()
   @HttpCode(HttpStatus.CREATED)
@@ -101,10 +135,25 @@ export class EscrowController {
     description: 'Original file name for the evidence being uploaded.',
     example: 'damage-photo.jpg',
   })
-  @ApiResponse({ status: 201, description: 'Pre-signed upload URL generated.' })
-  @ApiResponse({ status: 401, description: 'Unauthorized.' })
-  @ApiResponse({ status: 429, description: 'Too many requests.' })
-  @ApiResponse({ status: 500, description: 'Internal server error.' })
+  @ApiCreatedResponse({
+    description: 'Pre-signed upload URL generated.',
+    type: EvidenceUploadResponseDto,
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Unauthorized.',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 429,
+    description: 'Too many requests.',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 500,
+    description: 'Internal server error.',
+    type: ErrorResponseDto,
+  })
   @ApiBearerAuth()
   @Post('evidence-upload')
   @HttpCode(HttpStatus.CREATED)
@@ -125,10 +174,25 @@ export class EscrowController {
    * @throws NotFoundException if escrow does not exist
    */
   @ApiOperation({ summary: 'Get public escrow details by ID' })
-  @ApiResponse({ status: 200, description: 'Escrow details returned.' })
-  @ApiResponse({ status: 404, description: 'Escrow not found.' })
-  @ApiResponse({ status: 429, description: 'Too many requests.' })
-  @ApiResponse({ status: 500, description: 'Internal server error.' })
+  @ApiOkResponse({
+    description: 'Escrow details returned.',
+    type: EscrowResponseDto,
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Escrow not found.',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 429,
+    description: 'Too many requests.',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 500,
+    description: 'Internal server error.',
+    type: ErrorResponseDto,
+  })
   @Get(':id')
   getEscrow(@Param('id', ParseUUIDPipe) id: string) {
     return this.escrowService.getPublicEscrow(id);
@@ -136,16 +200,32 @@ export class EscrowController {
 
   /**
    * Returns chronological event history for an escrow.
-   * Events include CREATED, SHIPPED, DELIVERED, CANCELLED etc.
+   * Events include CREATED, SHIPPED, DELIVERED, CANCELLED, FUNDED, DISPUTED,
+   * COMPLETED, RELEASED and REFUNDED, read from the EscrowEvent audit table.
    *
    * @param id - UUID of the escrow
-   * @returns Array of event objects with name and timestamp
+   * @returns Array of event objects with event name, timestamp, fromState and toState
    */
   @ApiOperation({ summary: 'Get all events for an escrow transaction' })
-  @ApiResponse({ status: 200, description: 'List of escrow events returned.' })
-  @ApiResponse({ status: 404, description: 'Escrow not found.' })
-  @ApiResponse({ status: 429, description: 'Too many requests.' })
-  @ApiResponse({ status: 500, description: 'Internal server error.' })
+  @ApiOkResponse({
+    description: 'List of escrow events returned.',
+    type: [EscrowEventEntryDto],
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Escrow not found.',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 429,
+    description: 'Too many requests.',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 500,
+    description: 'Internal server error.',
+    type: ErrorResponseDto,
+  })
   @Get(':id/events')
   @Throttle({ public: { limit: 100, ttl: 60000 } })
   getEvents(@Param('id', ParseUUIDPipe) id: string) {
@@ -163,13 +243,25 @@ export class EscrowController {
   @ApiOperation({
     summary: 'Get carrier tracking information for an escrow shipment',
   })
-  @ApiResponse({ status: 200, description: 'Tracking information returned.' })
+  @ApiOkResponse({
+    description: 'Tracking information returned.',
+    type: TrackingResponseDto,
+  })
   @ApiResponse({
     status: 404,
     description: 'Escrow not found or not yet shipped.',
+    type: ErrorResponseDto,
   })
-  @ApiResponse({ status: 429, description: 'Too many requests.' })
-  @ApiResponse({ status: 500, description: 'Internal server error.' })
+  @ApiResponse({
+    status: 429,
+    description: 'Too many requests.',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 500,
+    description: 'Internal server error.',
+    type: ErrorResponseDto,
+  })
   @Get(':id/tracking')
   async getTracking(@Param('id', ParseUUIDPipe) id: string) {
     return this.escrowService.getTracking(id);
@@ -195,11 +287,35 @@ export class EscrowController {
    * @rateLimit 10 requests per 60 seconds
    */
   @ApiOperation({ summary: 'Update buyer contact details for an escrow' })
-  @ApiResponse({ status: 200, description: 'Buyer contact updated.' })
-  @ApiResponse({ status: 400, description: 'Validation error.' })
-  @ApiResponse({ status: 404, description: 'Escrow not found.' })
-  @ApiResponse({ status: 429, description: 'Too many requests.' })
-  @ApiResponse({ status: 500, description: 'Internal server error.' })
+  @ApiOkResponse({
+    description: 'Buyer contact updated.',
+    type: BuyerContactUpdateResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Validation error.',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Escrow not found.',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 409,
+    description: 'Conflict — escrow is in a terminal state.',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 429,
+    description: 'Too many requests.',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 500,
+    description: 'Internal server error.',
+    type: ErrorResponseDto,
+  })
   @Patch(':id/buyer-contact')
   @HttpCode(HttpStatus.OK)
   @Throttle({ public: { limit: 10, ttl: 60000 } })
@@ -225,16 +341,45 @@ export class EscrowController {
    * @rateLimit 20 requests per 60 seconds
    */
   @ApiOperation({ summary: 'Mark an escrow as shipped with a tracking ID' })
-  @ApiResponse({ status: 200, description: 'Escrow marked as shipped.' })
-  @ApiResponse({ status: 400, description: 'Validation error.' })
-  @ApiResponse({ status: 401, description: 'Unauthorized.' })
+  @ApiOkResponse({
+    description: 'Escrow marked as shipped.',
+    type: EscrowResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Validation error.',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Unauthorized.',
+    type: ErrorResponseDto,
+  })
   @ApiResponse({
     status: 403,
     description: 'Forbidden — not the escrow vendor.',
+    type: ErrorResponseDto,
   })
-  @ApiResponse({ status: 404, description: 'Escrow not found.' })
-  @ApiResponse({ status: 429, description: 'Too many requests.' })
-  @ApiResponse({ status: 500, description: 'Internal server error.' })
+  @ApiResponse({
+    status: 404,
+    description: 'Escrow not found.',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 409,
+    description: 'Conflict — escrow is not in FUNDED state.',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 429,
+    description: 'Too many requests.',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 500,
+    description: 'Internal server error.',
+    type: ErrorResponseDto,
+  })
   @ApiBearerAuth()
   @Patch(':id/ship')
   @HttpCode(HttpStatus.OK)
@@ -266,15 +411,40 @@ export class EscrowController {
    * @rateLimit 10 requests per 60 seconds
    */
   @ApiOperation({ summary: 'Cancel an active escrow transaction' })
-  @ApiResponse({ status: 200, description: 'Escrow cancelled.' })
-  @ApiResponse({ status: 401, description: 'Unauthorized.' })
+  @ApiOkResponse({
+    description: 'Escrow cancelled.',
+    type: EscrowResponseDto,
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Unauthorized.',
+    type: ErrorResponseDto,
+  })
   @ApiResponse({
     status: 403,
     description: 'Forbidden — not the escrow vendor or buyer.',
+    type: ErrorResponseDto,
   })
-  @ApiResponse({ status: 404, description: 'Escrow not found.' })
-  @ApiResponse({ status: 429, description: 'Too many requests.' })
-  @ApiResponse({ status: 500, description: 'Internal server error.' })
+  @ApiResponse({
+    status: 404,
+    description: 'Escrow not found.',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 409,
+    description: 'Conflict — escrow is not in FUNDED state.',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 429,
+    description: 'Too many requests.',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 500,
+    description: 'Internal server error.',
+    type: ErrorResponseDto,
+  })
   @ApiBearerAuth()
   @Patch(':id/cancel')
   @HttpCode(HttpStatus.OK)
@@ -306,15 +476,40 @@ export class EscrowController {
    * @rateLimit 10 requests per 60 seconds
    */
   @ApiOperation({ summary: 'Delete a pending (unfunded) escrow transaction' })
-  @ApiResponse({ status: 200, description: 'Pending escrow deleted.' })
-  @ApiResponse({ status: 401, description: 'Unauthorized.' })
+  @ApiOkResponse({
+    description: 'Pending escrow deleted.',
+    type: EscrowResponseDto,
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Unauthorized.',
+    type: ErrorResponseDto,
+  })
   @ApiResponse({
     status: 403,
     description: 'Forbidden — not the escrow vendor or buyer.',
+    type: ErrorResponseDto,
   })
-  @ApiResponse({ status: 404, description: 'Escrow not found.' })
-  @ApiResponse({ status: 429, description: 'Too many requests.' })
-  @ApiResponse({ status: 500, description: 'Internal server error.' })
+  @ApiResponse({
+    status: 404,
+    description: 'Escrow not found.',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 409,
+    description: 'Conflict — escrow is not in CREATED state.',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 429,
+    description: 'Too many requests.',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 500,
+    description: 'Internal server error.',
+    type: ErrorResponseDto,
+  })
   @ApiBearerAuth()
   @Delete(':id')
   @HttpCode(HttpStatus.OK)
@@ -346,12 +541,45 @@ export class EscrowController {
    * @rateLimit 5 requests per 60 seconds
    */
   @ApiOperation({ summary: 'Open a dispute for an escrow transaction' })
-  @ApiResponse({ status: 201, description: 'Dispute opened successfully.' })
-  @ApiResponse({ status: 400, description: 'Validation error.' })
-  @ApiResponse({ status: 401, description: 'Unauthorized.' })
-  @ApiResponse({ status: 404, description: 'Escrow not found.' })
-  @ApiResponse({ status: 429, description: 'Too many requests.' })
-  @ApiResponse({ status: 500, description: 'Internal server error.' })
+  @ApiCreatedResponse({
+    description: 'Dispute opened successfully.',
+    type: DisputeResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Validation error.',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Unauthorized.',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden — caller is not the buyer.',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Escrow not found.',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 409,
+    description: 'Conflict — escrow is in a terminal state.',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 429,
+    description: 'Too many requests.',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 500,
+    description: 'Internal server error.',
+    type: ErrorResponseDto,
+  })
   @ApiBearerAuth()
   @Post(':id/dispute')
   @HttpCode(HttpStatus.CREATED)
@@ -378,11 +606,35 @@ export class EscrowController {
    * @rateLimit 30 requests per 60 seconds
    */
   @ApiOperation({ summary: 'Get the dispute record for an escrow transaction' })
-  @ApiResponse({ status: 200, description: 'Dispute details returned.' })
-  @ApiResponse({ status: 401, description: 'Unauthorized.' })
-  @ApiResponse({ status: 404, description: 'Dispute not found.' })
-  @ApiResponse({ status: 429, description: 'Too many requests.' })
-  @ApiResponse({ status: 500, description: 'Internal server error.' })
+  @ApiOkResponse({
+    description: 'Dispute details returned.',
+    type: DisputeResponseDto,
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Unauthorized.',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden — caller is not the buyer or vendor.',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Dispute not found.',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 429,
+    description: 'Too many requests.',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 500,
+    description: 'Internal server error.',
+    type: ErrorResponseDto,
+  })
   @ApiBearerAuth()
   @Get(':id/dispute')
   @UseGuards(JwtGuard)
