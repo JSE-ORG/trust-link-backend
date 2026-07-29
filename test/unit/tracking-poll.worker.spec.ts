@@ -63,11 +63,13 @@ describe('TrackingPollWorker (issue #11)', () => {
 
     await worker.run();
 
+    // Delivery is recorded on-chain BEFORE marking as DELIVERED in the DB
+    // so that a contract failure leaves the escrow retryable.
+    expect(contractService.recordDelivery).toHaveBeenCalledWith('escrow-1');
     expect(escrowRepository.markDelivered).toHaveBeenCalledWith(
       'escrow-1',
       expect.any(Date),
     );
-    expect(contractService.recordDelivery).toHaveBeenCalledWith('escrow-1');
   });
 
   it('keeps polling resilient to carrier API failures', async () => {
