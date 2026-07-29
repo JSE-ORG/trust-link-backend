@@ -56,8 +56,13 @@ export class TrackingPollWorker implements OnModuleInit, OnApplicationShutdown {
           }
 
           const deliveredAt = new Date();
-          await this.escrowRepository.markDelivered(escrow.id, deliveredAt);
+          // Call the contract first so a failure leaves the escrow in SHIPPED
+          // state, allowing the next poll cycle to retry. Only mark as
+          // DELIVERED in the database after the chain call succeeds.
+          // This follows the same claim-and-release pattern used by
+          // AutoReleaseWorker (see auto-release.worker.ts).
           await this.contractService.recordDelivery(escrow.id);
+          await this.escrowRepository.markDelivered(escrow.id, deliveredAt);
         } catch (error) {
           this.logger.error(
             JSON.stringify({
