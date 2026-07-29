@@ -25,20 +25,19 @@ describe('ApiKeysController (issue #410) — business logic', () => {
     expect(logisticsService.getApiKey()).toBe('very-secret-key');
   });
 
-  it('rotates existing encrypted key via reencryptCredential without leaking secrets', async () => {
+  it('rotates to the submitted key (not re-encrypting old one) and does not leak secrets', async () => {
     // First set a key
-    const util = jest.requireActual('../../src/common/sanitization/credential-encryption.util');
-    const spy = jest.spyOn(util, 'reencryptCredential').mockReturnValue('reencrypted:val');
+    await controller.rotateLogisticsKey(buildDto('old-key'));
+    const encryptedBefore = logisticsService.getEncryptedApiKey();
 
-    logisticsService.setEncryptedApiKey('old:enc:key');
-
-    const result = await controller.rotateLogisticsKey(buildDto('should-not-be-used'));
+    const result = await controller.rotateLogisticsKey(buildDto('new-key'));
 
     expect(result).toEqual({ message: 'Logistics API key updated and encrypted' });
-    expect(spy).toHaveBeenCalledWith('old:enc:key');
-    expect(JSON.stringify(result)).not.toContain('old:enc:key');
-
-    spy.mockRestore();
+    // The submitted key is used, not the old one re-encrypted
+    expect(logisticsService.getApiKey()).toBe('new-key');
+    expect(logisticsService.getEncryptedApiKey()).not.toBe(encryptedBefore);
+    expect(JSON.stringify(result)).not.toContain('old-key');
+    expect(JSON.stringify(result)).not.toContain('new-key');
   });
 });
 
