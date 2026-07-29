@@ -2,14 +2,13 @@ import './tracing/tracing.bootstrap';
 import * as Sentry from '@sentry/nestjs';
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
-import { SwaggerModule } from '@nestjs/swagger';
 import compression from 'compression';
 import * as express from 'express';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { ConfigService } from './config/config.service';
 import { JsonLoggerService } from './common/logger/json-logger.service';
-import { createOpenApiDocument } from './openapi';
+import { createOpenApiDocument, setupOpenApiUi } from './openapi';
 import { SanitizationPipe } from './common/pipes/sanitization.pipe';
 import { SentryInterceptor } from './common/interceptors/sentry.interceptor';
 import { buildCspConnectSrc } from './common/security/csp.config';
@@ -158,7 +157,7 @@ async function bootstrap(): Promise<void> {
   );
 
   const document = createOpenApiDocument(app);
-  SwaggerModule.setup('api/docs', app, document);
+  setupOpenApiUi(app, document, isProduction);
 
   app.enableShutdownHooks();
 

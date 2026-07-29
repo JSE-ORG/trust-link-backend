@@ -892,14 +892,32 @@ export class PrismaService {
     },
     findMany: ({
       where,
+      orderBy,
     }: {
       where?: Partial<Pick<EscrowEventRecord, 'escrowId'>>;
+      orderBy?: Array<Partial<Record<'createdAt' | 'id', 'asc' | 'desc'>>>;
     } = {}): Promise<EscrowEventRecord[]> => {
       const events = [...this.escrowEvents.values()]
         .filter(
           (event) => !where?.escrowId || event.escrowId === where.escrowId,
         )
-        .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+        .sort((a, b) => {
+          for (const clause of orderBy ?? [{ createdAt: 'asc' }]) {
+            const [field, direction] = Object.entries(clause)[0] as [
+              'createdAt' | 'id',
+              'asc' | 'desc',
+            ];
+            const left =
+              field === 'createdAt' ? a.createdAt.getTime() : a.id;
+            const right =
+              field === 'createdAt' ? b.createdAt.getTime() : b.id;
+            const comparison = left < right ? -1 : left > right ? 1 : 0;
+            if (comparison !== 0) {
+              return direction === 'asc' ? comparison : -comparison;
+            }
+          }
+          return 0;
+        });
       return Promise.resolve(events.map((event) => ({ ...event })));
     },
     deleteMany: (): Promise<{ count: number }> => {
