@@ -1,4 +1,4 @@
-import { Injectable, Logger, Optional } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy, Optional } from '@nestjs/common';
 
 // AES-256-GCM ciphertext produced by contact-encryption.util: iv:authTag:ciphertext
 // IV = 12 bytes (24 hex), tag = 16 bytes (32 hex), ciphertext = 1+ hex chars.
@@ -212,16 +212,6 @@ export interface CursorRecord {
   updatedAt: Date;
 }
 
-// Issues #498, #499 — persisted, encrypted provider credentials (e.g. the
-// logistics API key), keyed by provider name so a rotation survives a
-// restart and propagates across replicas.
-export interface ProviderCredentialRecord {
-  provider: string;
-  encryptedKey: string;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
 export type FailedTransactionStatus =
   'PENDING_REVIEW' | 'REPLAYED' | 'ABANDONED';
 
@@ -355,19 +345,16 @@ type VendorTrackingSettingsUpdateInput = Partial<
 >;
 
 @Injectable()
-export class PrismaService {
+export class PrismaService implements OnModuleDestroy {
   // databaseUrl is accepted so the module can pass the pool-tuned URL from
   // ConfigService. The in-memory store does not use it, but a real PrismaClient
   // replacement should forward it to `new PrismaClient({ datasources: { db: { url } } })`.
-  constructor(@Optional() readonly databaseUrl?: string) {
+  constructor(readonly databaseUrl?: string) {
     // Issue #316: apply statement_timeout to prevent long-running queries
     if (databaseUrl) {
       try {
         const url = new URL(databaseUrl);
-        url.searchParams.set(
-          'statement_timeout',
-          process.env.QUERY_TIMEOUT_MS ?? '30000',
-        );
+        url.searchParams.set('statement_timeout', process.env.QUERY_TIMEOUT_MS ?? '30000');
         url.searchParams.set('connect_timeout', '10');
         this.effectiveDatabaseUrl = url.toString();
       } catch {
@@ -379,10 +366,8 @@ export class PrismaService {
   readonly effectiveDatabaseUrl?: string;
 
   // Issue #315: slow query logging middleware
-  private readonly slowQueryThresholdMs = parseInt(
-    process.env.SLOW_QUERY_THRESHOLD_MS ?? '500',
-    10,
-  );
+  private readonly slowQueryThresholdMs =
+    parseInt(process.env.SLOW_QUERY_THRESHOLD_MS ?? '500', 10);
 
   private readonly logger = new Logger('PrismaService');
 
@@ -399,7 +384,7 @@ export class PrismaService {
     if (duration > this.slowQueryThresholdMs) {
       this.logger.warn(
         `Slow query: ${model ?? 'unknown'}.${action} took ${duration}ms ` +
-          `(threshold: ${this.slowQueryThresholdMs}ms)`,
+        `(threshold: ${this.slowQueryThresholdMs}ms)`,
       );
     }
     return result;
@@ -456,7 +441,7 @@ export class PrismaService {
         ...data,
         id: data.id ?? String(this.escrowId++),
         itemRef: data.itemRef ?? '',
-        state: data.state ?? 'CREATED',
+        state: data.state ?? 'FUNDED',
         trackingId: data.trackingId ?? null,
         shippedAt: data.shippedAt ?? null,
         deliveredAt: data.deliveredAt ?? null,
@@ -484,422 +469,32 @@ export class PrismaService {
     },
     findMany: ({
       where,
-      select,
       orderBy,
-      skip,
-      take,
-      cursor,
-    }: {
-      where?: Partial<
-        Pick<
-          EscrowRecord,
-          | 'state'
-          | 'trackingId'
-          | 'vendorAddress'
-          | 'buyerAddress'
-          | 'disputeId'
-          | 'itemRef'
-          | 'autoReleaseTxHash'
-          | 'autoReleaseSubmittedAt'
-        >
-      > & {
-        shippedAt?: { lte: Date };
-        deliveredAt?: { lte: Date } | null;
-        createdAt?: { gte: Date; lte: Date };
-      };
-      select?: Partial<Record<keyof EscrowRecord, boolean>>;
-      orderBy?: Partial<Record<keyof EscrowRecord, 'asc' | 'desc'>>;
-      skip?: number;
-      take?: number;
-      cursor?: { id: string };
-    } = {}): Promise<EscrowRecord[]> => {
-      let escrows = [...this.escrows.values()].filter((escrow) => {
-        if (!where) {
-          return true;
-        }
-
-        return Object.entries(where).every(([key, value]) => {
-          if (value === undefined) {
-            return true;
-          }
-
-          if (
-            (key === 'shippedAt' || key === 'deliveredAt') &&
-            typeof value === 'object' &&
-            value !== null &&
-            'lte' in value
-          ) {
-            const { lte } = value;
-            const field =
-              key === 'shippedAt' ? escrow.shippedAt : escrow.deliveredAt;
-            return field !== null && field !== undefined && field <= lte;
-          }
-
-          if (
-            key === 'createdAt' &&
-            typeof value === 'object' &&
-            value !== null &&
-            'gte' in value &&
-            'lte' in value
-          ) {
-            const { gte, lte } = value;
-            return escrow.createdAt >= gte && escrow.createdAt <= lte;
-          }
-
-          return escrow[key as keyof EscrowRecord] === value;
-        });
-      });
-
-      if (!where?.state) {
-        escrows = escrows.filter((e) => e.state !== 'CANCELLED');
-      }
-
-      if (orderBy) {
-        const [field, dir] = Object.entries(orderBy)[0] as [
-          keyof EscrowRecord,
-          'asc' | 'desc',
-        ];
-        escrows = [...escrows].sort((a, b) => {
-          const aVal = a[field];
-          const bVal = b[field];
-          if (typeof aVal === 'number' && typeof bVal === 'number') {
-            return dir === 'asc' ? aVal - bVal : bVal - aVal;
-          }
-          if (aVal instanceof Date && bVal instanceof Date) {
-            return dir === 'asc'
-              ? aVal.getTime() - bVal.getTime()
-              : bVal.getTime() - aVal.getTime();
-          }
-          return 0;
-        });
-      }
-
-      if (cursor && cursor.id) {
-        const cursorIndex = escrows.findIndex((e) => e.id === cursor.id);
-        if (cursorIndex >= 0) {
-          const effectiveSkip = cursorIndex + (skip ?? 1);
-          escrows = escrows.slice(effectiveSkip);
-        }
-      } else if (skip !== undefined) {
-        escrows = escrows.slice(skip);
-      }
-      if (take !== undefined) escrows = escrows.slice(0, take);
-
-      if (select) {
-        return Promise.resolve(
-          escrows.map((escrow): EscrowRecord => {
-            const selected: Record<string, unknown> = {};
-            for (const key of Object.keys(select) as Array<
-              keyof EscrowRecord
-            >) {
-              selected[key] = escrow[key];
-            }
-            return selected as unknown as EscrowRecord;
-          }),
-        );
-      }
-
-      return Promise.resolve(escrows.map((escrow) => ({ ...escrow })));
-    },
-    update: ({
-      where,
-      data,
-    }: {
-      where: { id: string };
-      data: EscrowUpdateInput;
-    }): Promise<EscrowRecord> => {
-      assertEncryptedContact('buyerContactEmail', data.buyerContactEmail);
-      assertEncryptedContact('buyerContactPhone', data.buyerContactPhone);
-      const existing = this.escrows.get(where.id);
-      if (!existing) {
-        throw new Error(`Escrow ${where.id} not found`);
-      }
-      const updated = { ...existing, ...data, updatedAt: new Date() };
-      this.escrows.set(where.id, updated);
-      if (data.state !== undefined && data.state !== existing.state) {
-        this.recordEscrowEvent(where.id, existing.state, data.state);
-      }
-      return Promise.resolve({ ...updated });
-    },
-    findFirst: ({
-      where,
-      orderBy,
-    }: {
-      where?: Partial<
-        Pick<
-          EscrowRecord,
-          'vendorAddress' | 'buyerAddress' | 'state' | 'itemRef' | 'disputeId'
-        >
-      >;
-      orderBy?: Partial<Record<keyof EscrowRecord, 'asc' | 'desc'>>;
-    } = {}): Promise<EscrowRecord | null> => {
-      return this.escrow
-        .findMany({ where, orderBy })
-        .then((records) => records[0] ?? null);
-    },
-    updateMany: ({
-      where,
-      data,
-    }: {
-      where: { id: string; autoReleaseSubmittedAt?: Date | null };
-      data: { autoReleaseSubmittedAt: Date };
-    }): Promise<{ count: number }> => {
-      const escrow = this.escrows.get(where.id);
-      if (
-        escrow &&
-        (where.autoReleaseSubmittedAt === undefined ||
-          escrow.autoReleaseSubmittedAt === where.autoReleaseSubmittedAt)
-      ) {
-        const updated = { ...escrow, ...data, updatedAt: new Date() };
-        this.escrows.set(where.id, updated);
-        return Promise.resolve({ count: 1 });
-      }
-      return Promise.resolve({ count: 0 });
-    },
-    count: ({
-      where,
-    }: {
-      where?: Partial<
-        Pick<
-          EscrowRecord,
-          | 'state'
-          | 'trackingId'
-          | 'vendorAddress'
-          | 'buyerAddress'
-          | 'disputeId'
-          | 'itemRef'
-          | 'autoReleaseTxHash'
-          | 'autoReleaseSubmittedAt'
-        >
-      >;
-    } = {}): Promise<number> => {
-      return this.escrow.findMany({ where }).then((records) => records.length);
-    },
-    deleteMany: (): Promise<{ count: number }> => {
-      const count = this.escrows.size;
-      this.escrows.clear();
-      return Promise.resolve({ count });
-    },
-  };
-
-  dispute = {
-    create: ({
-      data,
-    }: {
-      data: DisputeCreateInput;
-    }): Promise<DisputeRecord> => {
-      const now = new Date();
-      const dispute: DisputeRecord = {
-        ...data,
-        id: data.id ?? String(this.disputeId++),
-        description: data.description ?? '',
-        status: data.status ?? 'OPEN',
-        evidenceUrls: data.evidenceUrls ?? [],
-        resolvedAt: data.resolvedAt ?? null,
-        createdAt: now,
-        updatedAt: now,
-      };
-
-      this.disputes.set(dispute.id, dispute);
-
-      const escrow = this.escrows.get(dispute.escrowId);
-      if (escrow) {
-        this.escrows.set(dispute.escrowId, {
-          ...escrow,
-          state: 'DISPUTED',
-          disputeId: dispute.id,
-          updatedAt: now,
-        });
-        if (escrow.state !== 'DISPUTED') {
-          this.recordEscrowEvent(dispute.escrowId, escrow.state, 'DISPUTED');
-        }
-      }
-
-      return Promise.resolve({ ...dispute });
-    },
-    findUnique: ({
-      where,
-    }: {
-      where: { id: string };
-    }): Promise<DisputeRecord | null> => {
-      const dispute = this.disputes.get(where.id);
-      return Promise.resolve(dispute ? { ...dispute } : null);
-    },
-    findMany: ({
-      where,
-    }: {
-      where?: Partial<Pick<DisputeRecord, 'escrowId' | 'status'>>;
-    } = {}): Promise<DisputeRecord[]> => {
-      const disputes = [...this.disputes.values()].filter((dispute) => {
-        if (!where) {
-          return true;
-        }
-
-        return Object.entries(where).every(([key, value]) => {
-          if (value === undefined) {
-            return true;
-          }
-
-          return dispute[key as keyof DisputeRecord] === value;
-        });
-      });
-
-      return Promise.resolve(disputes.map((dispute) => ({ ...dispute })));
-    },
-    update: ({
-      where,
-      data,
-    }: {
-      where: { id: string };
-      data: DisputeUpdateInput;
-    }): Promise<DisputeRecord> => {
-      const existing = this.disputes.get(where.id);
-      if (!existing) {
-        throw new Error(`Dispute ${where.id} not found`);
-      }
-
-      const updated = { ...existing, ...data, updatedAt: new Date() };
-      this.disputes.set(where.id, updated);
-      return Promise.resolve({ ...updated });
-    },
-    findFirst: ({
-      where,
-    }: {
-      where?: Partial<Pick<DisputeRecord, 'escrowId' | 'status'>>;
-    } = {}): Promise<DisputeRecord | null> => {
-      return this.dispute
-        .findMany({ where })
-        .then((records) => records[0] ?? null);
-    },
-    deleteMany: (): Promise<{ count: number }> => {
-      const count = this.disputes.size;
-      this.disputes.clear();
-      return Promise.resolve({ count });
-    },
-  };
-
-  notification = {
-    create: ({
-      data,
-    }: {
-      data: NotificationCreateInput;
-    }): Promise<NotificationRecord> => {
-      const now = new Date();
-      const notification: NotificationRecord = {
-        status: data.status ?? 'PENDING',
-        retryCount: data.retryCount ?? 0,
-        sentAt: data.sentAt ?? null,
-        failedAt: data.failedAt ?? null,
-        lastError: data.lastError ?? null,
-        providerMessageId: data.providerMessageId ?? null,
-        attemptCount: data.attemptCount ?? 0,
-        lastResponseCode: data.lastResponseCode ?? null,
-        ...data,
-        id: data.id ?? String(this.notificationId++),
-        createdAt: now,
-        updatedAt: now,
-      };
-      this.notifications.set(notification.id, notification);
-      return Promise.resolve({ ...notification });
-    },
-    update: ({
-      where,
-      data,
-    }: {
-      where: { id: string };
-      data: NotificationUpdateInput;
-    }): Promise<NotificationRecord> => {
-      const existing = this.notifications.get(where.id);
-      if (!existing) {
-        return Promise.reject(
-          new Error(`Notification with id ${where.id} not found`),
-        );
-      }
-      const updated: NotificationRecord = {
-        ...existing,
-        ...data,
-        updatedAt: new Date(),
-      };
-      this.notifications.set(where.id, updated);
-      return Promise.resolve({ ...updated });
-    },
-    findMany: (): Promise<NotificationRecord[]> =>
-      Promise.resolve(
-        [...this.notifications.values()].map((notification) => ({
-          ...notification,
-        })),
-      ),
-    deleteMany: (): Promise<{ count: number }> => {
-      const count = this.notifications.size;
-      this.notifications.clear();
-      return Promise.resolve({ count });
-    },
-  };
-
-  processedWebhookEvent = {
-    findUnique: ({
-      where,
-    }: {
-      where: { operationId: string };
-    }): Promise<ProcessedWebhookEventRecord | null> => {
-      const event = this.webhookEvents.get(where.operationId);
-      return Promise.resolve(event ? { ...event } : null);
-    },
-    create: ({
-      data,
-    }: {
-      data: { operationId: string };
-    }): Promise<ProcessedWebhookEventRecord> => {
-      const event: ProcessedWebhookEventRecord = {
-        operationId: data.operationId,
-        processedAt: new Date(),
-      };
-      this.webhookEvents.set(data.operationId, event);
-      return Promise.resolve({ ...event });
-    },
-    delete: ({
-      where,
-    }: {
-      where: { operationId: string };
-    }): Promise<ProcessedWebhookEventRecord | null> => {
-      const event = this.webhookEvents.get(where.operationId) ?? null;
-      this.webhookEvents.delete(where.operationId);
-      return Promise.resolve(event ? { ...event } : null);
-    },
-    deleteMany: (): Promise<{ count: number }> => {
-      const count = this.webhookEvents.size;
-      this.webhookEvents.clear();
-      return Promise.resolve({ count });
-    },
-  };
-
-  escrowEvent = {
-    create: ({
-      data,
-    }: {
-      data: Omit<EscrowEventRecord, 'id' | 'createdAt'> & {
-        fromState?: EscrowState | null;
-      };
-    }): Promise<EscrowEventRecord> => {
-      const event: EscrowEventRecord = {
-        ...data,
-        id: String(this.escrowEventId++),
-        fromState: data.fromState ?? null,
-        createdAt: new Date(),
-      };
-      this.escrowEvents.set(event.id, event);
-      return Promise.resolve({ ...event });
-    },
-    findMany: ({
-      where,
     }: {
       where?: Partial<Pick<EscrowEventRecord, 'escrowId'>>;
+      orderBy?: Array<Partial<Record<'createdAt' | 'id', 'asc' | 'desc'>>>;
     } = {}): Promise<EscrowEventRecord[]> => {
       const events = [...this.escrowEvents.values()]
         .filter(
           (event) => !where?.escrowId || event.escrowId === where.escrowId,
         )
-        .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+        .sort((a, b) => {
+          for (const clause of orderBy ?? [{ createdAt: 'asc' }]) {
+            const [field, direction] = Object.entries(clause)[0] as [
+              'createdAt' | 'id',
+              'asc' | 'desc',
+            ];
+            const left =
+              field === 'createdAt' ? a.createdAt.getTime() : a.id;
+            const right =
+              field === 'createdAt' ? b.createdAt.getTime() : b.id;
+            const comparison = left < right ? -1 : left > right ? 1 : 0;
+            if (comparison !== 0) {
+              return direction === 'asc' ? comparison : -comparison;
+            }
+          }
+          return 0;
+        });
       return Promise.resolve(events.map((event) => ({ ...event })));
     },
     deleteMany: (): Promise<{ count: number }> => {

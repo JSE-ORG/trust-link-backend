@@ -6,12 +6,8 @@ import {
   Logger,
   Res,
 } from '@nestjs/common';
-import {
-  ApiTags,
-  ApiOperation,
-  ApiResponse,
-  ApiOkResponse,
-} from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import type { Response } from 'express';
 import { AppService } from './app.service';
 import { getAppVersion } from './common/version';
@@ -59,6 +55,7 @@ export class AppController {
 
   @ApiOperation({ summary: 'Root endpoint — welcome message' })
   @ApiResponse({ status: 200, description: 'Service welcome message.' })
+  @Throttle({ public: { limit: 100, ttl: 60000 } })
   @Get()
   getHello(): string {
     return this.appService.getHello();
@@ -167,6 +164,9 @@ export class AppController {
     description: 'Internal server error.',
     type: ErrorResponseDto,
   })
+  @ApiResponse({ status: 200, description: 'All components healthy.' })
+  @ApiResponse({ status: 503, description: 'One or more components are down.' })
+  @SkipThrottle({ public: true }) // Health checks should never be throttled.
   @Get('health')
   async getHealth(
     @Res() res: Response,
@@ -253,22 +253,23 @@ export class AppController {
       .json(body);
   }
 
-  private async checkAllDependencies(): Promise<DependencyCheckResults> {
-    const [dbResult, horizonResult, redisResult] = await Promise.all([
-      this.checkDatabase().catch((err: unknown) => ({
-        status: 'down' as ComponentStatus,
-        error: err instanceof Error ? err.message : 'Database check failed',
-      })),
-      this.checkHorizon().catch((err: unknown) => ({
-        status: 'down' as ComponentStatus,
-        error: err instanceof Error ? err.message : 'Horizon check failed',
-      })),
-      this.checkRedis().catch((err: unknown) => ({
-        status: 'down' as ComponentStatus,
-        error: err instanceof Error ? err.message : 'Redis check failed',
-      })),
-    ]);
-    return { db: dbResult, horizon: horizonResult, redis: redisResult };
+  /**
+   * Returns the application version and environment information.
+   *
+   * @returns Version string, package name, and current environment
+   * @authentication None (public endpoint)
+   */
+  @ApiOperation({ summary: 'Get current application version and environment' })
+  @ApiResponse({ status: 200, description: 'Version information returned.' })
+  @Throttle({ public: { limit: 100, ttl: 60000 } })
+  @Get('version')
+  @HttpCode(HttpStatus.OK)
+  getVersion() {
+    return {
+      version: getAppVersion(),
+      name: '@truestlink/trustlink-backend',
+      environment: this.configService.get('NODE_ENV'),
+    };
   }
 
   private async checkDatabase(): Promise<ComponentHealth> {
