@@ -273,15 +273,50 @@ export class EscrowRepository {
   }
 
   /**
-   * Returns all SHIPPED escrows that have a non-null trackingId,
+   * Returns all SHIPPED escrows that have a non-null trackingId and have not
+   * been claimed for delivery recording (deliveryRecordedAt is null),
    * used by the tracking poll worker to check for delivery updates.
    */
   findShippedWithTracking(): Promise<EscrowRecord[]> {
     return this.prisma.escrow
-      .findMany({ where: { state: 'SHIPPED' } })
+      .findMany({
+        where: { state: 'SHIPPED', deliveryRecordedAt: null },
+      })
       .then((escrows) =>
         escrows.filter((escrow) => Boolean(escrow.trackingId)),
       );
+  }
+
+  /**
+   * Atomically claims an escrow for delivery recording by setting
+   * deliveryRecordedAt. Returns null if the escrow is already claimed
+   * (deliveryRecordedAt is not null).
+   * Follows the same claim-and-release pattern as markAutoReleaseSubmitting.
+   */
+  async claimDelivery(id: string): Promise<EscrowRecord | null> {
+    const escrow = await this.prisma.escrow.findUnique({ where: { id } });
+    if (!escrow || escrow.state !== 'SHIPPED' || escrow.deliveryRecordedAt !== null) {
+      return null;
+    }
+    const result = await this.prisma.escrow.update({
+      where: { id },
+      data: { deliveryRecordedAt: new Date() },
+    });
+    await this.invalidate(id);
+    return result;
+  }
+
+  /**
+   * Releases the delivery claim by setting deliveryRecordedAt back to null,
+   * allowing the next poll cycle to retry.
+   */
+  async clearDeliveryClaim(id: string): Promise<EscrowRecord> {
+    const result = await this.prisma.escrow.update({
+      where: { id },
+      data: { deliveryRecordedAt: null },
+    });
+    await this.invalidate(id);
+    return result;
   }
 
   /**
