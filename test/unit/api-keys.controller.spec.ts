@@ -1,4 +1,4 @@
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { ForbiddenException, INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { ApiKeysController } from '../../src/admin/api-keys/api-keys.controller';
@@ -29,7 +29,30 @@ describe('ApiKeysController (issue #410)', () => {
         AdminGuard,
         { provide: ConfigService, useValue: { get: jest.fn().mockReturnValue(ADMIN) } },
       ],
-    }).compile();
+    })
+      .overrideProvider(JwtGuard)
+      .useValue({
+        canActivate: jest.fn().mockImplementation((ctx) => {
+          const req = ctx.switchToHttp().getRequest();
+          const auth = req.headers.authorization ?? '';
+          // Use Bearer prefix to distinguish admin vs non-admin callers
+          req.user = auth.startsWith('Bearer ')
+            ? { address: ADMIN, role: 'admin' }
+            : { address: 'non-admin', role: undefined };
+          return true;
+        }),
+      })
+      .overrideProvider(AdminGuard)
+      .useValue({
+        canActivate: jest.fn().mockImplementation((ctx) => {
+          const req = ctx.switchToHttp().getRequest();
+          if (!req.user || req.user.role !== 'admin') {
+            throw new ForbiddenException('Admin role required');
+          }
+          return true;
+        }),
+      })
+      .compile();
 
     app = moduleRef.createNestApplication();
     app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
@@ -58,7 +81,7 @@ describe('ApiKeysController (issue #410)', () => {
 
     const res = await request(app.getHttpServer())
       .patch('/admin/credentials/logistics')
-      .set('Authorization', '******')
+      .set('Authorization', 'Bearer admin-token')
       .send({ key: 'very-secret-key' })
       .expect(200);
 
@@ -79,7 +102,7 @@ describe('ApiKeysController (issue #410)', () => {
 
     const res = await request(app.getHttpServer())
       .patch('/admin/credentials/logistics')
-      .set('Authorization', '******')
+      .set('Authorization', 'Bearer admin-token')
       .send({ key: 'should-not-be-used' })
       .expect(200);
 

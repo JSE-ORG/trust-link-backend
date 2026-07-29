@@ -8,23 +8,25 @@ describe('PrismaService in-memory stores (issue #411)', () => {
   });
 
   it('assertEncryptedContact throws when plaintext email or phone is written', async () => {
-    await expect(
-      prisma.escrow.create({
+    // Wrap in async function because assertEncryptedContact throws synchronously,
+    // which bypasses .rejects matcher when called directly.
+    const tryCreateEmail = async () => {
+      await prisma.escrow.create({
         data: {
           itemName: 'Item',
           amount: 10,
           currency: 'USDC',
           buyerAddress: 'buyer',
           vendorAddress: 'vendor',
-          // plaintext should be rejected
           buyerContactEmail: 'plain@example.com',
         },
-      }),
-    ).rejects.toThrow(/must be encrypted/);
+      });
+    };
+    await expect(tryCreateEmail()).rejects.toThrow(/must be encrypted/);
 
     // phone plaintext
-    await expect(
-      prisma.escrow.create({
+    const tryCreatePhone = async () => {
+      await prisma.escrow.create({
         data: {
           itemName: 'Item',
           amount: 10,
@@ -33,8 +35,9 @@ describe('PrismaService in-memory stores (issue #411)', () => {
           vendorAddress: 'vendor',
           buyerContactPhone: '+1234567890',
         },
-      }),
-    ).rejects.toThrow(/must be encrypted/);
+      });
+    };
+    await expect(tryCreatePhone()).rejects.toThrow(/must be encrypted/);
   });
 
   it('create/findUnique/findMany/update for escrow and updateMany behavior', async () => {
