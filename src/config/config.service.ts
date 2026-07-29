@@ -34,6 +34,9 @@ export interface Config {
   EVIDENCE_UPLOAD_TTL?: number;
   GIGL_API_BASE_URL?: string;
   GIGL_API_TOKEN?: string;
+  SOROBAN_RPC_URL?: string;
+  SOROBAN_POLL_INTERVAL_MS?: number;
+  CONTRACT_ID?: string;
 }
 
 @Injectable()
