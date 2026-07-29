@@ -7,6 +7,7 @@ import {
   ServiceUnavailableException,
   UseGuards,
 } from '@nestjs/common';
+import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { JwtGuard } from '../auth/guards/jwt.guard';
 import { AdminGuard } from '../admin/guards/admin.guard';
 import { DlqService } from './dlq.service';
@@ -21,6 +22,8 @@ import { ConfigService } from '../config/config.service';
  * Admin endpoints for reviewing and re-executing failed Stellar contract
  * submissions (#74).
  */
+@ApiTags('Admin')
+@ApiBearerAuth()
 @Controller('admin/dlq')
 @UseGuards(JwtGuard, AdminGuard)
 export class DlqController {
@@ -53,16 +56,26 @@ export class DlqController {
     return address;
   }
 
+  @ApiOperation({ summary: 'List failed transactions (admin DLQ)' })
+  @ApiQuery({ name: 'status', required: false, description: 'Filter by transaction status' })
+  @ApiQuery({ name: 'operation', required: false, description: 'Filter by operation name' })
+  @ApiQuery({ name: 'escrowId', required: false, description: 'Filter by escrow ID' })
+  @ApiQuery({ name: 'page', required: false, type: Number, description: 'Page number (default 1)' })
+  @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Maximum records per page (default 20, max 100)' })
   @Get()
   list(
     @Query('status') status?: FailedTransactionStatus,
     @Query('operation') operation?: string,
     @Query('escrowId') escrowId?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
   ) {
     const query: ListFailedTransactionsQuery = {};
     if (status) query.status = status;
     if (operation) query.operation = operation;
     if (escrowId) query.escrowId = escrowId;
+    if (page) query.page = parseInt(page, 10);
+    if (limit) query.limit = parseInt(limit, 10);
     return this.dlq.list(query);
   }
 
