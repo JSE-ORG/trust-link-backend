@@ -86,6 +86,8 @@ async function bootstrap(): Promise<void> {
   // vulnerabilities. The CSP connect-src is widened to the Stellar network so
   // the app can still reach the required blockchain API systems (Horizon and
   // Soroban RPC, on both mainnet and testnet).
+  const isProduction = configService.isProduction();
+
   app.use(
     helmet({
       contentSecurityPolicy: {
@@ -100,6 +102,11 @@ async function bootstrap(): Promise<void> {
       },
       crossOriginResourcePolicy: { policy: 'cross-origin' },
       frameguard: { action: 'deny' },
+      // HSTS is configured through helmet so it can be turned off outside
+      // production rather than being set unconditionally in middleware.
+      strictTransportSecurity: isProduction
+        ? { maxAge: 31536000, includeSubDomains: true }
+        : false,
     }),
   );
 
