@@ -19,23 +19,21 @@ import { ConfigService } from './config.service';
 const stellarSecretKey = Joi.string().custom((value, helpers) => {
   // Quick shape check first for better error messages
   if (!value.startsWith('S')) {
-    return helpers.error('any.invalid', {
-      message:
-        `${helpers.state.key} must be a Stellar secret key ` +
-        `starting with S, got a value starting with '${value[0]}'`,
-    });
+    throw new Error(
+      `${helpers.state.path?.[0] || 'SYSTEM_SIGNER_SECRET'} must be a Stellar secret key ` +
+      `starting with S, got a value starting with '${value[0]}'`
+    );
   }
 
   try {
     Keypair.fromSecret(value);
     return value; // valid — checksum passed
   } catch {
-    return helpers.error('any.invalid', {
-      message:
-        `${helpers.state.key} is not a valid Stellar secret key ` +
-        `— checksum verification failed. ` +
-        `Check the key value in your environment configuration.`,
-    });
+    throw new Error(
+      `${helpers.state.path?.[0] || 'SYSTEM_SIGNER_SECRET'} is an invalid Stellar secret key ` +
+      `— checksum verification failed. ` +
+      `Check the key value in your environment configuration.`
+    );
   }
 }, 'Stellar secret key checksum validation');
 
@@ -47,22 +45,20 @@ const stellarSecretKey = Joi.string().custom((value, helpers) => {
  */
 const stellarPublicKey = Joi.string().custom((value, helpers) => {
   if (!value.startsWith('G')) {
-    return helpers.error('any.invalid', {
-      message:
-        `${helpers.state.key} must be a Stellar public key ` +
-        `starting with G, got a value starting with '${value[0]}'`,
-    });
+    throw new Error(
+      `${helpers.state.path?.[0] || 'ADMIN_ADDRESS'} must be a Stellar public key ` +
+      `starting with G, got a value starting with '${value[0]}'`
+    );
   }
 
   try {
     Keypair.fromPublicKey(value);
     return value; // valid
   } catch {
-    return helpers.error('any.invalid', {
-      message:
-        `${helpers.state.key} is not a valid Stellar public key ` +
-        `— checksum verification failed.`,
-    });
+    throw new Error(
+      `${helpers.state.path?.[0] || 'ADMIN_ADDRESS'} is an invalid Stellar public key ` +
+      `— checksum verification failed.`
+    );
   }
 }, 'Stellar public key checksum validation');
 
@@ -70,6 +66,7 @@ const stellarPublicKey = Joi.string().custom((value, helpers) => {
 @Module({
   imports: [
     NestConfigModule.forRoot({
+      ignoreEnvFile: process.env.NODE_ENV === 'test',
       validationSchema: Joi.object({
         PORT: Joi.number().default(3000),
         DATABASE_URL: Joi.string().required(),

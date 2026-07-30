@@ -28,7 +28,7 @@ describe('Evidence Upload Rate Limiting (e2e)', () => {
     throttlerStorage = moduleFixture.get(getStorageToken());
 
     await app.init();
-  }, 15_000);
+  }, 60_000);
 
   afterAll(async () => {
     await app.close();

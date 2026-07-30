@@ -20,6 +20,7 @@ describe('LogisticsService & LogisticsModule (issue #479)', () => {
   beforeEach(() => {
     mockAxiosInstance = { get: jest.fn() };
     mockedAxios.create.mockReturnValue(mockAxiosInstance as any);
+    mockedAxios.isAxiosError.mockImplementation((err: any) => err?.isAxiosError === true);
   });
 
   describe('Runtime API key management', () => {

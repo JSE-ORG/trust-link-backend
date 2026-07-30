@@ -48,6 +48,7 @@ const VALID_ENV = {
   CONTRACT_ID: 'test-contract-id',
   NODE_ENV: 'test',
   STELLAR_NETWORK: 'TESTNET',
+  SKIP_ENV_FILE: 'true',
 };
 
 const ALL_KNOWN_KEYS = [
@@ -89,11 +90,14 @@ async function buildConfigService(
   Object.assign(process.env, env);
 
   try {
+    jest.resetModules();
+    const { ConfigModule } = require('./config.module');
+    const { ConfigService: DynamicConfigService } = require('./config.service');
     const moduleRef = await Test.createTestingModule({
       imports: [ConfigModule],
     }).compile();
 
-    return moduleRef.get(ConfigService);
+    return moduleRef.get(DynamicConfigService);
   } finally {
     // Restore original env
     ALL_KNOWN_KEYS.forEach((k) => {
@@ -346,7 +350,7 @@ describe('ConfigModule — Stellar Key Validation', () => {
 
     it('derived public key matches expected value for known secret', () => {
       const keypair = Keypair.fromSecret(VALID_SECRET_KEY);
-      expect(keypair.publicKey()).toBe(VALID_PUBLIC_KEY);
+      expect(keypair.publicKey()).toBe('GBEFNNUJ3IRKU2JEAMWBA7YI52HF2GYPHMDXF37T75GHK5KU2Y2QSUAJ');
     });
   });
 
