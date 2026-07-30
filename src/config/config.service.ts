@@ -8,7 +8,7 @@ export interface Config {
   DB_POOL_TIMEOUT_MS?: number;
   SEP10_JWT_SECRET: string;
   ADMIN_ADDRESS: string;
-  AUTO_RELEASE_SOURCE_ADDRESS?: string;
+  AUTO_RELEASE_SOURCE_ADDRESS: string;
   NODE_ENV: 'development' | 'production' | 'test';
   SENDGRID_API_KEY?: string;
   TWILIO_ACCOUNT_SID?: string;
@@ -54,6 +54,7 @@ export class ConfigService {
       DATABASE_URL: this.get('DATABASE_URL'),
       SEP10_JWT_SECRET: this.get('SEP10_JWT_SECRET'),
       ADMIN_ADDRESS: this.get('ADMIN_ADDRESS'),
+      AUTO_RELEASE_SOURCE_ADDRESS: this.get('AUTO_RELEASE_SOURCE_ADDRESS'),
       NODE_ENV: this.get('NODE_ENV'),
       SENDGRID_API_KEY: this.nestConfigService.get('SENDGRID_API_KEY', {
         infer: true,

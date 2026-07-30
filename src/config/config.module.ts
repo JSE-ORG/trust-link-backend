@@ -80,7 +80,10 @@ const stellarPublicKey = Joi.string().custom((value: string, helpers) => {
           'any.required': 'Config validation error: CONTRACT_ID is required',
         }),
         ADMIN_ADDRESS: stellarPublicKey.required(),
-        AUTO_RELEASE_SOURCE_ADDRESS: Joi.string().optional(),
+        AUTO_RELEASE_SOURCE_ADDRESS: stellarPublicKey.required().messages({
+          'any.required':
+            'Config validation error: AUTO_RELEASE_SOURCE_ADDRESS is required — the application fails to start without a valid auto-release signing address.',
+        }),
         NODE_ENV: Joi.string()
           .valid('development', 'production', 'test')
           .default('development'),

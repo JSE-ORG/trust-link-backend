@@ -1,10 +1,55 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { ConfigService } from '../../src/config/config.service';
 import { PrismaService } from '../../src/prisma/prisma.service';
 import { EscrowRepository } from '../../src/escrow/escrow.repository';
 import { DisputeRepository } from '../../src/dispute/dispute.repository';
 import { AutoReleaseWorker } from '../../src/workers/auto-release.worker';
 import { ContractService } from '../../src/stellar/contract.service';
 import { CacheService } from '../../src/cache/cache.service';
+
+const TEST_SOURCE_ADDRESS =
+  'GA4LQSEGF5UFRB2Q5GFF3S5PEHEGRD547VC6O7RURA37HZ4P4UL6W33C';
+
+function makeConfigService(): Partial<ConfigService> {
+  return {
+    get: jest.fn((key: string) => {
+      if (key === 'AUTO_RELEASE_SOURCE_ADDRESS') {
+        return TEST_SOURCE_ADDRESS;
+      }
+      return undefined as any;
+    }) as ConfigService['get'],
+  };
+}
+
+async function createDeliveredEscrow(
+  prisma: PrismaService,
+  repository: EscrowRepository,
+  overrides: {
+    itemName: string;
+    itemRef: string;
+    amount: number;
+    buyerAddress: string;
+    vendorAddress: string;
+    trackingId: string;
+    deliveredAt: Date;
+  },
+) {
+  const base = await prisma.escrow.create({
+    data: {
+      itemName: overrides.itemName,
+      itemRef: overrides.itemRef,
+      amount: overrides.amount,
+      currency: 'USDC',
+      buyerAddress: overrides.buyerAddress,
+      vendorAddress: overrides.vendorAddress,
+      state: 'SHIPPED',
+      trackingId: overrides.trackingId,
+      shippedAt: new Date(Date.now() - 60 * 60 * 60 * 1000),
+    },
+  });
+  await repository.markDelivered(base.id, overrides.deliveredAt);
+  return base.id;
+}
 
 /**
  * Integration tests for auto-release worker batch processing with partial failures.
@@ -17,6 +62,7 @@ import { CacheService } from '../../src/cache/cache.service';
  */
 describe('Auto-release batch processing with partial failures', () => {
   let prisma: PrismaService;
+  let escrowRepository: EscrowRepository;
   let contractService: jest.Mocked<ContractService>;
   let worker: AutoReleaseWorker;
 
@@ -36,6 +82,10 @@ describe('Auto-release batch processing with partial failures', () => {
           },
         },
         {
+          provide: ConfigService,
+          useValue: makeConfigService(),
+        },
+        {
           provide: CacheService,
           useValue: {
             get: jest.fn(),
@@ -47,6 +97,7 @@ describe('Auto-release batch processing with partial failures', () => {
     }).compile();
 
     prisma = moduleRef.get(PrismaService);
+    escrowRepository = moduleRef.get(EscrowRepository);
     contractService =
       moduleRef.get<jest.Mocked<ContractService>>(ContractService);
     worker = moduleRef.get(AutoReleaseWorker);
@@ -61,52 +112,34 @@ describe('Auto-release batch processing with partial failures', () => {
   describe('Mixed success/failure batch processing', () => {
     it('processes all escrows independently when middle escrow fails', async () => {
       // Create three eligible escrows
-      const escrow1 = await prisma.escrow.create({
-        data: {
-          itemName: 'Camera',
-          itemRef: 'camera-batch-001',
-          amount: 250,
-          currency: 'USDC',
-          buyerAddress: 'buyer-1',
-          vendorAddress: 'vendor-1',
-          state: 'SHIPPED',
-          trackingId: 'TRK-001',
-          shippedAt: new Date(Date.now() - 60 * 60 * 60 * 1000),
-          deliveredAt: pastDelivery,
-          deliveryRecordedAt: pastDelivery,
-        },
+      const id1 = await createDeliveredEscrow(prisma, escrowRepository, {
+        itemName: 'Camera',
+        itemRef: 'camera-batch-001',
+        amount: 250,
+        buyerAddress: 'buyer-1',
+        vendorAddress: 'vendor-1',
+        trackingId: 'TRK-001',
+        deliveredAt: pastDelivery,
       });
 
-      const escrow2 = await prisma.escrow.create({
-        data: {
-          itemName: 'Laptop',
-          itemRef: 'laptop-batch-001',
-          amount: 1200,
-          currency: 'USDC',
-          buyerAddress: 'buyer-2',
-          vendorAddress: 'vendor-2',
-          state: 'SHIPPED',
-          trackingId: 'TRK-002',
-          shippedAt: new Date(Date.now() - 60 * 60 * 60 * 1000),
-          deliveredAt: pastDelivery,
-          deliveryRecordedAt: pastDelivery,
-        },
+      const id2 = await createDeliveredEscrow(prisma, escrowRepository, {
+        itemName: 'Laptop',
+        itemRef: 'laptop-batch-001',
+        amount: 1200,
+        buyerAddress: 'buyer-2',
+        vendorAddress: 'vendor-2',
+        trackingId: 'TRK-002',
+        deliveredAt: pastDelivery,
       });
 
-      const escrow3 = await prisma.escrow.create({
-        data: {
-          itemName: 'Phone',
-          itemRef: 'phone-batch-001',
-          amount: 800,
-          currency: 'USDC',
-          buyerAddress: 'buyer-3',
-          vendorAddress: 'vendor-3',
-          state: 'SHIPPED',
-          trackingId: 'TRK-003',
-          shippedAt: new Date(Date.now() - 60 * 60 * 60 * 1000),
-          deliveredAt: pastDelivery,
-          deliveryRecordedAt: pastDelivery,
-        },
+      const id3 = await createDeliveredEscrow(prisma, escrowRepository, {
+        itemName: 'Phone',
+        itemRef: 'phone-batch-001',
+        amount: 800,
+        buyerAddress: 'buyer-3',
+        vendorAddress: 'vendor-3',
+        trackingId: 'TRK-003',
+        deliveredAt: pastDelivery,
       });
 
       // Second escrow fails, first and third succeed
@@ -121,87 +154,57 @@ describe('Auto-release batch processing with partial failures', () => {
       expect(contractService.submitAutoRelease).toHaveBeenCalledTimes(3);
 
       // Check final states
-      const after1 = await prisma.escrow.findUnique({
-        where: { id: escrow1.id },
-      });
-      expect(after1!.state).toBe('COMPLETED');
+      const after1 = await prisma.escrow.findUnique({ where: { id: id1 } });
+      expect(after1!.state).toBe('RELEASED');
       expect(after1!.autoReleaseTxHash).toBe('tx-hash-1');
 
-      const after2 = await prisma.escrow.findUnique({
-        where: { id: escrow2.id },
-      });
-      expect(after2!.state).toBe('SHIPPED');
+      const after2 = await prisma.escrow.findUnique({ where: { id: id2 } });
+      expect(after2!.state).toBe('DELIVERED');
       expect(after2!.autoReleaseTxHash).toBeNull();
 
-      const after3 = await prisma.escrow.findUnique({
-        where: { id: escrow3.id },
-      });
-      expect(after3!.state).toBe('COMPLETED');
+      const after3 = await prisma.escrow.findUnique({ where: { id: id3 } });
+      expect(after3!.state).toBe('RELEASED');
       expect(after3!.autoReleaseTxHash).toBe('tx-hash-3');
     });
 
     it('handles multiple failures in a batch without aborting', async () => {
       // Create four eligible escrows
-      const escrows = await Promise.all([
-        prisma.escrow.create({
-          data: {
-            itemName: 'Camera',
-            itemRef: 'camera-multi-fail-001',
-            amount: 250,
-            currency: 'USDC',
-            buyerAddress: 'buyer-1',
-            vendorAddress: 'vendor-1',
-            state: 'SHIPPED',
-            trackingId: 'TRK-001',
-            shippedAt: new Date(Date.now() - 60 * 60 * 60 * 1000),
-            deliveredAt: pastDelivery,
-            deliveryRecordedAt: pastDelivery,
-          },
+      const ids = await Promise.all([
+        createDeliveredEscrow(prisma, escrowRepository, {
+          itemName: 'Camera',
+          itemRef: 'camera-multi-fail-001',
+          amount: 250,
+          buyerAddress: 'buyer-1',
+          vendorAddress: 'vendor-1',
+          trackingId: 'TRK-001',
+          deliveredAt: pastDelivery,
         }),
-        prisma.escrow.create({
-          data: {
-            itemName: 'Laptop',
-            itemRef: 'laptop-multi-fail-001',
-            amount: 1200,
-            currency: 'USDC',
-            buyerAddress: 'buyer-2',
-            vendorAddress: 'vendor-2',
-            state: 'SHIPPED',
-            trackingId: 'TRK-002',
-            shippedAt: new Date(Date.now() - 60 * 60 * 60 * 1000),
-            deliveredAt: pastDelivery,
-            deliveryRecordedAt: pastDelivery,
-          },
+        createDeliveredEscrow(prisma, escrowRepository, {
+          itemName: 'Laptop',
+          itemRef: 'laptop-multi-fail-001',
+          amount: 1200,
+          buyerAddress: 'buyer-2',
+          vendorAddress: 'vendor-2',
+          trackingId: 'TRK-002',
+          deliveredAt: pastDelivery,
         }),
-        prisma.escrow.create({
-          data: {
-            itemName: 'Phone',
-            itemRef: 'phone-multi-fail-001',
-            amount: 800,
-            currency: 'USDC',
-            buyerAddress: 'buyer-3',
-            vendorAddress: 'vendor-3',
-            state: 'SHIPPED',
-            trackingId: 'TRK-003',
-            shippedAt: new Date(Date.now() - 60 * 60 * 60 * 1000),
-            deliveredAt: pastDelivery,
-            deliveryRecordedAt: pastDelivery,
-          },
+        createDeliveredEscrow(prisma, escrowRepository, {
+          itemName: 'Phone',
+          itemRef: 'phone-multi-fail-001',
+          amount: 800,
+          buyerAddress: 'buyer-3',
+          vendorAddress: 'vendor-3',
+          trackingId: 'TRK-003',
+          deliveredAt: pastDelivery,
         }),
-        prisma.escrow.create({
-          data: {
-            itemName: 'Tablet',
-            itemRef: 'tablet-multi-fail-001',
-            amount: 600,
-            currency: 'USDC',
-            buyerAddress: 'buyer-4',
-            vendorAddress: 'vendor-4',
-            state: 'SHIPPED',
-            trackingId: 'TRK-004',
-            shippedAt: new Date(Date.now() - 60 * 60 * 60 * 1000),
-            deliveredAt: pastDelivery,
-            deliveryRecordedAt: pastDelivery,
-          },
+        createDeliveredEscrow(prisma, escrowRepository, {
+          itemName: 'Tablet',
+          itemRef: 'tablet-multi-fail-001',
+          amount: 600,
+          buyerAddress: 'buyer-4',
+          vendorAddress: 'vendor-4',
+          trackingId: 'TRK-004',
+          deliveredAt: pastDelivery,
         }),
       ]);
 
@@ -219,54 +222,42 @@ describe('Auto-release batch processing with partial failures', () => {
 
       // Check final states
       const results = await Promise.all(
-        escrows.map((e) => prisma.escrow.findUnique({ where: { id: e.id } })),
+        ids.map((id) => prisma.escrow.findUnique({ where: { id } })),
       );
 
-      expect(results[0]!.state).toBe('COMPLETED');
+      expect(results[0]!.state).toBe('RELEASED');
       expect(results[0]!.autoReleaseTxHash).toBe('tx-hash-1');
 
-      expect(results[1]!.state).toBe('SHIPPED');
+      expect(results[1]!.state).toBe('DELIVERED');
       expect(results[1]!.autoReleaseTxHash).toBeNull();
 
-      expect(results[2]!.state).toBe('SHIPPED');
+      expect(results[2]!.state).toBe('DELIVERED');
       expect(results[2]!.autoReleaseTxHash).toBeNull();
 
-      expect(results[3]!.state).toBe('COMPLETED');
+      expect(results[3]!.state).toBe('RELEASED');
       expect(results[3]!.autoReleaseTxHash).toBe('tx-hash-4');
     });
 
     it('continues processing after first escrow fails', async () => {
       // Create two eligible escrows
-      const escrow1 = await prisma.escrow.create({
-        data: {
-          itemName: 'Camera',
-          itemRef: 'camera-first-fail-001',
-          amount: 250,
-          currency: 'USDC',
-          buyerAddress: 'buyer-1',
-          vendorAddress: 'vendor-1',
-          state: 'SHIPPED',
-          trackingId: 'TRK-001',
-          shippedAt: new Date(Date.now() - 60 * 60 * 60 * 1000),
-          deliveredAt: pastDelivery,
-          deliveryRecordedAt: pastDelivery,
-        },
+      const id1 = await createDeliveredEscrow(prisma, escrowRepository, {
+        itemName: 'Camera',
+        itemRef: 'camera-first-fail-001',
+        amount: 250,
+        buyerAddress: 'buyer-1',
+        vendorAddress: 'vendor-1',
+        trackingId: 'TRK-001',
+        deliveredAt: pastDelivery,
       });
 
-      const escrow2 = await prisma.escrow.create({
-        data: {
-          itemName: 'Laptop',
-          itemRef: 'laptop-first-fail-001',
-          amount: 1200,
-          currency: 'USDC',
-          buyerAddress: 'buyer-2',
-          vendorAddress: 'vendor-2',
-          state: 'SHIPPED',
-          trackingId: 'TRK-002',
-          shippedAt: new Date(Date.now() - 60 * 60 * 60 * 1000),
-          deliveredAt: pastDelivery,
-          deliveryRecordedAt: pastDelivery,
-        },
+      const id2 = await createDeliveredEscrow(prisma, escrowRepository, {
+        itemName: 'Laptop',
+        itemRef: 'laptop-first-fail-001',
+        amount: 1200,
+        buyerAddress: 'buyer-2',
+        vendorAddress: 'vendor-2',
+        trackingId: 'TRK-002',
+        deliveredAt: pastDelivery,
       });
 
       // First fails, second succeeds
@@ -280,66 +271,44 @@ describe('Auto-release batch processing with partial failures', () => {
       expect(contractService.submitAutoRelease).toHaveBeenCalledTimes(2);
 
       // Check final states
-      const after1 = await prisma.escrow.findUnique({
-        where: { id: escrow1.id },
-      });
-      expect(after1!.state).toBe('SHIPPED');
+      const after1 = await prisma.escrow.findUnique({ where: { id: id1 } });
+      expect(after1!.state).toBe('DELIVERED');
       expect(after1!.autoReleaseTxHash).toBeNull();
 
-      const after2 = await prisma.escrow.findUnique({
-        where: { id: escrow2.id },
-      });
-      expect(after2!.state).toBe('COMPLETED');
+      const after2 = await prisma.escrow.findUnique({ where: { id: id2 } });
+      expect(after2!.state).toBe('RELEASED');
       expect(after2!.autoReleaseTxHash).toBe('tx-hash-2');
     });
 
     it('handles all escrows failing without corruption', async () => {
       // Create three eligible escrows
-      const escrows = await Promise.all([
-        prisma.escrow.create({
-          data: {
-            itemName: 'Camera',
-            itemRef: 'camera-all-fail-001',
-            amount: 250,
-            currency: 'USDC',
-            buyerAddress: 'buyer-1',
-            vendorAddress: 'vendor-1',
-            state: 'SHIPPED',
-            trackingId: 'TRK-001',
-            shippedAt: new Date(Date.now() - 60 * 60 * 60 * 1000),
-            deliveredAt: pastDelivery,
-            deliveryRecordedAt: pastDelivery,
-          },
+      const ids = await Promise.all([
+        createDeliveredEscrow(prisma, escrowRepository, {
+          itemName: 'Camera',
+          itemRef: 'camera-all-fail-001',
+          amount: 250,
+          buyerAddress: 'buyer-1',
+          vendorAddress: 'vendor-1',
+          trackingId: 'TRK-001',
+          deliveredAt: pastDelivery,
         }),
-        prisma.escrow.create({
-          data: {
-            itemName: 'Laptop',
-            itemRef: 'laptop-all-fail-001',
-            amount: 1200,
-            currency: 'USDC',
-            buyerAddress: 'buyer-2',
-            vendorAddress: 'vendor-2',
-            state: 'SHIPPED',
-            trackingId: 'TRK-002',
-            shippedAt: new Date(Date.now() - 60 * 60 * 60 * 1000),
-            deliveredAt: pastDelivery,
-            deliveryRecordedAt: pastDelivery,
-          },
+        createDeliveredEscrow(prisma, escrowRepository, {
+          itemName: 'Laptop',
+          itemRef: 'laptop-all-fail-001',
+          amount: 1200,
+          buyerAddress: 'buyer-2',
+          vendorAddress: 'vendor-2',
+          trackingId: 'TRK-002',
+          deliveredAt: pastDelivery,
         }),
-        prisma.escrow.create({
-          data: {
-            itemName: 'Phone',
-            itemRef: 'phone-all-fail-001',
-            amount: 800,
-            currency: 'USDC',
-            buyerAddress: 'buyer-3',
-            vendorAddress: 'vendor-3',
-            state: 'SHIPPED',
-            trackingId: 'TRK-003',
-            shippedAt: new Date(Date.now() - 60 * 60 * 60 * 1000),
-            deliveredAt: pastDelivery,
-            deliveryRecordedAt: pastDelivery,
-          },
+        createDeliveredEscrow(prisma, escrowRepository, {
+          itemName: 'Phone',
+          itemRef: 'phone-all-fail-001',
+          amount: 800,
+          buyerAddress: 'buyer-3',
+          vendorAddress: 'vendor-3',
+          trackingId: 'TRK-003',
+          deliveredAt: pastDelivery,
         }),
       ]);
 
@@ -353,13 +322,13 @@ describe('Auto-release batch processing with partial failures', () => {
       // All should be attempted
       expect(contractService.submitAutoRelease).toHaveBeenCalledTimes(3);
 
-      // All should remain in SHIPPED state
+      // All should remain in DELIVERED state
       const results = await Promise.all(
-        escrows.map((e) => prisma.escrow.findUnique({ where: { id: e.id } })),
+        ids.map((id) => prisma.escrow.findUnique({ where: { id } })),
       );
 
       results.forEach((result) => {
-        expect(result!.state).toBe('SHIPPED');
+        expect(result!.state).toBe('DELIVERED');
         expect(result!.autoReleaseTxHash).toBeNull();
       });
     });
@@ -371,35 +340,23 @@ describe('Auto-release batch processing with partial failures', () => {
 
       // Create two eligible escrows
       await Promise.all([
-        prisma.escrow.create({
-          data: {
-            itemName: 'Camera',
-            itemRef: 'camera-log-001',
-            amount: 250,
-            currency: 'USDC',
-            buyerAddress: 'buyer-1',
-            vendorAddress: 'vendor-1',
-            state: 'SHIPPED',
-            trackingId: 'TRK-001',
-            shippedAt: new Date(Date.now() - 60 * 60 * 60 * 1000),
-            deliveredAt: pastDelivery,
-            deliveryRecordedAt: pastDelivery,
-          },
+        createDeliveredEscrow(prisma, escrowRepository, {
+          itemName: 'Camera',
+          itemRef: 'camera-log-001',
+          amount: 250,
+          buyerAddress: 'buyer-1',
+          vendorAddress: 'vendor-1',
+          trackingId: 'TRK-001',
+          deliveredAt: pastDelivery,
         }),
-        prisma.escrow.create({
-          data: {
-            itemName: 'Laptop',
-            itemRef: 'laptop-log-001',
-            amount: 1200,
-            currency: 'USDC',
-            buyerAddress: 'buyer-2',
-            vendorAddress: 'vendor-2',
-            state: 'SHIPPED',
-            trackingId: 'TRK-002',
-            shippedAt: new Date(Date.now() - 60 * 60 * 60 * 1000),
-            deliveredAt: pastDelivery,
-            deliveryRecordedAt: pastDelivery,
-          },
+        createDeliveredEscrow(prisma, escrowRepository, {
+          itemName: 'Laptop',
+          itemRef: 'laptop-log-001',
+          amount: 1200,
+          buyerAddress: 'buyer-2',
+          vendorAddress: 'vendor-2',
+          trackingId: 'TRK-002',
+          deliveredAt: pastDelivery,
         }),
       ]);
 
@@ -429,20 +386,14 @@ describe('Auto-release batch processing with partial failures', () => {
 
     it('processes successfully after retrying failed escrows', async () => {
       // Create one eligible escrow
-      const escrow = await prisma.escrow.create({
-        data: {
-          itemName: 'Camera',
-          itemRef: 'camera-retry-001',
-          amount: 250,
-          currency: 'USDC',
-          buyerAddress: 'buyer-1',
-          vendorAddress: 'vendor-1',
-          state: 'SHIPPED',
-          trackingId: 'TRK-001',
-          shippedAt: new Date(Date.now() - 60 * 60 * 60 * 1000),
-          deliveredAt: pastDelivery,
-          deliveryRecordedAt: pastDelivery,
-        },
+      const id = await createDeliveredEscrow(prisma, escrowRepository, {
+        itemName: 'Camera',
+        itemRef: 'camera-retry-001',
+        amount: 250,
+        buyerAddress: 'buyer-1',
+        vendorAddress: 'vendor-1',
+        trackingId: 'TRK-001',
+        deliveredAt: pastDelivery,
       });
 
       // First run fails
@@ -453,10 +404,8 @@ describe('Auto-release batch processing with partial failures', () => {
       await worker.run();
 
       // Verify first attempt failed
-      const afterFirst = await prisma.escrow.findUnique({
-        where: { id: escrow.id },
-      });
-      expect(afterFirst!.state).toBe('SHIPPED');
+      const afterFirst = await prisma.escrow.findUnique({ where: { id } });
+      expect(afterFirst!.state).toBe('DELIVERED');
       expect(afterFirst!.autoReleaseTxHash).toBeNull();
 
       // Second run succeeds
@@ -465,10 +414,8 @@ describe('Auto-release batch processing with partial failures', () => {
       await worker.run();
 
       // Verify retry succeeded
-      const afterSecond = await prisma.escrow.findUnique({
-        where: { id: escrow.id },
-      });
-      expect(afterSecond!.state).toBe('COMPLETED');
+      const afterSecond = await prisma.escrow.findUnique({ where: { id } });
+      expect(afterSecond!.state).toBe('RELEASED');
       expect(afterSecond!.autoReleaseTxHash).toBe('tx-hash-1');
     });
   });

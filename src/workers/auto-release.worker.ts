@@ -4,27 +4,34 @@ import {
   OnApplicationShutdown,
   OnModuleInit,
 } from '@nestjs/common';
+import { ConfigService } from '../config/config.service';
 import { DisputeRepository } from '../dispute/dispute.repository';
 import { EscrowRepository } from '../escrow/escrow.repository';
 import { ContractService } from '../stellar/contract.service';
 
 const EVERY_5_MINUTES = 5 * 60 * 1000;
 
-// Stellar address of the auto-release signing account. Must be set in production.
-const AUTO_RELEASE_SOURCE =
-  process.env.AUTO_RELEASE_SOURCE_ADDRESS ??
-  'GAUTORELEASE000000000000000000000000000000000000000000000';
-
 @Injectable()
 export class AutoReleaseWorker implements OnModuleInit, OnApplicationShutdown {
   private readonly logger = new Logger(AutoReleaseWorker.name);
+  private readonly autoReleaseSource: string;
   private timer: NodeJS.Timeout | null = null;
 
   constructor(
     private readonly escrowRepository: EscrowRepository,
     private readonly disputeRepository: DisputeRepository,
     private readonly contractService: ContractService,
-  ) {}
+    private readonly configService: ConfigService,
+  ) {
+    this.autoReleaseSource = this.configService.get(
+      'AUTO_RELEASE_SOURCE_ADDRESS',
+    );
+    if (!this.autoReleaseSource) {
+      throw new Error(
+        'AUTO_RELEASE_SOURCE_ADDRESS is not configured — the application fails to start without a valid auto-release signing address.',
+      );
+    }
+  }
 
   onModuleInit(): void {
     if (process.env.NODE_ENV === 'test') {
@@ -62,7 +69,7 @@ export class AutoReleaseWorker implements OnModuleInit, OnApplicationShutdown {
             continue;
           }
 
-          if (escrow.state === 'COMPLETED' || escrow.autoReleaseTxHash) {
+          if (escrow.state === 'RELEASED' || escrow.autoReleaseTxHash) {
             continue;
           }
 
@@ -81,12 +88,9 @@ export class AutoReleaseWorker implements OnModuleInit, OnApplicationShutdown {
           try {
             const txHash = await this.contractService.submitAutoRelease(
               escrow.id,
-              AUTO_RELEASE_SOURCE,
+              this.autoReleaseSource,
             );
-            await this.escrowRepository.markAutoReleaseCompleted(
-              escrow.id,
-              txHash,
-            );
+            await this.escrowRepository.markAutoReleased(escrow.id, txHash);
             successCount++;
           } catch (error) {
             // Release the claim so the next poll cycle can retry.
