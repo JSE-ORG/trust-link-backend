@@ -1,6 +1,10 @@
 import { Test } from '@jest/globals';
 import { Test as NestTest } from '@nestjs/testing';
 import { PrismaService } from '../../src/prisma/prisma.service';
+import {
+  encryptContact,
+  decryptContact,
+} from '../../src/common/sanitization/contact-encryption.util';
 
 describe('PrismaService constructor and DI (issue #483 regression)', () => {
   it('constructs without arguments and leaves effectiveDatabaseUrl undefined', () => {

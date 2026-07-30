@@ -140,19 +140,18 @@ describe('TracingInterceptor', () => {
       // workflow + attributes and that the captured function runs.
       const withWorkflowSpanSpy = jest
         .spyOn(tracing, 'withWorkflowSpan')
-        .mockImplementation(async (_workflow: string, fn: () => unknown, _attributes?: Record<string, string | number | boolean>) => fn());
+        .mockImplementation(async (_workflow: string, fn: () => unknown) =>
+          fn(),
+        );
 
       const context = createMockContext('POST', '/escrow/create');
       const next = createMockCallHandler('created');
 
-      const result = await lastValueFrom(
-        interceptor.intercept(context, next),
-      );
+      const result = await lastValueFrom(interceptor.intercept(context, next));
 
       expect(result).toBe('created');
       expect(withWorkflowSpanSpy).toHaveBeenCalledTimes(1);
-      const [workflow, _fn, attributes] = withWorkflowSpanSpy.mock
-        .calls[0] as [
+      const [workflow, , attributes] = withWorkflowSpanSpy.mock.calls[0] as [
         string,
         () => Promise<unknown>,
         Record<string, string>,
@@ -173,19 +172,18 @@ describe('TracingInterceptor', () => {
       // the interceptor still creates a fresh workflow span via the tracer.
       const withWorkflowSpanSpy = jest
         .spyOn(tracing, 'withWorkflowSpan')
-        .mockImplementation(async (_workflow: string, fn: () => unknown, _attributes?: Record<string, string | number | boolean>) => fn());
+        .mockImplementation(async (_workflow: string, fn: () => unknown) =>
+          fn(),
+        );
 
       const context = createMockContext('GET', '/vendor/escrows');
       const next = createMockCallHandler([{ id: 1 }]);
 
-      const result = await lastValueFrom(
-        interceptor.intercept(context, next),
-      );
+      const result = await lastValueFrom(interceptor.intercept(context, next));
 
       expect(result).toEqual([{ id: 1 }]);
       expect(withWorkflowSpanSpy).toHaveBeenCalledTimes(1);
-      const [workflow, _fn, attributes] = withWorkflowSpanSpy.mock
-        .calls[0] as [
+      const [workflow, , attributes] = withWorkflowSpanSpy.mock.calls[0] as [
         string,
         () => Promise<unknown>,
         Record<string, string>,
@@ -234,9 +232,7 @@ describe('TracingInterceptor', () => {
       const context = createMockContext('GET', '/health');
       const next = createMockCallHandler('ok');
 
-      const result = await lastValueFrom(
-        interceptor.intercept(context, next),
-      );
+      const result = await lastValueFrom(interceptor.intercept(context, next));
 
       expect(result).toBe('ok');
       expect(mockSpan.recordException).not.toHaveBeenCalled();
