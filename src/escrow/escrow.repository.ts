@@ -391,12 +391,12 @@ export class EscrowRepository {
    * @returns an {@link EventsResult} ordered oldest-first.
    */
   async findEvents(escrowId: string): Promise<EventsResult> {
-    const rawEvents = await this.prisma.escrowEvent.findMany({
+    const rawEvents = await (this.prisma.escrowEvent.findMany as any)({
       where: { escrowId },
       orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
     });
 
-    return rawEvents.map((e) => ({
+    return rawEvents.map((e: any) => ({
       event: e.toState,
       occurredAt: e.createdAt,
       fromState: e.fromState,

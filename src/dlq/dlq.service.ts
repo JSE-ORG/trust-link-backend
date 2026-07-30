@@ -51,17 +51,17 @@ export class DlqService {
     if (query.escrowId) where.escrowId = query.escrowId;
 
     const [records, total] = await Promise.all([
-      this.prisma.failedTransaction.findMany({
+      (this.prisma.failedTransaction.findMany as any)({
         where,
         orderBy: { createdAt: 'desc' },
         skip,
         take: limit,
       }),
-      this.prisma.failedTransaction.count({ where }),
+      (this.prisma.failedTransaction as any).count({ where }),
     ]);
 
     return {
-      data: records.map((r) => this.toRecord(r)),
+      data: records.map((r: any) => this.toRecord(r)),
       total,
       page,
       limit,

@@ -3,11 +3,11 @@ import {
   PrismaService,
   VendorTrackingSettingsRecord,
 } from '../../prisma/prisma.service';
-import { ChartDataResponse, DailyVolumeData } from './analytics.dto';
+import { ChartDataResponse, DailyVolumeDataDto } from './analytics.dto';
 import {
   AnalyticsStatsResponse,
-  TransactionStats,
-  ChannelMetrics,
+  TransactionStatsDto,
+  ChannelMetricsDto,
 } from './analytics-stats.dto';
 
 @Injectable()
@@ -54,7 +54,7 @@ export class AnalyticsService {
     `;
 
     // Convert aggregation results to DailyVolumeData format
-    const dailyMap = new Map<string, DailyVolumeData>();
+    const dailyMap = new Map<string, DailyVolumeDataDto>();
 
     type AggRow = {
       date: string;
@@ -121,19 +121,19 @@ export class AnalyticsService {
    * Ensures consistent time-series data even for days with no activity
    */
   private fillDateGaps(
-    dailyMap: Map<string, DailyVolumeData>,
+    dailyMap: Map<string, DailyVolumeDataDto>,
     startDate: Date,
     endDate: Date,
     timezone: string = 'UTC',
-  ): DailyVolumeData[] {
-    const result: DailyVolumeData[] = [];
+  ): DailyVolumeDataDto[] {
+    const result: DailyVolumeDataDto[] = [];
     const currentDate = new Date(startDate);
 
     while (currentDate <= endDate) {
       const dateKey = this.formatDateInTimezone(currentDate, timezone);
 
       if (dailyMap.has(dateKey)) {
-        result.push(dailyMap.get(dateKey));
+        result.push(dailyMap.get(dateKey)!);
       } else {
         result.push({
           date: dateKey,
@@ -181,7 +181,7 @@ export class AnalyticsService {
     });
 
     // Calculate transaction statistics
-    const stats: TransactionStats = {
+    const stats: TransactionStatsDto = {
       totalVolume: 0,
       activeVolume: 0,
       totalTransactions: escrows.length,
@@ -241,7 +241,7 @@ export class AnalyticsService {
 
     const notificationChannels = trackingSettings?.notificationChannels ?? [];
 
-    const channels: ChannelMetrics = {
+    const channels: ChannelMetricsDto = {
       email: {
         notificationsEnabled: notificationChannels.includes('EMAIL'),
       },
