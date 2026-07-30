@@ -14,7 +14,8 @@ RUN npm ci && npm cache clean --force
 COPY . .
 
 # Generate Prisma client and build application
-RUN npx prisma generate && npm run build
+ARG DATABASE_URL=postgresql://dummy:dummy@localhost:5432/dummy
+RUN DATABASE_URL=$DATABASE_URL npx prisma generate && npm run build
 
 # Production stage
 FROM node:22-alpine AS production
