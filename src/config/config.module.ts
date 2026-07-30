@@ -1,8 +1,7 @@
 import { Global, Module } from '@nestjs/common';
 import { ConfigModule as NestConfigModule } from '@nestjs/config';
-import * as Joi from 'joi';
-import { Keypair } from '@stellar/stellar-sdk';
 import { ConfigService } from './config.service';
+import { configValidationSchema } from './config.schema';
 
 /**
  * Custom Joi validator for Stellar secret keys.
@@ -73,6 +72,7 @@ const stellarPublicKey = Joi.string().custom((value, helpers) => {
   imports: [
     NestConfigModule.forRoot({
       ignoreEnvFile: true,
+      validationSchema: configValidationSchema,
       validationSchema: Joi.object({
         PORT: Joi.number().default(3000),
         DATABASE_URL: Joi.string().required(),
@@ -89,8 +89,14 @@ const stellarPublicKey = Joi.string().custom((value, helpers) => {
         CONTRACT_ID: Joi.string().required().messages({
           'any.required': 'Config validation error: CONTRACT_ID is required',
         }),
-        ADMIN_ADDRESS: stellarPublicKey.required(),
-        AUTO_RELEASE_SOURCE_ADDRESS: stellarPublicKey.optional(),
+        ADMIN_ADDRESS: Joi.string().required(),
+        AUTO_RELEASE_SOURCE_ADDRESS: Joi.string()
+          .pattern(/^G[A-Z2-7]{55}$/)
+          .optional()
+          .messages({
+            'string.pattern.base':
+              'Config validation error: AUTO_RELEASE_SOURCE_ADDRESS must be a valid Stellar public key (starts with G)',
+          }),
         NODE_ENV: Joi.string()
           .valid('development', 'production', 'test')
           .default('development'),
@@ -122,9 +128,21 @@ const stellarPublicKey = Joi.string().custom((value, helpers) => {
         SENTRY_DSN: Joi.when('NODE_ENV', {
           is: 'production',
           then: Joi.string().uri().required(),
-          otherwise: Joi.string().uri().optional(),
+          otherwise: Joi.string().uri().allow('').optional(),
         }),
         GIT_SHA: Joi.string().optional(),
+        AUTH_CHALLENGE_LIMIT: Joi.number().integer().min(1).default(10),
+        AUTH_CHALLENGE_WINDOW: Joi.number().integer().min(1000).default(60000),
+        PUBLIC_LIMIT: Joi.number().integer().min(1).default(60),
+        PUBLIC_WINDOW: Joi.number().integer().min(1000).default(60000),
+        EVIDENCE_UPLOAD_LIMIT: Joi.number().integer().min(1).default(10),
+        EVIDENCE_UPLOAD_TTL: Joi.number().integer().min(1000).default(60000),
+        REFRESH_TOKEN_TTL: Joi.number().integer().min(60).default(604800),
+        GIGL_API_BASE_URL: Joi.string().uri().optional(),
+        GIGL_API_TOKEN: Joi.string().optional(),
+        STELLAR_HORIZON_URL: Joi.string().uri().optional(),
+        QUERY_TIMEOUT_MS: Joi.number().integer().min(1000).default(30000),
+        SLOW_QUERY_THRESHOLD_MS: Joi.number().integer().min(0).default(500),
       }),
       validationOptions: {
         abortEarly: false,

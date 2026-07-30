@@ -18,6 +18,12 @@ import {
 } from '../../src/notifications/notification-retry-queue.types';
 import { EscrowRecord } from '../../src/prisma/prisma.service';
 
+// Mock before any test code — bullmq is imported dynamically inside onModuleInit
+jest.mock('bullmq', () => ({
+  Queue: jest.fn(),
+  Worker: jest.fn(),
+}));
+
 const escrow: EscrowRecord = {
   id: 'escrow-1',
   itemName: 'Vintage jacket',
@@ -191,5 +197,404 @@ describe('NotificationRetryQueueService (in-process fallback) (#73)', () => {
     const service = new NotificationRetryQueueService();
     expect(service._getDispatchers().EMAIL).toBeNull();
     expect(service._getDispatchers().SMS).toBeNull();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Prisma-integration tests — in-process retry path with database interaction
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('NotificationRetryQueueService (in-process with Prisma) (#73)', () => {
+  const synchronousScheduler = (cb: () => void) => cb();
+
+  const makePrismaMock = () => ({
+    notification: { update: jest.fn().mockResolvedValue(undefined) },
+  });
+
+  const makeJob = (
+    overrides: Partial<NotificationRetryJobData> = {},
+  ): NotificationRetryJobData => ({
+    channel: 'EMAIL',
+    type: 'FUNDED',
+    escrow,
+    recipientAddress: 'someone@example.test',
+    ...overrides,
+  });
+
+  it('updates notification to SENT on first-success when prisma + notificationId are provided', async () => {
+    const prisma = makePrismaMock();
+    const dispatch = jest.fn().mockResolvedValue(undefined);
+    const service = new NotificationRetryQueueService(
+      { backoff: { attempts: 3, delay: 1, maxDelayMs: 10 }, scheduleDelayed: synchronousScheduler },
+      prisma as any,
+    );
+    service.registerDispatcher('EMAIL', { dispatch });
+    await service.enqueue(makeJob({ notificationId: 'n-1' }));
+    expect(prisma.notification.update).toHaveBeenCalledTimes(1);
+    expect(prisma.notification.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'n-1' },
+        data: expect.objectContaining({ status: 'SENT', retryCount: 0 }),
+      }),
+    );
+  });
+
+  it('updates retryCount and failedAt on each retry attempt', async () => {
+    const prisma = makePrismaMock();
+    const dispatch = jest.fn().mockRejectedValue(new Error('transient'));
+    const service = new NotificationRetryQueueService(
+      { backoff: { attempts: 3, delay: 1, maxDelayMs: 10 }, scheduleDelayed: synchronousScheduler },
+      prisma as any,
+    );
+    service.registerDispatcher('EMAIL', { dispatch });
+    await service.enqueue(makeJob({ notificationId: 'n-1' }));
+    expect(prisma.notification.update).toHaveBeenCalled();
+    const allCalls = prisma.notification.update.mock.calls;
+    const lastCallArg = allCalls[allCalls.length - 1][0];
+    expect(lastCallArg).toMatchObject({
+      data: expect.objectContaining({ status: 'FAILED' }),
+    });
+  });
+
+  it('skips prisma when notificationId is not set', async () => {
+    const prisma = makePrismaMock();
+    const dispatch = jest.fn().mockResolvedValue(undefined);
+    const service = new NotificationRetryQueueService(
+      { backoff: { attempts: 2, delay: 1, maxDelayMs: 5 }, scheduleDelayed: synchronousScheduler },
+      prisma as any,
+    );
+    service.registerDispatcher('EMAIL', { dispatch });
+    await service.enqueue(makeJob({ notificationId: undefined }));
+    expect(prisma.notification.update).not.toHaveBeenCalled();
+  });
+
+  it('catches prisma error on success path without crashing', async () => {
+    const prisma = { notification: { update: jest.fn().mockRejectedValue(new Error('db down')) } };
+    const dispatch = jest.fn().mockResolvedValue(undefined);
+    const service = new NotificationRetryQueueService(
+      { backoff: { attempts: 2, delay: 1, maxDelayMs: 5 }, scheduleDelayed: synchronousScheduler },
+      prisma as any,
+    );
+    service.registerDispatcher('EMAIL', { dispatch });
+    await expect(service.enqueue(makeJob({ notificationId: 'n-1' }))).resolves.toBeUndefined();
+  });
+
+  it('catches prisma error on failure path without crashing', async () => {
+    const prisma = { notification: { update: jest.fn().mockRejectedValue(new Error('db down')) } };
+    const dispatch = jest.fn().mockRejectedValue(new Error('fail'));
+    const service = new NotificationRetryQueueService(
+      { backoff: { attempts: 2, delay: 1, maxDelayMs: 5 }, scheduleDelayed: synchronousScheduler },
+      prisma as any,
+    );
+    service.registerDispatcher('EMAIL', { dispatch });
+    await expect(service.enqueue(makeJob({ notificationId: 'n-1' }))).resolves.toBeUndefined();
+  });
+
+  it('records to DLQ after exhaustion with prisma FAILED update', async () => {
+    const dlqSink: NotificationDeadLetterRecord[] = [];
+    const prisma = makePrismaMock();
+    const dispatch = jest.fn().mockRejectedValue(new Error('exhausted'));
+    const service = new NotificationRetryQueueService(
+      {
+        backoff: { attempts: 3, delay: 1, maxDelayMs: 10 },
+        deadLetterSink: { record: (entry) => void dlqSink.push(entry) },
+        scheduleDelayed: synchronousScheduler,
+      },
+      prisma as any,
+    );
+    service.registerDispatcher('EMAIL', { dispatch });
+    await service.enqueue(makeJob({ notificationId: 'n-1', requestId: 'req-1' }));
+    expect(dispatch).toHaveBeenCalledTimes(3);
+    expect(dlqSink).toHaveLength(1);
+    expect(dlqSink[0].lastError).toBe('exhausted');
+    const lastUpdate = prisma.notification.update.mock.calls.slice(-1)[0][0];
+    expect(lastUpdate.data).toMatchObject({ status: 'FAILED' });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BullMQ integration — tests that exercise the BullMQ queue/worker path
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('NotificationRetryQueueService (BullMQ integration) (#73)', () => {
+  let MockQueue: jest.Mock;
+  let MockWorker: jest.Mock;
+  const mockQueueInstance = {
+    add: jest.fn().mockResolvedValue(undefined),
+    close: jest.fn().mockResolvedValue(undefined),
+  };
+  const mockDlqInstance = {
+    add: jest.fn().mockResolvedValue(undefined),
+    close: jest.fn().mockResolvedValue(undefined),
+  };
+  const mockWorkerInstance = {
+    close: jest.fn().mockResolvedValue(undefined),
+    on: jest.fn(),
+  };
+  let failedHandler: ((job: any, error: any) => void) | undefined;
+
+  beforeAll(() => {
+    const mod = jest.requireMock('bullmq') as { Queue: jest.Mock; Worker: jest.Mock };
+    MockQueue = mod.Queue;
+    MockWorker = mod.Worker;
+  });
+
+  beforeEach(() => {
+    MockQueue.mockReset();
+    MockWorker.mockReset();
+    mockQueueInstance.add.mockReset();
+    mockQueueInstance.close.mockReset();
+    mockDlqInstance.add.mockReset();
+    mockDlqInstance.close.mockReset();
+    mockWorkerInstance.close.mockReset();
+    mockWorkerInstance.on.mockReset();
+    failedHandler = undefined;
+
+    let queueCallCount = 0;
+    MockQueue.mockImplementation(() => {
+      queueCallCount++;
+      return queueCallCount === 1 ? mockQueueInstance : mockDlqInstance;
+    });
+
+    mockWorkerInstance.on.mockImplementation((event: string, handler: any) => {
+      if (event === 'failed') failedHandler = handler;
+    });
+    MockWorker.mockReturnValue(mockWorkerInstance);
+  });
+
+  afterEach(() => {
+    delete process.env.REDIS_URL;
+  });
+
+  it('onModuleInit without REDIS_URL logs warning and uses in-process fallback', async () => {
+    const service = new NotificationRetryQueueService({
+      backoff: { attempts: 2, delay: 1, maxDelayMs: 5 },
+    });
+    delete process.env.REDIS_URL;
+    await service.onModuleInit();
+    expect(MockQueue).not.toHaveBeenCalled();
+    expect(MockWorker).not.toHaveBeenCalled();
+  });
+
+  it('onModuleInit with REDIS_URL creates queue, dlq, and worker', async () => {
+    process.env.REDIS_URL = 'redis://localhost:6379';
+    const service = new NotificationRetryQueueService({
+      backoff: { attempts: 3, delay: 1_000, maxDelayMs: 300_000 },
+    });
+    service.registerDispatcher('EMAIL', { dispatch: jest.fn() });
+    await service.onModuleInit();
+    expect(MockQueue).toHaveBeenCalledTimes(2);
+    expect(MockQueue).toHaveBeenNthCalledWith(
+      1,
+      'notifications-retry',
+      expect.objectContaining({ connection: { url: 'redis://localhost:6379' } }),
+    );
+    expect(MockQueue).toHaveBeenNthCalledWith(
+      2,
+      'notifications-dlq',
+      expect.objectContaining({ connection: { url: 'redis://localhost:6379' } }),
+    );
+    expect(MockWorker).toHaveBeenCalledTimes(1);
+    expect(MockWorker).toHaveBeenCalledWith(
+      'notifications-retry',
+      expect.any(Function),
+      expect.objectContaining({ connection: { url: 'redis://localhost:6379' } }),
+    );
+    expect(mockWorkerInstance.on).toHaveBeenCalledWith('failed', expect.any(Function));
+  });
+
+  it('onModuleInit falls back to in-process when BullMQ import throws', async () => {
+    process.env.REDIS_URL = 'redis://localhost:6379';
+    MockQueue.mockImplementation(() => {
+      throw new Error('connection refused');
+    });
+    const service = new NotificationRetryQueueService({
+      backoff: { attempts: 2, delay: 1, maxDelayMs: 5 },
+    });
+    await service.onModuleInit();
+    const dispatchers = service._getDispatchers();
+    expect(dispatchers.EMAIL).toBeNull();
+    expect(dispatchers.SMS).toBeNull();
+  });
+
+  it('enqueue delegates to bullQueue.add when bullQueue is set', async () => {
+    const service = new NotificationRetryQueueService({
+      backoff: { attempts: 3, delay: 1_000, maxDelayMs: 300_000 },
+    });
+    (service as any).bullQueue = mockQueueInstance;
+    await service.enqueue(makeJob({ requestId: 'req-1' }));
+    expect(mockQueueInstance.add).toHaveBeenCalledWith(
+      'EMAIL-FUNDED',
+      expect.objectContaining({ channel: 'EMAIL', requestId: 'req-1' }),
+      expect.objectContaining({ attempts: 3, backoff: { type: 'exponential', delay: 1_000 } }),
+    );
+  });
+
+  it('onModuleDestroy closes worker, queue, and dlq', async () => {
+    const service = new NotificationRetryQueueService();
+    (service as any).bullWorker = mockWorkerInstance;
+    (service as any).bullQueue = mockQueueInstance;
+    (service as any).bullDlq = mockDlqInstance;
+    await service.onModuleDestroy();
+    expect(mockWorkerInstance.close).toHaveBeenCalledTimes(1);
+    expect(mockQueueInstance.close).toHaveBeenCalledTimes(1);
+    expect(mockDlqInstance.close).toHaveBeenCalledTimes(1);
+  });
+
+  it('onModuleDestroy handles null connections gracefully', async () => {
+    const service = new NotificationRetryQueueService();
+    (service as any).bullWorker = null;
+    (service as any).bullQueue = null;
+    (service as any).bullDlq = null;
+    await expect(service.onModuleDestroy()).resolves.toBeUndefined();
+  });
+
+  it('recordDeadLetter adds entry to bullDlq when set', async () => {
+    const service = new NotificationRetryQueueService({
+      backoff: { attempts: 3, delay: 1, maxDelayMs: 10 },
+    });
+    (service as any).bullDlq = mockDlqInstance;
+    await (service as any).recordDeadLetter(
+      makeJob({ requestId: 'dlq-test' }),
+      3,
+      new Error('epic fail'),
+    );
+    expect(mockDlqInstance.add).toHaveBeenCalledWith(
+      'EMAIL-FUNDED-dlq',
+      expect.objectContaining({
+        channel: 'EMAIL',
+        attemptsExhausted: 3,
+        lastError: 'epic fail',
+        requestId: 'dlq-test',
+      }),
+      expect.objectContaining({ removeOnComplete: false, removeOnFail: false }),
+    );
+  });
+
+  it('recordDeadLetter writes "unknown error" for non-Error lastError', async () => {
+    const sink: NotificationDeadLetterRecord[] = [];
+    const service = new NotificationRetryQueueService({
+      backoff: { attempts: 2, delay: 1, maxDelayMs: 5 },
+      deadLetterSink: { record: (entry) => void sink.push(entry) },
+    });
+    await (service as any).recordDeadLetter(makeJob(), 2, 'string error');
+    expect(sink).toHaveLength(1);
+    expect(sink[0].lastError).toBe('unknown error');
+  });
+
+  it('worker failed handler returns early when job is null', async () => {
+    process.env.REDIS_URL = 'redis://localhost:6379';
+    const sink: NotificationDeadLetterRecord[] = [];
+    const service = new NotificationRetryQueueService({
+      backoff: { attempts: 3, delay: 1, maxDelayMs: 10 },
+      deadLetterSink: { record: (entry) => void sink.push(entry) },
+    });
+    service.registerDispatcher('EMAIL', { dispatch: jest.fn() });
+    await service.onModuleInit();
+    expect(failedHandler).toBeDefined();
+    failedHandler!(null, new Error('test'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(sink).toHaveLength(0);
+  });
+
+  it('worker failed handler returns early when attempts not exhausted', async () => {
+    process.env.REDIS_URL = 'redis://localhost:6379';
+    const sink: NotificationDeadLetterRecord[] = [];
+    const service = new NotificationRetryQueueService({
+      backoff: { attempts: 5, delay: 1, maxDelayMs: 10 },
+      deadLetterSink: { record: (entry) => void sink.push(entry) },
+    });
+    service.registerDispatcher('EMAIL', { dispatch: jest.fn() });
+    await service.onModuleInit();
+    expect(failedHandler).toBeDefined();
+    failedHandler!(
+      {
+        data: makeJob({ requestId: 'req-a' }),
+        attemptsMade: 2,
+        opts: { attempts: 5 },
+      },
+      new Error('transient'),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(sink).toHaveLength(0);
+  });
+
+  it('worker failed handler records DLQ when attempts exhausted', async () => {
+    process.env.REDIS_URL = 'redis://localhost:6379';
+    const sink: NotificationDeadLetterRecord[] = [];
+    const service = new NotificationRetryQueueService({
+      backoff: { attempts: 3, delay: 1, maxDelayMs: 10 },
+      deadLetterSink: { record: (entry) => void sink.push(entry) },
+    });
+    service.registerDispatcher('EMAIL', { dispatch: jest.fn() });
+    await service.onModuleInit();
+    expect(failedHandler).toBeDefined();
+    failedHandler!(
+      {
+        data: makeJob({ requestId: 'req-b' }),
+        attemptsMade: 3,
+        opts: { attempts: 3 },
+      },
+      new Error('finally gave up'),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(sink).toHaveLength(1);
+    expect(sink[0].attemptsExhausted).toBe(3);
+    expect(sink[0].lastError).toBe('finally gave up');
+  });
+
+  it('worker failed handler uses job.opts.attempts instead of service default', async () => {
+    process.env.REDIS_URL = 'redis://localhost:6379';
+    const sink: NotificationDeadLetterRecord[] = [];
+    const service = new NotificationRetryQueueService({
+      backoff: { attempts: 10, delay: 1, maxDelayMs: 100 },
+      deadLetterSink: { record: (entry) => void sink.push(entry) },
+    });
+    service.registerDispatcher('EMAIL', { dispatch: jest.fn() });
+    await service.onModuleInit();
+    expect(failedHandler).toBeDefined();
+    failedHandler!(
+      {
+        data: makeJob({ requestId: 'req-c' }),
+        attemptsMade: 3,
+        opts: { attempts: 3 },
+      },
+      new Error('exhausted per-job limit'),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(sink).toHaveLength(1);
+    expect(sink[0].attemptsExhausted).toBe(3);
+  });
+
+  it('worker failed handler updates prisma FAILED status when notificationId present', async () => {
+    process.env.REDIS_URL = 'redis://localhost:6379';
+    const sink: NotificationDeadLetterRecord[] = [];
+    const prisma = { notification: { update: jest.fn().mockResolvedValue(undefined) } };
+    const service = new NotificationRetryQueueService(
+      {
+        backoff: { attempts: 3, delay: 1, maxDelayMs: 10 },
+        deadLetterSink: { record: (entry) => void sink.push(entry) },
+      },
+      prisma as any,
+    );
+    service.registerDispatcher('EMAIL', { dispatch: jest.fn() });
+    await service.onModuleInit();
+    expect(failedHandler).toBeDefined();
+    failedHandler!(
+      {
+        data: makeJob({ notificationId: 'n-99', requestId: 'req-d' }),
+        attemptsMade: 3,
+        opts: { attempts: 3 },
+      },
+      new Error('dead'),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(prisma.notification.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'n-99' },
+        data: expect.objectContaining({ status: 'FAILED' }),
+      }),
+    );
+    expect(sink).toHaveLength(1);
   });
 });
