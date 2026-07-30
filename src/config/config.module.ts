@@ -1,8 +1,7 @@
 import { Global, Module } from '@nestjs/common';
 import { ConfigModule as NestConfigModule } from '@nestjs/config';
-import * as Joi from 'joi';
-import { Keypair } from '@stellar/stellar-sdk';
 import { ConfigService } from './config.service';
+import { configValidationSchema } from './config.schema';
 
 /**
  * Custom Joi validator for Stellar secret keys.
@@ -72,6 +71,7 @@ const stellarPublicKey = Joi.string().custom((value, helpers) => {
 @Module({
   imports: [
     NestConfigModule.forRoot({
+      validationSchema: configValidationSchema,
       validationSchema: Joi.object({
         PORT: Joi.number().default(3000),
         DATABASE_URL: Joi.string().required(),
