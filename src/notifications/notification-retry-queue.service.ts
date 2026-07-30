@@ -33,6 +33,7 @@ import * as crypto from 'crypto';
 import type { ConnectionOptions } from 'bullmq';
 
 import { PrismaService } from '../prisma/prisma.service';
+import { ConfigService } from '../config/config.service';
 import {
   NotificationRetryJobData,
   NotificationRetryBackoff,
@@ -102,6 +103,7 @@ export class NotificationRetryQueueService
   constructor(
     @Optional() options?: CommonOptions,
     @Optional() private readonly prisma?: PrismaService,
+    @Optional() private readonly configService?: ConfigService,
   ) {
     if (options?.backoff) this.options.backoff = options.backoff;
     this.options.deadLetterSink = options?.deadLetterSink;
@@ -247,7 +249,7 @@ export class NotificationRetryQueueService
   }
 
   async onModuleInit(): Promise<void> {
-    const url = process.env.REDIS_URL;
+    const url = this.configService?.get<string>('REDIS_URL');
     if (!url) {
       this.logger.warn(
         'REDIS_URL is not set; NotificationRetryQueueService is using the in-process retry runner. ' +

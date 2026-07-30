@@ -17,16 +17,6 @@ import { CORS_ALLOWED_HEADERS } from './common/security/cors.config';
 const bootstrapLogger = new JsonLoggerService('Bootstrap');
 
 async function bootstrap(): Promise<void> {
-  const sentryDsn = process.env.SENTRY_DSN;
-  if (sentryDsn) {
-    Sentry.init({
-      dsn: sentryDsn,
-      release: process.env.GIT_SHA,
-      environment: process.env.NODE_ENV ?? 'development',
-      tracesSampleRate: process.env.NODE_ENV === 'production' ? 0.2 : 1.0,
-    });
-  }
-
   const app = await NestFactory.create(AppModule, {
     bufferLogs: true,
     bodyParser: false,
@@ -36,6 +26,16 @@ async function bootstrap(): Promise<void> {
   app.useLogger(jsonLogger);
 
   const configService = app.get(ConfigService);
+
+  const sentryDsn = configService.get<string | undefined>('SENTRY_DSN');
+  if (sentryDsn) {
+    Sentry.init({
+      dsn: sentryDsn,
+      release: configService.get<string | undefined>('GIT_SHA'),
+      environment: configService.get<string | undefined>('NODE_ENV') ?? 'development',
+      tracesSampleRate: configService.get<string | undefined>('NODE_ENV') === 'production' ? 0.2 : 1.0,
+    });
+  }
   const connectSrc = buildCspConnectSrc({
     stellarNetwork: configService.get('STELLAR_NETWORK'),
     stellarHorizonUrl: configService.get<string | undefined>(

@@ -59,6 +59,7 @@ const VALID_ENV = {
   CONTRACT_ID: 'test-contract-id',
   NODE_ENV: 'test',
   STELLAR_NETWORK: 'TESTNET',
+  CREDENTIAL_ENCRYPTION_KEY: 'a'.repeat(64),
 };
 
 /**

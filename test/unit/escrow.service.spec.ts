@@ -5,7 +5,7 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import https://github.com/JSE-ORG/trust-link-backend/pull/583/conflict?name=test%252Funit%252Fescrow.service.spec.ts&ancestor_oid=4aecad21d4c8c93ccff3ac31d2482698925613f8&base_oid=5e59d44a73cbf14bdd59b06864ce64e281af5ccf&head_oid=e109c784b18ea461494a318263f44c1603b67224{ NotificationsService } from '../../src/notifications/notifications.service';
+import { NotificationsService } from '../../src/notifications/notifications.service';
 import { EscrowRecord } from '../../src/prisma/prisma.service';
 import { EscrowRepository } from '../../src/escrow/escrow.repository';
 import { EscrowService } from '../../src/escrow/escrow.service';

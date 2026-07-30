@@ -30,6 +30,9 @@ const LEVEL_PRIORITY: Record<string, number> = {
   fatal: 5,
 };
 
+// Note: JsonLoggerService is instantiated manually during early bootstrap
+// (before the NestJS DI container exists), so it cannot cleanly rely on
+// ConfigService. It reads process.env directly.
 function minLevel(): string {
   return (process.env.LOG_LEVEL ?? 'info').toLowerCase();
 }

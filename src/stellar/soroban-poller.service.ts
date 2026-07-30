@@ -497,14 +497,22 @@ export class SorobanPollerService implements OnModuleInit, OnModuleDestroy {
    * testnet RPC with a clear log line saying so.
    */
   private resolveRpcUrl(): string {
-    const configured = this.config.get('SOROBAN_RPC_URL');
+    const configured = this.config.get<string>('SOROBAN_RPC_URL');
     if (configured) return configured;
 
-    if (this.config.isProduction()) {
+    const nodeEnv = this.config.get<string>('NODE_ENV');
+    const stellarNetwork = this.config.get<'TESTNET' | 'MAINNET'>('STELLAR_NETWORK');
+    const isProduction = nodeEnv === 'production' || this.config.isProduction?.() === true;
+
+    if (isProduction) {
       // Backstop only: config validation already rejects this at startup.
       throw new Error(
         'SOROBAN_RPC_URL is required in production — refusing to fall back to a default RPC endpoint',
       );
+    }
+
+    if (stellarNetwork === 'MAINNET') {
+      return 'https://mainnet.stellar.validationcloud.io/v1/soroban/rpc';
     }
 
     this.logger.warn(

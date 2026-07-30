@@ -47,7 +47,7 @@ export class AutoReleaseWorker implements OnModuleInit, OnApplicationShutdown {
   }
 
   onModuleInit(): void {
-    if (process.env.NODE_ENV === 'test') {
+    if (this.configService.get('NODE_ENV') === 'test') {
       return;
     }
 

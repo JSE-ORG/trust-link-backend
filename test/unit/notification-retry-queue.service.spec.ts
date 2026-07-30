@@ -18,6 +18,11 @@ import {
 } from '../../src/notifications/notification-retry-queue.types';
 import { EscrowRecord } from '../../src/prisma/prisma.service';
 
+jest.mock('bullmq', () => ({
+  Queue: jest.fn(),
+  Worker: jest.fn(),
+}));
+
 const escrow: EscrowRecord = {
   id: 'escrow-1',
   itemName: 'Vintage jacket',
@@ -264,32 +269,6 @@ describe('NotificationRetryQueueService (in-process fallback) (#73)', () => {
     expect(service._getDispatchers().SMS).toBeNull();
   });
 });
-/**
- * Unit tests for the notification retry queue (#73). The BullMQ
- * backend requires Redis, so the in-process fallback is the path
- * exercised here; the BullMQ wiring is unit-tested at the
- * dispatcher-registration / enqueue-routing level only.
- */
-
-import {
-  NotificationRetryQueueService,
-  type NotificationChannelDispatcher,
-} from '../../src/notifications/notification-retry-queue.service';
-import {
-  DEFAULT_BACKOFF,
-  NotificationDeadLetterRecord,
-  NotificationRetryBackoff,
-  NotificationRetryJobData,
-  computeBackoffDelay,
-} from '../../src/notifications/notification-retry-queue.types';
-import { EscrowRecord } from '../../src/prisma/prisma.service';
-
-// Mock before any test code — bullmq is imported dynamically inside onModuleInit
-jest.mock('bullmq', () => ({
-  Queue: jest.fn(),
-  Worker: jest.fn(),
-}));
-
 const escrow: EscrowRecord = {
   id: 'escrow-1',
   itemName: 'Vintage jacket',
