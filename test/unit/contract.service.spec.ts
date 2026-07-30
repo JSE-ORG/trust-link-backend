@@ -3,7 +3,7 @@ import { ContractCallFailedException } from '../../src/stellar/contract-call-fai
 import { ContractService } from '../../src/stellar/contract.service';
 import { STELLAR_SERVER } from '../../src/stellar/stellar.tokens';
 
-const SOURCE = 'GSOURCE000000000000000000000000000000000000000000000000000';
+const SOURCE = 'GAGRQY3NU3KFQMBABDJBSJKMT6LSTC2RXAYSAMSYB3Y6XUZRHI3ZGR7T';
 
 describe('ContractService.submitAutoRelease (issue #19)', () => {
   let service: ContractService;
