@@ -24,7 +24,7 @@ export class AdminStatsService {
       }),
       this.prisma.dispute.count(),
       this.prisma.dispute.count({
-        where: { status: { in: ['OPEN', 'UNDER_REVIEW'] } },
+        where: { status: { in: ['OPEN', 'UNDER_REVIEW'] } } as any,
       }),
     ]);
 

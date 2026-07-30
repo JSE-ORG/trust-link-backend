@@ -30,6 +30,7 @@ import { DlqModule } from '../dlq/dlq.module';
     BlockchainListenerService,
     CursorService,
     SorobanPollerService,
+    HorizonService,
     {
       provide: STELLAR_SERVER,
       useFactory: (config: ConfigService) => {
@@ -47,16 +48,8 @@ import { DlqModule } from '../dlq/dlq.module';
     ContractService,
     BlockchainListenerService,
     CursorService,
+    HorizonService,
     STELLAR_SERVER,
-  ],
-    HorizonService,
-    { provide: STELLAR_SERVER, useValue: undefined },
-  ],
-  exports: [
-    ContractService,
-    BlockchainListenerService,
-    CursorService,
-    HorizonService,
   ],
 })
 export class StellarModule {}

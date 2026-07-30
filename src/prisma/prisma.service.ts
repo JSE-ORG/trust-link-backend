@@ -746,7 +746,7 @@ export class PrismaService implements OnModuleDestroy {
       for (const [, records] of groups.entries()) {
         const group: Record<string, unknown> = {};
         for (let i = 0; i < by.length; i++) {
-          group[by[i]] = (records[0] as Record<string, unknown>)[by[i]];
+          group[by[i]] = (records[0] as unknown as Record<string, unknown>)[by[i]];
         }
         if (_count) {
           group._count = records.length;
