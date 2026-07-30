@@ -27,6 +27,29 @@ import { DlqService } from '../dlq/dlq.service';
  *   "Auto"   + "Released"→ "AutoReleased"
  */
 
+/**
+ * Public testnet RPC endpoint, used only outside production when
+ * SOROBAN_RPC_URL is unset. Production deployments must configure the URL
+ * explicitly — config validation enforces this at startup.
+ */
+const DEFAULT_TESTNET_RPC_URL = 'https://soroban-testnet.stellar.org';
+
+/**
+ * How many ledgers behind the current one a fresh deployment starts polling
+ * from. Soroban RPC nodes retain only a short window of events (~24h), so
+ * asking for the genesis ledger is rejected outright; starting just behind
+ * "now" keeps the first request inside the retention window.
+ */
+const START_LEDGER_MARGIN = 10;
+
+/**
+ * Prefix marking a persisted cursor that holds a start ledger rather than an
+ * RPC paging token. getEvents takes the two as different parameters, and the
+ * chosen start ledger must be persisted immediately so a restart resumes from
+ * the same point instead of skipping forward to a new "now".
+ */
+const LEDGER_CURSOR_PREFIX = 'ledger:';
+
 /** Minimal shape of a Soroban RPC getEvents response entry. */
 interface SorobanRpcEvent {
   id: string;
@@ -62,6 +85,7 @@ export class SorobanPollerService implements OnModuleInit, OnModuleDestroy {
   private timer: ReturnType<typeof setInterval> | null = null;
   private polling = false;
 
+  /** Poll interval in ms. Validated and defaulted (5000) by the config schema. */
   /**
    * Issue #554: per-event-id retry counter for syncStateFromChain failures.
    * In-memory and per-process by design — a restart resetting this just
@@ -73,6 +97,8 @@ export class SorobanPollerService implements OnModuleInit, OnModuleDestroy {
 
   /** Default poll interval in milliseconds (5 s). Configurable via SOROBAN_POLL_INTERVAL_MS. */
   private readonly pollIntervalMs: number;
+  /** Per-request RPC timeout in ms. Validated and defaulted (4000) by the config schema. */
+  private readonly rpcTimeoutMs: number;
   private readonly rpcUrl: string;
   private readonly contractId: string;
 
@@ -85,14 +111,14 @@ export class SorobanPollerService implements OnModuleInit, OnModuleDestroy {
   ) {
     this.rpcUrl = this.resolveRpcUrl();
     this.contractId = this.config.get('CONTRACT_ID') ?? '';
-    const intervalEnv = this.config.get('SOROBAN_POLL_INTERVAL_MS');
-    this.pollIntervalMs = intervalEnv ? Number(intervalEnv) : 5_000;
+    this.pollIntervalMs = this.config.get('SOROBAN_POLL_INTERVAL_MS');
+    this.rpcTimeoutMs = this.config.get('SOROBAN_RPC_TIMEOUT_MS');
   }
 
   onModuleInit(): void {
-    if (!this.rpcUrl || !this.contractId) {
+    if (!this.contractId) {
       this.logger.warn(
-        'SorobanPollerService: SOROBAN_RPC_URL or CONTRACT_ID not set — poller disabled',
+        'SorobanPollerService: CONTRACT_ID not set — poller disabled',
       );
       return;
     }
@@ -123,7 +149,18 @@ export class SorobanPollerService implements OnModuleInit, OnModuleDestroy {
     this.polling = true;
 
     try {
-      const cursor = await this.cursorService.get();
+      let cursor = await this.cursorService.get();
+      if (!cursor) {
+        const startLedger = await this.resolveStartLedger();
+        cursor = `${LEDGER_CURSOR_PREFIX}${startLedger}`;
+        // Persist before the first fetch so a restart resumes from this
+        // ledger instead of computing a new starting point and skipping the
+        // gap.
+        await this.cursorService.set(cursor);
+        this.logger.log(
+          `SorobanPollerService: no cursor stored — starting from ledger ${startLedger}`,
+        );
+      }
       const rawEvents = await this.fetchEvents(cursor);
 
       if (rawEvents.length === 0) {
@@ -162,10 +199,17 @@ export class SorobanPollerService implements OnModuleInit, OnModuleDestroy {
         await this.cursorService.set(lastPagingToken);
       }
     } catch (err) {
-      this.logger.error(
-        'SorobanPollerService: poll cycle failed',
-        err instanceof Error ? err.stack : String(err),
-      );
+      const message = err instanceof Error ? err.message : String(err);
+      if (message.includes('timed out')) {
+        // Logged distinctly from other failures: the request was aborted by
+        // our own timeout, and the next tick will retry normally.
+        this.logger.warn(`SorobanPollerService: ${message}`);
+      } else {
+        this.logger.error(
+          'SorobanPollerService: poll cycle failed',
+          err instanceof Error ? err.stack : String(err),
+        );
+      }
     } finally {
       this.polling = false;
     }
@@ -173,47 +217,125 @@ export class SorobanPollerService implements OnModuleInit, OnModuleDestroy {
 
   /**
    * Fetch contract events from the Soroban RPC `getEvents` endpoint.
-   * Resumes from the persisted cursor when one is available.
+   * A `ledger:`-prefixed cursor (written on first run) is sent as
+   * `startLedger`; anything else is an RPC paging token and is sent as
+   * `cursor`.
    */
-  private async fetchEvents(cursor?: string): Promise<SorobanRpcEvent[]> {
-    const body = {
-      jsonrpc: '2.0',
-      id: 1,
-      method: 'getEvents',
-      params: {
-        filters: [
-          {
-            type: 'contract',
-            contractIds: [this.contractId],
-          },
-        ],
-        ...(cursor ? { cursor } : { startLedger: 1 }),
-        limit: 100,
-      },
-    };
-
-    const response = await fetch(this.rpcUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+  private async fetchEvents(cursor: string): Promise<SorobanRpcEvent[]> {
+    const result = await this.rpcRequest<GetEventsResponse>('getEvents', {
+      filters: [
+        {
+          type: 'contract',
+          contractIds: [this.contractId],
+        },
+      ],
+      ...(cursor.startsWith(LEDGER_CURSOR_PREFIX)
+        ? { startLedger: Number(cursor.slice(LEDGER_CURSOR_PREFIX.length)) }
+        : { cursor }),
+      limit: 100,
     });
 
-    if (!response.ok) {
+    return result?.events ?? [];
+  }
+
+  /**
+   * Choose the first ledger to poll from when no cursor is stored.
+   *
+   * Starting from "now" (minus a small safety margin) is a documented
+   * decision: events emitted before the backend was first deployed are
+   * intentionally never read. Operators can override the starting point with
+   * SOROBAN_START_LEDGER to replay from a known ledger after an outage, as
+   * long as it is still inside the node's retention window.
+   */
+  private async resolveStartLedger(): Promise<number> {
+    const configured = this.config.get('SOROBAN_START_LEDGER');
+    if (configured) {
+      this.logger.log(
+        `SorobanPollerService: using configured SOROBAN_START_LEDGER ${configured}`,
+      );
+      return Number(configured);
+    }
+
+    const latest = await this.getLatestLedger();
+    return Math.max(1, latest - START_LEDGER_MARGIN);
+  }
+
+  /** Current ledger sequence from the Soroban RPC `getLatestLedger` endpoint. */
+  private async getLatestLedger(): Promise<number> {
+    const result = await this.rpcRequest<{ sequence: number }>(
+      'getLatestLedger',
+      {},
+    );
+    if (!result || typeof result.sequence !== 'number') {
       throw new Error(
-        `Soroban RPC responded with HTTP ${response.status}: ${response.statusText}`,
+        'Soroban RPC getLatestLedger returned no ledger sequence',
       );
     }
+    return result.sequence;
+  }
 
-    const json = (await response.json()) as {
-      result?: GetEventsResponse;
-      error?: { message: string };
-    };
+  /**
+   * Issue a JSON-RPC request bounded by SOROBAN_RPC_TIMEOUT_MS, following the
+   * AbortController pattern used by checkHorizon in app.controller.ts.
+   * Without the abort, a request that never settles would leave the `polling`
+   * guard set forever and silently stop event ingestion while the process
+   * still reports healthy.
+   */
+  private async rpcRequest<T>(
+    method: string,
+    params: Record<string, unknown>,
+  ): Promise<T | undefined> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.rpcTimeoutMs);
 
-    if (json.error) {
-      throw new Error(`Soroban RPC error: ${json.error.message}`);
+    try {
+      const response = await fetch(this.rpcUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        throw new Error(
+          `Soroban RPC responded with HTTP ${response.status}: ${response.statusText}`,
+        );
+      }
+
+      const json = (await response.json()) as {
+        result?: T;
+        error?: { message: string };
+      };
+
+      if (json.error) {
+        // A start ledger outside the node's short retention window is a
+        // configuration/replay problem, not a transient network failure —
+        // keep the two distinguishable in the logs.
+        if (/start.?ledger|ledger range|retention/i.test(json.error.message)) {
+          throw new Error(
+            `Soroban RPC retention error — requested ledger is outside the node's retention window: ${json.error.message}`,
+          );
+        }
+        throw new Error(`Soroban RPC error: ${json.error.message}`);
+      }
+
+      return json.result;
+    } catch (err) {
+      // Node's fetch rejects with a DOMException (which is not an Error
+      // subclass) when aborted, so match on the name rather than the class.
+      const isAbort =
+        typeof err === 'object' &&
+        err !== null &&
+        (err as { name?: unknown }).name === 'AbortError';
+      if (isAbort) {
+        throw new Error(
+          `Soroban RPC request "${method}" timed out after ${this.rpcTimeoutMs}ms`,
+        );
+      }
+      throw err;
+    } finally {
+      clearTimeout(timeout);
     }
-
-    return json.result?.events ?? [];
   }
 
   /**
@@ -368,14 +490,26 @@ export class SorobanPollerService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  /** Resolve Soroban RPC URL: SOROBAN_RPC_URL env var, or fall back to the public testnet endpoint. */
+  /**
+   * Resolve the Soroban RPC URL. An explicitly configured SOROBAN_RPC_URL
+   * always wins. Without one, production refuses to start rather than guess
+   * an endpoint, and every other environment falls back to the public
+   * testnet RPC with a clear log line saying so.
+   */
   private resolveRpcUrl(): string {
     const configured = this.config.get('SOROBAN_RPC_URL');
     if (configured) return configured;
 
-    const network = this.config.get('STELLAR_NETWORK');
-    return network === 'MAINNET'
-      ? 'https://mainnet.stellar.validationcloud.io/v1/soroban/rpc'
-      : 'https://soroban-testnet.stellar.org';
+    if (this.config.isProduction()) {
+      // Backstop only: config validation already rejects this at startup.
+      throw new Error(
+        'SOROBAN_RPC_URL is required in production — refusing to fall back to a default RPC endpoint',
+      );
+    }
+
+    this.logger.warn(
+      `SorobanPollerService: SOROBAN_RPC_URL not set — defaulting to public testnet RPC ${DEFAULT_TESTNET_RPC_URL}`,
+    );
+    return DEFAULT_TESTNET_RPC_URL;
   }
 }
