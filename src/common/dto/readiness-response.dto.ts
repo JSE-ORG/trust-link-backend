@@ -96,8 +96,10 @@ export class ReadinessResponseDto {
       'Per-component error details. Only populated when at least one required component is down.',
     type: 'object',
     properties: {
-      db: { $ref: '#/components/schemas/ReadinessComponentHealthDto' },
-      horizon: { $ref: '#/components/schemas/ReadinessComponentHealthDto' },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      db: { $ref: '#/components/schemas/ReadinessComponentHealthDto' } as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      horizon: { $ref: '#/components/schemas/ReadinessComponentHealthDto' } as any,
     },
   })
   details?: {

@@ -94,6 +94,8 @@ export class ConfigService {
       GIGL_API_TOKEN: this.nestConfigService.get('GIGL_API_TOKEN', {
         infer: true,
       }),
+      SOROBAN_POLL_INTERVAL_MS: this.get('SOROBAN_POLL_INTERVAL_MS'),
+      SOROBAN_RPC_TIMEOUT_MS: this.get('SOROBAN_RPC_TIMEOUT_MS'),
     };
   }
 

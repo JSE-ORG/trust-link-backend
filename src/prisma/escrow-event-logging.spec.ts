@@ -14,6 +14,7 @@ describe('Escrow state-transition logging (#71/#72)', () => {
     currency: 'USDC',
     buyerAddress: 'GBUYER',
     vendorAddress: 'GVENDOR',
+    state: 'CREATED' as const,
   };
 
   beforeEach(() => {
