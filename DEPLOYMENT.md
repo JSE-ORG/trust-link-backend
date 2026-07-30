@@ -6,8 +6,8 @@ This guide defines the production deployment order for the Trust-Link backend. U
 
 ## Infrastructure Prerequisites
 
-- Node.js 20 runtime.
-- PostgreSQL 15 or newer.
+- Node.js 22 runtime (the version pinned by `.nvmrc` and both Docker stages).
+- PostgreSQL 16 (the version used by Docker Compose and CI).
 - Redis for response and tracking cache when `REDIS_URL` is configured.
 - Stellar Horizon access for the selected network.
 - SendGrid and Twilio credentials when notifications are enabled.
@@ -37,6 +37,12 @@ Set all required variables before running migrations or starting the service:
 - `CREDENTIAL_ENCRYPTION_KEY` (64-character hex string for logistics API key encryption)
 
 Keep secrets in the deployment platform secret manager. Do not bake them into images, workflow files, or migration scripts.
+
+## OpenAPI schema
+
+Swagger UI is intentionally disabled when `NODE_ENV=production`. Production
+operators and API consumers should obtain the generated schema from the CI
+OpenAPI artifact or run `npm run openapi:generate` against the release source.
 
 ## Docker Compose Production Deployment
 

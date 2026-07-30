@@ -5,6 +5,7 @@ import { AppService } from './app.service';
 import { ConfigService } from './config/config.service';
 import { PrismaService } from './prisma/prisma.service';
 import { CacheService } from './cache/cache.service';
+import { HorizonService } from './stellar/horizon.service';
 
 function createMockResponse() {
   const res: Partial<Response> & {
@@ -56,6 +57,7 @@ describe('AppController', () => {
         { provide: ConfigService, useValue: mockConfigService },
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: CacheService, useValue: { ping: cachePingMock } },
+        HorizonService,
       ],
     }).compile();
 

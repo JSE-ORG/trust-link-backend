@@ -151,32 +151,29 @@ describe('TracingMiddleware.use (issue #79, issue #463)', () => {
     beforeEach(() => {
       mockedIsTracingEnabled.mockReturnValue(true);
       mockSpan = { setAttribute: jest.fn() };
-      jest.spyOn(api.trace, 'getActiveSpan').mockReturnValue(
-        mockSpan as unknown as api.Span,
-      );
+      jest
+        .spyOn(api.trace, 'getActiveSpan')
+        .mockReturnValue(mockSpan as unknown as api.Span);
       // Run context.with synchronously so we can assert on the side effects
       // of the inner block without depending on an active OpenTelemetry SDK.
       jest
         .spyOn(api.context, 'with')
-        .mockImplementation(
-          ((_ctx: api.Context, fn: () => unknown) => fn()) as typeof api.context.with,
-        );
+        .mockImplementation(((_ctx: api.Context, fn: () => unknown) =>
+          fn()) as typeof api.context.with);
       jest.spyOn(api.propagation, 'extract').mockReturnValue({} as api.Context);
     });
 
     it('continues the incoming trace context when a traceparent header is present', () => {
       const headers = {
-        traceparent:
-          '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01',
+        traceparent: '00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01',
       };
       const { req, res, next } = buildReqRes('/escrow/abc-123', headers);
 
       middleware.use(req, res, next);
 
       expect(api.propagation.extract).toHaveBeenCalledTimes(1);
-      const [activeCtx, carrier] = (
-        api.propagation.extract as jest.Mock
-      ).mock.calls[0] as [api.Context, Record<string, string>];
+      const [activeCtx, carrier] = (api.propagation.extract as jest.Mock).mock
+        .calls[0] as [api.Context, Record<string, string>];
       expect(activeCtx).toBeDefined();
       expect(carrier).toBe(headers);
       expect(api.context.with).toHaveBeenCalledTimes(1);
@@ -208,7 +205,11 @@ describe('TracingMiddleware.use (issue #79, issue #463)', () => {
     });
 
     it('prefers req.route.path for the http.route attribute', () => {
-      const { req, res, next } = buildReqRes('/escrow/list', {}, '/escrow/list');
+      const { req, res, next } = buildReqRes(
+        '/escrow/list',
+        {},
+        '/escrow/list',
+      );
 
       middleware.use(req, res, next);
 
@@ -258,7 +259,12 @@ describe('TracingMiddleware.use (issue #79, issue #463)', () => {
     });
 
     it('stamps the workflow attribute and wires the finish handler for matched routes without a route descriptor', () => {
-      const { req, res, next } = buildReqRes('/webhooks/stellar', {}, undefined, 'POST');
+      const { req, res, next } = buildReqRes(
+        '/webhooks/stellar',
+        {},
+        undefined,
+        'POST',
+      );
 
       middleware.use(req, res, next);
 

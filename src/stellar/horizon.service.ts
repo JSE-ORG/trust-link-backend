@@ -1,30 +1,75 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import axios from 'axios';
+import { ConfigService } from '../config/config.service';
 
 export const DEFAULT_HORIZON_URL = 'https://horizon-testnet.stellar.org';
 
-export interface HorizonConfig {
-  getStellarHorizonUrl(): string;
+const HORIZON_URLS: Record<'TESTNET' | 'MAINNET', string> = {
+  TESTNET: DEFAULT_HORIZON_URL,
+  MAINNET: 'https://horizon.stellar.org',
+};
+
+/** Matches the timeout the readiness probe previously used inline in AppController. */
+const HEALTH_CHECK_TIMEOUT_MS = 150;
+
+export interface HorizonHealth {
+  status: 'ok' | 'down';
+  error?: string;
 }
 
 /**
- * HorizonService reads STELLAR_HORIZON_URL from an injected HorizonConfig
- * instead of hard-coding the testnet URL (issue #291).  Falls back to the
- * testnet default when the environment variable is absent.
+ * HorizonService reads STELLAR_HORIZON_URL from ConfigService instead of
+ * hard-coding the testnet URL (issue #291), falling back to the
+ * network-appropriate default (STELLAR_NETWORK) when unset.
  */
 @Injectable()
 export class HorizonService {
+  private readonly logger = new Logger(HorizonService.name);
   readonly horizonUrl: string;
   private readonly pollIntervalMs = 100;
 
-  constructor(config?: HorizonConfig) {
+  constructor(private readonly config: ConfigService) {
+    const configured = this.config.get('STELLAR_HORIZON_URL');
+    const network = this.config.get('STELLAR_NETWORK');
     this.horizonUrl =
-      (config?.getStellarHorizonUrl() || process.env.STELLAR_HORIZON_URL) ??
-      DEFAULT_HORIZON_URL;
+      configured || HORIZON_URLS[network] || DEFAULT_HORIZON_URL;
   }
 
   getHorizonUrl(): string {
     return this.horizonUrl;
+  }
+
+  /**
+   * Readiness-probe style health check: a bounded-time GET against the
+   * Horizon root. Folded in from AppController's ad-hoc checkHorizon
+   * (issue #562) so the check is unit-testable in isolation.
+   */
+  async checkHealth(): Promise<HorizonHealth> {
+    const controller = new AbortController();
+    const timeout = setTimeout(
+      () => controller.abort(),
+      HEALTH_CHECK_TIMEOUT_MS,
+    );
+
+    try {
+      const response = await fetch(this.horizonUrl, {
+        method: 'GET',
+        signal: controller.signal,
+      });
+      if (response.ok) {
+        return { status: 'ok' };
+      }
+      const error = `Horizon returned status ${response.status}`;
+      this.logger.error(`Horizon health check failed: ${error}`);
+      return { status: 'down', error };
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : 'Horizon connection failed';
+      this.logger.error(`Horizon health check failed: ${message}`);
+      return { status: 'down', error: message };
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 
   async pollConfirmation(

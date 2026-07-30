@@ -1,126 +1,175 @@
-# Escrow State Machine
+# Backend Escrow State Machine
 
-This document is the formal lifecycle specification for `EscrowState`. The enum
-is defined in `contracts/escrow/src/types.rs`.
+This document is the formal lifecycle specification for the backend's `EscrowState`
+enum, defined in `prisma/schema.prisma` and mirrored in
+`src/common/enums/escrow-state.enum.ts`.
+
+## Relationship to the Contract's Enum
+
+The on-chain contract (in the separate `contracts/` repository) uses a smaller set
+of states: `Pending`, `Funded`, `Shipped`, `Disputed`, `Completed`, `Refunded`,
+`Canceled`. The backend extends this with three additional states to model
+off-chain bookkeeping that the contract does not track:
+
+| Backend state | Contract equivalent | Why it exists |
+|---|---|---|
+| `CREATED` | `Pending` | Escrow record created in the DB before funding is confirmed on-chain. |
+| `DELIVERED` | _(none)_ | Carrier API reports delivery; used to start the 48-hour auto-release window. |
+| `RELEASED` | _(none)_ | On-chain auto-release event confirmed; distinct from `COMPLETED` (backend-initiated release). |
+
+Name spelling also differs: the contract uses `Canceled` (one L), the backend uses
+`CANCELLED` (two L's) to match Prisma's PostgreSQL enum conventions.
 
 ## States
 
 | State | Meaning | Terminal |
 |---|---|---|
-| `Pending` | Escrow terms exist, but buyer funds have not been locked. | No |
-| `Funded` | Buyer funds are locked in the contract. | No |
-| `Shipped` | Seller has marked the escrow shipped and stored a tracking id. | No |
-| `Disputed` | Buyer raised a dispute before the dispute deadline. | No |
-| `Completed` | Funds were released to the seller. | Yes |
-| `Refunded` | Funds were returned to the buyer after dispute resolution. | Yes |
-| `Canceled` | Seller canceled an unfunded escrow. | Yes |
+| `CREATED` | Escrow record created; buyer funds not yet locked on-chain. | No |
+| `FUNDED` | Buyer funds locked in the contract (confirmed via Horizon webhook or chain sync). | No |
+| `SHIPPED` | Seller marked the escrow shipped and stored a tracking ID. | No |
+| `DELIVERED` | Carrier API reports delivery; 48-hour auto-release countdown begins. | No |
+| `DISPUTED` | Buyer raised a dispute before the dispute deadline. | No |
+| `COMPLETED` | Funds released to the seller by the backend auto-release worker or dispute resolution. | Yes |
+| `RELEASED` | On-chain auto-release event confirmed (contract-initiated release). | Yes |
+| `REFUNDED` | Funds returned to the buyer after dispute resolution. | Yes |
+| `CANCELLED` | Escrow cancelled by buyer, seller, or admin while in `CREATED` or `FUNDED` state. | Yes |
 
 ## Diagram
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Pending: create_escrow
+    [*] --> CREATED: createEscrow
 
-    Pending --> Funded: fund_escrow
-    Pending --> Canceled: cancel_escrow
+    CREATED --> FUNDED: StellarWebhookService.handlePayment
+    CREATED --> CANCELLED: EscrowService.cancelPendingEscrow
 
-    Funded --> Shipped: mark_shipped
-    Funded --> Disputed: raise_dispute
-    Funded --> Completed: confirm_delivery or auto_release
+    FUNDED --> SHIPPED: EscrowService.handleShipment
+    FUNDED --> CANCELLED: EscrowService.cancelEscrow
+    FUNDED --> DISPUTED: syncStateFromChain (DisputeRaised)
 
-    Shipped --> Disputed: raise_dispute
-    Shipped --> Completed: confirm_delivery or auto_release
+    SHIPPED --> DELIVERED: TrackingPollWorker
+    SHIPPED --> COMPLETED: AutoReleaseWorker
+    SHIPPED --> DISPUTED: syncStateFromChain (DisputeRaised)
 
-    Disputed --> Completed: resolve_dispute(Release)
-    Disputed --> Refunded: resolve_dispute(Refund)
+    DELIVERED --> DISPUTED: syncStateFromChain (DisputeRaised)
 
-    Completed --> [*]
-    Refunded --> [*]
-    Canceled --> [*]
+    DISPUTED --> COMPLETED: DisputeService.resolve (RELEASE)
+    DISPUTED --> REFUNDED: DisputeService.resolve (REFUND)
+
+    COMPLETED --> [*]
+    RELEASED --> [*]
+    REFUNDED --> [*]
+    CANCELLED --> [*]
 ```
 
 ## Transition Matrix
 
-| Current state | Valid next states | Entrypoint or condition |
-|---|---|---|
-| `Pending` | `Funded` | Buyer funds the escrow. |
-| `Pending` | `Canceled` | Seller cancels before funds are locked. |
-| `Funded` | `Shipped` | Seller calls `mark_shipped`. |
-| `Funded` | `Disputed` | Buyer raises a dispute before `dispute_deadline`. |
-| `Funded` | `Completed` | Buyer confirms after the dispute deadline, or auto-release conditions pass. |
-| `Shipped` | `Disputed` | Buyer raises a dispute before `dispute_deadline`. |
-| `Shipped` | `Completed` | Buyer confirms after the dispute deadline, or auto-release conditions pass. |
-| `Disputed` | `Completed` | Resolver or admin calls `resolve_dispute` with `ResolutionType::Release`. |
-| `Disputed` | `Refunded` | Resolver or admin calls `resolve_dispute` with `ResolutionType::Refund`. |
-| `Completed` | none | Terminal. |
-| `Refunded` | none | Terminal. |
-| `Canceled` | none | Terminal. |
+| Current state | Next state | Trigger | Code location |
+|---|---|---|---|
+| _(new record)_ | `CREATED` | Escrow created by vendor | `EscrowService.createEscrow` |
+| `CREATED` | `FUNDED` | Buyer payment confirmed on-chain | `StellarWebhookService.handlePayment` |
+| `CREATED` | `FUNDED` | Chain sync event (fallback) | `EscrowService.syncStateFromChain` (`EscrowFunded`) |
+| `CREATED` | `CANCELLED` | Buyer, seller, or admin cancels | `EscrowService.cancelPendingEscrow` |
+| `FUNDED` | `SHIPPED` | Seller marks shipped with tracking ID | `EscrowService.handleShipment` |
+| `FUNDED` | `SHIPPED` | Chain sync event (fallback) | `EscrowService.syncStateFromChain` (`EscrowShipped`) |
+| `FUNDED` | `CANCELLED` | Buyer, seller, or admin cancels | `EscrowService.cancelEscrow` |
+| `FUNDED` | `DISPUTED` | Chain sync event (DisputeRaised) | `EscrowService.syncStateFromChain` (`DisputeRaised`) |
+| `SHIPPED` | `DELIVERED` | Carrier API reports delivery | `TrackingPollWorker.run` |
+| `SHIPPED` | `COMPLETED` | Auto-release after 48h (backend worker) | `AutoReleaseWorker.run` |
+| `SHIPPED` | `DISPUTED` | Chain sync event (DisputeRaised) | `EscrowService.syncStateFromChain` (`DisputeRaised`) |
+| `DELIVERED` | `DISPUTED` | Chain sync event (DisputeRaised) | `EscrowService.syncStateFromChain` (`DisputeRaised`) |
+| `DISPUTED` | `COMPLETED` | Admin resolves with RELEASE | `DisputeService.resolve` |
+| `DISPUTED` | `REFUNDED` | Admin resolves with REFUND | `DisputeService.resolve` |
+| `DISPUTED` | `COMPLETED` | Chain sync event (DisputeResolved) | `EscrowService.syncStateFromChain` (`DisputeResolved`) |
+| any non-terminal | `FUNDED` | Chain sync event (EscrowFunded) | `EscrowService.syncStateFromChain` (`EscrowFunded`) |
+| any non-terminal | `SHIPPED` | Chain sync event (EscrowShipped) | `EscrowService.syncStateFromChain` (`EscrowShipped`) |
+| any non-terminal | `COMPLETED` | Chain sync event (EscrowCompleted) | `EscrowService.syncStateFromChain` (`EscrowCompleted`) |
+| any non-terminal | `DISPUTED` | Chain sync event (DisputeRaised) | `EscrowService.syncStateFromChain` (`DisputeRaised`) |
+| any non-terminal | `RELEASED` | Chain sync event (AutoReleased) | `EscrowService.syncStateFromChain` (`AutoReleased`) |
+
+## Terminal States
+
+`COMPLETED`, `RELEASED`, `REFUNDED`, and `CANCELLED` are terminal — no further
+state transitions are permitted from any of them. This is enforced by the
+`TERMINAL_STATES` set at the top of `src/escrow/escrow.service.ts`.
 
 ## Guard Conditions
 
-### `Pending -> Funded`
+### `CREATED -> FUNDED`
 
-- Buyer must authorize the funding call.
-- Escrow must currently be `Pending`.
-- Token transfer from buyer to contract must succeed.
-- `funded_at` and `dispute_deadline` are set from ledger time.
+- The Stellar Horizon webhook receives a payment matching the escrow's amount and
+  asset code, addressed to the vendor's destination account.
+- Alternatively, a chain sync `EscrowFunded` event arrives for the escrow.
 
-### `Pending -> Canceled`
+### `CREATED -> CANCELLED`
 
-- Caller must be the seller.
-- Escrow must currently be `Pending`.
-- No funds are moved.
+- Caller must be the buyer, seller, or admin.
+- Escrow must be in `CREATED` state.
+- If on-chain state is `FUNDED`, an on-chain refund is submitted first via
+  `contractService.cancelEscrowOnChain()` before marking cancelled.
 
-### `Funded -> Shipped`
+### `FUNDED -> SHIPPED`
 
-- Caller must be the seller.
-- Escrow must currently be `Funded`.
-- `tracking_id` must be non-empty and at most `MAX_TRACKING_ID_LEN`.
-- `shipped_at` is set from ledger time.
+- Caller must be the seller or admin.
+- Escrow must be in `FUNDED` state.
+- Must not already have a `trackingId`.
+- `trackingId` is stored and `shippedAt` is set.
 
-### `Funded -> Disputed` and `Shipped -> Disputed`
+### `FUNDED -> CANCELLED`
 
-- Caller must be the buyer.
-- Escrow must currently be `Funded` or `Shipped`.
-- Ledger timestamp must be before `dispute_deadline`.
-- Dispute evidence hash is stored as `BytesN<32>`.
+- Caller must be the buyer, seller, or admin.
+- Escrow must be in `FUNDED` state.
+- No on-chain refund is submitted (funds are still locked in the contract).
 
-### `Funded -> Completed` and `Shipped -> Completed`
+### `SHIPPED -> DELIVERED`
 
-- `confirm_delivery` requires buyer authorization and
-  `ledger.timestamp >= dispute_deadline`.
-- `auto_release` requires no signer, rejects escrows with an active dispute, and
-  requires the configured release windows to have elapsed.
-- Completion transfers the payout to the seller using protocol fee logic.
+- `TrackingPollWorker` polls the carrier API every 10 minutes.
+- When the carrier status is `DELIVERED`, `markDelivered` sets `deliveredAt` and
+  `deliveryRecordedAt`, and transitions to `DELIVERED`.
+- Also calls `contractService.recordDelivery()` on-chain.
 
-### `Disputed -> Completed` and `Disputed -> Refunded`
+### `SHIPPED -> COMPLETED` (auto-release worker)
 
-- Caller must be the escrow resolver or the current admin.
-- Escrow must currently be `Disputed`.
-- Arbitration fee is deducted before payout.
-- `ResolutionType::Release` pays the seller and moves to `Completed`.
-- `ResolutionType::Refund` pays the buyer and moves to `Refunded`.
+- `AutoReleaseWorker` polls every 5 minutes.
+- Eligibility: state is `SHIPPED`, `deliveredAt` is at least 48 hours ago,
+  no dispute exists, no auto-release transaction has been submitted.
+- Uses an atomic `updateMany` optimistic lock (`markAutoReleaseSubmitting`) to
+  prevent concurrent workers from double-submitting.
+- On success, calls `markAutoReleaseCompleted` which sets state to `COMPLETED`
+  and records the transaction hash.
+
+### `DISPUTED -> COMPLETED` / `DISPUTED -> REFUNDED` (dispute resolution)
+
+- Caller must be an admin.
+- Calls `contractService.resolveDispute()` on-chain.
+- Updates the dispute record to `RESOLVED`.
+- RELEASE: calls `escrowRepository.markCompleted()` — funds go to seller.
+- REFUND: calls `escrowRepository.markRefunded()` — funds go to buyer.
+
+### Chain sync events (`syncStateFromChain`)
+
+The blockchain listener forwards Soroban events to `EscrowService.syncStateFromChain`.
+Each event type performs the corresponding state transition, skipping escrows already
+in a terminal state or the target state:
+
+| Event | Target state | Extra action |
+|---|---|---|
+| `EscrowFunded` | `FUNDED` | — |
+| `EscrowShipped` | `SHIPPED` | Stores `trackingId` |
+| `EscrowCompleted` | `COMPLETED` | — |
+| `DisputeRaised` | `DISPUTED` | Creates a `Dispute` record |
+| `DisputeResolved` | `COMPLETED` | Updates dispute status to `RESOLVED` |
+| `AutoReleased` | `RELEASED` | Records on-chain `txHash` |
 
 ## Invariants
 
-- `Completed`, `Refunded`, and `Canceled` are terminal states.
-- Self-transitions are invalid.
-- `Pending` escrows cannot be disputed or completed.
-- `Canceled` escrows cannot be funded later.
-- A dispute must resolve to either seller release or buyer refund.
-- Resolver rotation is allowed only before a terminal state and does not change
-  `EscrowState`.
-- `record_delivery` records `delivered_at` for a shipped escrow and does not
-  change `EscrowState`.
-
-## Implementation Notes
-
-The pure `transition_state` helper in `contracts/escrow/src/lib.rs` is intended
-to centralize lifecycle validity. When entrypoint behavior, tests, or this
-document change, update all three in the same PR.
-
-As of the current revision, `events.rs` and tests reference funding and dispute
-events, while the checked-in `lib.rs` should be audited to ensure the public
-funding and dispute entrypoints remain present and aligned with this formal
-state machine.
-
+- `COMPLETED`, `RELEASED`, `REFUNDED`, and `CANCELLED` are terminal states.
+  No transitions are allowed from any of them.
+- Self-transitions are invalid — the code skips them silently.
+- `CREATED` escrows cannot be disputed or completed.
+- `CANCELLED` escrows cannot be funded later.
+- A dispute must resolve to either seller release (`COMPLETED`) or buyer refund
+  (`REFUNDED`).
+- The backend auto-release worker and the on-chain auto-release event produce
+  different terminal states: `COMPLETED` (worker) vs `RELEASED` (on-chain event).
+  Both represent funds released to the seller.

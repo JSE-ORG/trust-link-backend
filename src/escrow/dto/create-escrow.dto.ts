@@ -13,8 +13,9 @@ import { IsStellarAddress } from '../../common/validators/stellar-address.valida
 /**
  * Request body for creating a new escrow. The vendor supplies the item
  * details, amount, currency and the buyer's Stellar address. A new
- * escrow record is created in the FUNDED state and a payment URL is
- * returned so the buyer can complete the Stellar transaction.
+ * escrow record is created in the CREATED state. A payment URL is returned
+ * so the buyer can complete the Stellar transaction. The escrow transitions
+ * to FUNDED state when the buyer funds it on-chain.
  */
 export class CreateEscrowDto {
   @ApiProperty({

@@ -14,6 +14,7 @@ export interface Config {
   TWILIO_ACCOUNT_SID?: string;
   TWILIO_AUTH_TOKEN?: string;
   STELLAR_NETWORK: 'TESTNET' | 'MAINNET';
+  STELLAR_HORIZON_URL?: string;
   ALLOWED_ORIGINS?: string;
   STELLAR_WEBHOOK_SECRET?: string;
   LOG_LEVEL?: string;
@@ -35,7 +36,11 @@ export interface Config {
   GIGL_API_BASE_URL?: string;
   GIGL_API_TOKEN?: string;
   SOROBAN_RPC_URL?: string;
-  SOROBAN_POLL_INTERVAL_MS?: number;
+  /** Always present: the config schema applies a validated default of 5000. */
+  SOROBAN_POLL_INTERVAL_MS: number;
+  /** Always present: the config schema applies a validated default of 4000. */
+  SOROBAN_RPC_TIMEOUT_MS: number;
+  SOROBAN_START_LEDGER?: number;
   CONTRACT_ID?: string;
 }
 
