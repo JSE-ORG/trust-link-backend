@@ -24,6 +24,7 @@ export class AdminStatsService {
       }),
       this.prisma.dispute.count(),
       this.prisma.dispute.count({
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
         where: { status: { in: ['OPEN', 'UNDER_REVIEW'] } } as any,
       }),
     ]);

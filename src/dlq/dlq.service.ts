@@ -51,12 +51,14 @@ export class DlqService {
     if (query.escrowId) where.escrowId = query.escrowId;
 
     const [records, total] = await Promise.all([
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (this.prisma.failedTransaction.findMany as any)({
         where,
         orderBy: { createdAt: 'desc' },
         skip,
         take: limit,
       }),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (this.prisma.failedTransaction as any).count({ where }),
     ]);
 
