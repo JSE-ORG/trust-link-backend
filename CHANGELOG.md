@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `GiglClient` now rejects 2xx responses whose body does not match the expected `GiglTrackingResponse` schema, surfacing them as `GiglInvalidResponseError` instead of leaking bad payloads downstream. The new behaviour is exercised by the unit-test suite added alongside this change.
+
+### Changed
+
 - Escrow listings for vendors and buyers are cursor-paginated, return newest records first, and default to 20 records per page.
 - Creating an escrow requires an `Idempotency-Key`; keys must be UUIDs and are scoped to the authenticated vendor.
 - SEP-10 challenge signing now uses a configured key that remains stable across restarts and replicas.

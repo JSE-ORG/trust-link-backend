@@ -71,6 +71,7 @@ const stellarPublicKey = Joi.string().custom((value, helpers) => {
 @Module({
   imports: [
     NestConfigModule.forRoot({
+      ignoreEnvFile: true,
       validationSchema: configValidationSchema,
       validationSchema: Joi.object({
         PORT: Joi.number().default(3000),
