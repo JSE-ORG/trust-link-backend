@@ -79,7 +79,9 @@ describe('AdminGuard (issue #520)', () => {
           caught = e as ForbiddenException;
         }
         expect(caught).toBeInstanceOf(ForbiddenException);
-        expect((caught!.getResponse() as any).message).toBe('Admin access required');
+        expect((caught!.getResponse() as any).message).toBe(
+          'Admin access required',
+        );
       }
     });
   });

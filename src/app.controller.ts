@@ -9,15 +9,17 @@ import {
 import {
   ApiTags,
   ApiOperation,
-  ApiResponse,
   ApiOkResponse,
+  ApiResponse,
 } from '@nestjs/swagger';
+import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import type { Response } from 'express';
 import { AppService } from './app.service';
 import { getAppVersion } from './common/version';
 import { ConfigService } from './config/config.service';
 import { PrismaService } from './prisma/prisma.service';
 import { CacheService } from './cache/cache.service';
+import { HorizonService } from './stellar/horizon.service';
 import { LivenessResponseDto } from './common/dto/liveness-response.dto';
 import { ReadinessResponseDto } from './common/dto/readiness-response.dto';
 import { ErrorResponseDto } from './common/dto/error-response.dto';
@@ -38,13 +40,6 @@ interface DependencyCheckResults {
   redis: ComponentHealth & { rawStatus?: string };
 }
 
-const HORIZON_URLS: Record<'TESTNET' | 'MAINNET', string> = {
-  TESTNET: 'https://horizon-testnet.stellar.org',
-  MAINNET: 'https://horizon.stellar.org',
-};
-
-const HORIZON_TIMEOUT_MS = 150;
-
 @ApiTags('Health')
 @Controller()
 export class AppController {
@@ -55,10 +50,12 @@ export class AppController {
     private readonly configService: ConfigService,
     private readonly prismaService: PrismaService,
     private readonly cacheService: CacheService,
+    private readonly horizonService: HorizonService,
   ) {}
 
   @ApiOperation({ summary: 'Root endpoint — welcome message' })
   @ApiResponse({ status: 200, description: 'Service welcome message.' })
+  @Throttle({ public: { limit: 100, ttl: 60000 } })
   @Get()
   getHello(): string {
     return this.appService.getHello();
@@ -167,34 +164,14 @@ export class AppController {
     description: 'Internal server error.',
     type: ErrorResponseDto,
   })
+  @ApiResponse({ status: 200, description: 'All components healthy.' })
+  @ApiResponse({ status: 503, description: 'One or more components are down.' })
+  @SkipThrottle({ public: true }) // Health checks should never be throttled.
   @Get('health')
   async getHealth(
     @Res() res: Response,
   ): Promise<Response<ReadinessResponseDto>> {
     return this.runReadinessCheck(res);
-  }
-
-  /**
-   * Returns the application version and environment information.
-   *
-   * @returns Version string, package name, and current environment
-   * @authentication None (public endpoint)
-   */
-  @ApiOperation({ summary: 'Get current application version and environment' })
-  @ApiOkResponse({ description: 'Version information returned.' })
-  @ApiResponse({
-    status: 500,
-    description: 'Internal server error.',
-    type: ErrorResponseDto,
-  })
-  @Get('version')
-  @HttpCode(HttpStatus.OK)
-  getVersion() {
-    return {
-      version: getAppVersion(),
-      name: '@truestlink/trustlink-backend',
-      environment: this.configService.get('NODE_ENV'),
-    };
   }
 
   /**
@@ -253,22 +230,32 @@ export class AppController {
       .json(body);
   }
 
+  /**
+   * Returns the application version and environment information.
+   *
+   * @returns Version string, package name, and current environment
+   * @authentication None (public endpoint)
+   */
+  @ApiOperation({ summary: 'Get current application version and environment' })
+  @ApiResponse({ status: 200, description: 'Version information returned.' })
+  @Throttle({ public: { limit: 100, ttl: 60000 } })
+  @Get('version')
+  @HttpCode(HttpStatus.OK)
+  getVersion() {
+    return {
+      version: getAppVersion(),
+      name: '@truestlink/trustlink-backend',
+      environment: this.configService.get('NODE_ENV'),
+    };
+  }
+
   private async checkAllDependencies(): Promise<DependencyCheckResults> {
-    const [dbResult, horizonResult, redisResult] = await Promise.all([
-      this.checkDatabase().catch((err: unknown) => ({
-        status: 'down' as ComponentStatus,
-        error: err instanceof Error ? err.message : 'Database check failed',
-      })),
-      this.checkHorizon().catch((err: unknown) => ({
-        status: 'down' as ComponentStatus,
-        error: err instanceof Error ? err.message : 'Horizon check failed',
-      })),
-      this.checkRedis().catch((err: unknown) => ({
-        status: 'down' as ComponentStatus,
-        error: err instanceof Error ? err.message : 'Redis check failed',
-      })),
+    const [db, horizon, redis] = await Promise.all([
+      this.checkDatabase(),
+      this.checkHorizon(),
+      this.checkRedis(),
     ]);
-    return { db: dbResult, horizon: horizonResult, redis: redisResult };
+    return { db, horizon, redis };
   }
 
   private async checkDatabase(): Promise<ComponentHealth> {
@@ -284,36 +271,7 @@ export class AppController {
   }
 
   private async checkHorizon(): Promise<ComponentHealth> {
-    const network = this.configService.get('STELLAR_NETWORK');
-    const horizonUrl = HORIZON_URLS[network];
-    if (!horizonUrl) {
-      const error = `Invalid network configuration: ${network}`;
-      this.logger.error(`Horizon health check failed: ${error}`);
-      return { status: 'down', error };
-    }
-
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), HORIZON_TIMEOUT_MS);
-
-    try {
-      const response = await fetch(horizonUrl, {
-        method: 'GET',
-        signal: controller.signal,
-      });
-      if (response.ok) {
-        return { status: 'ok' };
-      }
-      const error = `Horizon returned status ${response.status}`;
-      this.logger.error(`Horizon health check failed: ${error}`);
-      return { status: 'down', error };
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : 'Horizon connection failed';
-      this.logger.error(`Horizon health check failed: ${message}`);
-      return { status: 'down', error: message };
-    } finally {
-      clearTimeout(timeout);
-    }
+    return this.horizonService.checkHealth();
   }
 
   private async checkRedis(): Promise<
