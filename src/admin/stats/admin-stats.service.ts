@@ -8,33 +8,44 @@ export class AdminStatsService {
 
   /** Aggregates escrow, volume, participant, and dispute totals for admins. */
   async getStats(): Promise<AdminStatsDto> {
-    const [allEscrows, allDisputes] = await Promise.all([
-      this.prisma.escrow.findMany({}),
-      this.prisma.dispute.findMany({}),
+    const [
+      aggregation,
+      stateGroups,
+      totalDisputes,
+      openDisputes,
+    ] = await Promise.all([
+      this.prisma.escrow.aggregate({
+        _sum: { amount: true },
+        _count: { vendorAddress: true, buyerAddress: true },
+      }),
+      this.prisma.escrow.groupBy({
+        by: ['state'],
+        _count: true,
+      }),
+      this.prisma.dispute.count(),
+      this.prisma.dispute.count({
+        where: { status: { in: ['OPEN', 'UNDER_REVIEW'] } },
+      }),
     ]);
 
-    const totalEscrows = allEscrows.length;
-    const escrows = allEscrows;
-    const totalVolume = escrows.reduce<number>(
-      (sum, e) => sum + Number(e.amount),
-      0,
-    );
-
-    const escrowsByState: Record<string, number> = {};
-    for (const e of escrows) {
-      escrowsByState[e.state] = (escrowsByState[e.state] ?? 0) + 1;
-    }
-
-    const uniqueVendors = new Set(escrows.map((e) => e.vendorAddress)).size;
-    const uniqueBuyers = new Set(escrows.map((e) => e.buyerAddress)).size;
-
-    const totalDisputes = allDisputes.length;
-    const openDisputes = allDisputes.filter(
-      (d) => d.status === 'OPEN' || d.status === 'UNDER_REVIEW',
-    ).length;
-
+    const totalEscrows =
+      (stateGroups as Array<{ _count: number }>).reduce(
+        (sum, g) => sum + g._count,
+        0,
+      );
+    const totalVolume = aggregation._sum?.amount ?? 0;
+    const uniqueVendors = aggregation._count?.vendorAddress ?? 0;
+    const uniqueBuyers = aggregation._count?.buyerAddress ?? 0;
     const averageEscrowAmount =
       totalEscrows > 0 ? totalVolume / totalEscrows : 0;
+
+    const escrowsByState: Record<string, number> = {};
+    for (const group of stateGroups as Array<{
+      state: string;
+      _count: number;
+    }>) {
+      escrowsByState[group.state] = group._count;
+    }
 
     return {
       totalEscrows,
