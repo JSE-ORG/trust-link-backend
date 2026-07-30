@@ -7,6 +7,12 @@ import {
   ServiceUnavailableException,
   UseGuards,
 } from '@nestjs/common';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiQuery,
+  ApiTags,
+} from '@nestjs/swagger';
 import { ApiBearerAuth, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { JwtGuard } from '../auth/guards/jwt.guard';
@@ -57,6 +63,34 @@ export class DlqController {
     return address;
   }
 
+  @ApiOperation({ summary: 'List failed transactions (admin DLQ)' })
+  @ApiQuery({
+    name: 'status',
+    required: false,
+    description: 'Filter by transaction status',
+  })
+  @ApiQuery({
+    name: 'operation',
+    required: false,
+    description: 'Filter by operation name',
+  })
+  @ApiQuery({
+    name: 'escrowId',
+    required: false,
+    description: 'Filter by escrow ID',
+  })
+  @ApiQuery({
+    name: 'page',
+    required: false,
+    type: Number,
+    description: 'Page number (default 1)',
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+    description: 'Maximum records per page (default 20, max 100)',
+  })
   @ApiOperation({ summary: 'List failed contract transactions available for review and replay' })
   @ApiResponse({ status: 200, description: 'Failed transaction records returned.' })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })

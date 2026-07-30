@@ -15,6 +15,7 @@ import {
   GiglUnauthorizedError,
   GiglNetworkError,
   GiglProviderError,
+  GiglInvalidResponseError,
 } from './gigl.client';
 import { GiglTrackingResponse } from './gigl.types';
 
@@ -351,6 +352,18 @@ describe('GiglLogisticsService', () => {
 
       await expect(service.getTrackingDetails('TRK-ERR')).rejects.toThrow(
         GiglProviderError,
+      );
+    });
+
+    it('propagates GiglInvalidResponseError from getTrackingDetails when the upstream returns a malformed body', async () => {
+      const error = new GiglInvalidResponseError(
+        'TRK-SHAPE-2',
+        'response body is missing one or more required fields',
+      );
+      client.fetchTracking.mockRejectedValue(error);
+
+      await expect(service.getTrackingDetails('TRK-SHAPE-2')).rejects.toThrow(
+        GiglInvalidResponseError,
       );
     });
   });

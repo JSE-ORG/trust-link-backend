@@ -175,24 +175,9 @@ export class NotificationRetryQueueService
               ),
             );
         }
-
-        const { attempts } = this.options.backoff;
-        let lastError: unknown = null;
-        for (let attempt = 1; attempt <= attempts; attempt++) {
-            try {
-                await dispatcher.dispatch(job);
-                return;
-            } catch (err) {
-                lastError = err;
-                if (attempt >= attempts) break;
-                const delay = computeBackoffDelay(attempt + 1, this.options.backoff);
-                this.logger.warn(
-                    `Retry attempt ${attempt}/${attempts} for ${job.type}/${job.channel} ` +
-                    `(requestId: ${job.requestId}) — next retry in ${delay}ms`,
-                );
-                await this.sleep(delay);
-            }
-        }
+        return;
+      } catch (err) {
+        lastError = err;
         if (attempt >= attempts) break;
         const delay = computeBackoffDelay(attempt + 1, this.options.backoff);
         this.logger.warn(
