@@ -20,7 +20,8 @@ export class TrackingEventDto {
   status!: string;
 
   @ApiPropertyOptional({
-    description: 'City/state/country location string, if the carrier provides one.',
+    description:
+      'City/state/country location string, if the carrier provides one.',
     example: 'Memphis, TN, US',
   })
   location?: string;
@@ -39,7 +40,8 @@ export class TrackingEventDto {
  */
 export class TrackingResponseDto {
   @ApiProperty({
-    description: 'Overall shipment status summarised by the logistics provider.',
+    description:
+      'Overall shipment status summarised by the logistics provider.',
     example: 'IN_TRANSIT',
   })
   status!: string;

@@ -1,5 +1,8 @@
 import { Keypair } from '@stellar/stellar-sdk';
 import { configValidationSchema } from './config.schema';
+import { Test } from '@nestjs/testing';
+import { Keypair } from '@stellar/stellar-sdk';
+import type { ConfigService } from './config.service';
 
 /**
  * ConfigModule validation tests — Stellar key checksum validation.
@@ -21,6 +24,7 @@ import { configValidationSchema } from './config.schema';
 // Real valid test fixtures — used by .env.test and SEP10 service tests.
 // VALID_PUBLIC_KEY is the actual derivation of VALID_SECRET_KEY, so
 // `Keypair.fromSecret(VALID_SECRET_KEY).publicKey() === VALID_PUBLIC_KEY`.
+// Real valid test fixtures — used by .env.test and SEP10 service tests
 const VALID_SECRET_KEY =
   'SAIJDXETR5B7YFPH7SUOISWVBHHSI46JLYFDCWDMEV2L46XAHASPP35C';
 const VALID_PUBLIC_KEY =
@@ -67,6 +71,50 @@ const VALIDATE_OPTIONS = {
   abortEarly: false,
   allowUnknown: true,
 } as const;
+async function buildConfigService(
+  env: Record<string, string | undefined>,
+): Promise<ConfigService> {
+  // Save and wipe all known keys so tests are fully isolated
+  const saved: Record<string, string | undefined> = {};
+  ALL_KNOWN_KEYS.forEach((k) => {
+    saved[k] = process.env[k];
+    delete process.env[k];
+  });
+
+  // Apply only the keys for this test
+  Object.keys(env).forEach((key) => {
+    if (env[key] === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = env[key];
+    }
+  });
+
+  jest.resetModules();
+
+  // Must be a dynamic require, not a static import: this needs to
+  // re-evaluate the module fresh after jest.resetModules() above (to
+  // re-run its load-time env validation against the env mutated in this
+  // test), and a static import is hoisted/cached so it would never see that.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { ConfigModule: LocalConfigModule } = require('./config.module');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- see above
+  const { ConfigService: LocalConfigService } = require('./config.service');
+
+  try {
+    const moduleRef = await Test.createTestingModule({
+      imports: [LocalConfigModule],
+    }).compile();
+
+    return moduleRef.get(LocalConfigService);
+  } finally {
+    // Restore original env
+    ALL_KNOWN_KEYS.forEach((k) => {
+      delete process.env[k];
+      if (saved[k] !== undefined) process.env[k] = saved[k];
+    });
+  }
+}
 
 describe('ConfigModule — Stellar Key Validation', () => {
   describe('valid Stellar keys pass validation', () => {
@@ -171,6 +219,57 @@ describe('ConfigModule — Stellar Key Validation', () => {
       );
 
       expect(error?.message.toLowerCase()).toContain('checksum');
+    it('error message for SYSTEM_SIGNER_SECRET names the variable', async () => {
+      try {
+        await buildConfigService({
+          ...VALID_ENV,
+          SYSTEM_SIGNER_SECRET: CHECKSUM_INVALID_SECRET,
+        });
+        throw new Error('Expected validation to throw');
+      } catch (error) {
+        const message = (error as Error).message;
+        expect(message).toContain('SYSTEM_SIGNER_SECRET');
+      }
+    });
+
+    it('error message for SEP10_SIGNING_SECRET names the variable', async () => {
+      try {
+        await buildConfigService({
+          ...VALID_ENV,
+          SEP10_SIGNING_SECRET: CHECKSUM_INVALID_SECRET,
+        });
+        throw new Error('Expected validation to throw');
+      } catch (error) {
+        const message = (error as Error).message;
+        expect(message).toContain('SEP10_SIGNING_SECRET');
+      }
+    });
+
+    it('error message says "invalid" and does not say "pattern"', async () => {
+      try {
+        await buildConfigService({
+          ...VALID_ENV,
+          SYSTEM_SIGNER_SECRET: CHECKSUM_INVALID_SECRET,
+        });
+        throw new Error('Expected validation to throw');
+      } catch (error) {
+        const message = (error as Error).message;
+        expect(message.toLowerCase()).toContain('invalid');
+        expect(message).not.toContain('pattern');
+      }
+    });
+
+    it('error message mentions checksum verification', async () => {
+      try {
+        await buildConfigService({
+          ...VALID_ENV,
+          SYSTEM_SIGNER_SECRET: CHECKSUM_INVALID_SECRET,
+        });
+        throw new Error('Expected validation to throw');
+      } catch (error) {
+        const message = (error as Error).message;
+        expect(message.toLowerCase()).toContain('checksum');
+      }
     });
   });
 
@@ -204,6 +303,19 @@ describe('ConfigModule — Stellar Key Validation', () => {
       expect(error?.message).toContain('SYSTEM_SIGNER_SECRET');
       expect(error?.message.toLowerCase()).toContain('start');
       expect(error?.message.toLowerCase()).toContain('s');
+    it('error message explains key must start with S for secret key', async () => {
+      try {
+        await buildConfigService({
+          ...VALID_ENV,
+          SYSTEM_SIGNER_SECRET: PUBLIC_KEY_AS_SECRET,
+        });
+        throw new Error('Expected validation to throw');
+      } catch (error) {
+        const message = (error as Error).message;
+        expect(message).toContain('SYSTEM_SIGNER_SECRET');
+        expect(message.toLowerCase()).toContain('start');
+        expect(message.toLowerCase()).toContain('s');
+      }
     });
   });
 
@@ -256,6 +368,32 @@ describe('ConfigModule — Stellar Key Validation', () => {
       expect(error?.message).toContain('ADMIN_ADDRESS');
       expect(error?.message.toLowerCase()).toContain('start');
       expect(error?.message.toLowerCase()).toContain('g');
+    it('error message names ADMIN_ADDRESS', async () => {
+      try {
+        await buildConfigService({
+          ...VALID_ENV,
+          ADMIN_ADDRESS: RANDOM_STRING,
+        });
+        throw new Error('Expected validation to throw');
+      } catch (error) {
+        const message = (error as Error).message;
+        expect(message).toContain('ADMIN_ADDRESS');
+      }
+    });
+
+    it('error message for secret key in ADMIN_ADDRESS explains key must start with G', async () => {
+      try {
+        await buildConfigService({
+          ...VALID_ENV,
+          ADMIN_ADDRESS: SECRET_KEY_AS_PUBLIC,
+        });
+        throw new Error('Expected validation to throw');
+      } catch (error) {
+        const message = (error as Error).message;
+        expect(message).toContain('ADMIN_ADDRESS');
+        expect(message.toLowerCase()).toContain('start');
+        expect(message.toLowerCase()).toContain('g');
+      }
     });
 
     it('rejects empty string as ADMIN_ADDRESS', () => {
@@ -305,6 +443,79 @@ describe('ConfigModule — Stellar Key Validation', () => {
     it('derived public key matches expected value for known secret', () => {
       const keypair = Keypair.fromSecret(VALID_SECRET_KEY);
       expect(keypair.publicKey()).toBe(VALID_PUBLIC_KEY);
+    });
+  });
+
+  describe('completely malformed strings', () => {
+    it('rejects a random string as SYSTEM_SIGNER_SECRET', async () => {
+      await expect(
+        buildConfigService({
+          ...VALID_ENV,
+          SYSTEM_SIGNER_SECRET: RANDOM_STRING,
+        }),
+      ).rejects.toThrow();
+    });
+
+    it('rejects an empty string as SYSTEM_SIGNER_SECRET', async () => {
+      await expect(
+        buildConfigService({
+          ...VALID_ENV,
+          SYSTEM_SIGNER_SECRET: EMPTY_STRING,
+        }),
+      ).rejects.toThrow();
+    });
+
+    it('rejects a random string as ADMIN_ADDRESS', async () => {
+      await expect(
+        buildConfigService({
+          ...VALID_ENV,
+          ADMIN_ADDRESS: RANDOM_STRING,
+        }),
+      ).rejects.toThrow();
+    });
+
+    it('rejects an empty string as ADMIN_ADDRESS', async () => {
+      await expect(
+        buildConfigService({
+          ...VALID_ENV,
+          ADMIN_ADDRESS: EMPTY_STRING,
+        }),
+      ).rejects.toThrow();
+    });
+  });
+
+  describe('error messages do not reference "pattern"', () => {
+    it('SYSTEM_SIGNER_SECRET error does not say "pattern"', async () => {
+      try {
+        await buildConfigService({
+          ...VALID_ENV,
+          SYSTEM_SIGNER_SECRET: CHECKSUM_INVALID_SECRET,
+        });
+        throw new Error('Expected validation to throw');
+      } catch (error) {
+        expect((error as Error).message).not.toContain('pattern');
+      }
+    });
+
+    it('ADMIN_ADDRESS error does not say "pattern"', async () => {
+      try {
+        await buildConfigService({
+          ...VALID_ENV,
+          ADMIN_ADDRESS: CHECKSUM_INVALID_PUBLIC,
+        });
+        throw new Error('Expected validation to throw');
+      } catch (error) {
+        expect((error as Error).message).not.toContain('pattern');
+      }
+    });
+  });
+
+  describe('Keypair.fromSecret round-trip proves valid key', () => {
+    it('valid secret key round-trips through Keypair', () => {
+      const keypair = Keypair.fromSecret(VALID_SECRET_KEY);
+      expect(keypair.publicKey()).toBe(
+        'GBEFNNUJ3IRKU2JEAMWBA7YI52HF2GYPHMDXF37T75GHK5KU2Y2QSUAJ',
+      );
     });
   });
 
@@ -366,12 +577,23 @@ describe('ConfigModule — Stellar Key Validation', () => {
       expect(message).toContain('SYSTEM_SIGNER_SECRET');
       expect(message).toContain('SEP10_SIGNING_SECRET');
       expect(message).toContain('ADMIN_ADDRESS');
+        });
+        throw new Error('Expected validation to throw');
+      } catch (error) {
+        const message = (error as Error).message;
+        // With abortEarly: false, should include all field names
+        expect(message).toContain('SYSTEM_SIGNER_SECRET');
+        expect(message).toContain('SEP10_SIGNING_SECRET');
+        expect(message).toContain('ADMIN_ADDRESS');
+      }
     });
   });
 
   describe('edge cases and regression tests', () => {
     it('rejects Stellar address with wrong prefix (T... or invalid prefix)', () => {
       // Doesn't start with S or G — should fail at the shape check level
+    it('rejects Stellar address with wrong prefix (T... or invalid prefix)', async () => {
+      // This should fail because it doesn't start with S or G
       const invalidPrefix =
         'TAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
 

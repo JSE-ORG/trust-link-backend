@@ -4,6 +4,7 @@ import { AutoReleaseService } from '../../src/escrow/auto-release.service';
 import { EscrowRepository } from '../../src/escrow/escrow.repository';
 import { EscrowRecord } from '../../src/prisma/prisma.service';
 import { ContractService } from '../../src/stellar/contract.service';
+import { ConfigService } from '../../src/config/config.service';
 
 // ── shared fixtures ───────────────────────────────────────────────────────
 
@@ -34,6 +35,7 @@ describe('AutoReleaseService.run', () => {
   let service: AutoReleaseService;
   let repository: jest.Mocked<EscrowRepository>;
   let contractService: jest.Mocked<ContractService>;
+  let configService: jest.Mocked<ConfigService>;
 
   beforeEach(async () => {
     repository = {
@@ -47,11 +49,16 @@ describe('AutoReleaseService.run', () => {
       submitAutoRelease: jest.fn(),
     } as unknown as jest.Mocked<ContractService>;
 
+    configService = {
+      get: jest.fn((key: string) => process.env[key]),
+    } as unknown as jest.Mocked<ConfigService>;
+
     const moduleRef = await Test.createTestingModule({
       providers: [
         AutoReleaseService,
         { provide: EscrowRepository, useValue: repository },
         { provide: ContractService, useValue: contractService },
+        { provide: ConfigService, useValue: configService },
       ],
     }).compile();
 
@@ -62,6 +69,29 @@ describe('AutoReleaseService.run', () => {
 
   afterEach(() => {
     jest.restoreAllMocks();
+  });
+
+  it('does not submit and clears the claim when AUTO_RELEASE_SOURCE_ADDRESS is unset (issue #500)', async () => {
+    const escrow = makeShippedEscrow('escrow-1');
+    repository.findAutoReleaseEligible.mockResolvedValue([escrow]);
+    repository.markAutoReleaseSubmitting.mockResolvedValue({
+      ...escrow,
+      autoReleaseSubmittedAt: new Date(),
+    });
+    repository.clearAutoReleaseSubmitting.mockResolvedValue({
+      ...escrow,
+      autoReleaseSubmittedAt: null,
+    });
+
+    configService.get.mockReturnValue(undefined);
+
+    await service.run();
+
+    expect(contractService.submitAutoRelease).not.toHaveBeenCalled();
+    expect(repository.markAutoReleased).not.toHaveBeenCalled();
+    expect(repository.clearAutoReleaseSubmitting).toHaveBeenCalledWith(
+      'escrow-1',
+    );
   });
 
   it('passes a cutoff exactly 7 days before now to findAutoReleaseEligible', async () => {

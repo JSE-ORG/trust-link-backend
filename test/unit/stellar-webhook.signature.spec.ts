@@ -6,6 +6,7 @@ import { Test } from '@nestjs/testing';
 import * as crypto from 'crypto';
 import { ConfigService } from '../../src/config/config.service';
 import { EscrowRepository } from '../../src/escrow/escrow.repository';
+import { NotificationsService } from '../../src/notifications/notifications.service';
 import { StellarWebhookDto } from '../../src/webhooks/dto/stellar-webhook.dto';
 import { StellarWebhookService } from '../../src/webhooks/stellar-webhook.service';
 
@@ -62,6 +63,10 @@ describe('StellarWebhookService — HMAC signature verification (issue #48)', ()
         StellarWebhookService,
         { provide: ConfigService, useValue: configService },
         { provide: EscrowRepository, useValue: escrowRepository },
+        {
+          provide: NotificationsService,
+          useValue: { notifyFunded: jest.fn() },
+        },
       ],
     }).compile();
 

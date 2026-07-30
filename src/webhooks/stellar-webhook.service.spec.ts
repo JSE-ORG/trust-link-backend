@@ -18,6 +18,7 @@ import { BadRequestException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '../config/config.service';
 import { EscrowRepository } from '../escrow/escrow.repository';
+import { NotificationsService } from '../notifications/notifications.service';
 import { StellarWebhookDto } from './dto/stellar-webhook.dto';
 import { StellarWebhookService } from './stellar-webhook.service';
 
@@ -85,6 +86,7 @@ function makePaymentDto(
 describe('StellarWebhookService – handlePayment (issue #396)', () => {
   let service: StellarWebhookService;
   let escrowRepository: jest.Mocked<EscrowRepository>;
+  let notificationsService: jest.Mocked<NotificationsService>;
 
   /** Spy on the private logger so we can assert on warn/log calls. */
   let loggerWarnSpy: jest.SpyInstance;
@@ -103,16 +105,22 @@ describe('StellarWebhookService – handlePayment (issue #396)', () => {
       get: jest.fn().mockReturnValue(undefined), // no STELLAR_WEBHOOK_SECRET → skip sig check
     };
 
+    const mockNotificationsService = {
+      notifyFunded: jest.fn().mockResolvedValue(undefined),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         StellarWebhookService,
         { provide: EscrowRepository, useValue: mockEscrowRepository },
         { provide: ConfigService, useValue: mockConfigService },
+        { provide: NotificationsService, useValue: mockNotificationsService },
       ],
     }).compile();
 
     service = module.get(StellarWebhookService);
     escrowRepository = module.get(EscrowRepository);
+    notificationsService = module.get(NotificationsService);
 
     // Silence logger output during tests but capture calls for assertions.
 
@@ -166,6 +174,11 @@ describe('StellarWebhookService – handlePayment (issue #396)', () => {
     expect(loggerLogSpy).toHaveBeenCalledWith(
       expect.stringContaining('stellar.webhook.deposit_confirmed'),
     );
+
+    expect(notificationsService.notifyFunded).toHaveBeenCalledWith({
+      ...escrow,
+      state: 'FUNDED',
+    });
   });
 
   // =========================================================================

@@ -1,5 +1,6 @@
 import { forwardRef, Module } from '@nestjs/common';
 import { EscrowModule } from '../escrow/escrow.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { StellarWebhookController } from './stellar-webhook.controller';
 import { StellarWebhookService } from './stellar-webhook.service';
 
@@ -11,7 +12,7 @@ import { StellarWebhookService } from './stellar-webhook.service';
  * deposits.
  */
 @Module({
-  imports: [forwardRef(() => EscrowModule)],
+  imports: [forwardRef(() => EscrowModule), NotificationsModule],
   controllers: [StellarWebhookController],
   providers: [StellarWebhookService],
   exports: [StellarWebhookService],
