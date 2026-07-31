@@ -5,6 +5,7 @@ import {
   EscrowRecord,
   EscrowState,
   PrismaService,
+  toEscrowRecord,
 } from '../prisma/prisma.service';
 import { CreateEscrowDto } from './dto/create-escrow.dto';
 import { ESCROW_CACHE_TTL_SECONDS } from './escrow.constants';
@@ -41,14 +42,16 @@ export class EscrowRepository {
 
   /** Persists a new escrow record with the given DTO fields and vendor address. */
   create(dto: CreateEscrowDto, vendorAddress: string): Promise<EscrowRecord> {
-    return this.prisma.escrow.create({
-      data: {
-        id: randomUUID(),
-        ...dto,
-        vendorAddress,
-        state: 'CREATED',
-      },
-    });
+    return this.prisma.escrow
+      .create({
+        data: {
+          id: randomUUID(),
+          ...dto,
+          vendorAddress,
+          state: 'CREATED',
+        },
+      })
+      .then(toEscrowRecord);
   }
 
   /**
@@ -61,10 +64,12 @@ export class EscrowRepository {
     vendorAddress: string,
     itemRef: string,
   ): Promise<EscrowRecord | null> {
-    return this.prisma.escrow.findFirst({
-      where: { vendorAddress, itemRef },
-      orderBy: { createdAt: 'asc' },
-    });
+    return this.prisma.escrow
+      .findFirst({
+        where: { vendorAddress, itemRef },
+        orderBy: { createdAt: 'asc' },
+      })
+      .then((row) => (row ? toEscrowRecord(row) : null));
   }
 
   /**
@@ -74,13 +79,10 @@ export class EscrowRepository {
   async findById(id: string): Promise<EscrowRecord | null> {
     const cached = await this.cache?.get<EscrowRecord>(this.cacheKey(id));
     if (cached) return cached;
-    const record = await this.prisma.escrow.findUnique({ where: { id } });
-    if (record)
-      await this.cache?.set(
-        this.cacheKey(id),
-        record,
-        ESCROW_CACHE_TTL_SECONDS,
-      );
+    const row = await this.prisma.escrow.findUnique({ where: { id } });
+    if (!row) return null;
+    const record = toEscrowRecord(row);
+    await this.cache?.set(this.cacheKey(id), record, ESCROW_CACHE_TTL_SECONDS);
     return record;
   }
 
@@ -94,12 +96,14 @@ export class EscrowRepository {
     cursor?: string,
     take = 20,
   ): Promise<EscrowRecord[]> {
-    return this.prisma.escrow.findMany({
-      where: { vendorAddress },
-      orderBy: { createdAt: 'desc' },
-      take,
-      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-    });
+    return this.prisma.escrow
+      .findMany({
+        where: { vendorAddress },
+        orderBy: { createdAt: 'desc' },
+        take,
+        ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+      })
+      .then((rows) => rows.map(toEscrowRecord));
   }
 
   /**
@@ -112,12 +116,14 @@ export class EscrowRepository {
     cursor?: string,
     take = 20,
   ): Promise<EscrowRecord[]> {
-    return this.prisma.escrow.findMany({
-      where: { buyerAddress },
-      orderBy: { createdAt: 'desc' },
-      take,
-      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-    });
+    return this.prisma.escrow
+      .findMany({
+        where: { buyerAddress },
+        orderBy: { createdAt: 'desc' },
+        take,
+        ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+      })
+      .then((rows) => rows.map(toEscrowRecord));
   }
 
   /** Updates the escrow state and invalidates its cache entry. */
@@ -127,7 +133,7 @@ export class EscrowRepository {
       data: { state },
     });
     await this.invalidate(id);
-    return result;
+    return toEscrowRecord(result);
   }
 
   /** Attaches a tracking ID to the escrow and invalidates its cache entry. */
@@ -137,7 +143,7 @@ export class EscrowRepository {
       data: { trackingId },
     });
     await this.invalidate(id);
-    return result;
+    return toEscrowRecord(result);
   }
 
   /**
@@ -169,7 +175,7 @@ export class EscrowRepository {
       this.prisma.escrow.count({ where }),
     ]);
 
-    return { data, total };
+    return { data: data.map(toEscrowRecord), total };
   }
 
   /**
@@ -182,7 +188,7 @@ export class EscrowRepository {
       data: { state: 'SHIPPED', trackingId, shippedAt: new Date() },
     });
     await this.invalidate(id);
-    return result;
+    return toEscrowRecord(result);
   }
 
   /** Transitions the escrow to COMPLETED and invalidates the cache. */
@@ -192,7 +198,7 @@ export class EscrowRepository {
       data: { state: 'COMPLETED' },
     });
     await this.invalidate(id);
-    return result;
+    return toEscrowRecord(result);
   }
 
   /** Transitions the escrow to REFUNDED and invalidates the cache. */
@@ -202,7 +208,7 @@ export class EscrowRepository {
       data: { state: 'REFUNDED' },
     });
     await this.invalidate(id);
-    return result;
+    return toEscrowRecord(result);
   }
 
   /** Transitions the escrow to RELEASED and invalidates the cache. */
@@ -212,7 +218,7 @@ export class EscrowRepository {
       data: { state: 'RELEASED' },
     });
     await this.invalidate(id);
-    return result;
+    return toEscrowRecord(result);
   }
 
   /**
@@ -232,7 +238,7 @@ export class EscrowRepository {
       },
     });
     await this.invalidate(id);
-    return result;
+    return toEscrowRecord(result);
   }
 
   /**
@@ -253,7 +259,7 @@ export class EscrowRepository {
       },
     });
     await this.invalidate(id);
-    return result;
+    return toEscrowRecord(result);
   }
 
   /**
@@ -269,7 +275,7 @@ export class EscrowRepository {
       },
     });
     await this.invalidate(id);
-    return result;
+    return toEscrowRecord(result);
   }
 
   /**
@@ -280,7 +286,9 @@ export class EscrowRepository {
     return this.prisma.escrow
       .findMany({ where: { state: 'SHIPPED' } })
       .then((escrows) =>
-        escrows.filter((escrow) => Boolean(escrow.trackingId)),
+        escrows
+          .filter((escrow) => Boolean(escrow.trackingId))
+          .map(toEscrowRecord),
       );
   }
 
@@ -295,15 +303,17 @@ export class EscrowRepository {
     referenceTime = new Date(),
   ): Promise<AutoReleaseEligibleResult> {
     const cutoff = new Date(referenceTime.getTime() - 48 * 60 * 60 * 1000);
-    return this.prisma.escrow.findMany({
-      where: {
-        state: 'SHIPPED',
-        deliveredAt: { lte: cutoff },
-        disputeId: null,
-        autoReleaseTxHash: null,
-        autoReleaseSubmittedAt: null,
-      },
-    });
+    return this.prisma.escrow
+      .findMany({
+        where: {
+          state: 'SHIPPED',
+          deliveredAt: { lte: cutoff },
+          disputeId: null,
+          autoReleaseTxHash: null,
+          autoReleaseSubmittedAt: null,
+        },
+      })
+      .then((rows) => rows.map(toEscrowRecord));
   }
 
   /**
@@ -332,7 +342,7 @@ export class EscrowRepository {
       data: { autoReleaseSubmittedAt: null },
     });
     await this.invalidate(id);
-    return result;
+    return toEscrowRecord(result);
   }
 
   /**
@@ -345,7 +355,7 @@ export class EscrowRepository {
       data: { state: 'RELEASED', autoReleaseTxHash: txHash },
     });
     await this.invalidate(id);
-    return result;
+    return toEscrowRecord(result);
   }
 
   /**
@@ -368,7 +378,7 @@ export class EscrowRepository {
       data: { deliveryRecordedAt: new Date() },
     });
     await this.invalidate(id);
-    return result;
+    return toEscrowRecord(result);
   }
 
   /**
@@ -381,7 +391,7 @@ export class EscrowRepository {
       data: { deliveryRecordedAt: null },
     });
     await this.invalidate(id);
-    return result;
+    return toEscrowRecord(result);
   }
 
   /**
@@ -426,6 +436,6 @@ export class EscrowRepository {
       },
     });
     await this.invalidate(id);
-    return result;
+    return toEscrowRecord(result);
   }
 }

@@ -115,6 +115,9 @@ model Notification {
   sentAt           DateTime?
   failedAt         DateTime?
   lastError        String?
+  providerMessageId String?
+  attemptCount     Int                @default(0)
+  lastResponseCode Int?
   createdAt        DateTime           @default(now())
   updatedAt        DateTime           @updatedAt
   escrow           Escrow             @relation(fields: [escrowId], references: [id], onDelete: Cascade)

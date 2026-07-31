@@ -31,13 +31,15 @@ export class AnalyticsService {
     startDate.setUTCHours(0, 0, 0, 0);
 
     // Use raw SQL for database-level aggregation with proper timezone handling
-    const aggregationResult = await this.prisma.$queryRaw<{
-      date: string;
-      totalVolume: number;
-      transactionCount: number;
-      completedCount: number;
-      disputedCount: number;
-    }>`
+    const aggregationResult = await this.prisma.$queryRaw<
+      Array<{
+        date: string;
+        totalVolume: number;
+        transactionCount: number;
+        completedCount: number;
+        disputedCount: number;
+      }>
+    >`
       SELECT 
         DATE("createdAt" AT TIME ZONE ${timezone})::date as date,
         COALESCE(SUM("amount"), 0) as "totalVolume",

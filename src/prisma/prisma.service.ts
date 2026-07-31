@@ -1,5 +1,12 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
-import { PrismaClient } from '@prisma/client';
+import {
+  Prisma,
+  PrismaClient,
+  Escrow as PrismaEscrow,
+  FailedTransaction as PrismaFailedTransaction,
+  VendorAccountDetails as PrismaVendorAccountDetails,
+  VendorTrackingSettings as PrismaVendorTrackingSettings,
+} from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 
 export type EscrowState =
@@ -239,89 +246,46 @@ export type EscrowCreateInput = Omit<
   createdAt?: Date;
 };
 
-type DisputeCreateInput = Omit<
-  DisputeRecord,
-  | 'id'
-  | 'status'
-  | 'resolvedAt'
-  | 'createdAt'
-  | 'updatedAt'
-  | 'evidenceUrls'
-  | 'description'
-> & {
-  id?: string;
-  status?: DisputeState;
-  resolvedAt?: Date | null;
-  evidenceUrls?: string[];
-  description?: string;
-};
+/**
+ * Boundary mappers: a real PrismaClient returns Prisma's generated row types
+ * (e.g. `amount` as a Decimal, `ledgerFeedback` as JsonValue). The rest of the
+ * codebase consumes the hand-written `*Record` shapes above (numeric amount,
+ * plain objects). Repositories convert generated rows through these mappers so
+ * the public contract — and every existing consumer/test — keeps working.
+ */
+export function toEscrowRecord(row: PrismaEscrow): EscrowRecord {
+  return { ...row, amount: Number(row.amount) } as EscrowRecord;
+}
 
-type EscrowUpdateInput = Partial<
-  Pick<
-    EscrowRecord,
-    | 'state'
-    | 'trackingId'
-    | 'shippedAt'
-    | 'deliveredAt'
-    | 'deliveryRecordedAt'
-    | 'autoReleaseSubmittedAt'
-    | 'autoReleaseTxHash'
-    | 'disputeId'
-    | 'cancelledAt'
-    | 'buyerContactEmail'
-    | 'buyerContactPhone'
-  >
->;
+export function toFailedTransactionRecord(
+  row: PrismaFailedTransaction,
+): FailedTransactionRecord {
+  return {
+    ...row,
+    status: row.status as FailedTransactionStatus,
+    ledgerFeedback:
+      (row.ledgerFeedback as Record<string, unknown> | null) ?? null,
+  };
+}
 
-type VendorProfileCreateInput = Omit<
-  VendorProfileRecord,
-  'createdAt' | 'updatedAt'
->;
+export function toVendorAccountDetailsRecord(
+  row: PrismaVendorAccountDetails,
+): VendorAccountDetailsRecord {
+  return {
+    ...row,
+    customFields: (row.customFields as Record<string, unknown> | null) ?? null,
+  };
+}
 
-type VendorProfileUpdateInput = Partial<
-  Omit<VendorProfileRecord, 'address' | 'createdAt' | 'updatedAt'>
->;
-
-type DisputeUpdateInput = Partial<
-  Pick<
-    DisputeRecord,
-    'status' | 'resolvedAt' | 'reason' | 'escrowId' | 'evidenceUrls'
-  >
->;
-
-type NotificationCreateInput = Pick<
-  NotificationRecord,
-  'escrowId' | 'type' | 'channel' | 'recipientAddress' | 'message'
-> &
-  Partial<
-    Pick<
-      NotificationRecord,
-      | 'id'
-      | 'status'
-      | 'retryCount'
-      | 'sentAt'
-      | 'failedAt'
-      | 'lastError'
-      | 'providerMessageId'
-      | 'attemptCount'
-      | 'lastResponseCode'
-    >
-  >;
-
-type NotificationUpdateInput = Partial<
-  Omit<NotificationRecord, 'id' | 'createdAt' | 'updatedAt'>
->;
-
-type VendorTrackingSettingsCreateInput = Partial<
-  Omit<VendorTrackingSettingsRecord, 'createdAt' | 'updatedAt'>
->;
-
-type VendorTrackingSettingsUpdateInput = Partial<
-  Omit<
-    VendorTrackingSettingsRecord,
-    'id' | 'vendorAddress' | 'createdAt' | 'updatedAt'
-  >
->;
+export function toVendorTrackingSettingsRecord(
+  row: PrismaVendorTrackingSettings,
+): VendorTrackingSettingsRecord {
+  return {
+    ...row,
+    customTrackingRules:
+      (row.customTrackingRules as Record<string, unknown> | null) ?? null,
+  };
+}
 
 @Injectable()
 export class PrismaService extends PrismaClient {
@@ -345,7 +309,7 @@ export class PrismaService extends PrismaClient {
     }
 
     const adapter = new PrismaPg({ connectionString: effectiveUrl });
-    super({ adapter });
+    super({ adapter, log: [{ emit: 'event', level: 'query' }] });
     this.effectiveDatabaseUrl = effectiveUrl;
   }
 
@@ -355,7 +319,13 @@ export class PrismaService extends PrismaClient {
       process.env.SLOW_QUERY_THRESHOLD_MS ?? '500',
       10,
     );
-    this.$on('query' as any, (event: any) => {
+    // The base PrismaClient type does not carry the query-event log config
+    // through the subclass, so narrow $on to the query-event signature here.
+    const onQuery = this.$on as unknown as (
+      event: 'query',
+      callback: (event: Prisma.QueryEvent) => void,
+    ) => void;
+    onQuery('query', (event: Prisma.QueryEvent) => {
       if (event.duration >= slowQueryThresholdMs) {
         this.logger.warn(
           `Slow query (${event.duration}ms): ${event.query}`,

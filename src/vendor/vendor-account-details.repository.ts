@@ -1,7 +1,9 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import {
   PrismaService,
   VendorAccountDetailsRecord,
+  toVendorAccountDetailsRecord,
 } from '../prisma/prisma.service';
 
 @Injectable()
@@ -12,23 +14,37 @@ export class VendorAccountDetailsRepository {
   findByVendorAddress(
     vendorAddress: string,
   ): Promise<VendorAccountDetailsRecord | null> {
-    return this.prisma.vendorAccountDetails.findUnique({
-      where: { vendorAddress },
-    });
+    return this.prisma.vendorAccountDetails
+      .findUnique({ where: { vendorAddress } })
+      .then((row) => (row ? toVendorAccountDetailsRecord(row) : null));
   }
 
   /** Creates or updates vendor account details. */
-  upsert(
+  async upsert(
     vendorAddress: string,
     data: Partial<VendorAccountDetailsRecord>,
   ): Promise<VendorAccountDetailsRecord> {
-    return this.prisma.vendorAccountDetails.upsert({
+    const { customFields, ...rest } = data;
+    const writeData = {
+      ...rest,
+      ...(customFields !== undefined
+        ? {
+            customFields:
+              customFields === null
+                ? Prisma.DbNull
+                : (customFields as Prisma.InputJsonValue),
+          }
+        : {}),
+    };
+
+    const row = await this.prisma.vendorAccountDetails.upsert({
       where: { vendorAddress },
       create: {
         vendorAddress,
-        ...data,
+        ...writeData,
       },
-      update: data,
+      update: writeData,
     });
+    return toVendorAccountDetailsRecord(row);
   }
 }

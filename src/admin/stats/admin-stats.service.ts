@@ -34,7 +34,7 @@ export class AdminStatsService {
         (sum, g) => sum + g._count,
         0,
       );
-    const totalVolume = aggregation._sum?.amount ?? 0;
+    const totalVolume = Number(aggregation._sum?.amount ?? 0);
     const uniqueVendors = aggregation._count?.vendorAddress ?? 0;
     const uniqueBuyers = aggregation._count?.buyerAddress ?? 0;
     const averageEscrowAmount =
