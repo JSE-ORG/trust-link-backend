@@ -4,6 +4,8 @@ import { ConfigService as NestConfigService } from '@nestjs/config';
 export interface Config {
   PORT: number;
   DATABASE_URL: string;
+  CONTACT_ENCRYPTION_KEY?: string;
+  CREDENTIAL_ENCRYPTION_KEY?: string;
   DB_POOL_CONNECTION_LIMIT?: number;
   DB_POOL_TIMEOUT_MS?: number;
   SEP10_JWT_SECRET: string;
@@ -62,6 +64,14 @@ export class ConfigService {
     return {
       PORT: this.get('PORT'),
       DATABASE_URL: this.get('DATABASE_URL'),
+      CONTACT_ENCRYPTION_KEY: this.nestConfigService.get(
+        'CONTACT_ENCRYPTION_KEY',
+        { infer: true },
+      ),
+      CREDENTIAL_ENCRYPTION_KEY: this.nestConfigService.get(
+        'CREDENTIAL_ENCRYPTION_KEY',
+        { infer: true },
+      ),
       SEP10_JWT_SECRET: this.get('SEP10_JWT_SECRET'),
       ADMIN_ADDRESS: this.get('ADMIN_ADDRESS'),
       AUTO_RELEASE_SOURCE_ADDRESS: this.nestConfigService.get(

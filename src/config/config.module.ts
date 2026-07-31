@@ -75,7 +75,40 @@ const sorobanRpcUrl = Joi.string()
 export const configValidationSchema = Joi.object({
   PORT: Joi.number().default(3000),
   DATABASE_URL: Joi.string().required(),
-  CREDENTIAL_ENCRYPTION_KEY: Joi.string().hex().length(64).required(),
+  CONTACT_ENCRYPTION_KEY: Joi.string()
+    .hex()
+    .length(64)
+    .messages({
+      'string.hex':
+        'Config validation error: CONTACT_ENCRYPTION_KEY must be a 64-character hexadecimal string',
+      'string.length':
+        'Config validation error: CONTACT_ENCRYPTION_KEY must be exactly 64 hex characters (32 bytes)',
+    })
+    .when('NODE_ENV', {
+      is: 'production',
+      then: Joi.required().messages({
+        'any.required':
+          'Config validation error: CONTACT_ENCRYPTION_KEY is required in production',
+      }),
+      otherwise: Joi.optional(),
+    }),
+  CREDENTIAL_ENCRYPTION_KEY: Joi.string()
+    .hex()
+    .length(64)
+    .messages({
+      'string.hex':
+        'Config validation error: CREDENTIAL_ENCRYPTION_KEY must be a 64-character hexadecimal string',
+      'string.length':
+        'Config validation error: CREDENTIAL_ENCRYPTION_KEY must be exactly 64 hex characters (32 bytes)',
+    })
+    .when('NODE_ENV', {
+      is: 'production',
+      then: Joi.required().messages({
+        'any.required':
+          'Config validation error: CREDENTIAL_ENCRYPTION_KEY is required in production',
+      }),
+      otherwise: Joi.optional(),
+    }),
   SEP10_JWT_SECRET: Joi.string().min(32).required(),
   // Stellar system signer secret key — validated by Keypair.fromSecret for checksum
   SYSTEM_SIGNER_SECRET: stellarSecretKey.required(),
