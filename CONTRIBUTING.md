@@ -125,12 +125,12 @@ nvm use          # reads .nvmrc
 # 4. Install dependencies
 npm ci           # not `npm install` — see note below
 
-# 5. Generate the Prisma client
-npx prisma generate
-
-# 6. Set up environment
+# 5. Set up environment
 cp .env.example .env
 # Edit .env — testnet values are pre-filled, you need your own DB URL
+
+# 6. Generate the Prisma client
+npx prisma generate
 
 # 7. Start Postgres (Docker shortcut)
 docker run --name trustlink-pg \
@@ -158,12 +158,14 @@ committing that drift is the single most common reason a pull request fails
 every check at the install step. Only run `npm install` when you are
 deliberately adding or upgrading a dependency.
 
-**Step 5, why `prisma generate`.** The Prisma client is generated into
+**Step 6, why `prisma generate`.** The Prisma client is generated into
 `node_modules` and is not committed. Skip this and `@prisma/client` exports do
 not exist, so `npm run typecheck` fails with errors like
 `Module '"@prisma/client"' has no exported member 'PrismaClient'`. That is a
 missing step, not a broken repository. Re-run it whenever
-`prisma/schema.prisma` changes.
+`prisma/schema.prisma` changes. Note that `prisma generate` reads
+`prisma.config.ts`, which calls `env('DATABASE_URL')` at load time — that is
+why the `.env` file must exist before this step.
 
 ### Writing Tests That Need Authentication
 
@@ -516,22 +518,17 @@ Closes #
 
 ## Testing
 
-```bash
-# Unit tests
-npm run test
+### Test Suites
 
-# Watch mode (during development)
-npm run test:watch
+The repository maintains three test suites with strict filename regex boundaries, commands, and CI workflows:
 
-# Integration tests (requires a real DB — uses a separate test DB)
-npm run test:integration
+| Suite | Filename Pattern | Command | CI Workflow | Selection Rule |
+|---|---|---|---|---|
+| **Unit** | `(src\|test)/.*\.spec\.ts$` | `npm test` / `npm run test:cov` | `test.yml` / `ci.yml` | Use for isolated unit testing of a single service or function with all dependencies mocked. |
+| **Integration** | `test/integration/.*\.integration-spec\.ts$` | `npm run test:integration` | `integration-test.yml` | Use for testing module component interactions against a database under `test/integration/`. |
+| **E2E** | `.*\.e2e-spec\.ts$` | `npm run test:e2e` | `e2e-test.yml` | Use for full HTTP request/response cycle testing using supertest against a bootstrapped NestJS app. |
 
-# E2E tests (requires full stack)
-npm run test:e2e
-
-# Coverage report
-npm run test:cov
-```
+Run `npm run check-test-match` to verify that all test files match one of the three Jest configurations. Spec files matching none of these patterns will fail CI validation.
 
 ### Test Layers
 

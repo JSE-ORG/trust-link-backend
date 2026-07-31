@@ -30,7 +30,7 @@ services:
       start_period: 40s
 
   db:
-    image: postgres:15-alpine
+    image: postgres:16-alpine
     environment:
       - POSTGRES_USER=trustlink
       - POSTGRES_PASSWORD=trustlink
@@ -113,7 +113,7 @@ services:
       - production
 
   db-prod:
-    image: postgres:15-alpine
+    image: postgres:16-alpine
     environment:
       - POSTGRES_USER=trustlink
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}

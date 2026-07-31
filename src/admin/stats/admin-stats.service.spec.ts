@@ -62,14 +62,9 @@ describe('AdminStatsService', () => {
 
     const stats = await service.getStats();
 
-    // PrismaService.findMany filters out CANCELLED by default
-    expect(stats.totalEscrows).toBe(8);
+    expect(stats.totalEscrows).toBe(9);
     for (const state of states) {
-      if (state === 'CANCELLED') {
-        expect(stats.escrowsByState[state]).toBeUndefined();
-      } else {
-        expect(stats.escrowsByState[state]).toBe(1);
-      }
+      expect(stats.escrowsByState[state]).toBe(1);
     }
   });
 

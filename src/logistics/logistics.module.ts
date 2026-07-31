@@ -12,14 +12,8 @@ import { LogisticsService } from './logistics.service';
     {
       provide: GiglClient,
       useFactory: (config: ConfigService) => {
-        const baseUrl =
-          config.get('GIGL_API_BASE_URL') ||
-          process.env.GIGL_API_BASE_URL ||
-          process.env.GIGL_BASE_URL;
-        const apiToken =
-          config.get('GIGL_API_TOKEN') ||
-          process.env.GIGL_API_TOKEN ||
-          process.env.LOGISTICS_API_KEY;
+        const baseUrl = config.get<string>('LOGISTICS_API_BASE_URL');
+        const apiToken = config.get<string>('LOGISTICS_API_KEY');
 
         if (!baseUrl || !apiToken) {
           return null;

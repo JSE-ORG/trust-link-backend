@@ -10,6 +10,7 @@ import {
   decryptCredential,
 } from '../common/sanitization/credential-encryption.util';
 import { PrismaService } from '../prisma/prisma.service';
+import { ConfigService } from '../config/config.service';
 
 /** Key used to identify the logistics provider's row in `ProviderCredential`. */
 export const LOGISTICS_CREDENTIAL_PROVIDER = 'logistics';
@@ -37,6 +38,7 @@ export class LogisticsService implements OnModuleInit {
 
   constructor(
     @Optional() @Inject(PrismaService) private readonly prisma?: PrismaService,
+    @Optional() @Inject(ConfigService) private readonly configService?: ConfigService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -57,7 +59,8 @@ export class LogisticsService implements OnModuleInit {
   private async loadPersistedApiKey(): Promise<void> {
     if (this.prisma) {
       try {
-        const record = await this.prisma.providerCredential.findUnique({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const record = await (this.prisma as any).providerCredential.findUnique({
           where: { provider: LOGISTICS_CREDENTIAL_PROVIDER },
         });
         if (record) {
@@ -73,9 +76,12 @@ export class LogisticsService implements OnModuleInit {
       }
     }
 
-    const envToken = process.env.GIGL_API_TOKEN;
+    const envToken = this.configService?.get<string>('LOGISTICS_API_KEY');
     if (envToken) {
-      this.apiKey = encryptCredential(envToken);
+      const key = this.configService?.get<string>('CREDENTIAL_ENCRYPTION_KEY');
+      if (key) {
+        this.apiKey = encryptCredential(envToken, key);
+      }
     }
   }
 
@@ -86,7 +92,11 @@ export class LogisticsService implements OnModuleInit {
    * The key is encrypted before being stored in memory for security.
    */
   setApiKey(key: string): void {
-    const encryptedKey = encryptCredential(key);
+    const encryptionKey = this.configService?.get<string>('CREDENTIAL_ENCRYPTION_KEY');
+    if (!encryptionKey) {
+      throw new Error('CREDENTIAL_ENCRYPTION_KEY is not configured');
+    }
+    const encryptedKey = encryptCredential(key, encryptionKey);
     this.apiKey = encryptedKey;
   }
 
@@ -101,11 +111,16 @@ export class LogisticsService implements OnModuleInit {
    * in memory for the lifetime of the instance.
    */
   async rotateApiKey(key: string): Promise<void> {
-    const encryptedKey = encryptCredential(key);
+    const encryptionKey = this.configService?.get<string>('CREDENTIAL_ENCRYPTION_KEY');
+    if (!encryptionKey) {
+      throw new Error('CREDENTIAL_ENCRYPTION_KEY is not configured');
+    }
+    const encryptedKey = encryptCredential(key, encryptionKey);
     this.apiKey = encryptedKey;
 
     if (this.prisma) {
-      await this.prisma.providerCredential.upsert({
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (this.prisma as any).providerCredential.upsert({
         where: { provider: LOGISTICS_CREDENTIAL_PROVIDER },
         update: { encryptedKey },
         create: {
@@ -125,7 +140,11 @@ export class LogisticsService implements OnModuleInit {
       return null;
     }
     try {
-      return decryptCredential(this.apiKey);
+      const encryptionKey = this.configService?.get<string>('CREDENTIAL_ENCRYPTION_KEY');
+      if (!encryptionKey) {
+        throw new Error('CREDENTIAL_ENCRYPTION_KEY is not configured');
+      }
+      return decryptCredential(this.apiKey, encryptionKey);
     } catch {
       throw new Error('Failed to decrypt logistics API key');
     }

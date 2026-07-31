@@ -349,17 +349,55 @@ export class EscrowRepository {
   }
 
   /**
+   * Atomically claims an escrow for delivery recording by setting
+   * deliveryRecordedAt. Returns null if the escrow is not in SHIPPED
+   * state or has already been claimed, preventing concurrent delivery
+   * recordings across worker instances.
+   */
+  async claimDelivery(id: string): Promise<EscrowRecord | null> {
+    const escrow = await this.prisma.escrow.findUnique({ where: { id } });
+    if (
+      !escrow ||
+      escrow.state !== 'SHIPPED' ||
+      escrow.deliveryRecordedAt !== null
+    ) {
+      return null;
+    }
+    const result = await this.prisma.escrow.update({
+      where: { id },
+      data: { deliveryRecordedAt: new Date() },
+    });
+    await this.invalidate(id);
+    return result;
+  }
+
+  /**
+   * Clears the delivery-recording claim by nulling deliveryRecordedAt,
+   * allowing a retry on the next poll cycle when the contract call fails.
+   */
+  async clearDeliveryClaim(id: string): Promise<EscrowRecord> {
+    const result = await this.prisma.escrow.update({
+      where: { id },
+      data: { deliveryRecordedAt: null },
+    });
+    await this.invalidate(id);
+    return result;
+  }
+
+  /**
    * Returns the chronological event history for the given escrow from the
    * EscrowEvent audit table. Returns an empty array if no events exist.
    *
    * @returns an {@link EventsResult} ordered oldest-first.
    */
   async findEvents(escrowId: string): Promise<EventsResult> {
-    const rawEvents = await this.prisma.escrowEvent.findMany({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rawEvents = await (this.prisma.escrowEvent.findMany as any)({
       where: { escrowId },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
     });
 
-    return rawEvents.map((e) => ({
+    return rawEvents.map((e: any) => ({
       event: e.toState,
       occurredAt: e.createdAt,
       fromState: e.fromState,
