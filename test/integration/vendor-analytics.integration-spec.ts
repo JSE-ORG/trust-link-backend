@@ -60,6 +60,7 @@ describe('GET /vendor/analytics/chart (issue #290)', () => {
     await prisma.escrow.create({
       data: {
         itemName: 'Test item',
+        itemRef: 'ref-analytics',
         amount,
         currency: 'USDC',
         buyerAddress: 'GBUYER001',

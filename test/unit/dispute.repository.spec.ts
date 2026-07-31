@@ -49,6 +49,7 @@ describe('DisputeRepository (issue #14)', () => {
     const escrow = await prisma.escrow.create({
       data: {
         itemName: 'Shoes',
+        itemRef: 'ref-shoes',
         amount: 90,
         currency: 'USDC',
         buyerAddress: 'buyer-1',

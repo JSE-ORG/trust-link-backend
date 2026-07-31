@@ -45,6 +45,7 @@ describe('AdminStatsService', () => {
       await prisma.escrow.create({
         data: {
           itemName: `item-${state}`,
+          itemRef: `ref-${state}`,
           amount: 100,
           currency: 'USDC',
           buyerAddress: 'GBUYER1',
@@ -72,6 +73,7 @@ describe('AdminStatsService', () => {
     await prisma.escrow.create({
       data: {
         itemName: 'item1',
+        itemRef: 'ref-item1-a',
         amount: 250.5,
         currency: 'USDC',
         buyerAddress: 'GBUYER1',
@@ -88,6 +90,7 @@ describe('AdminStatsService', () => {
     await prisma.escrow.create({
       data: {
         itemName: 'item2',
+        itemRef: 'ref-item2-a',
         amount: 749.5,
         currency: 'USDC',
         buyerAddress: 'GBUYER2',
@@ -112,6 +115,7 @@ describe('AdminStatsService', () => {
     await prisma.escrow.create({
       data: {
         itemName: 'item1',
+        itemRef: 'ref-item1-b',
         amount: 100,
         currency: 'USDC',
         buyerAddress: 'GBUYER_A',
@@ -128,6 +132,7 @@ describe('AdminStatsService', () => {
     await prisma.escrow.create({
       data: {
         itemName: 'item2',
+        itemRef: 'ref-item2-b',
         amount: 200,
         currency: 'USDC',
         buyerAddress: 'GBUYER_A',
@@ -152,6 +157,7 @@ describe('AdminStatsService', () => {
     const escrow = await prisma.escrow.create({
       data: {
         itemName: 'item1',
+        itemRef: 'ref-item1-c',
         amount: 100,
         currency: 'USDC',
         buyerAddress: 'GBUYER1',
@@ -177,6 +183,7 @@ describe('AdminStatsService', () => {
     const escrow2 = await prisma.escrow.create({
       data: {
         itemName: 'item2',
+        itemRef: 'ref-item2-c',
         amount: 200,
         currency: 'USDC',
         buyerAddress: 'GBUYER2',
@@ -241,6 +248,7 @@ describe('AdminStatsService', () => {
       await prisma.escrow.create({
         data: {
           itemName: `item-${amount}`,
+          itemRef: `ref-${amount}`,
           amount,
           currency: 'USDC',
           buyerAddress: 'GBUYER1',
@@ -267,6 +275,7 @@ describe('AdminStatsService', () => {
     const escrow = await prisma.escrow.create({
       data: {
         itemName: 'item1',
+        itemRef: 'ref-item1-d',
         amount: 100,
         currency: 'USDC',
         buyerAddress: 'GBUYER1',

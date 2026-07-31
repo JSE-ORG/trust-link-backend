@@ -17,6 +17,7 @@ import request from 'supertest';
 import { VendorEscrowController } from '../../src/escrow/vendor-escrow.controller';
 import { EscrowService } from '../../src/escrow/escrow.service';
 import { JwtGuard } from '../../src/auth/guards/jwt.guard';
+import { EscrowSummaryDto } from '../../src/escrow/dto/escrow-summary.dto';
 import { bearer } from '../auth-helper';
 
 describe('VendorEscrowController (issue #575)', () => {
@@ -26,15 +27,16 @@ describe('VendorEscrowController (issue #575)', () => {
   const VENDOR_A = 'GVENDORA000000000000000000000000000000000000000000000';
   const VENDOR_B = 'GVENDORB000000000000000000000000000000000000000000000';
 
-  const summaryFor = (id: string) => ({
-    id,
-    itemName: 'Sony A7 IV Mirrorless Camera',
-    itemRef: 'SKU-CAM-A7IV-001',
-    amount: 2499.99,
-    currency: 'USDC',
-    state: 'SHIPPED',
-    trackingId: null,
-  });
+  const summaryFor = (id: string): EscrowSummaryDto =>
+    ({
+      id,
+      itemName: 'Sony A7 IV Mirrorless Camera',
+      itemRef: 'SKU-CAM-A7IV-001',
+      amount: 2499.99,
+      currency: 'USDC',
+      state: 'SHIPPED',
+      trackingId: null,
+    }) as EscrowSummaryDto;
 
   beforeEach(async () => {
     escrowService = {

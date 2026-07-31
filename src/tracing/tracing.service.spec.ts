@@ -47,7 +47,7 @@ describe('TracingService', () => {
 
     mockTracer = {
       startActiveSpan: jest.fn().mockImplementation((_name, _options, fn) => {
-        return fn(mockSpan as Span);
+        return fn(mockSpan);
       }),
     } as unknown as jest.Mocked<ReturnType<typeof trace.getTracer>>;
 
@@ -83,7 +83,7 @@ describe('TracingService', () => {
     });
 
     it('returns the active span when one exists', () => {
-      const activeSpan = { setAttributes: jest.fn() } as Span;
+      const activeSpan = { setAttributes: jest.fn() } as unknown as Span;
       (trace.getActiveSpan as jest.Mock).mockReturnValue(activeSpan);
       expect(service.getActiveSpan()).toBe(activeSpan);
     });
@@ -139,9 +139,9 @@ describe('TracingService', () => {
       const error = new Error('fn error');
       const fn = jest.fn().mockRejectedValue(error);
 
-      await expect(
-        service.withSpan('test.span', {}, fn),
-      ).rejects.toThrow('fn error');
+      await expect(service.withSpan('test.span', {}, fn)).rejects.toThrow(
+        'fn error',
+      );
 
       expect(mockTracer.startActiveSpan).not.toHaveBeenCalled();
     });
@@ -170,7 +170,9 @@ describe('TracingService', () => {
         },
         expect.any(Function),
       );
-      expect(mockSpan.setStatus).toHaveBeenCalledWith({ code: SpanStatusCode.OK });
+      expect(mockSpan.setStatus).toHaveBeenCalledWith({
+        code: SpanStatusCode.OK,
+      });
       expect(mockSpan.end).toHaveBeenCalled();
     });
 
@@ -192,9 +194,9 @@ describe('TracingService', () => {
       const error = new Error('test error');
       const fn = jest.fn().mockRejectedValue(error);
 
-      await expect(
-        service.withSpan('test.span', {}, fn),
-      ).rejects.toThrow('test error');
+      await expect(service.withSpan('test.span', {}, fn)).rejects.toThrow(
+        'test error',
+      );
 
       expect(mockSpan.recordException).toHaveBeenCalledWith(error);
       expect(mockSpan.setStatus).toHaveBeenCalledWith({
@@ -207,9 +209,9 @@ describe('TracingService', () => {
     it('records exception with string error message', async () => {
       const fn = jest.fn().mockRejectedValue('string error');
 
-      await expect(
-        service.withSpan('test.span', {}, fn),
-      ).rejects.toBe('string error');
+      await expect(service.withSpan('test.span', {}, fn)).rejects.toBe(
+        'string error',
+      );
 
       expect(mockSpan.recordException).toHaveBeenCalled();
       expect(mockSpan.setStatus).toHaveBeenCalledWith({
@@ -294,7 +296,7 @@ describe('TracingService', () => {
 
   describe('setSpanAttributes', () => {
     it('sets attributes on the active span', () => {
-      const activeSpan = { setAttributes: jest.fn() } as Span;
+      const activeSpan = { setAttributes: jest.fn() } as unknown as Span;
       (trace.getActiveSpan as jest.Mock).mockReturnValue(activeSpan);
 
       service.setSpanAttributes({ key: 'value', num: 42 });

@@ -220,7 +220,7 @@ describe('DlqController', () => {
       const abandonedRecord = {
         ...autoReleaseRecord,
         status: 'ABANDONED',
-      };
+      } as FailedTransactionRecord;
       dlq.abandon.mockResolvedValue(abandonedRecord);
 
       const result = await controller.abandon('failed-tx-1');

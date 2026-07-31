@@ -39,6 +39,7 @@ describe('AnalyticsService', () => {
         data: {
           vendorAddress,
           itemName: 'Item 1',
+          itemRef: 'ref-1',
           amount: 100,
           currency: 'USD',
           buyerAddress: '0xBuyer1',
@@ -50,6 +51,7 @@ describe('AnalyticsService', () => {
         data: {
           vendorAddress,
           itemName: 'Item 2',
+          itemRef: 'ref-2',
           amount: 200,
           currency: 'USD',
           buyerAddress: '0xBuyer2',
@@ -61,6 +63,7 @@ describe('AnalyticsService', () => {
         data: {
           vendorAddress,
           itemName: 'Item 3',
+          itemRef: 'ref-3',
           amount: 150,
           currency: 'USD',
           buyerAddress: '0xBuyer3',
@@ -72,6 +75,7 @@ describe('AnalyticsService', () => {
         data: {
           vendorAddress,
           itemName: 'Item 4',
+          itemRef: 'ref-4',
           amount: 300,
           currency: 'USD',
           buyerAddress: '0xBuyer4',
@@ -103,6 +107,7 @@ describe('AnalyticsService', () => {
         data: {
           vendorAddress,
           itemName: 'Item 1',
+          itemRef: 'ref-5',
           amount: 100,
           currency: 'USD',
           buyerAddress: '0xBuyer1',
@@ -118,6 +123,7 @@ describe('AnalyticsService', () => {
         data: {
           vendorAddress,
           itemName: 'Item 1',
+          itemRef: 'ref-6',
           amount: 100,
           currency: 'USD',
           buyerAddress: '0xBuyer1',
@@ -186,6 +192,7 @@ describe('AnalyticsService', () => {
         data: {
           vendorAddress,
           itemName: 'Item 1',
+          itemRef: 'ref-7',
           amount: 100,
           currency: 'USD',
           buyerAddress: '0xBuyer1',
@@ -197,6 +204,7 @@ describe('AnalyticsService', () => {
         data: {
           vendorAddress,
           itemName: 'Item 2',
+          itemRef: 'ref-8',
           amount: 200,
           currency: 'USD',
           buyerAddress: '0xBuyer2',
@@ -208,6 +216,7 @@ describe('AnalyticsService', () => {
         data: {
           vendorAddress,
           itemName: 'Item 3',
+          itemRef: 'ref-9',
           amount: 150,
           currency: 'USD',
           buyerAddress: '0xBuyer3',
@@ -275,6 +284,7 @@ describe('AnalyticsService', () => {
         data: {
           vendorAddress,
           itemName: 'TZ Test Item',
+          itemRef: 'ref-10',
           amount: 500,
           currency: 'USD',
           buyerAddress: '0xBuyerTZ',
@@ -322,6 +332,7 @@ describe('AnalyticsService', () => {
         data: {
           vendorAddress: vendorA,
           itemName: 'A Item',
+          itemRef: 'ref-11',
           amount: 300,
           currency: 'USD',
           buyerAddress: '0xBuyerA',
@@ -333,6 +344,7 @@ describe('AnalyticsService', () => {
         data: {
           vendorAddress: vendorB,
           itemName: 'B Item',
+          itemRef: 'ref-12',
           amount: 9999,
           currency: 'USD',
           buyerAddress: '0xBuyerB',
@@ -379,6 +391,7 @@ describe('AnalyticsService', () => {
           data: {
             vendorAddress,
             itemName: `Item ${i}`,
+            itemRef: `ref-${i}`,
             amount: 100,
             currency: 'USD',
             buyerAddress: `0xBuyer${i}`,
@@ -404,6 +417,7 @@ describe('AnalyticsService', () => {
         data: {
           vendorAddress,
           itemName: 'Completed Item',
+          itemRef: 'ref-13',
           amount: 200,
           currency: 'USD',
           buyerAddress: '0xBuyer1',
@@ -415,6 +429,7 @@ describe('AnalyticsService', () => {
         data: {
           vendorAddress,
           itemName: 'Released Item',
+          itemRef: 'ref-14',
           amount: 300,
           currency: 'USD',
           buyerAddress: '0xBuyer2',
@@ -456,6 +471,7 @@ describe('AnalyticsService', () => {
           data: {
             vendorAddress,
             itemName: `Item ${i}`,
+            itemRef: `ref-${i}`,
             amount,
             currency: 'USD',
             buyerAddress: `0xBuyer${i}`,
@@ -481,6 +497,7 @@ describe('AnalyticsService', () => {
         data: {
           vendorAddress: '0xVendorNoSettings',
           itemName: 'Item',
+          itemRef: 'ref-15',
           amount: 100,
           currency: 'USD',
           buyerAddress: '0xBuyer',
@@ -548,6 +565,7 @@ describe('AnalyticsService', () => {
         data: {
           vendorAddress: vendorA,
           itemName: 'A1',
+          itemRef: 'ref-16',
           amount: 250,
           currency: 'USD',
           buyerAddress: '0xBuyerA1',
@@ -558,6 +576,7 @@ describe('AnalyticsService', () => {
         data: {
           vendorAddress: vendorA,
           itemName: 'A2',
+          itemRef: 'ref-17',
           amount: 350,
           currency: 'USD',
           buyerAddress: '0xBuyerA2',
@@ -570,6 +589,7 @@ describe('AnalyticsService', () => {
         data: {
           vendorAddress: vendorB,
           itemName: 'B1',
+          itemRef: 'ref-18',
           amount: 9000,
           currency: 'USD',
           buyerAddress: '0xBuyerB1',
@@ -616,6 +636,7 @@ describe('AnalyticsService', () => {
         data: {
           vendorAddress,
           itemName: 'Completed Item',
+          itemRef: 'ref-19',
           amount: 100,
           currency: 'USD',
           buyerAddress: '0xBuyerC1',
@@ -627,6 +648,7 @@ describe('AnalyticsService', () => {
         data: {
           vendorAddress,
           itemName: 'Cancelled Item',
+          itemRef: 'ref-20',
           amount: 50,
           currency: 'USD',
           buyerAddress: '0xBuyerC2',
@@ -638,6 +660,7 @@ describe('AnalyticsService', () => {
         data: {
           vendorAddress,
           itemName: 'Funded Item',
+          itemRef: 'ref-21',
           amount: 200,
           currency: 'USD',
           buyerAddress: '0xBuyerC3',

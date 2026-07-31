@@ -1,5 +1,6 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import { Prisma } from '@prisma/client';
 import { createHmac } from 'crypto';
 import request from 'supertest';
 import { AppModule } from '../../src/app.module';
@@ -85,7 +86,7 @@ describe('Admin DLQ Operations (issue #297)', () => {
         operation: overrides?.operation ?? 'submitAutoRelease',
         escrowId: overrides?.escrowId ?? null,
         errorMessage: overrides?.errorMessage ?? 'Stellar network timeout',
-        ledgerFeedback: null,
+        ledgerFeedback: Prisma.DbNull,
         status: 'PENDING_REVIEW',
         attempts: 1,
       },
