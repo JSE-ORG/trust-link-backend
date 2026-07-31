@@ -1,5 +1,4 @@
-import { Injectable, Logger, OnModuleDestroy, Optional, Inject } from '@nestjs/common';
-import { ConfigService } from '../config/config.service';
+import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 
 // AES-256-GCM ciphertext produced by contact-encryption.util: iv:authTag:ciphertext
 // IV = 12 bytes (24 hex), tag = 16 bytes (32 hex), ciphertext = 1+ hex chars.
@@ -653,6 +652,125 @@ export class PrismaService implements OnModuleDestroy {
       }
       return Promise.resolve({ count: 0 });
     },
+    count: ({
+      where,
+    }: {
+      where?: Partial<
+        Pick<
+          EscrowRecord,
+          | 'state'
+          | 'trackingId'
+          | 'vendorAddress'
+          | 'buyerAddress'
+          | 'disputeId'
+          | 'itemRef'
+          | 'autoReleaseTxHash'
+          | 'autoReleaseSubmittedAt'
+        >
+      > & {
+        deliveryRecordedAt?: Date | null;
+      };
+    } = {}): Promise<number> => {
+      let escrows = [...this.escrows.values()];
+      if (where) {
+        escrows = escrows.filter((e) =>
+          Object.entries(where).every(([key, value]) => {
+            if (value === undefined) return true;
+            if (key === 'deliveryRecordedAt') {
+              return e.deliveryRecordedAt === value;
+            }
+            return e[key as keyof EscrowRecord] === value;
+          }),
+        );
+      }
+      return Promise.resolve(escrows.length);
+    },
+    aggregate: ({
+      _sum,
+      _avg,
+      _count,
+    }: {
+      _sum?: { amount?: boolean };
+      _avg?: { amount?: boolean };
+      _count?: { vendorAddress?: boolean; buyerAddress?: boolean };
+    } = {}): Promise<{
+      _sum?: { amount: number | null };
+      _avg?: { amount: number | null };
+      _count?: { vendorAddress: number; buyerAddress: number };
+    }> => {
+      const allEscrows = [...this.escrows.values()];
+
+      const result: Record<string, unknown> = {};
+
+      if (_sum?.amount) {
+        const sum = allEscrows.reduce((s, e) => s + Number(e.amount), 0);
+        result._sum = { amount: sum };
+      }
+
+      if (_avg?.amount) {
+        const sum = allEscrows.reduce((s, e) => s + Number(e.amount), 0);
+        const avg = allEscrows.length > 0 ? sum / allEscrows.length : 0;
+        result._avg = { amount: avg };
+      }
+
+      if (_count?.vendorAddress) {
+        const unique = new Set(allEscrows.map((e) => e.vendorAddress)).size;
+        result._count = {
+          ...(result._count ?? {}),
+          vendorAddress: unique,
+        };
+      }
+
+      if (_count?.buyerAddress) {
+        const unique = new Set(allEscrows.map((e) => e.buyerAddress)).size;
+        result._count = {
+          ...(result._count ?? {}),
+          buyerAddress: unique,
+        };
+      }
+
+      return Promise.resolve(
+        result as {
+          _sum?: { amount: number | null };
+          _avg?: { amount: number | null };
+          _count?: { vendorAddress: number; buyerAddress: number };
+        },
+      );
+    },
+    groupBy: ({
+      by,
+      _count,
+    }: {
+      by: string[];
+      _count?: boolean;
+    }): Promise<Array<Record<string, unknown> & { _count?: number }>> => {
+      const allEscrows = [...this.escrows.values()];
+      const groups = new Map<string, EscrowRecord[]>();
+
+      for (const escrow of allEscrows) {
+        const groupKey = by
+          .map((field) => escrow[field as keyof EscrowRecord])
+          .join('|');
+        if (!groups.has(groupKey)) {
+          groups.set(groupKey, []);
+        }
+        groups.get(groupKey)!.push(escrow);
+      }
+
+      const result: Array<Record<string, unknown> & { _count?: number }> = [];
+      for (const [, records] of groups.entries()) {
+        const group: Record<string, unknown> = {};
+        for (let i = 0; i < by.length; i++) {
+          group[by[i]] = (records[0] as unknown as Record<string, unknown>)[by[i]];
+        }
+        if (_count) {
+          group._count = records.length;
+        }
+        result.push(group);
+      }
+
+      return Promise.resolve(result);
+    },
     deleteMany: (): Promise<{ count: number }> => {
       const count = this.escrows.size;
       this.escrows.clear();
@@ -705,24 +823,64 @@ export class PrismaService implements OnModuleDestroy {
     },
     findMany: ({
       where,
+      orderBy,
+      skip,
+      take,
     }: {
-      where?: Partial<Pick<DisputeRecord, 'escrowId' | 'status'>>;
+      where?: Partial<Pick<DisputeRecord, 'escrowId' | 'status'>> & {
+        status?: DisputeState | { in?: DisputeState[] };
+      };
+      orderBy?: Partial<Record<keyof DisputeRecord, 'asc' | 'desc'>>;
+      skip?: number;
+      take?: number;
     } = {}): Promise<DisputeRecord[]> => {
-      const disputes = [...this.disputes.values()].filter((dispute) => {
-        if (!where) {
-          return true;
-        }
-
+      let disputes = [...this.disputes.values()].filter((dispute) => {
+        if (!where) return true;
         return Object.entries(where).every(([key, value]) => {
-          if (value === undefined) {
-            return true;
+          if (value === undefined) return true;
+          if (
+            key === 'status' &&
+            typeof value === 'object' &&
+            value !== null &&
+            'in' in value
+          ) {
+            return (value as { in: DisputeState[] }).in.includes(
+              dispute.status,
+            );
           }
-
           return dispute[key as keyof DisputeRecord] === value;
         });
       });
 
-      return Promise.resolve(disputes.map((dispute) => ({ ...dispute })));
+      if (orderBy) {
+        const [field, dir] = Object.entries(orderBy)[0] as [
+          keyof DisputeRecord,
+          'asc' | 'desc',
+        ];
+        disputes = [...disputes].sort((a, b) => {
+          const aVal = a[field];
+          const bVal = b[field];
+          if (aVal instanceof Date && bVal instanceof Date) {
+            return dir === 'asc'
+              ? aVal.getTime() - bVal.getTime()
+              : bVal.getTime() - aVal.getTime();
+          }
+          if (typeof aVal === 'number' && typeof bVal === 'number') {
+            return dir === 'asc' ? aVal - bVal : bVal - aVal;
+          }
+          if (typeof aVal === 'string' && typeof bVal === 'string') {
+            return dir === 'asc'
+              ? aVal.localeCompare(bVal)
+              : bVal.localeCompare(aVal);
+          }
+          return 0;
+        });
+      }
+
+      if (skip !== undefined) disputes = disputes.slice(skip);
+      if (take !== undefined) disputes = disputes.slice(0, take);
+
+      return Promise.resolve(disputes.map((d) => ({ ...d })));
     },
     update: ({
       where,
@@ -748,6 +906,17 @@ export class PrismaService implements OnModuleDestroy {
       return this.dispute
         .findMany({ where })
         .then((records) => records[0] ?? null);
+    },
+    count: ({
+      where,
+    }: {
+      where?: Partial<Pick<DisputeRecord, 'escrowId' | 'status'>> & {
+        status?: DisputeState | { in?: DisputeState[] };
+      };
+    } = {}): Promise<number> => {
+      return this.dispute
+        .findMany({ where })
+        .then((records) => records.length);
     },
     deleteMany: (): Promise<{ count: number }> => {
       const count = this.disputes.size;
@@ -1455,249 +1624,3 @@ export class PrismaService implements OnModuleDestroy {
     },
   };
 }
-
-export interface NotificationRecord {
-  id: string;
-  escrowId: string;
-  type: NotificationType;
-  channel: NotificationChannel;
-  recipientAddress: string;
-  message: string;
-  status: NotificationStatus;
-  retryCount: number;
-  sentAt: Date | null;
-  failedAt: Date | null;
-  lastError: string | null;
-  providerMessageId?: string | null;
-  attemptCount?: number;
-  lastResponseCode?: number | null;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-export interface VendorTrackingSettingsRecord {
-  id: string;
-  vendorAddress: string;
-  enableTracking: boolean;
-  trackingProvider: string | null;
-  trackingApiKey: string | null;
-  autoUpdateTracking: boolean;
-  trackingUpdateInterval: number;
-  notifyOnDelivery: boolean;
-  notifyOnDelay: boolean;
-  notifyOnException: boolean;
-  delayThresholdHours: number;
-  deliveryConfirmation: boolean;
-  requireSignature: boolean;
-  insuranceRequired: boolean;
-  insuranceValue: number | null;
-  customTrackingRules: Record<string, unknown> | null;
-  webhookUrl: string | null;
-  webhookSecret: string | null;
-  notificationChannels: string[];
-  trackingHistoryRetentionDays: number;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-export interface ProcessedWebhookEventRecord {
-  operationId: string;
-  processedAt: Date;
-}
-
-export interface RefreshTokenRecord {
-  id: string;
-  userId: string;
-  tokenHash: string;
-  parentTokenId: string | null;
-  revoked: boolean;
-  expiresAt: Date;
-  createdAt: Date;
-}
-
-export interface NonceRecord {
-  id: string;
-  nonce: string;
-  walletAddress: string;
-  challenge: string;
-  used: boolean;
-  expiresAt: Date;
-  createdAt: Date;
-}
-
-export interface EscrowEventRecord {
-  id: string;
-  escrowId: string;
-  fromState: EscrowState | null;
-  toState: EscrowState;
-  createdAt: Date;
-}
-
-export interface VendorAccountDetailsRecord {
-  id: string;
-  vendorAddress: string;
-  businessLicense: string | null;
-  taxId: string | null;
-  bankAccountNumber: string | null;
-  bankRoutingNumber: string | null;
-  paymentMethods: string[];
-  preferredCurrency: string;
-  billingAddress: string | null;
-  billingCity: string | null;
-  billingState: string | null;
-  billingCountry: string | null;
-  billingPostalCode: string | null;
-  shippingAddress: string | null;
-  shippingCity: string | null;
-  shippingState: string | null;
-  shippingCountry: string | null;
-  shippingPostalCode: string | null;
-  websiteUrl: string | null;
-  socialMediaLinks: string[];
-  businessHours: string | null;
-  timezone: string;
-  language: string;
-  verificationStatus: string;
-  verifiedAt: Date | null;
-  kycStatus: string;
-  kycCompletedAt: Date | null;
-  riskScore: number;
-  complianceNotes: string | null;
-  customFields: Record<string, unknown> | null;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-export interface CursorRecord {
-  id: string;
-  cursorValue: string;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-export type FailedTransactionStatus =
-  'PENDING_REVIEW' | 'REPLAYED' | 'ABANDONED';
-
-export interface FailedTransactionRecord {
-  id: string;
-  operation: string;
-  escrowId: string | null;
-  errorMessage: string;
-  ledgerFeedback: Record<string, unknown> | null;
-  attempts: number;
-  status: FailedTransactionStatus;
-  lastReplayTxHash: string | null;
-  createdAt: Date;
-  updatedAt: Date;
-  reviewedAt: Date | null;
-  replayedAt: Date | null;
-}
-
-export type EscrowCreateInput = Omit<
-  EscrowRecord,
-  | 'id'
-  | 'itemRef'
-  | 'state'
-  | 'trackingId'
-  | 'shippedAt'
-  | 'deliveredAt'
-  | 'deliveryRecordedAt'
-  | 'autoReleaseSubmittedAt'
-  | 'autoReleaseTxHash'
-  | 'disputeId'
-  | 'cancelledAt'
-  | 'createdAt'
-  | 'updatedAt'
-> & {
-  id?: string;
-  itemRef?: string;
-  state?: EscrowState;
-  trackingId?: string | null;
-  shippedAt?: Date | null;
-  deliveredAt?: Date | null;
-  deliveryRecordedAt?: Date | null;
-  autoReleaseSubmittedAt?: Date | null;
-  autoReleaseTxHash?: string | null;
-  disputeId?: string | null;
-  cancelledAt?: Date | null;
-  createdAt?: Date;
-};
-
-type DisputeCreateInput = Omit<
-  DisputeRecord,
-  | 'id'
-  | 'status'
-  | 'resolvedAt'
-  | 'createdAt'
-  | 'updatedAt'
-  | 'evidenceUrls'
-  | 'description'
-> & {
-  id?: string;
-  status?: DisputeState;
-  resolvedAt?: Date | null;
-  evidenceUrls?: string[];
-  description?: string;
-};
-
-type EscrowUpdateInput = Partial<
-  Pick<
-    EscrowRecord,
-    | 'state'
-    | 'trackingId'
-    | 'shippedAt'
-    | 'deliveredAt'
-    | 'deliveryRecordedAt'
-    | 'autoReleaseSubmittedAt'
-    | 'autoReleaseTxHash'
-    | 'disputeId'
-    | 'cancelledAt'
-    | 'buyerContactEmail'
-    | 'buyerContactPhone'
-  >
->;
-
-type VendorProfileCreateInput = Omit<
-  VendorProfileRecord,
-  'createdAt' | 'updatedAt'
->;
-
-type VendorProfileUpdateInput = Partial<
-  Omit<VendorProfileRecord, 'address' | 'createdAt' | 'updatedAt'>
->;
-
-type DisputeUpdateInput = Partial<
-  Pick<
-    DisputeRecord,
-    'status' | 'resolvedAt' | 'reason' | 'escrowId' | 'evidenceUrls'
-  >
->;
-
-type NotificationCreateInput = Pick<
-  NotificationRecord,
-  'escrowId' | 'type' | 'channel' | 'recipientAddress' | 'message'
-> &
-  Partial<
-    Pick<
-      NotificationRecord,
-      | 'id'
-      | 'status'
-      | 'retryCount'
-      | 'sentAt'
-      | 'failedAt'
-      | 'lastError'
-      | 'providerMessageId'
-      | 'attemptCount'
-      | 'lastResponseCode'
-    >
-  >;
-
-type NotificationUpdateInput = Partial<
-  Omit<NotificationRecord, 'id' | 'createdAt' | 'updatedAt'>
->;
-
-type VendorTrackingSettingsCreateInput = Partial<
-  Omit<VendorTrackingSettingsRecord, 'createdAt' | 'updatedAt'>
->;
-
-

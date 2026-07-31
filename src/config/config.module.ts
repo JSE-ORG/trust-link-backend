@@ -3,7 +3,6 @@ import { ConfigModule as NestConfigModule } from '@nestjs/config';
 import * as Joi from 'joi';
 import { Keypair } from '@stellar/stellar-sdk';
 import { ConfigService } from './config.service';
-import { configValidationSchema } from './config.schema';
 
 /**
  * Custom Joi validator for Stellar secret keys.
@@ -40,34 +39,6 @@ const stellarSecretKey = Joi.string().custom((value, helpers) => {
     });
   }
 }, 'Stellar secret key checksum validation');
-
-/**
- * Custom Joi validator for Stellar public keys (G... addresses).
- *
- * Validates by decoding via Keypair.fromPublicKey. Rejects secret keys,
- * malformed strings, and checksum failures.
- */
-const stellarPublicKey = Joi.string().custom((value, helpers) => {
-  const keyName = helpers.state.path ? helpers.state.path.join('.') : 'key';
-  if (!value.startsWith('G')) {
-    return helpers.message({
-      custom:
-        `${keyName} must be a Stellar public key ` +
-        `starting with G, got a value starting with '${value[0]}'`,
-    });
-  }
-
-  try {
-    Keypair.fromPublicKey(value);
-    return value; // valid
-  } catch {
-    return helpers.message({
-      custom:
-        `${keyName} is an invalid Stellar public key ` +
-        `— checksum verification failed.`,
-    });
-  }
-}, 'Stellar public key checksum validation');
 
 /**
  * Custom Joi validator asserting the Soroban RPC URL agrees with

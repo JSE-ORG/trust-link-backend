@@ -59,7 +59,8 @@ export class LogisticsService implements OnModuleInit {
   private async loadPersistedApiKey(): Promise<void> {
     if (this.prisma) {
       try {
-        const record = await this.prisma.providerCredential.findUnique({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const record = await (this.prisma as any).providerCredential.findUnique({
           where: { provider: LOGISTICS_CREDENTIAL_PROVIDER },
         });
         if (record) {
@@ -118,7 +119,8 @@ export class LogisticsService implements OnModuleInit {
     this.apiKey = encryptedKey;
 
     if (this.prisma) {
-      await this.prisma.providerCredential.upsert({
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (this.prisma as any).providerCredential.upsert({
         where: { provider: LOGISTICS_CREDENTIAL_PROVIDER },
         update: { encryptedKey },
         create: {

@@ -9,13 +9,17 @@ describe('DisputeRepository (issue #14)', () => {
   let prisma: PrismaService;
 
   beforeEach(async () => {
+    prisma = new PrismaService();
     const moduleRef = await Test.createTestingModule({
-      providers: [DisputeRepository, EscrowRepository, PrismaService],
+      providers: [
+        DisputeRepository,
+        EscrowRepository,
+        { provide: PrismaService, useValue: prisma },
+      ],
     }).compile();
 
     disputeRepository = moduleRef.get(DisputeRepository);
     escrowRepository = moduleRef.get(EscrowRepository);
-    prisma = moduleRef.get(PrismaService);
     await prisma.reset();
   });
 
