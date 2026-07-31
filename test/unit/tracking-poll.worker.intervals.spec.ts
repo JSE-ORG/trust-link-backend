@@ -3,6 +3,7 @@ import { EscrowRepository } from '../../src/escrow/escrow.repository';
 import { LogisticsService } from '../../src/logistics/logistics.service';
 import { TrackingPollWorker } from '../../src/workers/tracking-poll.worker';
 import { ContractService } from '../../src/stellar/contract.service';
+import { ConfigService } from '../../src/config/config.service';
 
 const TEN_MINUTES = 10 * 60 * 1000;
 
@@ -39,6 +40,7 @@ describe('TrackingPollWorker — interval scheduling & polling loop (issue #46)'
   let escrowRepository: jest.Mocked<EscrowRepository>;
   let logisticsService: jest.Mocked<LogisticsService>;
   let contractService: jest.Mocked<ContractService>;
+  let configService: jest.Mocked<ConfigService>;
 
   beforeEach(async () => {
     escrowRepository = {
@@ -55,6 +57,14 @@ describe('TrackingPollWorker — interval scheduling & polling loop (issue #46)'
     contractService = {
       recordDelivery: jest.fn(),
     } as unknown as jest.Mocked<ContractService>;
+    configService = {
+      get: jest.fn().mockImplementation((key: string) => {
+        if (key === 'NODE_ENV') {
+          return process.env.NODE_ENV ?? 'test';
+        }
+        return undefined;
+      }),
+    } as unknown as jest.Mocked<ConfigService>;
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -62,6 +72,7 @@ describe('TrackingPollWorker — interval scheduling & polling loop (issue #46)'
         { provide: EscrowRepository, useValue: escrowRepository },
         { provide: LogisticsService, useValue: logisticsService },
         { provide: ContractService, useValue: contractService },
+        { provide: ConfigService, useValue: configService },
       ],
     }).compile();
 

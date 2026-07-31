@@ -7,6 +7,7 @@ import {
 import { EscrowRepository } from '../escrow/escrow.repository';
 import { LogisticsService } from '../logistics/logistics.service';
 import { ContractService } from '../stellar/contract.service';
+import { ConfigService } from '../config/config.service';
 
 const EVERY_10_MINUTES = 10 * 60 * 1000;
 
@@ -19,10 +20,11 @@ export class TrackingPollWorker implements OnModuleInit, OnApplicationShutdown {
     private readonly escrowRepository: EscrowRepository,
     private readonly logisticsService: LogisticsService,
     private readonly contractService: ContractService,
+    private readonly configService: ConfigService,
   ) {}
 
   onModuleInit(): void {
-    if (process.env.NODE_ENV === 'test') {
+    if (this.configService.get('NODE_ENV') === 'test') {
       return;
     }
 

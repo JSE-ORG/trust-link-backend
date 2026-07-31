@@ -349,12 +349,15 @@ export class PrismaService implements OnModuleDestroy {
   // databaseUrl is accepted so the module can pass the pool-tuned URL from
   // ConfigService. The in-memory store does not use it, but a real PrismaClient
   // replacement should forward it to `new PrismaClient({ datasources: { db: { url } } })`.
-  constructor(readonly databaseUrl?: string) {
+  constructor(
+    @Optional() readonly databaseUrl?: string,
+    @Optional() @Inject(ConfigService) private readonly configService?: ConfigService,
+  ) {
     // Issue #316: apply statement_timeout to prevent long-running queries
     if (databaseUrl) {
       try {
         const url = new URL(databaseUrl);
-        url.searchParams.set('statement_timeout', process.env.QUERY_TIMEOUT_MS ?? '30000');
+        url.searchParams.set('statement_timeout', this.configService?.get<string>('QUERY_TIMEOUT_MS') ?? '30000');
         url.searchParams.set('connect_timeout', '10');
         this.effectiveDatabaseUrl = url.toString();
       } catch {
@@ -367,7 +370,7 @@ export class PrismaService implements OnModuleDestroy {
 
   // Issue #315: slow query logging middleware
   private readonly slowQueryThresholdMs =
-    parseInt(process.env.SLOW_QUERY_THRESHOLD_MS ?? '500', 10);
+    parseInt(this.configService?.get<string>('SLOW_QUERY_THRESHOLD_MS') ?? '500', 10);
 
   private readonly logger = new Logger('PrismaService');
 
@@ -617,6 +620,18 @@ export class PrismaService implements OnModuleDestroy {
       return this.escrow
         .findMany({ where, orderBy })
         .then((records) => records[0] ?? null);
+    },
+    count: ({ where }: { where?: Record<string, unknown> } = {}): Promise<number> => {
+      let escrows = [...this.escrows.values()];
+      if (where) {
+        escrows = escrows.filter((escrow) =>
+          Object.entries(where).every(([key, value]) => {
+            if (value === undefined) return true;
+            return escrow[key as keyof EscrowRecord] === value;
+          }),
+        );
+      }
+      return Promise.resolve(escrows.length);
     },
     updateMany: ({
       where,

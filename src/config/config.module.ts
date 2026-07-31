@@ -75,6 +75,7 @@ const sorobanRpcUrl = Joi.string()
 export const configValidationSchema = Joi.object({
   PORT: Joi.number().default(3000),
   DATABASE_URL: Joi.string().required(),
+  CREDENTIAL_ENCRYPTION_KEY: Joi.string().hex().length(64).required(),
   SEP10_JWT_SECRET: Joi.string().min(32).required(),
   // Stellar system signer secret key — validated by Keypair.fromSecret for checksum
   SYSTEM_SIGNER_SECRET: stellarSecretKey.required(),
@@ -104,6 +105,7 @@ export const configValidationSchema = Joi.object({
   TWILIO_AUTH_TOKEN: Joi.string().optional(),
   STELLAR_NETWORK: Joi.string().valid('TESTNET', 'MAINNET').default('TESTNET'),
   ALLOWED_ORIGINS: Joi.string().optional(),
+  CSP_CONNECT_SRC: Joi.string().optional(),
   STELLAR_WEBHOOK_SECRET: Joi.when('NODE_ENV', {
     is: 'production',
     then: Joi.string().required().messages({
@@ -135,8 +137,8 @@ export const configValidationSchema = Joi.object({
   EVIDENCE_UPLOAD_LIMIT: Joi.number().integer().min(1).default(10),
   EVIDENCE_UPLOAD_TTL: Joi.number().integer().min(1000).default(60000),
   REFRESH_TOKEN_TTL: Joi.number().integer().min(60).default(604800),
-  GIGL_API_BASE_URL: Joi.string().uri().optional(),
-  GIGL_API_TOKEN: Joi.string().optional(),
+  LOGISTICS_API_BASE_URL: Joi.string().uri().optional(),
+  LOGISTICS_API_KEY: Joi.string().optional(),
   STELLAR_HORIZON_URL: Joi.string().uri().optional(),
   QUERY_TIMEOUT_MS: Joi.number().integer().min(1000).default(30000),
   SLOW_QUERY_THRESHOLD_MS: Joi.number().integer().min(0).default(500),

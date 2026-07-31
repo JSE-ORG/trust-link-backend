@@ -79,7 +79,12 @@ describe('AutoReleaseWorker', () => {
     } as unknown as jest.Mocked<ContractService>;
 
     configService = {
-      get: jest.fn().mockReturnValue(TEST_AUTO_RELEASE_SOURCE),
+      get: jest.fn().mockImplementation((key: string) => {
+        if (key === 'NODE_ENV') {
+          return process.env.NODE_ENV ?? 'test';
+        }
+        return TEST_AUTO_RELEASE_SOURCE;
+      }),
     } as unknown as jest.Mocked<ConfigService>;
 
     worker = new AutoReleaseWorker(
