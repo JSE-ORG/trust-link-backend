@@ -14,6 +14,13 @@ describe('EscrowRepository (issue #13)', () => {
     repository = moduleRef.get(EscrowRepository);
     prisma = moduleRef.get(PrismaService);
     await prisma.reset();
+    await prisma.vendorProfile.createMany({
+      data: [
+        { address: 'vendor-1', businessName: 'Vendor 1' },
+        { address: 'vendor-2', businessName: 'Vendor 2' },
+      ],
+      skipDuplicates: true,
+    });
   });
 
   it('finds escrows by vendor and buyer', async () => {

@@ -3,6 +3,7 @@ import { ConfigModule as NestConfigModule } from '@nestjs/config';
 import * as Joi from 'joi';
 import { Keypair } from '@stellar/stellar-sdk';
 import { ConfigService } from './config.service';
+import { stellarPublicKey } from './config.schema';
 
 /**
  * Custom Joi validator for Stellar secret keys.
@@ -122,7 +123,7 @@ export const configValidationSchema = Joi.object({
   CONTRACT_ID: Joi.string().required().messages({
     'any.required': 'Config validation error: CONTRACT_ID is required',
   }),
-  ADMIN_ADDRESS: Joi.string().required(),
+  ADMIN_ADDRESS: stellarPublicKey.required(),
   AUTO_RELEASE_SOURCE_ADDRESS: Joi.string()
     .pattern(/^G[A-Z2-7]{55}$/)
     .optional()

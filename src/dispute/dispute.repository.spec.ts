@@ -7,8 +7,12 @@ describe('DisputeRepository', () => {
   let escrowRepo: EscrowRepository;
   let prisma: PrismaService;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     prisma = new PrismaService();
+    await prisma.vendorProfile.createMany({
+      data: [{ address: 'vendor', businessName: 'Test Vendor' }],
+      skipDuplicates: true,
+    });
     disputeRepo = new DisputeRepository(prisma);
     escrowRepo = new EscrowRepository(prisma);
   });

@@ -21,6 +21,41 @@ describe('DisputeRepository (issue #14)', () => {
     disputeRepository = moduleRef.get(DisputeRepository);
     escrowRepository = moduleRef.get(EscrowRepository);
     await prisma.reset();
+    await prisma.vendorProfile.createMany({
+      data: [{ address: 'vendor-1', businessName: 'Vendor 1' }],
+      skipDuplicates: true,
+    });
+    await prisma.escrow.createMany({
+      data: [
+        {
+          id: 'escrow-1',
+          itemName: 'Item 1',
+          itemRef: 'ref-1',
+          amount: 10,
+          currency: 'USDC',
+          buyerAddress: 'buyer-1',
+          vendorAddress: 'vendor-1',
+        },
+        {
+          id: 'escrow-2',
+          itemName: 'Item 2',
+          itemRef: 'ref-2',
+          amount: 10,
+          currency: 'USDC',
+          buyerAddress: 'buyer-1',
+          vendorAddress: 'vendor-1',
+        },
+        {
+          id: 'escrow-3',
+          itemName: 'Item 3',
+          itemRef: 'ref-3',
+          amount: 10,
+          currency: 'USDC',
+          buyerAddress: 'buyer-1',
+          vendorAddress: 'vendor-1',
+        },
+      ],
+    });
   });
 
   it('returns open disputes only', async () => {

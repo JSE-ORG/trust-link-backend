@@ -36,6 +36,14 @@ jest.mock('axios', () => {
 });
 const mockedAxios = axios as jest.Mocked<typeof axios>;
 
+const encryptionKeyConfig = {
+  get: (key: string) => {
+    if (key === 'CREDENTIAL_ENCRYPTION_KEY') return 'a'.repeat(64);
+    if (key === 'LOGISTICS_API_KEY') return process.env.LOGISTICS_API_KEY;
+    return undefined;
+  },
+} as ConfigService;
+
 describe('LogisticsService & LogisticsModule (issue #479)', () => {
   let service: LogisticsService;
   let mockAxiosInstance: { get: jest.Mock };
@@ -47,7 +55,7 @@ describe('LogisticsService & LogisticsModule (issue #479)', () => {
 
   describe('Runtime API key management', () => {
     beforeEach(() => {
-      service = new LogisticsService();
+      service = new LogisticsService(undefined, encryptionKeyConfig);
     });
 
     it('stores and returns the API key at runtime', () => {
@@ -106,7 +114,7 @@ describe('LogisticsService & LogisticsModule (issue #479)', () => {
 
     it('rotates to the submitted key on first set (nothing previously stored)', async () => {
       const prisma = createFakePrisma();
-      const svc = new LogisticsService(prisma as any);
+      const svc = new LogisticsService(prisma as any, encryptionKeyConfig);
 
       expect(svc.getApiKey()).toBeNull();
       await svc.rotateApiKey('first-key');
@@ -117,7 +125,7 @@ describe('LogisticsService & LogisticsModule (issue #479)', () => {
 
     it('rotates to the submitted key when a key already exists, and the stored value actually changes', async () => {
       const prisma = createFakePrisma();
-      const svc = new LogisticsService(prisma as any);
+      const svc = new LogisticsService(prisma as any, encryptionKeyConfig);
 
       await svc.rotateApiKey('old-key');
       const encryptedAfterFirst = svc.getEncryptedApiKey();
@@ -133,51 +141,51 @@ describe('LogisticsService & LogisticsModule (issue #479)', () => {
 
     it('persists the rotated key so a freshly constructed service instance loads it (issue #499)', async () => {
       const prisma = createFakePrisma();
-      const svc1 = new LogisticsService(prisma as any);
+      const svc1 = new LogisticsService(prisma as any, encryptionKeyConfig);
       await svc1.rotateApiKey('rotated-secret');
 
-      const svc2 = new LogisticsService(prisma as any);
+      const svc2 = new LogisticsService(prisma as any, encryptionKeyConfig);
       await svc2.onModuleInit();
 
       expect(svc2.getApiKey()).toBe('rotated-secret');
     });
 
-    it('falls back to the GIGL_API_TOKEN environment variable when nothing is persisted', async () => {
+    it('falls back to the LOGISTICS_API_KEY environment variable when nothing is persisted', async () => {
       const prisma = createFakePrisma();
-      const originalToken = process.env.GIGL_API_TOKEN;
-      process.env.GIGL_API_TOKEN = 'env-fallback-token';
+      const originalToken = process.env.LOGISTICS_API_KEY;
+      process.env.LOGISTICS_API_KEY = 'env-fallback-token';
 
       try {
-        const svc = new LogisticsService(prisma as any);
+        const svc = new LogisticsService(prisma as any, encryptionKeyConfig);
         await svc.onModuleInit();
         expect(svc.getApiKey()).toBe('env-fallback-token');
       } finally {
         if (originalToken === undefined) {
-          delete process.env.GIGL_API_TOKEN;
+          delete process.env.LOGISTICS_API_KEY;
         } else {
-          process.env.GIGL_API_TOKEN = originalToken;
+          process.env.LOGISTICS_API_KEY = originalToken;
         }
       }
     });
 
     it('prefers the persisted key over the environment variable', async () => {
       const prisma = createFakePrisma();
-      const originalToken = process.env.GIGL_API_TOKEN;
-      process.env.GIGL_API_TOKEN = 'env-fallback-token';
+      const originalToken = process.env.LOGISTICS_API_KEY;
+      process.env.LOGISTICS_API_KEY = 'env-fallback-token';
 
       try {
-        const svc1 = new LogisticsService(prisma as any);
+        const svc1 = new LogisticsService(prisma as any, encryptionKeyConfig);
         await svc1.rotateApiKey('rotated-secret');
 
-        const svc2 = new LogisticsService(prisma as any);
+        const svc2 = new LogisticsService(prisma as any, encryptionKeyConfig);
         await svc2.onModuleInit();
 
         expect(svc2.getApiKey()).toBe('rotated-secret');
       } finally {
         if (originalToken === undefined) {
-          delete process.env.GIGL_API_TOKEN;
+          delete process.env.LOGISTICS_API_KEY;
         } else {
-          process.env.GIGL_API_TOKEN = originalToken;
+          process.env.LOGISTICS_API_KEY = originalToken;
         }
       }
     });
@@ -187,8 +195,8 @@ describe('LogisticsService & LogisticsModule (issue #479)', () => {
     it('provides GiglLogisticsService and GiglClient when configured', async () => {
       const mockConfigService = {
         get: (key: string) => {
-          if (key === 'GIGL_API_BASE_URL') return 'https://api.gigl.com/v1';
-          if (key === 'GIGL_API_TOKEN') return 'test-token-123';
+          if (key === 'LOGISTICS_API_BASE_URL') return 'https://api.gigl.com/v1';
+          if (key === 'LOGISTICS_API_KEY') return 'test-token-123';
           return undefined;
         },
       };

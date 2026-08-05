@@ -321,7 +321,9 @@ export class PrismaService extends PrismaClient {
     );
     // The base PrismaClient type does not carry the query-event log config
     // through the subclass, so narrow $on to the query-event signature here.
-    const onQuery = this.$on as unknown as (
+    // Prisma v7 exposes the client through a Proxy whose get trap returns
+    // methods unbound, so bind `this` explicitly before invoking.
+    const onQuery = (this.$on.bind(this) as unknown) as (
       event: 'query',
       callback: (event: Prisma.QueryEvent) => void,
     ) => void;
@@ -348,10 +350,19 @@ export class PrismaService extends PrismaClient {
     const tablenames = await this.$queryRaw<Array<{ tablename: string }>>`
       SELECT tablename FROM pg_tables WHERE schemaname='public'
     `;
-    for (const { tablename } of tablenames) {
-      if (tablename !== '_prisma_migrations') {
-        await this.$executeRawUnsafe(`TRUNCATE TABLE "${tablename}" CASCADE;`);
-      }
+    const tables = tablenames
+      .map(({ tablename }) => tablename)
+      .filter((tablename) => tablename !== '_prisma_migrations')
+      .map((tablename) => `"${tablename}"`)
+      .join(', ');
+    if (tables) {
+      // Single TRUNCATE statement avoids the deadlocks caused by truncating
+      // tables one-by-one, and the advisory lock serializes reset() across
+      // parallel Jest workers sharing the same test database.
+      await this.$transaction(async (tx) => {
+        await tx.$executeRawUnsafe(`SELECT pg_advisory_xact_lock(42);`);
+        await tx.$executeRawUnsafe(`TRUNCATE TABLE ${tables} CASCADE;`);
+      });
     }
   }
 }

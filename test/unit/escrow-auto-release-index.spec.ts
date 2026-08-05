@@ -31,6 +31,14 @@ describe('EscrowRepository – auto-release index query (issue #310)', () => {
     prisma = new PrismaService();
     repository = new EscrowRepository(prisma);
     await prisma.reset();
+    await prisma.vendorProfile.createMany({
+      data: [
+        { address: 'vendor-1', businessName: 'Vendor 1' },
+        { address: 'vendor-2', businessName: 'Vendor 2' },
+        { address: 'vendor-3', businessName: 'Vendor 3' },
+      ],
+      skipDuplicates: true,
+    });
   });
 
   // ── (state, deliveredAt) index path ──────────────────────────────────────

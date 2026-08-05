@@ -6,6 +6,13 @@ describe('PrismaService dispute.findFirst', () => {
   beforeEach(async () => {
     prisma = new PrismaService();
     await prisma.reset();
+    await prisma.vendorProfile.createMany({
+      data: [
+        { address: 'v1', businessName: 'Vendor 1' },
+        { address: 'v2', businessName: 'Vendor 2' },
+      ],
+      skipDuplicates: true,
+    });
   });
 
   afterEach(async () => {

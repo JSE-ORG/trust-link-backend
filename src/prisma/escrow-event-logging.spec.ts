@@ -6,6 +6,10 @@ describe('PrismaService basic CRUD', () => {
   beforeEach(async () => {
     prisma = new PrismaService();
     await prisma.reset();
+    await prisma.vendorProfile.createMany({
+      data: [{ address: 'GVENDOR', businessName: 'Test Vendor' }],
+      skipDuplicates: true,
+    });
   });
 
   afterEach(async () => {

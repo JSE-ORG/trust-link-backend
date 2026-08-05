@@ -102,7 +102,7 @@ function mockRpcResponse(
     ok: true,
     status: 200,
     statusText: 'OK',
-    json: async () => ({ result: { events, latestLedger: 200 } }),
+    json: async () => ({ result: { events, latestLedger: 200, sequence: 200 } }),
   } as unknown as Response);
 }
 
@@ -185,7 +185,7 @@ describe('SorobanPollerService — lifecycle (issue #559)', () => {
       ok: true,
       status: 200,
       statusText: 'OK',
-      json: async () => ({ result: { events: [], latestLedger: 1 } }),
+      json: async () => ({ result: { events: [], latestLedger: 1, sequence: 1 } }),
     });
 
     await firstPoll;

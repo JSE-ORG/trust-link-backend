@@ -50,6 +50,10 @@ describe('PrismaService parity with Prisma schema', () => {
   beforeEach(async () => {
     prisma = new PrismaService();
     await prisma.reset();
+    await prisma.vendorProfile.createMany({
+      data: [{ address: 'vendor-1', businessName: 'Acme' }],
+      skipDuplicates: true,
+    });
   });
 
   afterEach(async () => {
@@ -114,9 +118,16 @@ describe('PrismaService parity with Prisma schema', () => {
 
   it('vendor profile records contain every required VendorProfile column', async () => {
     const required = requiredScalarFields(schema, 'VendorProfile');
-    const profile = await prisma.vendorProfile.create({
-      data: {
+    const profile = await prisma.vendorProfile.upsert({
+      where: { address: 'vendor-1' },
+      create: {
         address: 'vendor-1',
+        businessName: 'Acme',
+        description: '',
+        email: '',
+        phone: '',
+      },
+      update: {
         businessName: 'Acme',
         description: '',
         email: '',

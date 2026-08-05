@@ -22,6 +22,15 @@ describe('AnalyticsService', () => {
 
     // Reset prisma before each test
     await prisma.reset();
+    await prisma.vendorProfile.createMany({
+      data: [
+        { address: '0xVendor123', businessName: 'Vendor 123' },
+        { address: '0xVendor456', businessName: 'Vendor 456' },
+        { address: '0xVendorXYZ', businessName: 'Vendor XYZ' },
+        { address: '0xVendorABC', businessName: 'Vendor ABC' },
+      ],
+      skipDuplicates: true,
+    });
   });
 
   // ─── getDailyVolumeChart ───────────────────────────────────────────────────
