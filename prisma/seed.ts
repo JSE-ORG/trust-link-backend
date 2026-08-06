@@ -37,6 +37,19 @@ export const EXPECTED_COUNTS = {
   notifications: 10,
 };
 
+async function seedVendors(p: PrismaService): Promise<void> {
+  for (const address of VENDORS) {
+    await p.vendorProfile.upsert({
+      where: { address },
+      create: {
+        address,
+        businessName: `Vendor ${address.slice(0, 6)}`,
+      },
+      update: {},
+    });
+  }
+}
+
 async function seedEscrows(
   p: PrismaService,
 ): Promise<{ created: number; updated: number; ids: string[] }> {
@@ -167,6 +180,9 @@ export async function main(p?: PrismaService) {
   const prisma = p ?? new PrismaService();
   try {
     console.log('Starting database seed...');
+
+    await seedVendors(prisma);
+    console.log(`Vendors: ${VENDORS.length} ensured`);
 
     const { created: escrowsCreated, updated: escrowsUpdated, ids: escrowIds } =
       await seedEscrows(prisma);

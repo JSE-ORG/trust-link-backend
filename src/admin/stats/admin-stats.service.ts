@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { DisputeStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AdminStatsDto } from './dto/admin-stats.dto';
 
@@ -24,8 +25,9 @@ export class AdminStatsService {
       }),
       this.prisma.dispute.count(),
       this.prisma.dispute.count({
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        where: { status: { in: ['OPEN', 'UNDER_REVIEW'] } } as any,
+        where: {
+          status: { in: [DisputeStatus.OPEN, DisputeStatus.UNDER_REVIEW] },
+        },
       }),
     ]);
 
@@ -34,7 +36,7 @@ export class AdminStatsService {
         (sum, g) => sum + g._count,
         0,
       );
-    const totalVolume = aggregation._sum?.amount ?? 0;
+    const totalVolume = Number(aggregation._sum?.amount ?? 0);
     const uniqueVendors = aggregation._count?.vendorAddress ?? 0;
     const uniqueBuyers = aggregation._count?.buyerAddress ?? 0;
     const averageEscrowAmount =

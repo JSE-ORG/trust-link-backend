@@ -1,7 +1,6 @@
 import { Keypair } from '@stellar/stellar-sdk';
 import { configValidationSchema } from './config.schema';
 import { Test } from '@nestjs/testing';
-import { Keypair } from '@stellar/stellar-sdk';
 import type { ConfigService } from './config.service';
 
 /**
@@ -72,6 +71,10 @@ const VALIDATE_OPTIONS = {
   abortEarly: false,
   allowUnknown: true,
 } as const;
+
+// Every env key the tests touch — saved/wiped/restored for full isolation.
+const ALL_KNOWN_KEYS: string[] = Object.keys(VALID_ENV);
+
 async function buildConfigService(
   env: Record<string, string | undefined>,
 ): Promise<ConfigService> {
@@ -220,6 +223,7 @@ describe('ConfigModule — Stellar Key Validation', () => {
       );
 
       expect(error?.message.toLowerCase()).toContain('checksum');
+    });
     it('error message for SYSTEM_SIGNER_SECRET names the variable', async () => {
       try {
         await buildConfigService({
@@ -304,6 +308,7 @@ describe('ConfigModule — Stellar Key Validation', () => {
       expect(error?.message).toContain('SYSTEM_SIGNER_SECRET');
       expect(error?.message.toLowerCase()).toContain('start');
       expect(error?.message.toLowerCase()).toContain('s');
+    });
     it('error message explains key must start with S for secret key', async () => {
       try {
         await buildConfigService({
@@ -369,6 +374,7 @@ describe('ConfigModule — Stellar Key Validation', () => {
       expect(error?.message).toContain('ADMIN_ADDRESS');
       expect(error?.message.toLowerCase()).toContain('start');
       expect(error?.message.toLowerCase()).toContain('g');
+    });
     it('error message names ADMIN_ADDRESS', async () => {
       try {
         await buildConfigService({
@@ -578,21 +584,10 @@ describe('ConfigModule — Stellar Key Validation', () => {
       expect(message).toContain('SYSTEM_SIGNER_SECRET');
       expect(message).toContain('SEP10_SIGNING_SECRET');
       expect(message).toContain('ADMIN_ADDRESS');
-        });
-        throw new Error('Expected validation to throw');
-      } catch (error) {
-        const message = (error as Error).message;
-        // With abortEarly: false, should include all field names
-        expect(message).toContain('SYSTEM_SIGNER_SECRET');
-        expect(message).toContain('SEP10_SIGNING_SECRET');
-        expect(message).toContain('ADMIN_ADDRESS');
-      }
     });
   });
 
   describe('edge cases and regression tests', () => {
-    it('rejects Stellar address with wrong prefix (T... or invalid prefix)', () => {
-      // Doesn't start with S or G — should fail at the shape check level
     it('rejects Stellar address with wrong prefix (T... or invalid prefix)', async () => {
       // This should fail because it doesn't start with S or G
       const invalidPrefix =

@@ -3,36 +3,52 @@
 ## What We've Done
 Phase 1–3 of unit test fixes complete. All **65 test suites, 642 tests passing** (integration + unit).
 
-### Phase 1 — Environment & Setup
-- Added `CREDENTIAL_ENCRYPTION_KEY=...` to `.env.test` — unblocked `credential-encryption.util.spec.ts` (7 tests) + `logistics.service.spec.ts` (5 tests)
-- Added missing `import { ConfigService }` to `cache.service.spec.ts` — fixed 11 tests
-- Fixed encrypt/delete ordering in `credential-encryption.util.spec.ts` "should throw when key not set"
+### Phase 4 — Real PrismaClient (In-Progress)
+Replaced the 1532-line in-memory PrismaService fake with a real `PrismaClient` using `@prisma/adapter-pg` (Prisma v7 driver adapter). This removes all Map-based stores and delegates all queries to PostgreSQL.
 
-### Phase 2 — Logic & Type Fixes
-- `sep10.service.spec.ts` — unclosed `beforeEach`, orphaned object literal, duplicate test block (36 tests + 3 TS1005 fixed)
-- `auto-release.worker.spec.ts` — added second expected arg `GAUTORELEASE...` to `submitAutoRelease` assertion
-- `gigl-logistics.service.spec.ts` — `toEqual({ status })` → `toMatchObject({ status })` matching richer response shape
+#### Core Changes
+- `src/prisma/prisma.service.ts` — extends `PrismaClient` instead of in-memory Map stores
+  - Constructor accepts optional `databaseUrl` (falls back to `process.env.DATABASE_URL`)
+  - Creates `PrismaPg` adapter with connection string internally
+  - Applies `statement_timeout` and `connect_timeout` to URL
+  - `onModuleInit()` calls `$connect()` and registers slow-query logger via `$on('query')`
+  - `onModuleDestroy()` calls `$disconnect()`
+  - `reset()` executes `TRUNCATE TABLE ... CASCADE` on all public tables (skips `_prisma_migrations`)
+  - All custom type exports preserved for backward compatibility
+- `src/prisma/prisma.module.ts` — comment-only update
+- `.github/workflows/ci.yml` — added Postgres 16 service (matched from `test.yml`)
 
-### Phase 3 — Edge Cases
-- `escrow.repository.spec.ts` — added `cursor` support to `PrismaService` mock's `findMany` (cursor-based pagination was ignored, returning remaining records instead of skipping past cursor)
-- `analytics.service.spec.ts` — two fixes:
-  - "fill gaps" test: passed `createdAt` to `prisma.escrow.create()` so escrows land on different dates (mock defaults to `new Date()`)
-  - "aggregations" test: used `result.data.find(d => d.transactionCount > 0)` instead of `result.data[0]` (transactions are on the last day of the range)
-- `escrow.evidence-upload.spec.ts` — removed `@Throttle()` decorator from controller (was hardcoding `limit: 10, ttl: 60000` overriding env vars); module-level throttler config now reads from env vars
+#### Behavioral Fixes
+- `src/escrow/buyer-dispute.service.ts` — `openDispute()` now explicitly calls `escrowRepository.updateState(escrowId, 'DISPUTED')` after creating a dispute (in-memory fake auto-transitioned escrow as side-effect; real DB does not)
+- `test/integration/vendor-analytics.integration-spec.ts` — removed `(prisma as any).escrows.set(...)`; now passes `createdAt` directly to `prisma.escrow.create()`
+- `src/prisma/prisma.service.spec.ts`, `test/unit/prisma.service.spec.ts`, `test/unit/prisma-schema-parity.spec.ts`, `src/prisma/escrow-event-logging.spec.ts` — updated for real PrismaClient API
 
-### Earlier Work (Integration Tests)
+#### Known Behavioral Changes
+- `prisma.escrow.findMany()` no longer auto-filters CANCELLED records (remove CANCELLED-hiding behavior). All records are returned unless a `state` filter is provided.
+- `prisma.escrow.create()` / `prisma.escrow.update()` no longer auto-create `EscrowEvent` rows — event logging must be done explicitly.
+- `prisma.dispute.create()` no longer auto-transitions escrow to DISPUTED — handled by `BuyerDisputeService`.
+- `amount` fields are `Prisma.Decimal` at runtime (not `number`). Use `toEqual()` instead of `toBe()` for comparisons, or call `Number(escrow.amount)` for arithmetic.
+
+#### Prerequisites
+- PostgreSQL must be running on `localhost:5432` with `trustlink_test` database
+- `DATABASE_URL` in `.env.test` points to `postgresql://postgres:postgres@localhost:5432/trustlink_test`
+
+### Earlier Work
 All 24 integration test suites (182 tests) passing after:
 - CI Node v20→v22, baseline migration, `SENTRY_DSN` fix, Stellar addresses, `Idempotency-Key` header
 - `markAutoReleaseSubmitting` race condition → atomic `updateMany`
 - `PrismaService` in-memory mock additions (`updateMany`, `CacheService.del`, etc.)
 
 ## Key Files Modified
-- `src/prisma/prisma.service.ts` — cursor in `findMany`, `updateMany` store, `$queryRaw` mock
-- `src/escrow/escrow.controller.ts` — removed `@Throttle` decorator from evidence-upload
-- `src/vendor/analytics/analytics.service.spec.ts` — `createdAt` pass-through, `find` instead of `[0]`
-- `src/escrow/escrow.evidence-upload.spec.ts` — increased loop iterations to `limit+10`
-- `.env.test` — added `CREDENTIAL_ENCRYPTION_KEY=...`
-- `.github/workflows/*.yml` — node-version `'22'`
+- `src/prisma/prisma.service.ts` — full rewrite (extends PrismaClient + PrismaPg adapter)
+- `src/prisma/prisma.module.ts` — comment update
+- `src/escrow/buyer-dispute.service.ts` — explicit escrow state transition
+- `src/prisma/prisma.service.spec.ts` — updated for real DB
+- `src/prisma/escrow-event-logging.spec.ts` — updated for real DB
+- `test/unit/prisma.service.spec.ts` — updated for real DB
+- `test/unit/prisma-schema-parity.spec.ts` — updated for real DB
+- `test/integration/vendor-analytics.integration-spec.ts` — removed direct store access
+- `.github/workflows/ci.yml` — added Postgres service
 
 ## Jest Config
 - `jest-integration.json`: `testTimeout: 60000`

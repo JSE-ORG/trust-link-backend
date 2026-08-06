@@ -51,9 +51,11 @@ describe('tracing.bootstrap', () => {
   }
 
   function loadBootstrapAndGetIsEnabled(): boolean {
-    let result: boolean;
+    let result!: boolean;
     jest.isolateModules(() => {
-      const { isTracingEnabled } = require('../../src/tracing/tracing.bootstrap');
+      const {
+        isTracingEnabled,
+      } = require('../../src/tracing/tracing.bootstrap');
       result = isTracingEnabled();
     });
     return result;

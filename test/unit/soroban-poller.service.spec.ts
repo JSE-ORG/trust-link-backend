@@ -62,7 +62,7 @@ describe('SorobanPollerService.poll (issue #554)', () => {
       ok: true,
       status: 200,
       statusText: 'OK',
-      json: async () => ({ result: { events, latestLedger: 200 } }),
+      json: async () => ({ result: { events, latestLedger: 200, sequence: 200 } }),
     } as unknown as Response);
   }
 

@@ -3,6 +3,7 @@ import { ConfigService } from '../config/config.service';
 import { BlockchainListenerService } from './blockchain-listener.service';
 import { CursorService } from './cursor.service';
 import { EscrowService } from '../escrow/escrow.service';
+import { DlqService } from '../dlq/dlq.service';
 import { SorobanPollerService } from './soroban-poller.service';
 
 const PUBLIC_TESTNET_RPC = 'https://soroban-testnet.stellar.org';
@@ -11,6 +12,7 @@ interface Mocks {
   blockchainListener: { parseEvent: jest.Mock };
   cursorService: { get: jest.Mock; set: jest.Mock };
   escrowService: { syncStateFromChain: jest.Mock };
+  dlqService: { enqueue: jest.Mock };
 }
 
 function makeMocks(): Mocks {
@@ -22,6 +24,9 @@ function makeMocks(): Mocks {
     },
     escrowService: {
       syncStateFromChain: jest.fn().mockResolvedValue(undefined),
+    },
+    dlqService: {
+      enqueue: jest.fn().mockResolvedValue(undefined),
     },
   };
 }
@@ -56,6 +61,7 @@ function makeService(
     mocks.blockchainListener as unknown as BlockchainListenerService,
     mocks.cursorService as unknown as CursorService,
     mocks.escrowService as unknown as EscrowService,
+    mocks.dlqService as unknown as DlqService,
   );
   return { service, mocks };
 }

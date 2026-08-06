@@ -9,8 +9,8 @@ import { PrismaService } from './prisma.service';
 //   DB_POOL_TIMEOUT_MS        – ms to wait for a free connection before error (default: 10000)
 //
 // ConfigService.getDatabaseUrl() appends these as `connection_limit` and
-// `pool_timeout` query parameters on the PostgreSQL connection string so Prisma
-// picks them up without any code-level PrismaClient construction.
+// `pool_timeout` query parameters on the PostgreSQL connection string so the
+// PrismaPg driver passes them to the underlying pg-pool.
 
 @Global()
 @Module({

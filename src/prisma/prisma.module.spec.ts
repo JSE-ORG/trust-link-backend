@@ -37,7 +37,10 @@ describe('PrismaModule', () => {
       .compile();
 
     const prisma = module.get(PrismaService);
-    expect(prisma).toBeInstanceOf(PrismaService);
+    // Prisma v7 exposes the client through an internal Proxy, so instanceof
+    // cannot see the subclass; verify the real service was constructed instead.
+    expect(prisma.constructor.name).toBe('PrismaService');
+    expect(typeof (prisma as PrismaService).reset).toBe('function');
     expect(mockTracing.isEnabled).toHaveBeenCalled();
   });
 

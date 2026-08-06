@@ -19,8 +19,12 @@ describe('EscrowRepository', () => {
   let repo: EscrowRepository;
   let prisma: PrismaService;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     prisma = new PrismaService();
+    await prisma.vendorProfile.createMany({
+      data: [{ address: 'vendor-addr', businessName: 'Test Vendor' }],
+      skipDuplicates: true,
+    });
     repo = new EscrowRepository(prisma);
   });
 

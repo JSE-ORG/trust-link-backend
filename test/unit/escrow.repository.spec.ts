@@ -14,12 +14,20 @@ describe('EscrowRepository (issue #13)', () => {
     repository = moduleRef.get(EscrowRepository);
     prisma = moduleRef.get(PrismaService);
     await prisma.reset();
+    await prisma.vendorProfile.createMany({
+      data: [
+        { address: 'vendor-1', businessName: 'Vendor 1' },
+        { address: 'vendor-2', businessName: 'Vendor 2' },
+      ],
+      skipDuplicates: true,
+    });
   });
 
   it('finds escrows by vendor and buyer', async () => {
     await prisma.escrow.create({
       data: {
         itemName: 'Jacket',
+        itemRef: 'ref-jacket',
         amount: 100,
         currency: 'USDC',
         buyerAddress: 'buyer-1',
@@ -29,6 +37,7 @@ describe('EscrowRepository (issue #13)', () => {
     await prisma.escrow.create({
       data: {
         itemName: 'Hat',
+        itemRef: 'ref-hat',
         amount: 40,
         currency: 'USDC',
         buyerAddress: 'buyer-2',
@@ -44,6 +53,7 @@ describe('EscrowRepository (issue #13)', () => {
     const eligible = await prisma.escrow.create({
       data: {
         itemName: 'Camera',
+        itemRef: 'ref-camera-1',
         amount: 250,
         currency: 'USDC',
         buyerAddress: 'buyer-1',
@@ -56,6 +66,7 @@ describe('EscrowRepository (issue #13)', () => {
     await prisma.escrow.create({
       data: {
         itemName: 'Laptop',
+        itemRef: 'ref-laptop',
         amount: 300,
         currency: 'USDC',
         buyerAddress: 'buyer-2',
@@ -83,6 +94,7 @@ describe('EscrowRepository (issue #13)', () => {
     const escrow = await prisma.escrow.create({
       data: {
         itemName: 'Camera',
+        itemRef: 'ref-camera-2',
         amount: 250,
         currency: 'USDC',
         buyerAddress: 'buyer-1',
@@ -113,7 +125,11 @@ describe('EscrowRepository (issue #13)', () => {
     });
     jest.setSystemTime(new Date('2026-07-29T13:00:00.000Z'));
     await prisma.escrowEvent.create({
-      data: { escrowId: 'escrow-1', fromState: 'SHIPPED', toState: 'COMPLETED' },
+      data: {
+        escrowId: 'escrow-1',
+        fromState: 'SHIPPED',
+        toState: 'COMPLETED',
+      },
     });
 
     const events = await repository.findEvents('escrow-1');

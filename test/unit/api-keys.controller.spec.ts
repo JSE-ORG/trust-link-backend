@@ -9,6 +9,11 @@ import { ConfigService } from '../../src/config/config.service';
 import { RotateApiKeyDto } from '../../src/admin/api-keys/dto/rotate-api-key.dto';
 import { bearer } from '../auth-helper';
 
+const encryptionKeyConfig = {
+  get: (key: string) =>
+    key === 'CREDENTIAL_ENCRYPTION_KEY' ? 'a'.repeat(64) : undefined,
+} as ConfigService;
+
 describe('ApiKeysController (issue #410)', () => {
   let app: INestApplication;
   // Issue #548: this used to be a hand-built mock asserting on
@@ -29,7 +34,7 @@ describe('ApiKeysController (issue #410)', () => {
     'GA7QYNF7SOWQ3GLR2BGMZEHXAVIRZA4KVWLTJJFC7MGXUA74P7UJVSGZ';
 
   beforeEach(async () => {
-    logisticsService = new LogisticsService();
+    logisticsService = new LogisticsService(undefined, encryptionKeyConfig);
 
     const moduleRef: TestingModule = await Test.createTestingModule({
       controllers: [ApiKeysController],
@@ -118,7 +123,7 @@ describe('ApiKeysController (issue #498)', () => {
   }
 
   it('rotates to the submitted key on first set (no key previously configured)', async () => {
-    const logisticsService = new LogisticsService();
+    const logisticsService = new LogisticsService(undefined, encryptionKeyConfig);
     const controller = new ApiKeysController(logisticsService);
 
     expect(logisticsService.getApiKey()).toBeNull();
@@ -134,7 +139,7 @@ describe('ApiKeysController (issue #498)', () => {
   });
 
   it('rotates to the submitted key when a key already exists, instead of re-encrypting the old one', async () => {
-    const logisticsService = new LogisticsService();
+    const logisticsService = new LogisticsService(undefined, encryptionKeyConfig);
     const controller = new ApiKeysController(logisticsService);
 
     await controller.rotateLogisticsKey(buildDto('compromised-old-key'));
@@ -150,7 +155,7 @@ describe('ApiKeysController (issue #498)', () => {
   });
 
   it('does not echo the submitted key (or any part of it) in the response', async () => {
-    const logisticsService = new LogisticsService();
+    const logisticsService = new LogisticsService(undefined, encryptionKeyConfig);
     const controller = new ApiKeysController(logisticsService);
 
     const secretKey = 'super-secret-value-should-not-leak';

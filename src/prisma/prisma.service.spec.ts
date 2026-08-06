@@ -3,11 +3,29 @@ import { PrismaService } from './prisma.service';
 describe('PrismaService dispute.findFirst', () => {
   let prisma: PrismaService;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     prisma = new PrismaService();
+    await prisma.reset();
+    await prisma.vendorProfile.createMany({
+      data: [
+        { address: 'v1', businessName: 'Vendor 1' },
+        { address: 'v2', businessName: 'Vendor 2' },
+      ],
+      skipDuplicates: true,
+    });
+  });
+
+  afterEach(async () => {
+    await prisma?.$disconnect();
   });
 
   it('returns the first dispute matching a multi-field where filter', async () => {
+    await prisma.escrow.create({
+      data: { id: 'escrow-1', itemName: 'Item', itemRef: 'ref-1', amount: 100, currency: 'USDC', buyerAddress: 'b1', vendorAddress: 'v1' },
+    });
+    await prisma.escrow.create({
+      data: { id: 'escrow-2', itemName: 'Item', itemRef: 'ref-2', amount: 200, currency: 'USDC', buyerAddress: 'b2', vendorAddress: 'v2' },
+    });
     await prisma.dispute.create({
       data: { escrowId: 'escrow-1', reason: 'Item not received' },
     });
@@ -29,6 +47,9 @@ describe('PrismaService dispute.findFirst', () => {
   });
 
   it('returns null when no dispute matches the where filter', async () => {
+    await prisma.escrow.create({
+      data: { id: 'escrow-1', itemName: 'Item', itemRef: 'ref-1', amount: 100, currency: 'USDC', buyerAddress: 'b1', vendorAddress: 'v1' },
+    });
     await prisma.dispute.create({
       data: { escrowId: 'escrow-1', reason: 'Item not received' },
     });
@@ -38,18 +59,5 @@ describe('PrismaService dispute.findFirst', () => {
     });
 
     expect(found).toBeNull();
-  });
-
-  it('delegates to findMany so the same filtering logic applies to both', async () => {
-    const findManySpy = jest.spyOn(prisma.dispute, 'findMany');
-    await prisma.dispute.create({
-      data: { escrowId: 'escrow-1', reason: 'Item not received' },
-    });
-
-    await prisma.dispute.findFirst({ where: { escrowId: 'escrow-1' } });
-
-    expect(findManySpy).toHaveBeenCalledWith({
-      where: { escrowId: 'escrow-1' },
-    });
   });
 });

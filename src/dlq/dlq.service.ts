@@ -1,5 +1,9 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
+import { Prisma, FailedTransaction as PrismaFailedTransaction } from '@prisma/client';
+import {
+  PrismaService,
+  toFailedTransactionRecord,
+} from '../prisma/prisma.service';
 import {
   EnqueueFailedTransactionInput,
   FailedTransactionRecord,
@@ -29,7 +33,10 @@ export class DlqService {
         operation: input.operation,
         escrowId: input.escrowId ?? null,
         errorMessage: input.errorMessage,
-        ledgerFeedback: input.ledgerFeedback ?? null,
+        ledgerFeedback:
+          input.ledgerFeedback == null
+            ? Prisma.DbNull
+            : (input.ledgerFeedback as Prisma.InputJsonValue),
         attempts: input.attempts ?? 1,
         status: 'PENDING_REVIEW',
       },
@@ -152,9 +159,7 @@ export class DlqService {
     return this.get(id);
   }
 
-  private toRecord(
-    row: import('../prisma/prisma.service').FailedTransactionRecord,
-  ): FailedTransactionRecord {
-    return row;
+  private toRecord(row: PrismaFailedTransaction): FailedTransactionRecord {
+    return toFailedTransactionRecord(row);
   }
 }

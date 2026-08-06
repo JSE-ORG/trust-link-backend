@@ -29,6 +29,8 @@ const PRODUCTION_ENV: Record<string, string> = {
   NODE_ENV: 'production',
   STELLAR_WEBHOOK_SECRET: 'test-webhook-hmac-secret',
   SENTRY_DSN: 'https://key@org.ingest.sentry.io/123',
+  CONTACT_ENCRYPTION_KEY: 'a'.repeat(64),
+  CREDENTIAL_ENCRYPTION_KEY: 'a'.repeat(64),
 };
 
 function validate(env: Record<string, string>) {
