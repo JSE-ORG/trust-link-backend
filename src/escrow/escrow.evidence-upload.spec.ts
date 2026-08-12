@@ -5,10 +5,13 @@ import { AppModule } from '../app.module';
 import { ConfigService } from '../config/config.service';
 import { getStorageToken } from '@nestjs/throttler';
 import { ThrottlerStorage } from '@nestjs/throttler';
+import { EVIDENCE_UPLOAD_THROTTLE } from '../common/security/throttle.config';
 
-// Must be set before Test.createTestingModule so ThrottlerModule picks them up
-process.env.EVIDENCE_UPLOAD_LIMIT = '5';
-process.env.EVIDENCE_UPLOAD_TTL = '2000';
+// EVIDENCE_UPLOAD_LIMIT=5 and EVIDENCE_UPLOAD_TTL=2000 come from .env.test,
+// which test/setup-env.ts loads before any import here. Assigning them in this
+// file would be too late: the AppModule import above is hoisted above every
+// statement in the module body, and both ConfigModule and the route's
+// @Throttle decorator read process.env at that point.
 
 describe('Evidence Upload Rate Limiting (e2e)', () => {
   let app: INestApplication;
@@ -70,10 +73,9 @@ describe('Evidence Upload Rate Limiting (e2e)', () => {
 
         if (response.status === HttpStatus.TOO_MANY_REQUESTS) {
           rateLimitHit = true;
-          // NestJS throttler emits Retry-After-<throttlerName> header
-          expect(response.headers).toHaveProperty(
-            'retry-after-evidence-upload',
-          );
+          // The route overrides the `default` throttler rather than declaring
+          // a named one, so the header carries no suffix.
+          expect(response.headers).toHaveProperty('retry-after');
           expect(response.body).toHaveProperty('message');
           break;
         }
@@ -93,7 +95,7 @@ describe('Evidence Upload Rate Limiting (e2e)', () => {
           .set('Authorization', 'Bearer valid-jwt-token');
 
         if (response.status === HttpStatus.TOO_MANY_REQUESTS) {
-          const retryAfter = response.headers['retry-after-evidence-upload'];
+          const retryAfter = response.headers['retry-after'];
           expect(retryAfter).toBeDefined();
 
           const retryAfterNum = parseInt(retryAfter, 10);
@@ -177,20 +179,25 @@ describe('Evidence Upload Rate Limiting (e2e)', () => {
       expect(configService.get('EVIDENCE_UPLOAD_TTL')).toBeDefined();
     });
 
-    it('should use custom values from env vars', async () => {
-      process.env.EVIDENCE_UPLOAD_LIMIT = '15';
-      process.env.EVIDENCE_UPLOAD_TTL = '120000';
+    it('reflects the configured limits from the environment', () => {
+      // ConfigService is not a live view of process.env: NestConfigModule
+      // validates the environment once, at import, and serves that snapshot.
+      // Mutating process.env mid-test therefore changes nothing, which is why
+      // the values under test come from .env.test instead.
+      expect(Number(configService.get('EVIDENCE_UPLOAD_LIMIT'))).toBe(5);
+      expect(Number(configService.get('EVIDENCE_UPLOAD_TTL'))).toBe(2000);
+    });
 
-      // ConfigService reads directly from process.env; values are strings
-      const customLimit = configService.get('EVIDENCE_UPLOAD_LIMIT');
-      const customTtl = configService.get('EVIDENCE_UPLOAD_TTL');
-
-      expect(Number(customLimit)).toBe(15);
-      expect(Number(customTtl)).toBe(120000);
-
-      // Restore test values
-      process.env.EVIDENCE_UPLOAD_LIMIT = '5';
-      process.env.EVIDENCE_UPLOAD_TTL = '2000';
+    it('applies those same limits to the route throttler', () => {
+      // The decorator reads process.env directly, so this pins the two paths
+      // to the same numbers — a drift here is what let the route silently run
+      // on the default limit before.
+      expect(EVIDENCE_UPLOAD_THROTTLE.limit).toBe(
+        Number(configService.get('EVIDENCE_UPLOAD_LIMIT')),
+      );
+      expect(EVIDENCE_UPLOAD_THROTTLE.ttl).toBe(
+        Number(configService.get('EVIDENCE_UPLOAD_TTL')),
+      );
     });
   });
 });

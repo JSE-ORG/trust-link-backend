@@ -9,12 +9,23 @@ describe('DisputeRepository', () => {
 
   beforeEach(async () => {
     prisma = new PrismaService();
+    // State lives in a shared database now, not a per-instance Map, so a
+    // suite that does not clear it inherits whatever the previous file left
+    // behind — and jest's file ordering is not stable (#475).
+    await prisma.reset();
     await prisma.vendorProfile.createMany({
       data: [{ address: 'vendor', businessName: 'Test Vendor' }],
       skipDuplicates: true,
     });
     disputeRepo = new DisputeRepository(prisma);
     escrowRepo = new EscrowRepository(prisma);
+  });
+
+  afterEach(async () => {
+    // Each `new PrismaService()` opens its own connection pool. Constructed in
+    // beforeEach across ~100 suites, undisconnected clients exhaust Postgres
+    // (`sorry, too many clients already`) partway through a full run.
+    await prisma?.$disconnect();
   });
 
   describe('findByEscrow()', () => {

@@ -5,6 +5,7 @@ import { AppModule } from '../../src/app.module';
 import { EscrowRepository } from '../../src/escrow/escrow.repository';
 import { PrismaService } from '../../src/prisma/prisma.service';
 import { bearer } from '../auth-helper';
+import { ensureVendors } from '../prisma-helpers';
 
 describe('POST /escrow/:id/dispute integration (issue #51)', () => {
   let app: INestApplication;
@@ -35,6 +36,12 @@ describe('POST /escrow/:id/dispute integration (issue #51)', () => {
 
   beforeEach(async () => {
     await prisma.reset();
+    // Escrow.vendorAddress is a foreign key onto VendorProfile.address, so
+    // the parent row must exist before any escrow referencing it (#475).
+    await ensureVendors(
+      prisma,
+      'GB3LCRCZEETCBYV4PEIPV2PD2R3AJMC6S2OOBMV5MA6WCOKEMN3XA3K3',
+    );
 
     await prisma.escrow.create({
       data: {

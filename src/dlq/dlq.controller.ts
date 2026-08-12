@@ -92,13 +92,27 @@ export class DlqController {
     type: Number,
     description: 'Maximum records per page (default 20, max 100)',
   })
-  @ApiOperation({ summary: 'List failed contract transactions available for review and replay' })
-  @ApiResponse({ status: 200, description: 'Failed transaction records returned.' })
+  @ApiOperation({
+    summary:
+      'List failed contract transactions available for review and replay',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Failed transaction records returned.',
+  })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   @ApiResponse({ status: 403, description: 'Admin access required.' })
   @ApiQuery({ name: 'status', required: false, example: 'failed' })
-  @ApiQuery({ name: 'operation', required: false, example: 'submitAutoRelease' })
-  @ApiQuery({ name: 'escrowId', required: false, example: '9d9e2e16-0c78-4a84-9c8c-0f3a5eb2d4e3' })
+  @ApiQuery({
+    name: 'operation',
+    required: false,
+    example: 'submitAutoRelease',
+  })
+  @ApiQuery({
+    name: 'escrowId',
+    required: false,
+    example: '9d9e2e16-0c78-4a84-9c8c-0f3a5eb2d4e3',
+  })
   @Throttle({ auth: { limit: 20, ttl: 60000 } })
   @Get()
   list(
@@ -118,10 +132,16 @@ export class DlqController {
   }
 
   @ApiOperation({ summary: 'Get details for a failed transaction record' })
-  @ApiResponse({ status: 200, description: 'Failed transaction record returned.' })
+  @ApiResponse({
+    status: 200,
+    description: 'Failed transaction record returned.',
+  })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   @ApiResponse({ status: 403, description: 'Admin access required.' })
-  @ApiResponse({ status: 404, description: 'Failed transaction record not found.' })
+  @ApiResponse({
+    status: 404,
+    description: 'Failed transaction record not found.',
+  })
   @ApiParam({ name: 'id', example: 'abc123-def4-5678-90ab-cdef12345678' })
   @Throttle({ auth: { limit: 30, ttl: 60000 } })
   @Get(':id')
@@ -135,10 +155,16 @@ export class DlqController {
    * hand. Either way the record is updated on the outcome.
    */
   @ApiOperation({ summary: 'Replay a failed on-chain transaction attempt' })
-  @ApiResponse({ status: 200, description: 'Replay request accepted and replay execution started.' })
+  @ApiResponse({
+    status: 200,
+    description: 'Replay request accepted and replay execution started.',
+  })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   @ApiResponse({ status: 403, description: 'Admin access required.' })
-  @ApiResponse({ status: 404, description: 'Failed transaction record not found.' })
+  @ApiResponse({
+    status: 404,
+    description: 'Failed transaction record not found.',
+  })
   @ApiParam({ name: 'id', example: 'abc123-def4-5678-90ab-cdef12345678' })
   @Throttle({ auth: { limit: 5, ttl: 60000 } })
   @Post(':id/replay')
@@ -157,11 +183,20 @@ export class DlqController {
     });
   }
 
-  @ApiOperation({ summary: 'Abandon a failed transaction record and prevent future replay attempts' })
-  @ApiResponse({ status: 200, description: 'Failed transaction record abandoned.' })
+  @ApiOperation({
+    summary:
+      'Abandon a failed transaction record and prevent future replay attempts',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Failed transaction record abandoned.',
+  })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   @ApiResponse({ status: 403, description: 'Admin access required.' })
-  @ApiResponse({ status: 404, description: 'Failed transaction record not found.' })
+  @ApiResponse({
+    status: 404,
+    description: 'Failed transaction record not found.',
+  })
   @ApiParam({ name: 'id', example: 'abc123-def4-5678-90ab-cdef12345678' })
   @Throttle({ auth: { limit: 5, ttl: 60000 } })
   @Post(':id/abandon')

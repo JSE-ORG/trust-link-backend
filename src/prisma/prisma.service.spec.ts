@@ -21,10 +21,26 @@ describe('PrismaService dispute.findFirst', () => {
 
   it('returns the first dispute matching a multi-field where filter', async () => {
     await prisma.escrow.create({
-      data: { id: 'escrow-1', itemName: 'Item', itemRef: 'ref-1', amount: 100, currency: 'USDC', buyerAddress: 'b1', vendorAddress: 'v1' },
+      data: {
+        id: 'escrow-1',
+        itemName: 'Item',
+        itemRef: 'ref-1',
+        amount: 100,
+        currency: 'USDC',
+        buyerAddress: 'b1',
+        vendorAddress: 'v1',
+      },
     });
     await prisma.escrow.create({
-      data: { id: 'escrow-2', itemName: 'Item', itemRef: 'ref-2', amount: 200, currency: 'USDC', buyerAddress: 'b2', vendorAddress: 'v2' },
+      data: {
+        id: 'escrow-2',
+        itemName: 'Item',
+        itemRef: 'ref-2',
+        amount: 200,
+        currency: 'USDC',
+        buyerAddress: 'b2',
+        vendorAddress: 'v2',
+      },
     });
     await prisma.dispute.create({
       data: { escrowId: 'escrow-1', reason: 'Item not received' },
@@ -48,7 +64,15 @@ describe('PrismaService dispute.findFirst', () => {
 
   it('returns null when no dispute matches the where filter', async () => {
     await prisma.escrow.create({
-      data: { id: 'escrow-1', itemName: 'Item', itemRef: 'ref-1', amount: 100, currency: 'USDC', buyerAddress: 'b1', vendorAddress: 'v1' },
+      data: {
+        id: 'escrow-1',
+        itemName: 'Item',
+        itemRef: 'ref-1',
+        amount: 100,
+        currency: 'USDC',
+        buyerAddress: 'b1',
+        vendorAddress: 'v1',
+      },
     });
     await prisma.dispute.create({
       data: { escrowId: 'escrow-1', reason: 'Item not received' },

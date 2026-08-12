@@ -25,7 +25,10 @@ export class StressTestController {
 
   @ApiOperation({ summary: 'Start a new stress test run' })
   @ApiResponse({ status: 200, description: 'Stress test execution started.' })
-  @ApiResponse({ status: 400, description: 'Invalid stress test configuration.' })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid stress test configuration.',
+  })
   @Throttle({ public: { limit: 10, ttl: 60000 } })
   @Post()
   async runStressTest(
@@ -36,7 +39,10 @@ export class StressTestController {
   }
 
   @ApiOperation({ summary: 'Get the status of a single active stress test' })
-  @ApiResponse({ status: 200, description: 'Active stress test status returned.' })
+  @ApiResponse({
+    status: 200,
+    description: 'Active stress test status returned.',
+  })
   @ApiResponse({ status: 404, description: 'Stress test not found.' })
   @ApiParam({ name: 'testId', example: 'stress-test-2026-07-29' })
   @Throttle({ public: { limit: 30, ttl: 60000 } })

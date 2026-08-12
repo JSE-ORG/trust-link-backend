@@ -4,6 +4,7 @@ import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { AutoReleaseWorker } from '../src/workers/auto-release.worker';
 import { ContractService } from '../src/stellar/contract.service';
+import { ensureVendors } from './prisma-helpers';
 
 /**
  * E2E tests for concurrent auto-release collision detection (issues #302, #307, #308).
@@ -67,6 +68,10 @@ describe('Auto-Release Worker — concurrent collision detection (issues #302/#3
    */
   async function createEligibleEscrow(suffix: string) {
     const pastDelivery = new Date(Date.now() - 50 * 60 * 60 * 1000);
+    // Escrow.vendorAddress is a foreign key onto VendorProfile.address (#475),
+    // and this spec writes escrows directly rather than through the API, so it
+    // has to create the parent row itself.
+    await ensureVendors(prisma, `vendor-concurrent-${suffix}`);
     return prisma.escrow.create({
       data: {
         itemName: `Concurrent Item ${suffix}`,

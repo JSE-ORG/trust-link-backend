@@ -6,6 +6,7 @@ import { AutoReleaseWorker } from '../../src/workers/auto-release.worker';
 import { ContractService } from '../../src/stellar/contract.service';
 import { CacheService } from '../../src/cache/cache.service';
 import { ConfigService } from '../../src/config/config.service';
+import { ensureVendors } from '../prisma-helpers';
 
 /**
  * Integration tests for auto-release worker batch processing with partial failures.
@@ -59,6 +60,10 @@ describe('Auto-release batch processing with partial failures', () => {
     worker = moduleRef.get(AutoReleaseWorker);
 
     await prisma.reset();
+    // Escrow.vendorAddress (and the vendor settings/details tables) are
+    // foreign keys onto VendorProfile.address, so the parent rows must exist
+    // before any row referencing them can be written (#475).
+    await ensureVendors(prisma, 'vendor-1', 'vendor-2', 'vendor-3', 'vendor-4');
   });
 
   afterEach(async () => {

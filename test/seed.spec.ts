@@ -9,6 +9,13 @@ describe('Database Seed', () => {
     await prisma.reset();
   });
 
+  afterEach(async () => {
+    // Each `new PrismaService()` opens its own connection pool. Constructed in
+    // beforeEach across ~100 suites, undisconnected clients exhaust Postgres
+    // (`sorry, too many clients already`) partway through a full run.
+    await prisma?.$disconnect();
+  });
+
   it('produces the expected number of escrows, disputes, and notifications', async () => {
     await main(prisma);
 

@@ -1,4 +1,5 @@
 import { Prisma } from '@prisma/client';
+import { ensureVendors } from '../prisma-helpers';
 import { PrismaService } from '../../src/prisma/prisma.service';
 
 describe('PrismaService real database operations', () => {
@@ -7,6 +8,9 @@ describe('PrismaService real database operations', () => {
   beforeEach(async () => {
     prisma = new PrismaService();
     await prisma.reset();
+    // Escrow.vendorAddress is a foreign key onto VendorProfile.address, so the
+    // parent rows must exist before any escrow can be written (#475).
+    await ensureVendors(prisma, 'v', 'v1', 'v2');
   });
 
   afterEach(async () => {

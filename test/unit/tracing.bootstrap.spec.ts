@@ -46,6 +46,9 @@ describe('tracing.bootstrap', () => {
 
   function loadBootstrap() {
     jest.isolateModules(() => {
+      // Must re-evaluate after jest.isolateModules; a static import is hoisted
+      // and cached, so it would only ever see the first test's environment.
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
       require('../../src/tracing/tracing.bootstrap');
     });
   }
@@ -55,6 +58,7 @@ describe('tracing.bootstrap', () => {
     jest.isolateModules(() => {
       const {
         isTracingEnabled,
+        // eslint-disable-next-line @typescript-eslint/no-require-imports -- see above
       } = require('../../src/tracing/tracing.bootstrap');
       result = isTracingEnabled();
     });

@@ -5,6 +5,7 @@ import { ConfigService } from '../../src/config/config.service';
 import { AppModule } from '../../src/app.module';
 import { PrismaService } from '../../src/prisma/prisma.service';
 import { bearer } from '../auth-helper';
+import { ensureVendors } from '../prisma-helpers';
 
 describe('Escrow Cancel Endpoints (issue #516)', () => {
   let app: INestApplication;
@@ -40,6 +41,12 @@ describe('Escrow Cancel Endpoints (issue #516)', () => {
 
   beforeEach(async () => {
     await prisma.reset();
+    // Escrow.vendorAddress is a foreign key onto VendorProfile.address, so
+    // the parent row must exist before any escrow referencing it (#475).
+    await ensureVendors(
+      prisma,
+      'GB3LCRCZEETCBYV4PEIPV2PD2R3AJMC6S2OOBMV5MA6WCOKEMN3XA3K3',
+    );
 
     // Create a CREATED (pending) escrow
     await prisma.escrow.create({
@@ -96,7 +103,8 @@ describe('Escrow Cancel Endpoints (issue #516)', () => {
         itemRef: 'TEST-001',
         amount: 150,
         currency: 'USDC',
-        buyerAddress: 'GDAMQCBXJI72A6R4QOTF6BJTXVLE5P7G2RT7ADADDB4UKMILJ3YF77F2',
+        buyerAddress:
+          'GDAMQCBXJI72A6R4QOTF6BJTXVLE5P7G2RT7ADADDB4UKMILJ3YF77F2',
       };
 
       const idempotencyKey = '550e8400-e29b-41d4-a716-446655440000';

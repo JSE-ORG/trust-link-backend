@@ -18,9 +18,7 @@ describe('ThrottlerGuard configuration', () => {
 
   it('default throttler uses public limits (60/min)', async () => {
     const moduleRef = await Test.createTestingModule({
-      imports: [
-        ThrottlerModule.forRoot([{ ttl: 60000, limit: 60 }]),
-      ],
+      imports: [ThrottlerModule.forRoot([{ ttl: 60000, limit: 60 }])],
       providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
     }).compile();
 

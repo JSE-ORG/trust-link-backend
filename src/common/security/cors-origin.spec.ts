@@ -80,9 +80,7 @@ describe('CORS origin callback (disallowed origin → clean denial)', () => {
       .set('Origin', DISALLOWED_ORIGIN);
 
     expect(response.status).not.toBe(500);
-    expect(
-      response.headers['access-control-allow-origin'],
-    ).toBeUndefined();
+    expect(response.headers['access-control-allow-origin']).toBeUndefined();
   });
 
   it('allows a request with no Origin header (non-browser clients)', async () => {
@@ -99,9 +97,7 @@ describe('CORS origin callback (disallowed origin → clean denial)', () => {
       .set('Access-Control-Request-Method', 'GET');
 
     expect(response.status).toBe(204);
-    const advertised = (
-      response.headers['access-control-allow-headers'] ?? ''
-    )
+    const advertised = (response.headers['access-control-allow-headers'] ?? '')
       .split(',')
       .map((h: string) => h.trim().toLowerCase());
     expect(advertised).toContain('idempotency-key');
@@ -114,8 +110,6 @@ describe('CORS origin callback (disallowed origin → clean denial)', () => {
       .set('Access-Control-Request-Method', 'GET');
 
     expect(response.status).not.toBe(500);
-    expect(
-      response.headers['access-control-allow-origin'],
-    ).toBeUndefined();
+    expect(response.headers['access-control-allow-origin']).toBeUndefined();
   });
 });

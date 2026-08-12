@@ -21,6 +21,7 @@ import { DisputeRepository } from '../../src/dispute/dispute.repository';
 import { S3PresignService } from '../../src/common/services/s3-presign.service';
 import { ContractService } from '../../src/stellar/contract.service';
 import { CacheService } from '../../src/cache/cache.service';
+import { ensureVendors } from '../prisma-helpers';
 
 describe('Cross-vendor escrow access (issue #272)', () => {
   let app: INestApplication;
@@ -103,6 +104,9 @@ describe('Cross-vendor escrow access (issue #272)', () => {
 
   beforeEach(async () => {
     await prisma.reset();
+    // Escrow.vendorAddress is a foreign key onto VendorProfile.address, so the
+    // parent rows must exist before any escrow referencing them (#475).
+    await ensureVendors(prisma, VENDOR_A, VENDOR_B);
   });
 
   describe('vendor ownership check', () => {
