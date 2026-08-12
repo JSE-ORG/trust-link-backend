@@ -401,13 +401,12 @@ export class EscrowRepository {
    * @returns an {@link EventsResult} ordered oldest-first.
    */
   async findEvents(escrowId: string): Promise<EventsResult> {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const rawEvents = await (this.prisma.escrowEvent.findMany as any)({
+    const rawEvents = await this.prisma.escrowEvent.findMany({
       where: { escrowId },
       orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
     });
 
-    return rawEvents.map((e: any) => ({
+    return rawEvents.map((e) => ({
       event: e.toState,
       occurredAt: e.createdAt,
       fromState: e.fromState,

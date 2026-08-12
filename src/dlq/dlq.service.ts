@@ -1,5 +1,8 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { Prisma, FailedTransaction as PrismaFailedTransaction } from '@prisma/client';
+import {
+  Prisma,
+  FailedTransaction as PrismaFailedTransaction,
+} from '@prisma/client';
 import {
   PrismaService,
   toFailedTransactionRecord,
@@ -52,25 +55,23 @@ export class DlqService {
     const limit = Math.min(100, Math.max(1, rawLimit));
     const skip = (page - 1) * limit;
 
-    const where: Record<string, unknown> = {};
+    const where: Prisma.FailedTransactionWhereInput = {};
     if (query.status) where.status = query.status;
     if (query.operation) where.operation = query.operation;
     if (query.escrowId) where.escrowId = query.escrowId;
 
     const [records, total] = await Promise.all([
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (this.prisma.failedTransaction.findMany as any)({
+      this.prisma.failedTransaction.findMany({
         where,
         orderBy: { createdAt: 'desc' },
         skip,
         take: limit,
       }),
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (this.prisma.failedTransaction as any).count({ where }),
+      this.prisma.failedTransaction.count({ where }),
     ]);
 
     return {
-      data: records.map((r: any) => this.toRecord(r)),
+      data: records.map((r) => this.toRecord(r)),
       total,
       page,
       limit,

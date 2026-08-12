@@ -8,6 +8,7 @@ import {
   DisputeState,
   EscrowRecord,
   PrismaService,
+  toDisputeRecord,
 } from '../../prisma/prisma.service';
 import { EscrowRepository } from '../../escrow/escrow.repository';
 import { ContractService } from '../../stellar/contract.service';
@@ -47,7 +48,7 @@ export class DisputeService {
       }),
       this.prisma.dispute.count({ where }),
     ]);
-    return { data, total, page, limit };
+    return { data: data.map(toDisputeRecord), total, page, limit };
   }
 
   /** Resolves a dispute by submitting the contract action and finalizing escrow state. */

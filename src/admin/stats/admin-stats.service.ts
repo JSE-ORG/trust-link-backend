@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { DisputeStatus } from '@prisma/client';
+import { DisputeStatusEnum } from '../../common/enums/escrow-state.enum';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AdminStatsDto } from './dto/admin-stats.dto';
 
@@ -12,33 +12,40 @@ export class AdminStatsService {
     const [
       aggregation,
       stateGroups,
+      vendorGroups,
+      buyerGroups,
       totalDisputes,
       openDisputes,
     ] = await Promise.all([
       this.prisma.escrow.aggregate({
         _sum: { amount: true },
-        _count: { vendorAddress: true, buyerAddress: true },
       }),
       this.prisma.escrow.groupBy({
         by: ['state'],
         _count: true,
       }),
+      // Distinct participants, via groupBy. `aggregate._count.vendorAddress`
+      // counts non-null *rows*, not distinct values, so it reported the total
+      // escrow count under the name "unique vendors".
+      this.prisma.escrow.groupBy({ by: ['vendorAddress'] }),
+      this.prisma.escrow.groupBy({ by: ['buyerAddress'] }),
       this.prisma.dispute.count(),
       this.prisma.dispute.count({
         where: {
-          status: { in: [DisputeStatus.OPEN, DisputeStatus.UNDER_REVIEW] },
+          status: {
+            in: [DisputeStatusEnum.OPEN, DisputeStatusEnum.UNDER_REVIEW],
+          },
         },
       }),
     ]);
 
-    const totalEscrows =
-      (stateGroups as Array<{ _count: number }>).reduce(
-        (sum, g) => sum + g._count,
-        0,
-      );
+    const totalEscrows = (stateGroups as Array<{ _count: number }>).reduce(
+      (sum, g) => sum + g._count,
+      0,
+    );
     const totalVolume = Number(aggregation._sum?.amount ?? 0);
-    const uniqueVendors = aggregation._count?.vendorAddress ?? 0;
-    const uniqueBuyers = aggregation._count?.buyerAddress ?? 0;
+    const uniqueVendors = vendorGroups.length;
+    const uniqueBuyers = buyerGroups.length;
     const averageEscrowAmount =
       totalEscrows > 0 ? totalVolume / totalEscrows : 0;
 

@@ -24,6 +24,20 @@ export class ReadinessComponentHealthDto {
 }
 
 /**
+ * Per-component failure detail, populated only when a required component is
+ * down. Declared as a class rather than an inline schema so Swagger emits a
+ * proper $ref instead of an untyped object — the hand-written schema needed
+ * `as any` casts because `properties` does not accept a raw $ref.
+ */
+export class ReadinessDetailsDto {
+  @ApiPropertyOptional({ type: () => ReadinessComponentHealthDto })
+  db?: ReadinessComponentHealthDto;
+
+  @ApiPropertyOptional({ type: () => ReadinessComponentHealthDto })
+  horizon?: ReadinessComponentHealthDto;
+}
+
+/**
  * Response body for the readiness probe at GET /health/ready (and the
  * legacy GET /health alias). A readiness probe answers: "Is this instance
  * ready to accept real user traffic right now?" It checks every required
@@ -94,16 +108,7 @@ export class ReadinessResponseDto {
   @ApiPropertyOptional({
     description:
       'Per-component error details. Only populated when at least one required component is down.',
-    type: 'object',
-    properties: {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      db: { $ref: '#/components/schemas/ReadinessComponentHealthDto' } as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      horizon: { $ref: '#/components/schemas/ReadinessComponentHealthDto' } as any,
-    },
+    type: () => ReadinessDetailsDto,
   })
-  details?: {
-    db?: ReadinessComponentHealthDto;
-    horizon?: ReadinessComponentHealthDto;
-  };
+  details?: ReadinessDetailsDto;
 }

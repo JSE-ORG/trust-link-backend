@@ -277,7 +277,20 @@ export class AppController {
   private async checkRedis(): Promise<
     ComponentHealth & { rawStatus?: string }
   > {
-    const result = await this.cacheService.ping();
+    // ping() rejecting must not escape: checkAllDependencies awaits these with
+    // Promise.all, so a thrown error would fail the whole probe with a 500 and
+    // take a healthy instance out of the load balancer. Redis is optional
+    // infrastructure (issue #31) — a failure is reported, not fatal.
+    let result: string;
+    try {
+      result = await this.cacheService.ping();
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : 'Redis connection failed';
+      this.logger.error(`Redis health check failed: ${message}`);
+      return { status: 'down', error: message, rawStatus: 'error' };
+    }
+
     if (result === 'ok') {
       return { status: 'ok' };
     }

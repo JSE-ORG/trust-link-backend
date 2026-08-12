@@ -1,4 +1,4 @@
-import { configValidationSchema } from './config.module';
+import { configValidationSchema } from './config.schema';
 
 /**
  * Validation tests for the Soroban poller configuration:

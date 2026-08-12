@@ -38,7 +38,9 @@ export class LogisticsService implements OnModuleInit {
 
   constructor(
     @Optional() @Inject(PrismaService) private readonly prisma?: PrismaService,
-    @Optional() @Inject(ConfigService) private readonly configService?: ConfigService,
+    @Optional()
+    @Inject(ConfigService)
+    private readonly configService?: ConfigService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -59,8 +61,7 @@ export class LogisticsService implements OnModuleInit {
   private async loadPersistedApiKey(): Promise<void> {
     if (this.prisma) {
       try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const record = await (this.prisma as any).providerCredential.findUnique({
+        const record = await this.prisma.providerCredential.findUnique({
           where: { provider: LOGISTICS_CREDENTIAL_PROVIDER },
         });
         if (record) {
@@ -92,7 +93,9 @@ export class LogisticsService implements OnModuleInit {
    * The key is encrypted before being stored in memory for security.
    */
   setApiKey(key: string): void {
-    const encryptionKey = this.configService?.get<string>('CREDENTIAL_ENCRYPTION_KEY');
+    const encryptionKey = this.configService?.get<string>(
+      'CREDENTIAL_ENCRYPTION_KEY',
+    );
     if (!encryptionKey) {
       throw new Error('CREDENTIAL_ENCRYPTION_KEY is not configured');
     }
@@ -111,7 +114,9 @@ export class LogisticsService implements OnModuleInit {
    * in memory for the lifetime of the instance.
    */
   async rotateApiKey(key: string): Promise<void> {
-    const encryptionKey = this.configService?.get<string>('CREDENTIAL_ENCRYPTION_KEY');
+    const encryptionKey = this.configService?.get<string>(
+      'CREDENTIAL_ENCRYPTION_KEY',
+    );
     if (!encryptionKey) {
       throw new Error('CREDENTIAL_ENCRYPTION_KEY is not configured');
     }
@@ -119,8 +124,7 @@ export class LogisticsService implements OnModuleInit {
     this.apiKey = encryptedKey;
 
     if (this.prisma) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (this.prisma as any).providerCredential.upsert({
+      await this.prisma.providerCredential.upsert({
         where: { provider: LOGISTICS_CREDENTIAL_PROVIDER },
         update: { encryptedKey },
         create: {
@@ -140,7 +144,9 @@ export class LogisticsService implements OnModuleInit {
       return null;
     }
     try {
-      const encryptionKey = this.configService?.get<string>('CREDENTIAL_ENCRYPTION_KEY');
+      const encryptionKey = this.configService?.get<string>(
+        'CREDENTIAL_ENCRYPTION_KEY',
+      );
       if (!encryptionKey) {
         throw new Error('CREDENTIAL_ENCRYPTION_KEY is not configured');
       }
