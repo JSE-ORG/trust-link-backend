@@ -312,6 +312,12 @@ export class EscrowRepository {
           autoReleaseTxHash: null,
           autoReleaseSubmittedAt: null,
         },
+        // Oldest delivery first, with id as a tie-break. Without an explicit
+        // order Postgres may return these rows in any sequence, which makes
+        // batch processing non-deterministic: which escrow is attempted first
+        // (and therefore which is retried after a partial failure) would vary
+        // between runs.
+        orderBy: [{ deliveredAt: 'asc' }, { id: 'asc' }],
       })
       .then((rows) => rows.map(toEscrowRecord));
   }

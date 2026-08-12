@@ -121,11 +121,20 @@ describe('Auto-release batch processing with partial failures', () => {
         },
       });
 
-      // Second escrow fails, first and third succeed
-      contractService.submitAutoRelease
-        .mockResolvedValueOnce('tx-hash-1')
-        .mockRejectedValueOnce(new Error('Network timeout'))
-        .mockResolvedValueOnce('tx-hash-3');
+      // Second escrow fails, first and third succeed — keyed by escrow id, not
+      // call order: the worker's processing sequence is decided by the query's
+      // ordering, not by the order these rows were created.
+      const outcomes = new Map<string, () => Promise<string>>([
+        [escrow1.id, () => Promise.resolve('tx-hash-1')],
+        [escrow2.id, () => Promise.reject(new Error('Network timeout'))],
+        [escrow3.id, () => Promise.resolve('tx-hash-3')],
+      ]);
+      contractService.submitAutoRelease.mockImplementation((escrowId: string) =>
+        (
+          outcomes.get(escrowId) ??
+          (() => Promise.reject(new Error(`unexpected escrow ${escrowId}`)))
+        )(),
+      );
 
       await worker.run();
 
@@ -217,12 +226,26 @@ describe('Auto-release batch processing with partial failures', () => {
         }),
       ]);
 
-      // Pattern: success, fail, fail, success
-      contractService.submitAutoRelease
-        .mockResolvedValueOnce('tx-hash-1')
-        .mockRejectedValueOnce(new Error('Network error'))
-        .mockRejectedValueOnce(new Error('Insufficient balance'))
-        .mockResolvedValueOnce('tx-hash-4');
+      // Pattern: success, fail, fail, success — keyed by escrow id rather than
+      // call order. The worker processes whatever findAutoReleaseEligible
+      // returns, and the four escrows here share a deliveredAt, so the id
+      // tie-break decides the sequence. A call-order mock silently attaches the
+      // wrong outcome to the wrong escrow depending on generated UUIDs.
+      const outcomes = new Map<string, () => Promise<string>>([
+        [escrows[0].id, () => Promise.resolve('tx-hash-1')],
+        [escrows[1].id, () => Promise.reject(new Error('Network error'))],
+        [
+          escrows[2].id,
+          () => Promise.reject(new Error('Insufficient balance')),
+        ],
+        [escrows[3].id, () => Promise.resolve('tx-hash-4')],
+      ]);
+      contractService.submitAutoRelease.mockImplementation((escrowId: string) =>
+        (
+          outcomes.get(escrowId) ??
+          (() => Promise.reject(new Error(`unexpected escrow ${escrowId}`)))
+        )(),
+      );
 
       await worker.run();
 
@@ -281,10 +304,17 @@ describe('Auto-release batch processing with partial failures', () => {
         },
       });
 
-      // First fails, second succeeds
-      contractService.submitAutoRelease
-        .mockRejectedValueOnce(new Error('Transaction failed'))
-        .mockResolvedValueOnce('tx-hash-2');
+      // First fails, second succeeds — keyed by escrow id, not call order.
+      const outcomes = new Map<string, () => Promise<string>>([
+        [escrow1.id, () => Promise.reject(new Error('Transaction failed'))],
+        [escrow2.id, () => Promise.resolve('tx-hash-2')],
+      ]);
+      contractService.submitAutoRelease.mockImplementation((escrowId: string) =>
+        (
+          outcomes.get(escrowId) ??
+          (() => Promise.reject(new Error(`unexpected escrow ${escrowId}`)))
+        )(),
+      );
 
       await worker.run();
 

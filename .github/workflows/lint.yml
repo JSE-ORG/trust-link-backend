@@ -9,6 +9,12 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+
+    # prisma.config.ts reads DATABASE_URL at load, so `prisma generate` needs it
+    # even though generation never connects.
+    env:
+      DATABASE_URL: postgresql://trustlink:trustlink@localhost:5432/trustlink_test
+
     steps:
       - uses: actions/checkout@v4
 
@@ -20,6 +26,12 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      # Typed lint rules resolve types through @prisma/client. Without the
+      # generated client every `prisma.x.update()` is an unresolved type and
+      # the no-unsafe-* rules fire in their hundreds — 421 errors on this repo.
+      - name: Generate Prisma client
+        run: npx prisma generate
 
       - name: Run ESLint
         run: npm run lint:check
