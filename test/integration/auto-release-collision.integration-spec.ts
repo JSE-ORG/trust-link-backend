@@ -286,9 +286,19 @@ describe('Auto-release collision detection (issue #277)', () => {
         },
       });
 
-      contractService.submitAutoRelease
-        .mockResolvedValueOnce('tx-hash-a')
-        .mockResolvedValueOnce('tx-hash-b');
+      // Keyed by escrow id rather than call order: the worker processes
+      // whatever findAutoReleaseEligible returns, so a call-order mock attaches
+      // the wrong hash to the wrong escrow whenever that order differs.
+      const hashes = new Map<string, string>([
+        [escrow1.id, 'tx-hash-a'],
+        [escrow2.id, 'tx-hash-b'],
+      ]);
+      contractService.submitAutoRelease.mockImplementation(
+        (escrowId: string) =>
+          hashes.has(escrowId)
+            ? Promise.resolve(hashes.get(escrowId)!)
+            : Promise.reject(new Error(`unexpected escrow ${escrowId}`)),
+      );
 
       await service.run();
 
