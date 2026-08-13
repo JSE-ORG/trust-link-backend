@@ -25,10 +25,7 @@ describe('CredentialEncryption', () => {
       expect(encrypted1).not.toBe(encrypted2);
     });
 
-
-
     it('should throw when encryption key has invalid length', () => {
-
       expect(() => encryptCredential('test', 'short-key')).toThrow(
         'Encryption key must be exactly 64 hex characters',
       );
@@ -72,9 +69,9 @@ describe('CredentialEncryption', () => {
       // Create a malformed encrypted string with wrong IV length
       const malformedEncrypted = 'short-iv:tag:ciphertext';
 
-      expect(() => decryptCredential(malformedEncrypted, encryptionKey)).toThrow(
-        'Malformed encrypted credential',
-      );
+      expect(() =>
+        decryptCredential(malformedEncrypted, encryptionKey),
+      ).toThrow('Malformed encrypted credential');
     });
 
     it('should throw when decryption fails (tampered data)', () => {
@@ -89,15 +86,17 @@ describe('CredentialEncryption', () => {
         'Failed to decrypt credential',
       );
     });
-
-
   });
 
   describe('reencryptCredential', () => {
     it('should re-encrypt a credential with the same key', () => {
       const plaintext = 'my-secret-api-key-12345';
       const encrypted1 = encryptCredential(plaintext, encryptionKey);
-      const reencrypted = reencryptCredential(encrypted1, encryptionKey, encryptionKey);
+      const reencrypted = reencryptCredential(
+        encrypted1,
+        encryptionKey,
+        encryptionKey,
+      );
       const decrypted = decryptCredential(reencrypted, encryptionKey);
 
       expect(reencrypted).not.toBe(encrypted1);
@@ -107,8 +106,16 @@ describe('CredentialEncryption', () => {
     it('should produce different ciphertext on each re-encryption', () => {
       const plaintext = 'my-secret-api-key-12345';
       const encrypted = encryptCredential(plaintext, encryptionKey);
-      const reencrypted1 = reencryptCredential(encrypted, encryptionKey, encryptionKey);
-      const reencrypted2 = reencryptCredential(encrypted, encryptionKey, encryptionKey);
+      const reencrypted1 = reencryptCredential(
+        encrypted,
+        encryptionKey,
+        encryptionKey,
+      );
+      const reencrypted2 = reencryptCredential(
+        encrypted,
+        encryptionKey,
+        encryptionKey,
+      );
 
       expect(reencrypted1).not.toBe(reencrypted2);
     });
@@ -116,9 +123,9 @@ describe('CredentialEncryption', () => {
     it('should throw when encrypted format is invalid', () => {
       const invalidEncrypted = 'invalid-format';
 
-      expect(() => reencryptCredential(invalidEncrypted, encryptionKey, encryptionKey)).toThrow(
-        'Invalid encrypted credential format',
-      );
+      expect(() =>
+        reencryptCredential(invalidEncrypted, encryptionKey, encryptionKey),
+      ).toThrow('Invalid encrypted credential format');
     });
   });
 

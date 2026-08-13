@@ -62,13 +62,19 @@ describe('SorobanPollerService.poll (issue #554)', () => {
       ok: true,
       status: 200,
       statusText: 'OK',
-      json: async () => ({ result: { events, latestLedger: 200, sequence: 200 } }),
+      json: async () => ({
+        result: { events, latestLedger: 200, sequence: 200 },
+      }),
     } as unknown as Response);
   }
 
   beforeEach(async () => {
     cursorService = {
-      get: jest.fn().mockResolvedValue(undefined),
+      // A cursor is already stored so poll() skips the start-ledger bootstrap
+      // added in #588. Without this, the bootstrap persists a cursor of its
+      // own and every "did the cursor advance?" assertion below counts that
+      // write as an advancement.
+      get: jest.fn().mockResolvedValue('ledger:900'),
       set: jest.fn().mockResolvedValue(undefined),
     } as unknown as jest.Mocked<CursorService>;
 

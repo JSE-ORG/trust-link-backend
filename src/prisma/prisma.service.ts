@@ -3,6 +3,7 @@ import {
   Prisma,
   PrismaClient,
   Escrow as PrismaEscrow,
+  Dispute as PrismaDispute,
   FailedTransaction as PrismaFailedTransaction,
   VendorAccountDetails as PrismaVendorAccountDetails,
   VendorTrackingSettings as PrismaVendorTrackingSettings,
@@ -21,9 +22,9 @@ export type EscrowState =
   | 'CANCELLED';
 export type NotificationChannel = 'EMAIL' | 'SMS';
 export type NotificationType =
-  | 'FUNDED' | 'SHIPPED' | 'DELIVERED' | 'DISPUTED' | 'COMPLETED' | 'REFUNDED';
+  'FUNDED' | 'SHIPPED' | 'DELIVERED' | 'DISPUTED' | 'COMPLETED' | 'REFUNDED';
 export type DisputeState =
-  | 'OPEN' | 'UNDER_REVIEW' | 'RESOLVED' | 'CANCELLED' | 'ABANDONED';
+  'OPEN' | 'UNDER_REVIEW' | 'RESOLVED' | 'CANCELLED' | 'ABANDONED';
 
 export interface EscrowRecord {
   id: string;
@@ -254,7 +255,17 @@ export type EscrowCreateInput = Omit<
  * the public contract — and every existing consumer/test — keeps working.
  */
 export function toEscrowRecord(row: PrismaEscrow): EscrowRecord {
-  return { ...row, amount: Number(row.amount) } as EscrowRecord;
+  return { ...row, amount: Number(row.amount) };
+}
+
+/**
+ * Narrows a Dispute row's `status` to the DisputeState union.
+ *
+ * The column is text in the database (see the note on the model), so Prisma
+ * types it as `string`. The values written are always DisputeState members.
+ */
+export function toDisputeRecord(row: PrismaDispute): DisputeRecord {
+  return { ...row, status: row.status as DisputeState };
 }
 
 export function toFailedTransactionRecord(
@@ -293,7 +304,10 @@ export class PrismaService extends PrismaClient {
   private readonly logger = new Logger('PrismaService');
 
   constructor(@Optional() readonly databaseUrl?: string) {
-    const baseUrl = databaseUrl || process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/trustlink_test';
+    const baseUrl =
+      databaseUrl ||
+      process.env.DATABASE_URL ||
+      'postgresql://postgres:postgres@localhost:5432/trustlink_test';
 
     let effectiveUrl: string;
     try {
@@ -323,15 +337,13 @@ export class PrismaService extends PrismaClient {
     // through the subclass, so narrow $on to the query-event signature here.
     // Prisma v7 exposes the client through a Proxy whose get trap returns
     // methods unbound, so bind `this` explicitly before invoking.
-    const onQuery = (this.$on.bind(this) as unknown) as (
+    const onQuery = this.$on.bind(this) as unknown as (
       event: 'query',
       callback: (event: Prisma.QueryEvent) => void,
     ) => void;
     onQuery('query', (event: Prisma.QueryEvent) => {
       if (event.duration >= slowQueryThresholdMs) {
-        this.logger.warn(
-          `Slow query (${event.duration}ms): ${event.query}`,
-        );
+        this.logger.warn(`Slow query (${event.duration}ms): ${event.query}`);
       }
     });
   }

@@ -76,11 +76,19 @@ describe('EscrowRepository (issue #13)', () => {
         deliveredAt: new Date('2026-05-25T23:00:00.000Z'),
       },
     });
-    await prisma.dispute.create({
+    const dispute = await prisma.dispute.create({
       data: {
         escrowId: eligible.id,
         reason: 'Item missing',
       },
+    });
+    // Mirror what production does: BuyerDisputeService links the dispute and
+    // transitions the escrow (buyer-dispute.service.ts). The previous
+    // in-memory PrismaService applied that side effect inside dispute.create
+    // itself, so the test got it for free; the real client does not (#475).
+    await prisma.escrow.update({
+      where: { id: eligible.id },
+      data: { disputeId: dispute.id, state: 'DISPUTED' },
     });
 
     const results = await repository.findAutoReleaseEligible(
@@ -116,23 +124,44 @@ describe('EscrowRepository (issue #13)', () => {
 
   it('orders event history oldest-first and breaks timestamp ties by id', async () => {
     const findMany = jest.spyOn(prisma.escrowEvent, 'findMany');
-    jest.useFakeTimers().setSystemTime(new Date('2026-07-29T12:00:00.000Z'));
-    await prisma.escrowEvent.create({
-      data: { escrowId: 'escrow-1', toState: 'FUNDED' },
-    });
-    await prisma.escrowEvent.create({
-      data: { escrowId: 'escrow-1', fromState: 'FUNDED', toState: 'SHIPPED' },
-    });
-    jest.setSystemTime(new Date('2026-07-29T13:00:00.000Z'));
-    await prisma.escrowEvent.create({
+
+    // EscrowEvent.escrowId is a foreign key, so the parent escrow has to exist.
+    const escrow = await prisma.escrow.create({
       data: {
-        escrowId: 'escrow-1',
-        fromState: 'SHIPPED',
-        toState: 'COMPLETED',
+        itemName: 'Ordered',
+        itemRef: 'ref-ordered',
+        amount: 10,
+        currency: 'USDC',
+        buyerAddress: 'buyer-1',
+        vendorAddress: 'vendor-1',
       },
     });
 
-    const events = await repository.findEvents('escrow-1');
+    // createdAt is supplied explicitly rather than driven by fake timers: the
+    // first two share a timestamp so the id tie-break is what orders them, and
+    // fake timers would stall the real database I/O this now performs (#475).
+    const tie = new Date('2026-07-29T12:00:00.000Z');
+    await prisma.escrowEvent.create({
+      data: { escrowId: escrow.id, toState: 'FUNDED', createdAt: tie },
+    });
+    await prisma.escrowEvent.create({
+      data: {
+        escrowId: escrow.id,
+        fromState: 'FUNDED',
+        toState: 'SHIPPED',
+        createdAt: tie,
+      },
+    });
+    await prisma.escrowEvent.create({
+      data: {
+        escrowId: escrow.id,
+        fromState: 'SHIPPED',
+        toState: 'COMPLETED',
+        createdAt: new Date('2026-07-29T13:00:00.000Z'),
+      },
+    });
+
+    const events = await repository.findEvents(escrow.id);
 
     expect(events.map((event) => event.toState)).toEqual([
       'FUNDED',
@@ -140,9 +169,8 @@ describe('EscrowRepository (issue #13)', () => {
       'COMPLETED',
     ]);
     expect(findMany).toHaveBeenCalledWith({
-      where: { escrowId: 'escrow-1' },
+      where: { escrowId: escrow.id },
       orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
     });
-    jest.useRealTimers();
   });
 });

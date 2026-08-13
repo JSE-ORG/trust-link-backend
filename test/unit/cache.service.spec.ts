@@ -121,7 +121,12 @@ describe('CacheService (issue #285) — in-memory fallback mode', () => {
   /** Access the private `memory` map for assertions. */
   function memorySize(): number {
     return (service as unknown as Record<string, unknown>).memory instanceof Map
-      ? ((service as unknown as Record<string, unknown>).memory as Map<string, unknown>).size
+      ? (
+          (service as unknown as Record<string, unknown>).memory as Map<
+            string,
+            unknown
+          >
+        ).size
       : -1;
   }
 

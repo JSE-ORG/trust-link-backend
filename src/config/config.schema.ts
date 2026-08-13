@@ -2,43 +2,13 @@ import * as Joi from 'joi';
 import { Keypair } from '@stellar/stellar-sdk';
 
 /**
- * Custom Joi validator for Stellar secret keys.
+ * Single source of truth for environment validation.
  *
- * Validates by DECODING the key via `Keypair.fromSecret`, not pattern matching
- * alone. This catches checksum errors that the pattern `^S[A-Z2-7]{55}$` cannot
- * detect.
- *
- * Rejects:
- * - Shape-valid but checksum-invalid keys (e.g. `SAAAAAAA...AAAA`)
- * - Public keys supplied where a secret key is expected (`G...` keys)
- * - Completely malformed strings
- *
- * The `any.invalid` message is overridden so `error.message` carries the
- * custom reason (the default template is the unhelpful
- * `"<label>" contains an invalid value`).
+ * ConfigModule feeds this straight to NestConfigModule, and the specs validate
+ * against this same object. Keeping one definition is deliberate: a second copy
+ * previously drifted to 25 of the 44 keys, so the suite was green against a
+ * schema the application never loaded.
  */
-export const stellarSecretKey = Joi.string()
-  .custom((value, helpers) => {
-    if (!value.startsWith('S')) {
-      return helpers.error('any.invalid', {
-        reason: `must be a Stellar secret key starting with S, got a value starting with '${value[0]}'`,
-      });
-    }
-
-    try {
-      Keypair.fromSecret(value);
-      return value; // valid — checksum passed
-    } catch {
-      return helpers.error('any.invalid', {
-        reason:
-          `is an invalid Stellar secret key — checksum verification failed. ` +
-          `Check the key value in your environment configuration.`,
-      });
-    }
-  }, 'Stellar secret key checksum validation')
-  .messages({
-    'any.invalid': '{{#label}} {{#reason}}',
-  });
 
 /**
  * Custom Joi validator for Stellar public keys (G... addresses).
@@ -48,7 +18,7 @@ export const stellarSecretKey = Joi.string()
  * `stellarSecretKey` so callers see the full reason on `error.message`.
  */
 export const stellarPublicKey = Joi.string()
-  .custom((value, helpers) => {
+  .custom((value: string, helpers) => {
     if (!value.startsWith('G')) {
       return helpers.error('any.invalid', {
         reason: `must be a Stellar public key starting with G, got a value starting with '${value[0]}'`,
@@ -71,14 +41,110 @@ export const stellarPublicKey = Joi.string()
   });
 
 /**
- * Effective Joi schema for all runtime configuration. Imported by both
- * `ConfigModule` (production path) and the unit spec (direct tests). Keeping
- * a single definition means tests exercise the same validation rules the
- * app uses on boot — without the Nest module lifecycle interfering.
+ * Custom Joi validator for Stellar secret keys.
+ *
+ * Validates by DECODING the key via Keypair.fromSecret, not pattern matching
+ * alone. This catches checksum errors that the pattern /^S[A-Z2-7]{55}$/ cannot
+ * detect.
+ *
+ * Rejects:
+ * - Shape-valid but checksum-invalid keys (e.g. SAAAAAAA...AAAA)
+ * - Public keys supplied where a secret key is expected (G... keys)
+ * - Completely malformed strings
  */
+const stellarSecretKey = Joi.string().custom((value: string, helpers) => {
+  const keyName = helpers.state.path ? helpers.state.path.join('.') : 'key';
+  // Quick shape check first for better error messages
+  if (!value.startsWith('S')) {
+    return helpers.message({
+      custom:
+        `${keyName} must be a Stellar secret key ` +
+        `starting with S, got a value starting with '${value[0]}'`,
+    });
+  }
+
+  try {
+    Keypair.fromSecret(value);
+    return value; // valid — checksum passed
+  } catch {
+    return helpers.message({
+      custom:
+        `${keyName} is an invalid Stellar secret key ` +
+        `— checksum verification failed. ` +
+        `Check the key value in your environment configuration.`,
+    });
+  }
+}, 'Stellar secret key checksum validation');
+
+/**
+ * Custom Joi validator asserting the Soroban RPC URL agrees with
+ * STELLAR_NETWORK. A URL carrying a "testnet" marker under MAINNET (or a
+ * "mainnet" marker under TESTNET) is rejected at startup, so a misconfigured
+ * service cannot read events from the wrong chain and apply them to real
+ * escrows.
+ */
+const sorobanRpcUrl = Joi.string()
+  .uri()
+  .custom((value: string, helpers) => {
+    const ancestors = helpers.state.ancestors as
+      Array<Record<string, unknown>> | undefined;
+    const network = (ancestors?.[0]?.STELLAR_NETWORK as string) ?? 'TESTNET';
+
+    if (network === 'MAINNET' && /testnet/i.test(value)) {
+      return helpers.message({
+        custom:
+          'Config validation error: SOROBAN_RPC_URL points at a testnet ' +
+          'endpoint while STELLAR_NETWORK is MAINNET',
+      });
+    }
+    if (network === 'TESTNET' && /mainnet/i.test(value)) {
+      return helpers.message({
+        custom:
+          'Config validation error: SOROBAN_RPC_URL points at a mainnet ' +
+          'endpoint while STELLAR_NETWORK is TESTNET',
+      });
+    }
+    return value;
+  }, 'Soroban RPC URL / STELLAR_NETWORK agreement');
+
+/** Exported so tests can validate environment shapes without booting Nest. */
 export const configValidationSchema = Joi.object({
   PORT: Joi.number().default(3000),
   DATABASE_URL: Joi.string().required(),
+  CONTACT_ENCRYPTION_KEY: Joi.string()
+    .hex()
+    .length(64)
+    .messages({
+      'string.hex':
+        'Config validation error: CONTACT_ENCRYPTION_KEY must be a 64-character hexadecimal string',
+      'string.length':
+        'Config validation error: CONTACT_ENCRYPTION_KEY must be exactly 64 hex characters (32 bytes)',
+    })
+    .when('NODE_ENV', {
+      is: 'production',
+      then: Joi.required().messages({
+        'any.required':
+          'Config validation error: CONTACT_ENCRYPTION_KEY is required in production',
+      }),
+      otherwise: Joi.optional(),
+    }),
+  CREDENTIAL_ENCRYPTION_KEY: Joi.string()
+    .hex()
+    .length(64)
+    .messages({
+      'string.hex':
+        'Config validation error: CREDENTIAL_ENCRYPTION_KEY must be a 64-character hexadecimal string',
+      'string.length':
+        'Config validation error: CREDENTIAL_ENCRYPTION_KEY must be exactly 64 hex characters (32 bytes)',
+    })
+    .when('NODE_ENV', {
+      is: 'production',
+      then: Joi.required().messages({
+        'any.required':
+          'Config validation error: CREDENTIAL_ENCRYPTION_KEY is required in production',
+      }),
+      otherwise: Joi.optional(),
+    }),
   SEP10_JWT_SECRET: Joi.string().min(32).required(),
   // Stellar system signer secret key — validated by Keypair.fromSecret for checksum
   SYSTEM_SIGNER_SECRET: stellarSecretKey.required(),
@@ -92,7 +158,6 @@ export const configValidationSchema = Joi.object({
   CONTRACT_ID: Joi.string().required().messages({
     'any.required': 'Config validation error: CONTRACT_ID is required',
   }),
-  // Admin's Stellar public key — validated as a real Stellar address (checksum + G- prefix).
   ADMIN_ADDRESS: stellarPublicKey.required(),
   AUTO_RELEASE_SOURCE_ADDRESS: Joi.string()
     .pattern(/^G[A-Z2-7]{55}$/)
@@ -109,6 +174,7 @@ export const configValidationSchema = Joi.object({
   TWILIO_AUTH_TOKEN: Joi.string().optional(),
   STELLAR_NETWORK: Joi.string().valid('TESTNET', 'MAINNET').default('TESTNET'),
   ALLOWED_ORIGINS: Joi.string().optional(),
+  CSP_CONNECT_SRC: Joi.string().optional(),
   STELLAR_WEBHOOK_SECRET: Joi.when('NODE_ENV', {
     is: 'production',
     then: Joi.string().required().messages({
@@ -130,7 +196,65 @@ export const configValidationSchema = Joi.object({
   SENTRY_DSN: Joi.when('NODE_ENV', {
     is: 'production',
     then: Joi.string().uri().required(),
-    otherwise: Joi.string().uri().optional(),
+    otherwise: Joi.string().uri().allow('').optional(),
   }),
   GIT_SHA: Joi.string().optional(),
+  AUTH_CHALLENGE_LIMIT: Joi.number().integer().min(1).default(10),
+  AUTH_CHALLENGE_WINDOW: Joi.number().integer().min(1000).default(60000),
+  PUBLIC_LIMIT: Joi.number().integer().min(1).default(60),
+  PUBLIC_WINDOW: Joi.number().integer().min(1000).default(60000),
+  EVIDENCE_UPLOAD_LIMIT: Joi.number().integer().min(1).default(10),
+  EVIDENCE_UPLOAD_TTL: Joi.number().integer().min(1000).default(60000),
+  REFRESH_TOKEN_TTL: Joi.number().integer().min(60).default(604800),
+  LOGISTICS_API_BASE_URL: Joi.string().uri().optional(),
+  LOGISTICS_API_KEY: Joi.string().optional(),
+  STELLAR_HORIZON_URL: Joi.string().uri().optional(),
+  QUERY_TIMEOUT_MS: Joi.number().integer().min(1000).default(30000),
+  SLOW_QUERY_THRESHOLD_MS: Joi.number().integer().min(0).default(500),
+  // Soroban RPC endpoint for the on-chain event poller. Required in
+  // production and whenever STELLAR_NETWORK is MAINNET — there is no safe
+  // default mainnet endpoint. Outside production the poller falls back to
+  // the public testnet RPC and logs that it did.
+  SOROBAN_RPC_URL: sorobanRpcUrl
+    .when('NODE_ENV', {
+      is: 'production',
+      then: Joi.required().messages({
+        'any.required':
+          'Config validation error: SOROBAN_RPC_URL is required in ' +
+          'production — refusing to fall back to a default RPC endpoint',
+      }),
+    })
+    .when('STELLAR_NETWORK', {
+      is: 'MAINNET',
+      then: Joi.required().messages({
+        'any.required':
+          'Config validation error: SOROBAN_RPC_URL is required when ' +
+          'STELLAR_NETWORK is MAINNET (no default mainnet endpoint exists)',
+      }),
+    }),
+  // Poll cadence for the Soroban event poller. Validated here so a
+  // non-numeric or too-small value fails at startup instead of producing
+  // setInterval(fn, NaN), which fires as fast as the event loop allows and
+  // floods the RPC endpoint. The default lives here, nowhere else.
+  // Lets a process boot the module without starting the polling interval —
+  // used by the test suites, which would otherwise issue real RPC requests and
+  // keep the process alive after the run.
+  SOROBAN_POLLER_ENABLED: Joi.boolean().default(true),
+  SOROBAN_POLL_INTERVAL_MS: Joi.number()
+    .integer()
+    .min(1000)
+    .default(5000)
+    .messages({
+      'number.base':
+        'Config validation error: SOROBAN_POLL_INTERVAL_MS must be an integer number of milliseconds',
+      'number.min':
+        'Config validation error: SOROBAN_POLL_INTERVAL_MS must be at least 1000ms — lower values flood the RPC endpoint',
+    }),
+  // Per-request timeout for Soroban RPC calls. Keep it below
+  // SOROBAN_POLL_INTERVAL_MS so a hung request cannot span poll cycles.
+  SOROBAN_RPC_TIMEOUT_MS: Joi.number().integer().min(100).default(4000),
+  // Optional replay point: with no stored cursor the poller starts a small
+  // margin behind the current ledger. Set this to replay from a known ledger
+  // after an outage instead.
+  SOROBAN_START_LEDGER: Joi.number().integer().min(1).optional(),
 });

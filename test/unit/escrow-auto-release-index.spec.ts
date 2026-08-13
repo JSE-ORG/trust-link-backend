@@ -41,6 +41,13 @@ describe('EscrowRepository – auto-release index query (issue #310)', () => {
     });
   });
 
+  afterEach(async () => {
+    // Each `new PrismaService()` opens its own connection pool. Constructed in
+    // beforeEach across ~100 suites, undisconnected clients exhaust Postgres
+    // (`sorry, too many clients already`) partway through a full run.
+    await prisma?.$disconnect();
+  });
+
   // ── (state, deliveredAt) index path ──────────────────────────────────────
 
   it('returns SHIPPED escrow delivered more than 48 h ago', async () => {

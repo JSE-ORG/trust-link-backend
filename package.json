@@ -20,6 +20,7 @@
         "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
         "test:e2e": "jest --config ./test/jest-e2e.json",
         "check-coverage": "node scripts/check_coverage.js",
+        "openapi:generate": "ts-node scripts/generate-openapi.ts",
         "check-test-match": "node scripts/check_test_match.js",
         "db:generate": "prisma generate",
         "db:push": "prisma db push",
@@ -111,7 +112,16 @@
         "rootDir": ".",
         "testRegex": "(src|test)/.*\\.spec\\.ts$",
         "transform": {
-            "^.+\\.(t|j)s$": "ts-jest"
+            "^.+\\.(t|j)s$": [
+                "ts-jest",
+                {
+                    "tsconfig": {
+                        "module": "commonjs",
+                        "moduleResolution": "node",
+                        "resolvePackageJsonExports": false
+                    }
+                }
+            ]
         },
         "collectCoverageFrom": [
             "src/**/*.ts",

@@ -5,6 +5,7 @@ import { PrismaService } from '../src/prisma/prisma.service';
 import { TrackingPollWorker } from '../src/workers/tracking-poll.worker';
 import { LogisticsService } from '../src/logistics/logistics.service';
 import { ContractService } from '../src/stellar/contract.service';
+import { ensureVendors } from './prisma-helpers';
 
 describe('Logistics Webhook Delivery Update E2E (issue #61)', () => {
   let app: INestApplication;
@@ -30,6 +31,8 @@ describe('Logistics Webhook Delivery Update E2E (issue #61)', () => {
     contractService = app.get(ContractService);
 
     await prisma.reset();
+    // Escrow.vendorAddress is a foreign key onto VendorProfile.address (#475).
+    await ensureVendors(prisma, 'vendor-address', 'vendor-address-2');
 
     jest
       .spyOn(contractService, 'recordDelivery')

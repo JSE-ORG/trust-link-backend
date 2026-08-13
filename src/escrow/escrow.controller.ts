@@ -34,6 +34,7 @@ import { UpdateBuyerContactDto } from './dto/update-buyer-contact.dto';
 import { EscrowService } from './escrow.service';
 import { BuyerDisputeService } from './buyer-dispute.service';
 import { Throttle } from '@nestjs/throttler';
+import { EVIDENCE_UPLOAD_THROTTLE } from '../common/security/throttle.config';
 import { EscrowResponseDto } from './dto/escrow-response.dto';
 import { EscrowWithPaymentUrlResponseDto } from './dto/escrow-with-payment-url-response.dto';
 import { EvidenceUploadResponseDto } from './dto/evidence-upload.dto';
@@ -70,7 +71,8 @@ export class EscrowController {
    */
   @ApiOperation({
     summary: 'Create a new escrow transaction',
-    description: 'Creates a new escrow in CREATED state with a payment URL for the buyer. The escrow transitions to FUNDED when the buyer completes the on-chain payment.',
+    description:
+      'Creates a new escrow in CREATED state with a payment URL for the buyer. The escrow transitions to FUNDED when the buyer completes the on-chain payment.',
   })
   @ApiCreatedResponse({
     description: 'Escrow created successfully.',
@@ -164,7 +166,7 @@ export class EscrowController {
   @Post('evidence-upload')
   @HttpCode(HttpStatus.CREATED)
   @UseGuards(JwtGuard)
-  @Throttle({ 'evidence-upload': { ttl: 60000, limit: 10 } })
+  @Throttle({ default: EVIDENCE_UPLOAD_THROTTLE })
   evidenceUpload(
     @Query('fileName') fileName: string,
     @CurrentUser() user: AuthUser,
@@ -423,7 +425,8 @@ export class EscrowController {
    */
   @ApiOperation({
     summary: 'Cancel a FUNDED escrow transaction',
-    description: 'Cancels a FUNDED escrow, transitioning it to CANCELLED state. Precondition: escrow must be in FUNDED state. Only the buyer, vendor, or admin can cancel. See DELETE /escrow/:id for cancelling a CREATED (pending) escrow.',
+    description:
+      'Cancels a FUNDED escrow, transitioning it to CANCELLED state. Precondition: escrow must be in FUNDED state. Only the buyer, vendor, or admin can cancel. See DELETE /escrow/:id for cancelling a CREATED (pending) escrow.',
   })
   @ApiOkResponse({
     description: 'Escrow cancelled.',
@@ -495,7 +498,8 @@ export class EscrowController {
    */
   @ApiOperation({
     summary: 'Cancel a CREATED (pending) escrow transaction',
-    description: 'Cancels a CREATED (pending) escrow, with on-chain state verification. If funded on-chain, a refund is submitted before cancellation. Precondition: escrow must be in CREATED state. Only the buyer, vendor, or admin can cancel. See PATCH /escrow/:id/cancel for cancelling a FUNDED escrow.',
+    description:
+      'Cancels a CREATED (pending) escrow, with on-chain state verification. If funded on-chain, a refund is submitted before cancellation. Precondition: escrow must be in CREATED state. Only the buyer, vendor, or admin can cancel. See PATCH /escrow/:id/cancel for cancelling a FUNDED escrow.',
   })
   @ApiOkResponse({
     description: 'Pending escrow deleted.',

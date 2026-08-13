@@ -96,12 +96,11 @@ describe('GiglClient', () => {
     );
     // Match the real axios.isAxiosError contract: true iff the value is an
     // object carrying an explicit `isAxiosError: true` flag.
-    mockedAxios.isAxiosError.mockImplementation(
-      (err: unknown): boolean =>
-        Boolean(
-          (err as { isAxiosError?: unknown } | null | undefined)
-            ?.isAxiosError === true,
-        ),
+    mockedAxios.isAxiosError.mockImplementation((err: unknown): boolean =>
+      Boolean(
+        (err as { isAxiosError?: unknown } | null | undefined)?.isAxiosError ===
+        true,
+      ),
     );
     client = new GiglClient(DEFAULT_OPTS);
   });
@@ -284,9 +283,7 @@ describe('GiglClient', () => {
       await expect(client.fetchTracking('TRK-401')).rejects.toThrow(
         GiglUnauthorizedError,
       );
-      await expect(client.fetchTracking('TRK-401')).rejects.toThrow(
-        /TRK-401/,
-      );
+      await expect(client.fetchTracking('TRK-401')).rejects.toThrow(/TRK-401/);
       await expect(client.fetchTracking('TRK-401')).rejects.toThrow(
         /invalid or expired API token/i,
       );

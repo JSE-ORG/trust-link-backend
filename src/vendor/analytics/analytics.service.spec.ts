@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { AnalyticsService } from './analytics.service';
 import { EscrowState, PrismaService } from '../../prisma/prisma.service';
+import { ensureVendors } from '../../../test/prisma-helpers';
 
 describe('AnalyticsService', () => {
   let service: AnalyticsService;
@@ -22,15 +23,38 @@ describe('AnalyticsService', () => {
 
     // Reset prisma before each test
     await prisma.reset();
-    await prisma.vendorProfile.createMany({
-      data: [
-        { address: '0xVendor123', businessName: 'Vendor 123' },
-        { address: '0xVendor456', businessName: 'Vendor 456' },
-        { address: '0xVendorXYZ', businessName: 'Vendor XYZ' },
-        { address: '0xVendorABC', businessName: 'Vendor ABC' },
-      ],
-      skipDuplicates: true,
-    });
+    // Every vendor address used anywhere in this file. Escrow.vendorAddress and
+    // VendorTrackingSettings.vendorAddress are foreign keys onto
+    // VendorProfile.address, so the parent rows must exist first (#475). Only
+    // four were seeded previously, which the in-memory store did not mind.
+    await ensureVendors(
+      prisma,
+      '0xVendor123',
+      '0xVendor456',
+      '0xVendorABC',
+      '0xVendorActive',
+      '0xVendorBoth',
+      '0xVendorCompleted',
+      '0xVendorEmail',
+      '0xVendorMixed',
+      '0xVendorNoSettings',
+      '0xVendorSMS',
+      '0xVendorTZ',
+      '0xVendorWithCancelled',
+      '0xVendorXYZ',
+      '0xVendorA',
+      '0xVendorB',
+      '0xStatsVendorA',
+      '0xStatsVendorB',
+      '0xVendorDefaults',
+    );
+  });
+
+  afterEach(async () => {
+    // Each `new PrismaService()` opens its own connection pool. Constructed in
+    // beforeEach across ~100 suites, undisconnected clients exhaust Postgres
+    // (`sorry, too many clients already`) partway through a full run.
+    await prisma?.$disconnect();
   });
 
   // ─── getDailyVolumeChart ───────────────────────────────────────────────────

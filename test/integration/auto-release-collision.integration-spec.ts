@@ -5,6 +5,7 @@ import { AutoReleaseService } from '../../src/escrow/auto-release.service';
 import { ContractService } from '../../src/stellar/contract.service';
 import { CacheService } from '../../src/cache/cache.service';
 import { ConfigService } from '../../src/config/config.service';
+import { ensureVendors } from '../prisma-helpers';
 
 /**
  * Issue #277 — Integration tests for concurrent auto-release collision detection.
@@ -57,6 +58,18 @@ describe('Auto-release collision detection (issue #277)', () => {
     service = moduleRef.get(AutoReleaseService);
 
     await prisma.reset();
+    // Escrow.vendorAddress (and the vendor settings/details tables) are
+    // foreign keys onto VendorProfile.address, so the parent rows must exist
+    // before any row referencing them can be written (#475).
+    await ensureVendors(
+      prisma,
+      'vendor-1',
+      'vendor-2',
+      'vendor-3',
+      'vendor-4',
+      'vendor-5',
+      'vendor-6',
+    );
   });
 
   afterEach(async () => {
@@ -273,9 +286,19 @@ describe('Auto-release collision detection (issue #277)', () => {
         },
       });
 
-      contractService.submitAutoRelease
-        .mockResolvedValueOnce('tx-hash-a')
-        .mockResolvedValueOnce('tx-hash-b');
+      // Keyed by escrow id rather than call order: the worker processes
+      // whatever findAutoReleaseEligible returns, so a call-order mock attaches
+      // the wrong hash to the wrong escrow whenever that order differs.
+      const hashes = new Map<string, string>([
+        [escrow1.id, 'tx-hash-a'],
+        [escrow2.id, 'tx-hash-b'],
+      ]);
+      contractService.submitAutoRelease.mockImplementation(
+        (escrowId: string) =>
+          hashes.has(escrowId)
+            ? Promise.resolve(hashes.get(escrowId)!)
+            : Promise.reject(new Error(`unexpected escrow ${escrowId}`)),
+      );
 
       await service.run();
 
@@ -335,13 +358,21 @@ describe('Auto-release collision detection (issue #277)', () => {
         },
       });
 
-      await prisma.dispute.create({
+      const dispute = await prisma.dispute.create({
         data: {
           escrowId: escrow.id,
           reason: 'ITEM_NOT_AS_DESCRIBED',
           description: 'Phone has defects',
           status: 'OPEN',
         },
+      });
+      // Mirror production: BuyerDisputeService links the dispute and moves the
+      // escrow to DISPUTED. The in-memory PrismaService applied that side
+      // effect inside dispute.create itself, so this test got it for free; the
+      // real client does not (#475).
+      await prisma.escrow.update({
+        where: { id: escrow.id },
+        data: { disputeId: dispute.id, state: 'DISPUTED' },
       });
 
       await service.run();

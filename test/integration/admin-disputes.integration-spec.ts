@@ -5,6 +5,7 @@ import request from 'supertest';
 import { AppModule } from '../../src/app.module';
 import { ConfigService } from '../../src/config/config.service';
 import { PrismaService } from '../../src/prisma/prisma.service';
+import { ensureVendors } from '../prisma-helpers';
 
 type TestServer = Parameters<typeof request>[0];
 type DisputesResponseBody = {
@@ -39,6 +40,13 @@ describe('GET /admin/disputes filters integration (issue #53)', () => {
 
   beforeEach(async () => {
     await prisma.reset();
+    // Escrow.vendorAddress (and the vendor settings/details tables) are
+    // foreign keys onto VendorProfile.address, so the parent rows must exist
+    // before any row referencing them can be written (#475).
+    await ensureVendors(
+      prisma,
+      'GB3LCRCZEETCBYV4PEIPV2PD2R3AJMC6S2OOBMV5MA6WCOKEMN3XA3K3',
+    );
 
     await prisma.escrow.create({
       data: {

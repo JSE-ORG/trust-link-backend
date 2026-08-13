@@ -65,12 +65,12 @@ export const computeBackoffDelay = (
   attemptNumber: number,
   backoff: NotificationRetryBackoff = DEFAULT_BACKOFF,
 ): number => {
-    if (attemptNumber <= 1) return 0;
-    const raw = backoff.delay * Math.pow(2, attemptNumber - 2);
-    const capped = Math.min(raw, backoff.maxDelayMs ?? Number.POSITIVE_INFINITY);
-    // Add jitter ±25% to prevent thundering herd (#317)
-    const jitter = capped * 0.25 * (Math.random() * 2 - 1);
-    return Math.max(0, Math.round(capped + jitter));
+  if (attemptNumber <= 1) return 0;
+  const raw = backoff.delay * Math.pow(2, attemptNumber - 2);
+  const capped = Math.min(raw, backoff.maxDelayMs ?? Number.POSITIVE_INFINITY);
+  // Add jitter ±25% to prevent thundering herd (#317)
+  const jitter = capped * 0.25 * (Math.random() * 2 - 1);
+  return Math.max(0, Math.round(capped + jitter));
 };
 
 /**

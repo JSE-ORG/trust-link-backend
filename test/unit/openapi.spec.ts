@@ -4,7 +4,10 @@ import { setupOpenApiUi } from '../../src/openapi';
 
 jest.mock('@nestjs/swagger', () => {
   const actual = jest.requireActual('@nestjs/swagger');
-  return { ...actual, SwaggerModule: { ...actual.SwaggerModule, setup: jest.fn() } };
+  return {
+    ...actual,
+    SwaggerModule: { ...actual.SwaggerModule, setup: jest.fn() },
+  };
 });
 
 describe('setupOpenApiUi', () => {

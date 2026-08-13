@@ -283,7 +283,9 @@ describe('ContractService', () => {
         simulateTransaction: jest
           .fn()
           .mockResolvedValue({ transactionData: {} }),
-        prepareTransaction: jest.fn().mockImplementation((tx) => Promise.resolve(tx)),
+        prepareTransaction: jest
+          .fn()
+          .mockImplementation((tx) => Promise.resolve(tx)),
         sendTransaction: jest.fn().mockResolvedValue({
           status: 'PENDING',
           hash: 'soroban-hash-1',
@@ -295,7 +297,7 @@ describe('ContractService', () => {
 
     it('executes successful Soroban contract invocation flow', async () => {
       const server = makeSorobanRpcServer();
-      const svc = new ContractService(server as any);
+      const svc = new ContractService(server);
 
       const disputeHash = await svc.resolveDispute(ESCROW, 'RELEASE');
       expect(disputeHash).toBe('soroban-hash-1');
@@ -321,7 +323,7 @@ describe('ContractService', () => {
         error: 'Host error: ContractError(101)',
       });
 
-      const svc = new ContractService(server as any);
+      const svc = new ContractService(server);
       await expect(svc.resolveDispute(ESCROW, 'RELEASE')).rejects.toThrow(
         ContractCallFailedException,
       );
@@ -333,7 +335,7 @@ describe('ContractService', () => {
         new Error('Resource limits exceeded'),
       );
 
-      const svc = new ContractService(server as any);
+      const svc = new ContractService(server);
       await expect(svc.resolveDispute(ESCROW, 'RELEASE')).rejects.toThrow(
         ContractCallFailedException,
       );
@@ -346,7 +348,7 @@ describe('ContractService', () => {
         errorResultXdr: 'tx_failed',
       });
 
-      const svc = new ContractService(server as any);
+      const svc = new ContractService(server);
       await expect(svc.resolveDispute(ESCROW, 'RELEASE')).rejects.toThrow(
         ContractCallFailedException,
       );
@@ -363,7 +365,7 @@ describe('ContractService', () => {
         resultXdr: 'Error(Contract, #404)',
       });
 
-      const svc = new ContractService(server as any);
+      const svc = new ContractService(server);
       await expect(svc.resolveDispute(ESCROW, 'RELEASE')).rejects.toThrow(
         ContractCallFailedException,
       );
@@ -381,7 +383,7 @@ describe('ContractService', () => {
           hash: 'soroban-retry-success-hash',
         });
 
-      const svc = new ContractService(server as any);
+      const svc = new ContractService(server);
       const hash = await svc.submitAutoRelease(ESCROW, SOURCE, 2);
 
       expect(hash).toBe('soroban-retry-success-hash');
@@ -390,7 +392,7 @@ describe('ContractService', () => {
 
     it('simulates getEscrowState with Soroban RPC', async () => {
       const server = makeSorobanRpcServer();
-      const svc = new ContractService(server as any);
+      const svc = new ContractService(server);
 
       const resultOk = await svc.getEscrowState(ESCROW);
       expect(resultOk).toEqual({ state: 'CREATED', exists: true });

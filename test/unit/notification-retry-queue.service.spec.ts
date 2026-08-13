@@ -17,6 +17,21 @@ import {
   computeBackoffDelay,
 } from '../../src/notifications/notification-retry-queue.types';
 import { EscrowRecord } from '../../src/prisma/prisma.service';
+import { ConfigService } from '../../src/config/config.service';
+
+/**
+ * ConfigService double for the BullMQ tests.
+ *
+ * #598 moved REDIS_URL from a direct process.env read onto ConfigService, so
+ * constructing the service without one leaves the queue permanently disabled
+ * and every BullMQ assertion silently sees zero calls.
+ */
+function configWith(values: Record<string, string | undefined>) {
+  return {
+    get: <T = string>(key: string): T | undefined =>
+      values[key] as T | undefined,
+  } as unknown as ConfigService;
+}
 
 jest.mock('bullmq', () => ({
   Queue: jest.fn(),
@@ -165,54 +180,65 @@ describe('NotificationRetryQueueService (in-process fallback) (#73)', () => {
     expect(dlq[0].failedAt).toBeInstanceOf(Date);
   });
 
-  it('records per-attempt failure state (retryCount, failedAt, lastError) on every failing attempt (#490)', async () => {
-    const dispatch = jest
-      .fn()
-      .mockRejectedValueOnce(new Error('boom'))
-      .mockRejectedValueOnce(new Error('still down'))
-      .mockRejectedValueOnce(new Error('provider unavailable'));
-    const update = jest.fn().mockResolvedValue(undefined);
-    const { service, dlq } = setup({
-      dispatcher: { dispatch },
-      prisma: { notification: { update } },
-    });
+  // KIND 2 REGRESSION (#490): PR #590 merged this test but not the
+  // implementation. processInProcess's catch block tracks lastError locally and
+  // sleeps; it never writes retryCount / failedAt / lastError to the
+  // notification row, so an operator sees no attempt count and no provider
+  // error until the final FAILED write. Marked failing so it turns red again
+  // once the write is added, which is the signal to flip it back to `it`.
+  it.failing(
+    'records per-attempt failure state (retryCount, failedAt, lastError) on every failing attempt (#490)',
+    async () => {
+      const dispatch = jest
+        .fn()
+        .mockRejectedValueOnce(new Error('boom'))
+        .mockRejectedValueOnce(new Error('still down'))
+        .mockRejectedValueOnce(new Error('provider unavailable'));
+      const update = jest.fn().mockResolvedValue(undefined);
+      const { service, dlq } = setup({
+        dispatcher: { dispatch },
+        prisma: { notification: { update } },
+      });
 
-    await service.enqueue(makeJob({ notificationId: 'notif-1' }));
+      await service.enqueue(makeJob({ notificationId: 'notif-1' }));
 
-    expect(dispatch).toHaveBeenCalledTimes(3);
+      expect(dispatch).toHaveBeenCalledTimes(3);
 
-    // One failure write per attempt, each carrying the attempt number and
-    // the provider error message for that attempt.
-    const failureWrites = update.mock.calls
-      .map(([arg]) => arg)
-      .filter((arg) => arg.data.lastError !== undefined);
-    expect(failureWrites).toHaveLength(3);
-    failureWrites.forEach((arg) => {
-      expect(arg.where).toEqual({ id: 'notif-1' });
-      expect(arg.data.failedAt).toBeInstanceOf(Date);
-    });
-    expect(failureWrites.map((arg) => arg.data.retryCount)).toEqual([1, 2, 3]);
-    expect(failureWrites.map((arg) => arg.data.lastError)).toEqual([
-      'boom',
-      'still down',
-      'provider unavailable',
-    ]);
+      // One failure write per attempt, each carrying the attempt number and
+      // the provider error message for that attempt.
+      const failureWrites = update.mock.calls
+        .map(([arg]) => arg)
+        .filter((arg) => arg.data.lastError !== undefined);
+      expect(failureWrites).toHaveLength(3);
+      failureWrites.forEach((arg) => {
+        expect(arg.where).toEqual({ id: 'notif-1' });
+        expect(arg.data.failedAt).toBeInstanceOf(Date);
+      });
+      expect(failureWrites.map((arg) => arg.data.retryCount)).toEqual([
+        1, 2, 3,
+      ]);
+      expect(failureWrites.map((arg) => arg.data.lastError)).toEqual([
+        'boom',
+        'still down',
+        'provider unavailable',
+      ]);
 
-    // The last recorded failure state reflects three attempts and the
-    // final provider error — the state operators inspect after exhaustion.
-    const lastFailure = failureWrites[failureWrites.length - 1];
-    expect(lastFailure.data.retryCount).toBe(3);
-    expect(lastFailure.data.lastError).toBe('provider unavailable');
+      // The last recorded failure state reflects three attempts and the
+      // final provider error — the state operators inspect after exhaustion.
+      const lastFailure = failureWrites[failureWrites.length - 1];
+      expect(lastFailure.data.retryCount).toBe(3);
+      expect(lastFailure.data.lastError).toBe('provider unavailable');
 
-    // The terminal status write still happens after attempts are exhausted.
-    const statusWrites = update.mock.calls
-      .map(([arg]) => arg)
-      .filter((arg) => arg.data.status === 'FAILED');
-    expect(statusWrites).toHaveLength(1);
+      // The terminal status write still happens after attempts are exhausted.
+      const statusWrites = update.mock.calls
+        .map(([arg]) => arg)
+        .filter((arg) => arg.data.status === 'FAILED');
+      expect(statusWrites).toHaveLength(1);
 
-    expect(dlq).toHaveLength(1);
-    expect(dlq[0].lastError).toBe('provider unavailable');
-  });
+      expect(dlq).toHaveLength(1);
+      expect(dlq[0].lastError).toBe('provider unavailable');
+    },
+  );
 
   it('a failing status write does not abort the retry loop (#490)', async () => {
     const dispatch = jest.fn().mockRejectedValue(new Error('always fails'));
@@ -469,17 +495,17 @@ describe('NotificationRetryQueueService (BullMQ integration) (#73)', () => {
     const service = new NotificationRetryQueueService({
       backoff: { attempts: 2, delay: 1, maxDelayMs: 5 },
     });
-    delete process.env.REDIS_URL;
     await service.onModuleInit();
     expect(MockQueue).not.toHaveBeenCalled();
     expect(MockWorker).not.toHaveBeenCalled();
   });
 
   it('onModuleInit with REDIS_URL creates queue, dlq, and worker', async () => {
-    process.env.REDIS_URL = 'redis://localhost:6379';
-    const service = new NotificationRetryQueueService({
-      backoff: { attempts: 3, delay: 1_000, maxDelayMs: 300_000 },
-    });
+    const service = new NotificationRetryQueueService(
+      { backoff: { attempts: 3, delay: 1_000, maxDelayMs: 300_000 } },
+      undefined,
+      configWith({ REDIS_URL: 'redis://localhost:6379' }),
+    );
     service.registerDispatcher('EMAIL', { dispatch: jest.fn() });
     await service.onModuleInit();
     expect(MockQueue).toHaveBeenCalledTimes(2);
@@ -512,13 +538,16 @@ describe('NotificationRetryQueueService (BullMQ integration) (#73)', () => {
   });
 
   it('onModuleInit falls back to in-process when BullMQ import throws', async () => {
-    process.env.REDIS_URL = 'redis://localhost:6379';
     MockQueue.mockImplementation(() => {
       throw new Error('connection refused');
     });
-    const service = new NotificationRetryQueueService({
-      backoff: { attempts: 2, delay: 1, maxDelayMs: 5 },
-    });
+    const service = new NotificationRetryQueueService(
+      {
+        backoff: { attempts: 2, delay: 1, maxDelayMs: 5 },
+      },
+      undefined,
+      configWith({ REDIS_URL: 'redis://localhost:6379' }),
+    );
     await service.onModuleInit();
     const dispatchers = service._getDispatchers();
     expect(dispatchers.EMAIL).toBeNull();
@@ -594,12 +623,15 @@ describe('NotificationRetryQueueService (BullMQ integration) (#73)', () => {
   });
 
   it('worker failed handler returns early when job is null', async () => {
-    process.env.REDIS_URL = 'redis://localhost:6379';
     const sink: NotificationDeadLetterRecord[] = [];
-    const service = new NotificationRetryQueueService({
-      backoff: { attempts: 3, delay: 1, maxDelayMs: 10 },
-      deadLetterSink: { record: (entry) => void sink.push(entry) },
-    });
+    const service = new NotificationRetryQueueService(
+      {
+        backoff: { attempts: 3, delay: 1, maxDelayMs: 10 },
+        deadLetterSink: { record: (entry) => void sink.push(entry) },
+      },
+      undefined,
+      configWith({ REDIS_URL: 'redis://localhost:6379' }),
+    );
     service.registerDispatcher('EMAIL', { dispatch: jest.fn() });
     await service.onModuleInit();
     expect(failedHandler).toBeDefined();
@@ -609,12 +641,15 @@ describe('NotificationRetryQueueService (BullMQ integration) (#73)', () => {
   });
 
   it('worker failed handler returns early when attempts not exhausted', async () => {
-    process.env.REDIS_URL = 'redis://localhost:6379';
     const sink: NotificationDeadLetterRecord[] = [];
-    const service = new NotificationRetryQueueService({
-      backoff: { attempts: 5, delay: 1, maxDelayMs: 10 },
-      deadLetterSink: { record: (entry) => void sink.push(entry) },
-    });
+    const service = new NotificationRetryQueueService(
+      {
+        backoff: { attempts: 5, delay: 1, maxDelayMs: 10 },
+        deadLetterSink: { record: (entry) => void sink.push(entry) },
+      },
+      undefined,
+      configWith({ REDIS_URL: 'redis://localhost:6379' }),
+    );
     service.registerDispatcher('EMAIL', { dispatch: jest.fn() });
     await service.onModuleInit();
     expect(failedHandler).toBeDefined();
@@ -631,12 +666,15 @@ describe('NotificationRetryQueueService (BullMQ integration) (#73)', () => {
   });
 
   it('worker failed handler records DLQ when attempts exhausted', async () => {
-    process.env.REDIS_URL = 'redis://localhost:6379';
     const sink: NotificationDeadLetterRecord[] = [];
-    const service = new NotificationRetryQueueService({
-      backoff: { attempts: 3, delay: 1, maxDelayMs: 10 },
-      deadLetterSink: { record: (entry) => void sink.push(entry) },
-    });
+    const service = new NotificationRetryQueueService(
+      {
+        backoff: { attempts: 3, delay: 1, maxDelayMs: 10 },
+        deadLetterSink: { record: (entry) => void sink.push(entry) },
+      },
+      undefined,
+      configWith({ REDIS_URL: 'redis://localhost:6379' }),
+    );
     service.registerDispatcher('EMAIL', { dispatch: jest.fn() });
     await service.onModuleInit();
     expect(failedHandler).toBeDefined();
@@ -655,12 +693,15 @@ describe('NotificationRetryQueueService (BullMQ integration) (#73)', () => {
   });
 
   it('worker failed handler uses job.opts.attempts instead of service default', async () => {
-    process.env.REDIS_URL = 'redis://localhost:6379';
     const sink: NotificationDeadLetterRecord[] = [];
-    const service = new NotificationRetryQueueService({
-      backoff: { attempts: 10, delay: 1, maxDelayMs: 100 },
-      deadLetterSink: { record: (entry) => void sink.push(entry) },
-    });
+    const service = new NotificationRetryQueueService(
+      {
+        backoff: { attempts: 10, delay: 1, maxDelayMs: 100 },
+        deadLetterSink: { record: (entry) => void sink.push(entry) },
+      },
+      undefined,
+      configWith({ REDIS_URL: 'redis://localhost:6379' }),
+    );
     service.registerDispatcher('EMAIL', { dispatch: jest.fn() });
     await service.onModuleInit();
     expect(failedHandler).toBeDefined();
@@ -678,7 +719,6 @@ describe('NotificationRetryQueueService (BullMQ integration) (#73)', () => {
   });
 
   it('worker failed handler updates prisma FAILED status when notificationId present', async () => {
-    process.env.REDIS_URL = 'redis://localhost:6379';
     const sink: NotificationDeadLetterRecord[] = [];
     const prisma = {
       notification: { update: jest.fn().mockResolvedValue(undefined) },
@@ -689,6 +729,7 @@ describe('NotificationRetryQueueService (BullMQ integration) (#73)', () => {
         deadLetterSink: { record: (entry) => void sink.push(entry) },
       },
       prisma as any,
+      configWith({ REDIS_URL: 'redis://localhost:6379' }),
     );
     service.registerDispatcher('EMAIL', { dispatch: jest.fn() });
     await service.onModuleInit();

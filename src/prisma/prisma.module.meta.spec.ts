@@ -1,22 +1,33 @@
+import { Test } from '@nestjs/testing';
 import { PrismaModule } from './prisma.module';
+import { PrismaService } from './prisma.service';
 
-describe('PrismaModule metadata inspection', () => {
-  it('should have providers in metadata', () => {
-    const protoKeys = Reflect.ownKeys(Object.getPrototypeOf(PrismaModule));
-    console.log('Prototype keys:', protoKeys.map(k => k.toString()));
-    
-    const allKeys = Reflect.ownKeys(PrismaModule.prototype);
-    console.log('Prototype own keys:', allKeys.map(k => k.toString()));
-    
-    for (const k of allKeys) {
-      try {
-        const v = Reflect.getMetadata(k, PrismaModule.prototype);
-        console.log('Key', k.toString(), '=>', typeof v, JSON.stringify(v).slice(0, 300));
-      } catch(e) {
-        // ignore
-      }
-    }
-    
-    expect(true).toBe(true);
+/**
+ * PrismaModule wiring.
+ *
+ * This file previously printed reflection metadata to the console and asserted
+ * `expect(true).toBe(true)` — debug scaffolding that covered nothing. It now
+ * pins the two properties that actually matter: the module exports
+ * PrismaService for other modules to inject, and PrismaService is still
+ * constructable as a plain provider (the shape #489 broke by dropping
+ * @Optional() from its injected database URL).
+ */
+describe('PrismaModule wiring', () => {
+  it('exports PrismaService so other modules can inject it', () => {
+    const exports = Reflect.getMetadata('exports', PrismaModule) as unknown[];
+
+    expect(exports).toContain(PrismaService);
+  });
+
+  it('is constructable as a plain provider, without the module', async () => {
+    const moduleRef = await Test.createTestingModule({
+      providers: [PrismaService],
+    }).compile();
+
+    // Prisma v7 exposes the client through a Proxy, so instanceof cannot see
+    // the subclass; check the constructor name and a service-only method.
+    const prisma = moduleRef.get(PrismaService);
+    expect(prisma.constructor.name).toBe('PrismaService');
+    expect(typeof prisma.reset).toBe('function');
   });
 });

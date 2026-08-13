@@ -25,9 +25,7 @@ export interface StellarServer {
     tx: Transaction,
   ): Promise<rpc.Api.SimulateTransactionResponse>;
   prepareTransaction?(tx: Transaction): Promise<Transaction>;
-  sendTransaction?(
-    tx: Transaction,
-  ): Promise<rpc.Api.SendTransactionResponse>;
+  sendTransaction?(tx: Transaction): Promise<rpc.Api.SendTransactionResponse>;
   getTransaction?(hash: string): Promise<rpc.Api.GetTransactionResponse>;
   pollTransaction?(hash: string): Promise<rpc.Api.GetTransactionResponse>;
   submitTransaction?(transaction: Record<string, unknown>): Promise<{
@@ -177,20 +175,17 @@ export class ContractService {
 
   /** Submits an on-chain cancellation/refund transaction (`cancel_escrow`) and returns the transaction hash. */
   async cancelEscrowOnChain(escrowId: string): Promise<string> {
-    return this.invokeContract(
-      'cancel_escrow',
-      [nativeToScVal(escrowId)],
-      { escrowId, refund: true },
-    );
+    return this.invokeContract('cancel_escrow', [nativeToScVal(escrowId)], {
+      escrowId,
+      refund: true,
+    });
   }
 
   /** Records delivery on-chain (`record_delivery`) and returns the submitted transaction hash. */
   async recordDelivery(escrowId: string): Promise<string> {
-    return this.invokeContract(
-      'record_delivery',
-      [nativeToScVal(escrowId)],
-      { escrowId },
-    );
+    return this.invokeContract('record_delivery', [nativeToScVal(escrowId)], {
+      escrowId,
+    });
   }
 
   /**
@@ -243,11 +238,11 @@ export class ContractService {
       return result.hash;
     }
 
-    const secret = this.config?.get('SYSTEM_SIGNER_SECRET');
+    const secret = this.config?.get<string>('SYSTEM_SIGNER_SECRET');
     let signerKeypair: Keypair | null = null;
     if (secret) {
       try {
-        signerKeypair = Keypair.fromSecret(String(secret));
+        signerKeypair = Keypair.fromSecret(secret);
       } catch {
         // Ignore keypair parsing errors if invalid test secret
       }
@@ -313,10 +308,19 @@ export class ContractService {
     // Step 6: Submit transaction
     const sendResult = await this.submitTransaction(preparedTx);
     if (sendResult.status === 'ERROR') {
+      // The SDK types the error payload loosely and the field name has moved
+      // between versions, so read both defensively rather than casting to any.
+      const detail = sendResult as {
+        errorResultXdr?: unknown;
+        errorResult?: unknown;
+      };
+      const raw = detail.errorResultXdr ?? detail.errorResult;
       const errorMsg =
-        (sendResult as any).errorResultXdr ||
-        (sendResult as any).errorResult ||
-        'Transaction submission returned ERROR status';
+        raw == null
+          ? 'Transaction submission returned ERROR status'
+          : typeof raw === 'string'
+            ? raw
+            : JSON.stringify(raw);
       if (this.isSequenceError(errorMsg)) {
         throw new Error(`sequence error: ${errorMsg}`);
       }
@@ -330,7 +334,9 @@ export class ContractService {
 
     // Step 7: Poll until final status
     const finalTx = await this.pollTransactionStatus(txHash);
-    if (finalTx.status === 'FAILED') {
+    // Compared as a string: pollTransactionStatus can return a test double
+    // whose status is a plain string rather than the SDK's enum member.
+    if (String(finalTx.status) === 'FAILED') {
       const decodedError = this.decodeTransactionError(finalTx);
       throw new ContractCallFailedException(
         `Contract execution failed: ${decodedError}`,
@@ -350,10 +356,16 @@ export class ContractService {
       if (rawAcc instanceof Account) {
         return rawAcc;
       }
-      if (typeof (rawAcc as any)?.sequenceNumber === 'function') {
-        seq = (rawAcc as any).sequenceNumber();
-      } else if ((rawAcc as any)?.sequence) {
-        seq = String((rawAcc as any).sequence);
+      // Horizon, Soroban RPC and the test doubles each return a different
+      // account shape, so narrow instead of casting to any.
+      const acc = rawAcc as {
+        sequenceNumber?: () => string;
+        sequence?: string | number;
+      };
+      if (typeof acc?.sequenceNumber === 'function') {
+        seq = acc.sequenceNumber();
+      } else if (acc?.sequence != null) {
+        seq = String(acc.sequence);
       }
     } else if (typeof this.server.loadAccount === 'function') {
       const acc = await this.server.loadAccount(publicKey);
@@ -381,7 +393,16 @@ export class ContractService {
       return this.server.prepareTransaction(tx);
     }
     if (simResult && typeof rpc.assembleTransaction === 'function') {
-      return (rpc as unknown as { assembleTransaction: (t: Transaction, s: rpc.Api.SimulateTransactionResponse) => { build: () => Transaction } }).assembleTransaction(tx, simResult).build();
+      return (
+        rpc as unknown as {
+          assembleTransaction: (
+            t: Transaction,
+            s: rpc.Api.SimulateTransactionResponse,
+          ) => { build: () => Transaction };
+        }
+      )
+        .assembleTransaction(tx, simResult)
+        .build();
     }
     return tx;
   }
@@ -439,8 +460,11 @@ export class ContractService {
   private decodeTransactionError(
     txResponse: rpc.Api.GetTransactionResponse,
   ): string {
-    if ((txResponse as any).resultXdr) {
-      return (txResponse as any).resultXdr;
+    const { resultXdr } = txResponse as { resultXdr?: unknown };
+    if (resultXdr != null) {
+      return typeof resultXdr === 'string'
+        ? resultXdr
+        : JSON.stringify(resultXdr);
     }
     return 'Transaction failed on chain';
   }

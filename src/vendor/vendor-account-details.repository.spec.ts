@@ -1,13 +1,31 @@
 import { VendorAccountDetailsRepository } from './vendor-account-details.repository';
 import { PrismaService } from '../prisma/prisma.service';
+import { ensureVendors } from '../../test/prisma-helpers';
 
 describe('VendorAccountDetailsRepository', () => {
   let repo: VendorAccountDetailsRepository;
   let prisma: PrismaService;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     prisma = new PrismaService();
+    await prisma.reset();
+    // VendorAccountDetails.vendorAddress is a foreign key onto
+    // VendorProfile.address (#475).
+    await ensureVendors(
+      prisma,
+      'vendor-addr',
+      'vendor-addr-1',
+      'vendor-addr-2',
+      'vendor-addr-3',
+    );
     repo = new VendorAccountDetailsRepository(prisma);
+  });
+
+  afterEach(async () => {
+    // Each `new PrismaService()` opens its own connection pool. Constructed in
+    // beforeEach across ~100 suites, undisconnected clients exhaust Postgres
+    // (`sorry, too many clients already`) partway through a full run.
+    await prisma?.$disconnect();
   });
 
   describe('findByVendorAddress()', () => {

@@ -48,9 +48,18 @@ function parsedEventFor(
 }
 
 async function buildService(configOverrides: Record<string, string> = {}) {
+  // Stateful, like the real CursorService, and pre-seeded. Two reasons:
+  // once poll() persists a cursor the next cycle must read it back, and a
+  // stored cursor means poll() skips the start-ledger bootstrap added in #588.
+  // With a stateless mock returning undefined, every cycle re-bootstrapped and
+  // issued an extra getLatestLedger request, so the fetch counts below doubled.
+  let storedCursor: string | undefined = 'ledger:900';
   const cursorService = {
-    get: jest.fn().mockResolvedValue(undefined),
-    set: jest.fn().mockResolvedValue(undefined),
+    get: jest.fn(() => Promise.resolve(storedCursor)),
+    set: jest.fn((value: string) => {
+      storedCursor = value;
+      return Promise.resolve();
+    }),
   } as unknown as jest.Mocked<CursorService>;
 
   const blockchainListener = {
@@ -102,7 +111,9 @@ function mockRpcResponse(
     ok: true,
     status: 200,
     statusText: 'OK',
-    json: async () => ({ result: { events, latestLedger: 200, sequence: 200 } }),
+    json: async () => ({
+      result: { events, latestLedger: 200, sequence: 200 },
+    }),
   } as unknown as Response);
 }
 
@@ -185,7 +196,9 @@ describe('SorobanPollerService — lifecycle (issue #559)', () => {
       ok: true,
       status: 200,
       statusText: 'OK',
-      json: async () => ({ result: { events: [], latestLedger: 1, sequence: 1 } }),
+      json: async () => ({
+        result: { events: [], latestLedger: 1, sequence: 1 },
+      }),
     });
 
     await firstPoll;

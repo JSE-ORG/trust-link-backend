@@ -86,7 +86,13 @@ model Dispute {
   reason       String
   description  String        @default("")
   evidenceUrls String[]      @default([])
-  status       DisputeStatus @default(OPEN)
+  // Stored as text, not the DisputeStatus enum. Migration
+  // 20260529120000_add_state_deliveredat_composite_index deliberately
+  // converted this column with `ALTER COLUMN "status" TYPE TEXT`, but the
+  // model was never updated to match. The resulting drift made the generated
+  // client compare a text column against an enum, which Postgres rejects with
+  // `operator does not exist: text = "DisputeStatus"`.
+  status       String        @default("OPEN")
   resolvedAt   DateTime?
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt

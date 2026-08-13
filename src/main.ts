@@ -32,8 +32,12 @@ async function bootstrap(): Promise<void> {
     Sentry.init({
       dsn: sentryDsn,
       release: configService.get<string | undefined>('GIT_SHA'),
-      environment: configService.get<string | undefined>('NODE_ENV') ?? 'development',
-      tracesSampleRate: configService.get<string | undefined>('NODE_ENV') === 'production' ? 0.2 : 1.0,
+      environment:
+        configService.get<string | undefined>('NODE_ENV') ?? 'development',
+      tracesSampleRate:
+        configService.get<string | undefined>('NODE_ENV') === 'production'
+          ? 0.2
+          : 1.0,
     });
   }
   const connectSrc = buildCspConnectSrc({

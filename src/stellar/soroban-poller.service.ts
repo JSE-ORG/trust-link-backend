@@ -99,6 +99,8 @@ export class SorobanPollerService implements OnModuleInit, OnModuleDestroy {
   private readonly pollIntervalMs: number;
   /** Per-request RPC timeout in ms. Validated and defaulted (4000) by the config schema. */
   private readonly rpcTimeoutMs: number;
+  /** Whether the polling interval should start on module init. */
+  private readonly enabled: boolean;
   private readonly rpcUrl: string;
   private readonly contractId: string;
 
@@ -113,9 +115,20 @@ export class SorobanPollerService implements OnModuleInit, OnModuleDestroy {
     this.contractId = this.config.get('CONTRACT_ID') ?? '';
     this.pollIntervalMs = this.config.get('SOROBAN_POLL_INTERVAL_MS');
     this.rpcTimeoutMs = this.config.get('SOROBAN_RPC_TIMEOUT_MS');
+    this.enabled = this.config.get('SOROBAN_POLLER_ENABLED') !== false;
   }
 
   onModuleInit(): void {
+    // An explicit switch, not an environment sniff: a background interval that
+    // issues real RPC requests is unwanted in any process that only boots the
+    // module to serve requests or run a spec, and leaving it running holds the
+    // process open after the work is done.
+    if (!this.enabled) {
+      this.logger.log(
+        'SorobanPollerService: disabled via SOROBAN_POLLER_ENABLED',
+      );
+      return;
+    }
     if (!this.contractId) {
       this.logger.warn(
         'SorobanPollerService: CONTRACT_ID not set — poller disabled',
@@ -501,8 +514,11 @@ export class SorobanPollerService implements OnModuleInit, OnModuleDestroy {
     if (configured) return configured;
 
     const nodeEnv = this.config.get<string>('NODE_ENV');
-    const stellarNetwork = this.config.get<'TESTNET' | 'MAINNET'>('STELLAR_NETWORK');
-    const isProduction = nodeEnv === 'production' || this.config.isProduction?.() === true;
+    const stellarNetwork = this.config.get<'TESTNET' | 'MAINNET'>(
+      'STELLAR_NETWORK',
+    );
+    const isProduction =
+      nodeEnv === 'production' || this.config.isProduction?.() === true;
 
     if (isProduction) {
       // Backstop only: config validation already rejects this at startup.

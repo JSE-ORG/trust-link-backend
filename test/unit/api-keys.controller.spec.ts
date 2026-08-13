@@ -59,7 +59,9 @@ describe('ApiKeysController (issue #410)', () => {
     }).compile();
 
     app = moduleRef.createNestApplication();
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true }),
+    );
     await app.init();
   });
 
@@ -85,7 +87,9 @@ describe('ApiKeysController (issue #410)', () => {
       .send({ key: 'very-secret-key' })
       .expect(200);
 
-    expect(res.body).toEqual({ message: 'Logistics API key updated and encrypted' });
+    expect(res.body).toEqual({
+      message: 'Logistics API key updated and encrypted',
+    });
     // ensure raw credential never echoed back
     expect(JSON.stringify(res.body)).not.toContain('very-secret-key');
 
@@ -104,7 +108,9 @@ describe('ApiKeysController (issue #410)', () => {
       .send({ key: 'brand-new-key' })
       .expect(200);
 
-    expect(res.body).toEqual({ message: 'Logistics API key updated and encrypted' });
+    expect(res.body).toEqual({
+      message: 'Logistics API key updated and encrypted',
+    });
     expect(JSON.stringify(res.body)).not.toContain('old-compromised-key');
     expect(JSON.stringify(res.body)).not.toContain('brand-new-key');
 
@@ -123,7 +129,10 @@ describe('ApiKeysController (issue #498)', () => {
   }
 
   it('rotates to the submitted key on first set (no key previously configured)', async () => {
-    const logisticsService = new LogisticsService(undefined, encryptionKeyConfig);
+    const logisticsService = new LogisticsService(
+      undefined,
+      encryptionKeyConfig,
+    );
     const controller = new ApiKeysController(logisticsService);
 
     expect(logisticsService.getApiKey()).toBeNull();
@@ -139,7 +148,10 @@ describe('ApiKeysController (issue #498)', () => {
   });
 
   it('rotates to the submitted key when a key already exists, instead of re-encrypting the old one', async () => {
-    const logisticsService = new LogisticsService(undefined, encryptionKeyConfig);
+    const logisticsService = new LogisticsService(
+      undefined,
+      encryptionKeyConfig,
+    );
     const controller = new ApiKeysController(logisticsService);
 
     await controller.rotateLogisticsKey(buildDto('compromised-old-key'));
@@ -155,7 +167,10 @@ describe('ApiKeysController (issue #498)', () => {
   });
 
   it('does not echo the submitted key (or any part of it) in the response', async () => {
-    const logisticsService = new LogisticsService(undefined, encryptionKeyConfig);
+    const logisticsService = new LogisticsService(
+      undefined,
+      encryptionKeyConfig,
+    );
     const controller = new ApiKeysController(logisticsService);
 
     const secretKey = 'super-secret-value-should-not-leak';

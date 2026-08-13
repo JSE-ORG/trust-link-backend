@@ -195,7 +195,8 @@ describe('LogisticsService & LogisticsModule (issue #479)', () => {
     it('provides GiglLogisticsService and GiglClient when configured', async () => {
       const mockConfigService = {
         get: (key: string) => {
-          if (key === 'LOGISTICS_API_BASE_URL') return 'https://api.gigl.com/v1';
+          if (key === 'LOGISTICS_API_BASE_URL')
+            return 'https://api.gigl.com/v1';
           if (key === 'LOGISTICS_API_KEY') return 'test-token-123';
           return undefined;
         },

@@ -312,6 +312,12 @@ export class EscrowRepository {
           autoReleaseTxHash: null,
           autoReleaseSubmittedAt: null,
         },
+        // Oldest delivery first, with id as a tie-break. Without an explicit
+        // order Postgres may return these rows in any sequence, which makes
+        // batch processing non-deterministic: which escrow is attempted first
+        // (and therefore which is retried after a partial failure) would vary
+        // between runs.
+        orderBy: [{ deliveredAt: 'asc' }, { id: 'asc' }],
       })
       .then((rows) => rows.map(toEscrowRecord));
   }
@@ -401,13 +407,12 @@ export class EscrowRepository {
    * @returns an {@link EventsResult} ordered oldest-first.
    */
   async findEvents(escrowId: string): Promise<EventsResult> {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const rawEvents = await (this.prisma.escrowEvent.findMany as any)({
+    const rawEvents = await this.prisma.escrowEvent.findMany({
       where: { escrowId },
       orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
     });
 
-    return rawEvents.map((e: any) => ({
+    return rawEvents.map((e) => ({
       event: e.toState,
       occurredAt: e.createdAt,
       fromState: e.fromState,

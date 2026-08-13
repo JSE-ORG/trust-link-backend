@@ -12,7 +12,10 @@ const SEPARATOR = ':';
  * A fresh IV is generated per call so encrypting the same value twice
  * produces different ciphertext — prevents correlation attacks.
  */
-export function encryptCredential(plaintext: string, encryptionKey: string): string {
+export function encryptCredential(
+  plaintext: string,
+  encryptionKey: string,
+): string {
   const key = Buffer.from(encryptionKey, 'hex');
   if (key.length !== 32) {
     throw new Error(
@@ -40,7 +43,10 @@ export function encryptCredential(plaintext: string, encryptionKey: string): str
  * Decrypts a value produced by `encryptCredential`.
  * Returns the plaintext string, or throws if the ciphertext is tampered.
  */
-export function decryptCredential(stored: string, encryptionKey: string): string {
+export function decryptCredential(
+  stored: string,
+  encryptionKey: string,
+): string {
   const key = Buffer.from(encryptionKey, 'hex');
   if (key.length !== 32) {
     throw new Error(
@@ -79,7 +85,11 @@ export function decryptCredential(stored: string, encryptionKey: string): string
  * Re-encrypts a credential with a new key.
  * This is used during key rotation operations.
  */
-export function reencryptCredential(encryptedCredential: string, oldKey: string, newKey: string): string {
+export function reencryptCredential(
+  encryptedCredential: string,
+  oldKey: string,
+  newKey: string,
+): string {
   const plaintext = decryptCredential(encryptedCredential, oldKey);
   return encryptCredential(plaintext, newKey);
 }

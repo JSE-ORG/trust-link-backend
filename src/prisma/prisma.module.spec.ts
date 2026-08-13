@@ -40,7 +40,7 @@ describe('PrismaModule', () => {
     // Prisma v7 exposes the client through an internal Proxy, so instanceof
     // cannot see the subclass; verify the real service was constructed instead.
     expect(prisma.constructor.name).toBe('PrismaService');
-    expect(typeof (prisma as PrismaService).reset).toBe('function');
+    expect(typeof prisma.reset).toBe('function');
     expect(mockTracing.isEnabled).toHaveBeenCalled();
   });
 
