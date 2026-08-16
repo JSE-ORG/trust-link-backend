@@ -13,6 +13,7 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { JwtGuard } from '../../auth/guards/jwt.guard';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import type { AuthUser } from '../../auth/auth-user';
@@ -35,6 +36,7 @@ export class DisputeController {
   @ApiResponse({ status: 200, description: 'Paginated dispute list returned.' })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   @ApiResponse({ status: 403, description: 'Admin access required.' })
+  @Throttle({ auth: { limit: 20, ttl: 60000 } })
   @Get('disputes')
   async getDisputes(
     @Query('status') status?: string,
@@ -59,6 +61,7 @@ export class DisputeController {
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   @ApiResponse({ status: 403, description: 'Admin access required.' })
   @ApiResponse({ status: 404, description: 'Escrow not found.' })
+  @Throttle({ auth: { limit: 10, ttl: 60000 } })
   @Patch('dispute/:id/resolve')
   async resolve(
     @Param('id') id: string,
@@ -80,6 +83,7 @@ export class DisputeController {
   @ApiResponse({ status: 200, description: 'Audit log returned.' })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   @ApiResponse({ status: 403, description: 'Admin access required.' })
+  @Throttle({ auth: { limit: 20, ttl: 60000 } })
   @Get('audit-log')
   getAuditLog() {
     return this.auditLogService.findAll();

@@ -2,7 +2,11 @@ import { AutoReleaseWorker } from './auto-release.worker';
 import { EscrowRepository } from '../escrow/escrow.repository';
 import { DisputeRepository } from '../dispute/dispute.repository';
 import { ContractService } from '../stellar/contract.service';
+import { ConfigService } from '../config/config.service';
 import { EscrowRecord, DisputeRecord } from '../prisma/prisma.service';
+
+const TEST_AUTO_RELEASE_SOURCE =
+  'GCKFBEIYTKP5RQGHKGKFHVOPXQVQPQWO7EEQOFTIYSDIN2R7RQNU3XXY';
 
 function makeEscrow(overrides: Partial<EscrowRecord> = {}): EscrowRecord {
   return {
@@ -48,6 +52,7 @@ describe('AutoReleaseWorker', () => {
   let escrowRepository: jest.Mocked<EscrowRepository>;
   let disputeRepository: jest.Mocked<DisputeRepository>;
   let contractService: jest.Mocked<ContractService>;
+  let configService: jest.Mocked<ConfigService>;
 
   beforeEach(() => {
     escrowRepository = {
@@ -73,10 +78,20 @@ describe('AutoReleaseWorker', () => {
       submitAutoRelease: jest.fn(),
     } as unknown as jest.Mocked<ContractService>;
 
+    configService = {
+      get: jest.fn().mockImplementation((key: string) => {
+        if (key === 'NODE_ENV') {
+          return process.env.NODE_ENV ?? 'test';
+        }
+        return TEST_AUTO_RELEASE_SOURCE;
+      }),
+    } as unknown as jest.Mocked<ConfigService>;
+
     worker = new AutoReleaseWorker(
       escrowRepository,
       disputeRepository,
       contractService,
+      configService,
     );
   });
 
@@ -190,6 +205,37 @@ describe('AutoReleaseWorker', () => {
       expect(escrowRepository.markAutoReleaseCompleted).toHaveBeenCalledWith(
         'escrow-ok',
         'tx-hash-ok',
+      );
+    });
+  });
+
+  describe('auto-release source configuration (issue #500)', () => {
+    it('does not submit and clears the claim when AUTO_RELEASE_SOURCE_ADDRESS is unset', async () => {
+      configService.get.mockReturnValue(undefined);
+      const escrow = makeEscrow();
+      escrowRepository.findAutoReleaseEligible.mockResolvedValue([escrow]);
+      disputeRepository.findByEscrow.mockResolvedValue(null);
+
+      await worker.run();
+
+      expect(contractService.submitAutoRelease).not.toHaveBeenCalled();
+      expect(escrowRepository.markAutoReleaseCompleted).not.toHaveBeenCalled();
+      expect(escrowRepository.clearAutoReleaseSubmitting).toHaveBeenCalledWith(
+        'escrow-1',
+      );
+    });
+
+    it('submits using the address resolved from ConfigService when configured', async () => {
+      const escrow = makeEscrow();
+      escrowRepository.findAutoReleaseEligible.mockResolvedValue([escrow]);
+      disputeRepository.findByEscrow.mockResolvedValue(null);
+      contractService.submitAutoRelease.mockResolvedValue('tx-hash-abc');
+
+      await worker.run();
+
+      expect(contractService.submitAutoRelease).toHaveBeenCalledWith(
+        'escrow-1',
+        TEST_AUTO_RELEASE_SOURCE,
       );
     });
   });

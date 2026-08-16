@@ -1,5 +1,6 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import { Prisma } from '@prisma/client';
 import { createHmac } from 'crypto';
 import request from 'supertest';
 import { AppModule } from '../../src/app.module';
@@ -85,7 +86,7 @@ describe('Admin DLQ Operations (issue #297)', () => {
         operation: overrides?.operation ?? 'submitAutoRelease',
         escrowId: overrides?.escrowId ?? null,
         errorMessage: overrides?.errorMessage ?? 'Stellar network timeout',
-        ledgerFeedback: null,
+        ledgerFeedback: Prisma.DbNull,
         status: 'PENDING_REVIEW',
         attempts: 1,
       },
@@ -93,7 +94,7 @@ describe('Admin DLQ Operations (issue #297)', () => {
   }
 
   describe('GET /admin/dlq', () => {
-    it('lists DLQ entries', async () => {
+    it('lists DLQ entries with pagination defaults', async () => {
       await seedDlqEntry({ operation: 'submitAutoRelease' });
       await seedDlqEntry({
         operation: 'recordDelivery',
@@ -105,11 +106,15 @@ describe('Admin DLQ Operations (issue #297)', () => {
         .set('Authorization', `Bearer ${adminJwt()}`)
         .expect(200);
 
-      expect(Array.isArray(res.body)).toBe(true);
-      expect(res.body).toHaveLength(2);
+      expect(res.body).toHaveProperty('data');
+      expect(Array.isArray(res.body.data)).toBe(true);
+      expect(res.body.data).toHaveLength(2);
+      expect(res.body.total).toBe(2);
+      expect(res.body.page).toBe(1);
+      expect(res.body.limit).toBe(20);
     });
 
-    it('filters by status', async () => {
+    it('filters by status and supports page/limit pagination', async () => {
       const entry = await seedDlqEntry();
       await prisma.failedTransaction.update({
         where: { id: entry.id },
@@ -120,11 +125,14 @@ describe('Admin DLQ Operations (issue #297)', () => {
       const res = await request(httpServer())
         .get('/admin/dlq')
         .set('Authorization', `Bearer ${adminJwt()}`)
-        .query({ status: 'PENDING_REVIEW' })
+        .query({ status: 'PENDING_REVIEW', page: 1, limit: 10 })
         .expect(200);
 
-      expect(res.body).toHaveLength(1);
-      expect(res.body[0].status).toBe('PENDING_REVIEW');
+      expect(res.body.data).toHaveLength(1);
+      expect(res.body.data[0].status).toBe('PENDING_REVIEW');
+      expect(res.body.total).toBe(1);
+      expect(res.body.page).toBe(1);
+      expect(res.body.limit).toBe(10);
     });
 
     it('filters by operation', async () => {
@@ -137,8 +145,8 @@ describe('Admin DLQ Operations (issue #297)', () => {
         .query({ operation: 'submitAutoRelease' })
         .expect(200);
 
-      expect(res.body).toHaveLength(1);
-      expect(res.body[0].operation).toBe('submitAutoRelease');
+      expect(res.body.data).toHaveLength(1);
+      expect(res.body.data[0].operation).toBe('submitAutoRelease');
     });
   });
 

@@ -28,7 +28,10 @@ describe('AnalyticsController', () => {
     it('delegates to service with user address', async () => {
       const statsResponse = {
         stats: { totalVolume: 0 },
-        channels: { email: { notificationsEnabled: false }, sms: { notificationsEnabled: false } },
+        channels: {
+          email: { notificationsEnabled: false },
+          sms: { notificationsEnabled: false },
+        },
         lastUpdated: new Date().toISOString(),
       };
       service.getTransactionStats.mockResolvedValue(statsResponse as any);
@@ -72,7 +75,11 @@ describe('AnalyticsController', () => {
     });
 
     it('passes custom timezone param through', async () => {
-      await controller.getDailyVolumeChart(undefined, 'America/New_York', mockUser);
+      await controller.getDailyVolumeChart(
+        undefined,
+        'America/New_York',
+        mockUser,
+      );
 
       expect(service.getDailyVolumeChart).toHaveBeenCalledWith(
         'GVENDOR123',
@@ -83,32 +90,56 @@ describe('AnalyticsController', () => {
 
     it('falls back to 30 days for invalid days param', async () => {
       await controller.getDailyVolumeChart('abc', undefined, mockUser);
-      expect(service.getDailyVolumeChart).toHaveBeenCalledWith('GVENDOR123', 30, 'UTC');
+      expect(service.getDailyVolumeChart).toHaveBeenCalledWith(
+        'GVENDOR123',
+        30,
+        'UTC',
+      );
     });
 
     it('falls back to 30 days for negative days', async () => {
       await controller.getDailyVolumeChart('-5', undefined, mockUser);
-      expect(service.getDailyVolumeChart).toHaveBeenCalledWith('GVENDOR123', 30, 'UTC');
+      expect(service.getDailyVolumeChart).toHaveBeenCalledWith(
+        'GVENDOR123',
+        30,
+        'UTC',
+      );
     });
 
     it('falls back to 30 days for days > 365', async () => {
       await controller.getDailyVolumeChart('999', undefined, mockUser);
-      expect(service.getDailyVolumeChart).toHaveBeenCalledWith('GVENDOR123', 30, 'UTC');
+      expect(service.getDailyVolumeChart).toHaveBeenCalledWith(
+        'GVENDOR123',
+        30,
+        'UTC',
+      );
     });
 
     it('falls back to 30 days for zero', async () => {
       await controller.getDailyVolumeChart('0', undefined, mockUser);
-      expect(service.getDailyVolumeChart).toHaveBeenCalledWith('GVENDOR123', 30, 'UTC');
+      expect(service.getDailyVolumeChart).toHaveBeenCalledWith(
+        'GVENDOR123',
+        30,
+        'UTC',
+      );
     });
 
     it('accepts max valid days (365)', async () => {
       await controller.getDailyVolumeChart('365', undefined, mockUser);
-      expect(service.getDailyVolumeChart).toHaveBeenCalledWith('GVENDOR123', 365, 'UTC');
+      expect(service.getDailyVolumeChart).toHaveBeenCalledWith(
+        'GVENDOR123',
+        365,
+        'UTC',
+      );
     });
 
     it('falls back to 30 for 366', async () => {
       await controller.getDailyVolumeChart('366', undefined, mockUser);
-      expect(service.getDailyVolumeChart).toHaveBeenCalledWith('GVENDOR123', 30, 'UTC');
+      expect(service.getDailyVolumeChart).toHaveBeenCalledWith(
+        'GVENDOR123',
+        30,
+        'UTC',
+      );
     });
 
     it('passes both custom days and timezone', async () => {

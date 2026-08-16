@@ -6,6 +6,7 @@ import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { ContractService } from '../src/stellar/contract.service';
 import { AutoReleaseWorker } from '../src/workers/auto-release.worker';
+import { EscrowService } from '../src/escrow/escrow.service';
 import { bearer } from './auth-helper';
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -19,6 +20,27 @@ describe('Happy-Path E2E — full escrow lifecycle (issue #56)', () => {
   let prisma: PrismaService;
   let contractService: ContractService;
   let autoReleaseWorker: AutoReleaseWorker;
+  let escrowService: EscrowService;
+
+  // Issue #494 changed escrow creation to start in CREATED, not FUNDED.
+  // There is no HTTP endpoint for funding — in production it happens via
+  // SorobanPollerService observing an on-chain payment and calling
+  // EscrowService.syncStateFromChain directly (see
+  // src/stellar/soroban-poller.service.ts). Tests that need a FUNDED escrow
+  // drive it through that same real code path rather than writing the state
+  // into Postgres by hand, so this also exercises the notifyFunded call and
+  // the funded-at bookkeeping that syncStateFromChain performs.
+  async function fundEscrow(escrowId: string): Promise<void> {
+    const result = await escrowService.syncStateFromChain({
+      eventType: 'EscrowFunded',
+      escrowId,
+    });
+    if (result.skipped) {
+      throw new Error(
+        `fundEscrow: syncStateFromChain skipped (${result.reason}) for ${escrowId}`,
+      );
+    }
+  }
 
   beforeEach(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -38,6 +60,7 @@ describe('Happy-Path E2E — full escrow lifecycle (issue #56)', () => {
     prisma = app.get(PrismaService);
     contractService = app.get(ContractService);
     autoReleaseWorker = app.get(AutoReleaseWorker);
+    escrowService = app.get(EscrowService);
 
     await prisma.reset();
 
@@ -80,11 +103,11 @@ describe('Happy-Path E2E — full escrow lifecycle (issue #56)', () => {
 
     const escrowId: string = createRes.body.id;
     expect(escrowId).toBeDefined();
-    expect(createRes.body.state).toBe('FUNDED');
+    expect(createRes.body.state).toBe('CREATED');
 
     // DB sanity check
     const created = await prisma.escrow.findUnique({ where: { id: escrowId } });
-    expect(created?.state).toBe('FUNDED');
+    expect(created?.state).toBe('CREATED');
     expect(created?.vendorAddress).toBe(VENDOR_ADDRESS);
     expect(created?.buyerAddress).toBe(BUYER_ADDRESS);
 
@@ -104,6 +127,11 @@ describe('Happy-Path E2E — full escrow lifecycle (issue #56)', () => {
     expect(afterContact?.buyerContactEmail).not.toBe('buyer@example.com');
     expect(afterContact?.buyerContactPhone).toBeDefined();
     expect(afterContact?.buyerContactPhone).not.toBe('+2348012345678');
+    expect(afterContact?.state).toBe('CREATED');
+
+    // ── 2b. Buyer pays — the on-chain poller observes the payment and syncs
+    // the escrow to FUNDED (issue #494/#549) ───────────────────────────────
+    await fundEscrow(escrowId);
 
     // ── 3. GET /escrow/:id must not expose contact fields ─────────────────
     const publicRes = await request(app.getHttpServer())
@@ -295,8 +323,12 @@ describe('Happy-Path E2E — full escrow lifecycle (issue #56)', () => {
 
     const escrowId: string = createRes.body.id;
 
+    // Issue #549: the escrow is CREATED (not FUNDED) at this point, so the
+    // FUNDED-only PATCH /escrow/:id/cancel is the wrong endpoint here — the
+    // CREATED-only DELETE /escrow/:id (cancelPendingEscrow) is what
+    // actually cancels it.
     await request(app.getHttpServer())
-      .patch(`/escrow/${escrowId}/cancel`)
+      .delete(`/escrow/${escrowId}`)
       .set('Authorization', bearer(VENDOR_ADDRESS))
       .expect(200);
 
@@ -323,6 +355,11 @@ describe('Happy-Path E2E — full escrow lifecycle (issue #56)', () => {
       .expect(201);
 
     const escrowId: string = createRes.body.id;
+
+    // Issue #549: shipment requires FUNDED; fund it through the real sync
+    // path first so the *first* ship succeeds and the test actually
+    // exercises "already shipped", not "not yet funded".
+    await fundEscrow(escrowId);
 
     await request(app.getHttpServer())
       .patch(`/escrow/${escrowId}/ship`)

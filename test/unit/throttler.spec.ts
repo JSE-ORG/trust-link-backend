@@ -16,11 +16,9 @@ describe('ThrottlerGuard configuration', () => {
     expect(throttlerGuardProvider).toBeDefined();
   });
 
-  it('auth throttler has correct default ttl and limit', async () => {
+  it('default throttler uses public limits (60/min)', async () => {
     const moduleRef = await Test.createTestingModule({
-      imports: [
-        ThrottlerModule.forRoot([{ name: 'auth', ttl: 60000, limit: 10 }]),
-      ],
+      imports: [ThrottlerModule.forRoot([{ ttl: 60000, limit: 60 }])],
       providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
     }).compile();
 
@@ -30,10 +28,10 @@ describe('ThrottlerGuard configuration', () => {
     await moduleRef.close();
   });
 
-  it('public throttler has correct default ttl and limit', async () => {
+  it('auth throttler can be configured for auth routes', async () => {
     const moduleRef = await Test.createTestingModule({
       imports: [
-        ThrottlerModule.forRoot([{ name: 'public', ttl: 60000, limit: 60 }]),
+        ThrottlerModule.forRoot([{ name: 'auth', ttl: 60000, limit: 10 }]),
       ],
       providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
     }).compile();
@@ -42,11 +40,11 @@ describe('ThrottlerGuard configuration', () => {
     await moduleRef.close();
   });
 
-  it('evidence-upload throttler has correct default ttl and limit', async () => {
+  it('evidence-upload throttler can be configured for evidence routes', async () => {
     const moduleRef = await Test.createTestingModule({
       imports: [
         ThrottlerModule.forRoot([
-          { name: 'evidence-upload', ttl: 60000, limit: 10 },
+          { name: 'evidenceUpload', ttl: 60000, limit: 10 },
         ]),
       ],
       providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
@@ -56,13 +54,13 @@ describe('ThrottlerGuard configuration', () => {
     await moduleRef.close();
   });
 
-  it('all three named throttlers can coexist in a single module', async () => {
+  it('named throttlers coexist with the default', async () => {
     const moduleRef = await Test.createTestingModule({
       imports: [
         ThrottlerModule.forRoot([
+          { ttl: 60000, limit: 60 },
           { name: 'auth', ttl: 60000, limit: 10 },
-          { name: 'public', ttl: 60000, limit: 60 },
-          { name: 'evidence-upload', ttl: 60000, limit: 10 },
+          { name: 'evidenceUpload', ttl: 60000, limit: 10 },
         ]),
       ],
       providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],

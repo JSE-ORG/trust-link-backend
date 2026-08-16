@@ -7,13 +7,9 @@ import {
 import { DisputeRepository } from '../dispute/dispute.repository';
 import { EscrowRepository } from '../escrow/escrow.repository';
 import { ContractService } from '../stellar/contract.service';
+import { ConfigService } from '../config/config.service';
 
 const EVERY_5_MINUTES = 5 * 60 * 1000;
-
-// Stellar address of the auto-release signing account. Must be set in production.
-const AUTO_RELEASE_SOURCE =
-  process.env.AUTO_RELEASE_SOURCE_ADDRESS ??
-  'GAUTORELEASE000000000000000000000000000000000000000000000';
 
 @Injectable()
 export class AutoReleaseWorker implements OnModuleInit, OnApplicationShutdown {
@@ -24,10 +20,34 @@ export class AutoReleaseWorker implements OnModuleInit, OnApplicationShutdown {
     private readonly escrowRepository: EscrowRepository,
     private readonly disputeRepository: DisputeRepository,
     private readonly contractService: ContractService,
+    private readonly configService: ConfigService,
   ) {}
 
+  /**
+   * Returns the configured auto-release signing address, or throws.
+   *
+   * Resolved on use through `ConfigService`, matching `dlq.controller.ts`.
+   * `AUTO_RELEASE_SOURCE_ADDRESS` is deliberately optional (issue #500's
+   * technical notes), so this cannot be a constructor dependency: throwing at
+   * construction would make Nest refuse to instantiate this worker whenever
+   * the variable is unset, taking down the whole application boot instead of
+   * just the auto-release path.
+   */
+  private requireAutoReleaseSource(): string {
+    const address = this.configService.get<string>(
+      'AUTO_RELEASE_SOURCE_ADDRESS',
+    );
+    if (!address) {
+      throw new Error(
+        'AUTO_RELEASE_SOURCE_ADDRESS is not configured; refusing to submit ' +
+          'auto-release transactions.',
+      );
+    }
+    return address;
+  }
+
   onModuleInit(): void {
-    if (process.env.NODE_ENV === 'test') {
+    if (this.configService.get('NODE_ENV') === 'test') {
       return;
     }
 
@@ -81,7 +101,7 @@ export class AutoReleaseWorker implements OnModuleInit, OnApplicationShutdown {
           try {
             const txHash = await this.contractService.submitAutoRelease(
               escrow.id,
-              AUTO_RELEASE_SOURCE,
+              this.requireAutoReleaseSource(),
             );
             await this.escrowRepository.markAutoReleaseCompleted(
               escrow.id,

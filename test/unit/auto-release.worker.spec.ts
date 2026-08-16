@@ -3,6 +3,7 @@ import { DisputeRepository } from '../../src/dispute/dispute.repository';
 import { EscrowRepository } from '../../src/escrow/escrow.repository';
 import { AutoReleaseWorker } from '../../src/workers/auto-release.worker';
 import { ContractService } from '../../src/stellar/contract.service';
+import { ConfigService } from '../../src/config/config.service';
 import { EscrowRecord } from '../../src/prisma/prisma.service';
 
 describe('AutoReleaseWorker (issue #10)', () => {
@@ -39,6 +40,12 @@ describe('AutoReleaseWorker (issue #10)', () => {
         { provide: EscrowRepository, useValue: escrowRepository },
         { provide: DisputeRepository, useValue: disputeRepository },
         { provide: ContractService, useValue: contractService },
+        {
+          provide: ConfigService,
+          useValue: {
+            get: jest.fn((key: string) => process.env[key]),
+          },
+        },
       ],
     }).compile();
 

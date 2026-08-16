@@ -1,7 +1,9 @@
-# Dependencies and build output
+# Dependencies and build output.
+# Coverage is matched with a trailing slash so any variant is caught —
+# `coverage-full/` was committed once as 181 files of generated HTML.
 /node_modules
 /dist
-/coverage
+coverage*/
 /openapi.json
 .eslintcache
 

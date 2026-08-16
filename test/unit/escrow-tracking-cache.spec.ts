@@ -12,7 +12,7 @@ import { NotFoundException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { EscrowService } from '../../src/escrow/escrow.service';
 import { EscrowRepository } from '../../src/escrow/escrow.repository';
-import { LogisticsService, TrackingDetails } from '../../src/logistics/logistics.service';
+import { LogisticsService } from '../../src/logistics/logistics.service';
 import { CacheService } from '../../src/cache/cache.service';
 import { NotificationsService } from '../../src/notifications/notifications.service';
 import { EscrowRecord } from '../../src/prisma/prisma.service';
@@ -108,7 +108,7 @@ describe('EscrowService tracking cache (issue #308)', () => {
       cacheService.get.mockResolvedValue(null);
       logisticsService.getStatus.mockResolvedValue({
         status: 'IN_TRANSIT',
-      } as TrackingDetails);
+      } as any);
 
       await service.getTracking(ESCROW_ID);
 
@@ -151,7 +151,7 @@ describe('EscrowService tracking cache (issue #308)', () => {
       cacheService.get.mockResolvedValue(null);
       logisticsService.getStatus.mockResolvedValue({
         status: 'PENDING',
-      } as TrackingDetails);
+      } as any);
 
       await service.getTracking(ESCROW_ID);
 

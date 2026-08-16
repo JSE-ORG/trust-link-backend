@@ -36,6 +36,15 @@ export interface ListFailedTransactionsQuery {
   status?: FailedTransactionStatus;
   operation?: string;
   escrowId?: string;
+  page?: number;
+  limit?: number;
+}
+
+export interface PaginatedFailedTransactions {
+  data: FailedTransactionRecord[];
+  total: number;
+  page: number;
+  limit: number;
 }
 
 /**

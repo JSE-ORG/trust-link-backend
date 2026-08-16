@@ -18,6 +18,10 @@ describe('POST /webhooks/stellar (issue #294)', () => {
 
   const WEBHOOK_SECRET = 'test-webhook-hmac-secret-key-32ch';
   const BUYER_ADDR = 'GWEBHOOKBUYER001';
+  const WEBHOOK_SECRET = 'test-webhook-integration-secret';
+
+  const sign = (body: Buffer, secret: string): string =>
+    crypto.createHmac('sha256', secret).update(body).digest('hex');
 
   const sign = (body: Buffer, secret: string): string =>
     crypto.createHmac('sha256', secret).update(body).digest('hex');
@@ -25,6 +29,8 @@ describe('POST /webhooks/stellar (issue #294)', () => {
   jest.setTimeout(30000);
 
   beforeEach(async () => {
+    process.env.STELLAR_WEBHOOK_SECRET = WEBHOOK_SECRET;
+
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
@@ -64,6 +70,7 @@ describe('POST /webhooks/stellar (issue #294)', () => {
   });
 
   afterEach(async () => {
+    delete process.env.STELLAR_WEBHOOK_SECRET;
     await app.close();
   });
 
@@ -209,15 +216,15 @@ describe('POST /webhooks/stellar (issue #294)', () => {
   // ── Missing required fields ───────────────────────────────────────────────
 
   it('returns 400 when payload is missing required fields', async () => {
-    const payload = { type: 'payment' };
-    const body = Buffer.from(JSON.stringify(payload), 'utf8');
+    const invalidPayload = { type: 'payment' };
+    const body = Buffer.from(JSON.stringify(invalidPayload), 'utf8');
     const sig = sign(body, WEBHOOK_SECRET);
 
     await request(app.getHttpServer())
       .post('/webhooks/stellar')
       .set('Content-Type', 'application/json')
       .set('x-stellar-signature', sig)
-      .send(payload)
+      .send(invalidPayload)
       .expect(400);
   });
 });

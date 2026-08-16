@@ -31,6 +31,21 @@ describe('EscrowRepository – auto-release index query (issue #310)', () => {
     prisma = new PrismaService();
     repository = new EscrowRepository(prisma);
     await prisma.reset();
+    await prisma.vendorProfile.createMany({
+      data: [
+        { address: 'vendor-1', businessName: 'Vendor 1' },
+        { address: 'vendor-2', businessName: 'Vendor 2' },
+        { address: 'vendor-3', businessName: 'Vendor 3' },
+      ],
+      skipDuplicates: true,
+    });
+  });
+
+  afterEach(async () => {
+    // Each `new PrismaService()` opens its own connection pool. Constructed in
+    // beforeEach across ~100 suites, undisconnected clients exhaust Postgres
+    // (`sorry, too many clients already`) partway through a full run.
+    await prisma?.$disconnect();
   });
 
   // ── (state, deliveredAt) index path ──────────────────────────────────────

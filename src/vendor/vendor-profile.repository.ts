@@ -3,6 +3,7 @@ import {
   PrismaService,
   VendorProfileRecord,
   VendorTrackingSettingsRecord,
+  toVendorTrackingSettingsRecord,
 } from '../prisma/prisma.service';
 import { CreateVendorProfileDto } from './dto/create-vendor-profile.dto';
 import { UpdateVendorProfileDto } from './dto/update-vendor-profile.dto';
@@ -107,7 +108,9 @@ export class VendorProfileRepository {
       },
     });
 
-    return { trackingSettings };
+    return {
+      trackingSettings: toVendorTrackingSettingsRecord(trackingSettings),
+    };
   }
 
   /** Returns notification preferences for the vendor, falling back to platform defaults if not configured. */

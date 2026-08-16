@@ -15,6 +15,7 @@ import {
   GiglUnauthorizedError,
   GiglNetworkError,
   GiglProviderError,
+  GiglInvalidResponseError,
 } from './gigl.client';
 import { GiglTrackingResponse } from './gigl.types';
 
@@ -269,6 +270,16 @@ describe('GiglLogisticsService', () => {
       );
     });
 
+    it('propagates GiglProviderError when the upstream returns HTTP 404', async () => {
+      const error = new GiglProviderError('TRK-404', 404);
+      client.fetchTracking.mockRejectedValue(error);
+
+      await expect(service.getStatus('TRK-404')).rejects.toThrow(
+        GiglProviderError,
+      );
+      await expect(service.getStatus('TRK-404')).rejects.toThrow(/HTTP 404/);
+    });
+
     it('propagates GiglProviderError when the upstream returns HTTP 500', async () => {
       const error = new GiglProviderError('TRK-ERR', 500);
       client.fetchTracking.mockRejectedValue(error);
@@ -286,6 +297,27 @@ describe('GiglLogisticsService', () => {
       await expect(service.getStatus('TRK-503')).rejects.toThrow(
         GiglProviderError,
       );
+    });
+
+    it('fails clearly and logs a warning when constructed without a client', async () => {
+      const unconfiguredService = new GiglLogisticsService(null);
+      const loggerSpy = jest
+        .spyOn((unconfiguredService as any).logger, 'warn')
+        .mockImplementation();
+
+      await unconfiguredService.onModuleInit();
+
+      expect(loggerSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Logistics provider is not configured'),
+      );
+
+      await expect(
+        unconfiguredService.getStatus('TRK-NO-CLIENT'),
+      ).rejects.toThrow('Logistics service is not configured');
+
+      await expect(
+        unconfiguredService.getTrackingDetails('TRK-NO-CLIENT'),
+      ).rejects.toThrow('Logistics service is not configured');
     });
   });
 
@@ -320,6 +352,18 @@ describe('GiglLogisticsService', () => {
 
       await expect(service.getTrackingDetails('TRK-ERR')).rejects.toThrow(
         GiglProviderError,
+      );
+    });
+
+    it('propagates GiglInvalidResponseError from getTrackingDetails when the upstream returns a malformed body', async () => {
+      const error = new GiglInvalidResponseError(
+        'TRK-SHAPE-2',
+        'response body is missing one or more required fields',
+      );
+      client.fetchTracking.mockRejectedValue(error);
+
+      await expect(service.getTrackingDetails('TRK-SHAPE-2')).rejects.toThrow(
+        GiglInvalidResponseError,
       );
     });
   });

@@ -4,6 +4,7 @@ import { AppModule } from '../../src/app.module';
 import { PrismaService } from '../../src/prisma/prisma.service';
 import { ContractService } from '../../src/stellar/contract.service';
 import { EscrowRepository } from '../../src/escrow/escrow.repository';
+import { ensureVendors } from '../prisma-helpers';
 
 describe('Auto-Release Idempotency Key Locking (issue #296)', () => {
   let app: INestApplication;
@@ -29,6 +30,10 @@ describe('Auto-Release Idempotency Key Locking (issue #296)', () => {
 
   beforeEach(async () => {
     await prisma.reset();
+    // Escrow.vendorAddress (and the vendor settings/details tables) are
+    // foreign keys onto VendorProfile.address, so the parent rows must exist
+    // before any row referencing them can be written (#475).
+    await ensureVendors(prisma, 'vendor-address');
 
     jest
       .spyOn(contractService, 'submitAutoRelease')

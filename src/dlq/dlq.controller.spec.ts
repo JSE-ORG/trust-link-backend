@@ -1,4 +1,6 @@
-import { Test, TestingModule } from '@nestjs/testing';
+import { ServiceUnavailableException } from '@nestjs/common';
+import { Test } from '@nestjs/testing';
+import type { TestingModule } from '@nestjs/testing';
 import { DlqController } from './dlq.controller';
 import { DlqService } from './dlq.service';
 import { ContractService } from '../stellar/contract.service';
@@ -55,17 +57,34 @@ describe('DlqController', () => {
     };
   };
 
-  describe('startup', () => {
-    it('throws when AUTO_RELEASE_SOURCE_ADDRESS is unset', async () => {
-      await expect(buildController(undefined)).rejects.toThrow(
-        'AUTO_RELEASE_SOURCE_ADDRESS must be set',
-      );
+  describe('missing AUTO_RELEASE_SOURCE_ADDRESS', () => {
+    // The address is resolved when replay is called, not in the constructor.
+    // `config.module.ts` declares AUTO_RELEASE_SOURCE_ADDRESS optional, so
+    // throwing at construction stopped Nest instantiating the controller and
+    // took the whole application down with it: NestFactory.create failed, so
+    // `npm run start` and `npm run openapi:generate` both broke. Only the
+    // replay endpoint should be unavailable when the address is unset.
+
+    it('still constructs when the address is unset', async () => {
+      await expect(buildController(undefined)).resolves.toBeDefined();
     });
 
-    it('throws when AUTO_RELEASE_SOURCE_ADDRESS is an empty string', async () => {
-      await expect(buildController('')).rejects.toThrow(
-        'AUTO_RELEASE_SOURCE_ADDRESS must be set',
+    it('still constructs when the address is an empty string', async () => {
+      await expect(buildController('')).resolves.toBeDefined();
+    });
+
+    it('rejects replay with 503 when the address is unset', async () => {
+      const { controller, dlq, contract } = await buildController(undefined);
+      dlq.get.mockResolvedValue(autoReleaseRecord);
+      dlq.replay.mockImplementation(async (_id, replay) => {
+        await replay(autoReleaseRecord);
+        return autoReleaseRecord;
+      });
+
+      await expect(controller.replay(autoReleaseRecord.id)).rejects.toThrow(
+        ServiceUnavailableException,
       );
+      expect(contract.submitAutoRelease).not.toHaveBeenCalled();
     });
   });
 
@@ -135,35 +154,47 @@ describe('DlqController', () => {
   });
 
   describe('GET /admin/dlq', () => {
-    it('passes query filters to dlq.list()', async () => {
+    it('passes query filters, page, and limit to dlq.list()', async () => {
       const { controller, dlq } = await buildController(
         'GAUTORELEASESOURCEADDRESS0000000000000000000000000000',
       );
-      dlq.list.mockResolvedValue([autoReleaseRecord]);
+      const paginated = {
+        data: [autoReleaseRecord],
+        total: 1,
+        page: 2,
+        limit: 10,
+      };
+      dlq.list.mockResolvedValue(paginated);
 
       const result = await controller.list(
         'PENDING_REVIEW',
         'submitAutoRelease',
         'escrow-123',
+        '2',
+        '10',
       );
 
       expect(dlq.list).toHaveBeenCalledWith({
         status: 'PENDING_REVIEW',
         operation: 'submitAutoRelease',
         escrowId: 'escrow-123',
+        page: 2,
+        limit: 10,
       });
-      expect(result).toEqual([autoReleaseRecord]);
+      expect(result).toEqual(paginated);
     });
 
     it('passes empty query when no filters are provided', async () => {
       const { controller, dlq } = await buildController(
         'GAUTORELEASESOURCEADDRESS0000000000000000000000000000',
       );
-      dlq.list.mockResolvedValue([]);
+      const emptyPaginated = { data: [], total: 0, page: 1, limit: 20 };
+      dlq.list.mockResolvedValue(emptyPaginated);
 
-      await controller.list();
+      const result = await controller.list();
 
       expect(dlq.list).toHaveBeenCalledWith({});
+      expect(result).toEqual(emptyPaginated);
     });
   });
 
@@ -189,7 +220,7 @@ describe('DlqController', () => {
       const abandonedRecord = {
         ...autoReleaseRecord,
         status: 'ABANDONED',
-      };
+      } as FailedTransactionRecord;
       dlq.abandon.mockResolvedValue(abandonedRecord);
 
       const result = await controller.abandon('failed-tx-1');

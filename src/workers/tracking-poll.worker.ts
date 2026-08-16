@@ -7,6 +7,7 @@ import {
 import { EscrowRepository } from '../escrow/escrow.repository';
 import { LogisticsService } from '../logistics/logistics.service';
 import { ContractService } from '../stellar/contract.service';
+import { ConfigService } from '../config/config.service';
 
 const EVERY_10_MINUTES = 10 * 60 * 1000;
 
@@ -19,10 +20,11 @@ export class TrackingPollWorker implements OnModuleInit, OnApplicationShutdown {
     private readonly escrowRepository: EscrowRepository,
     private readonly logisticsService: LogisticsService,
     private readonly contractService: ContractService,
+    private readonly configService: ConfigService,
   ) {}
 
   onModuleInit(): void {
-    if (process.env.NODE_ENV === 'test') {
+    if (this.configService.get('NODE_ENV') === 'test') {
       return;
     }
 
@@ -55,9 +57,24 @@ export class TrackingPollWorker implements OnModuleInit, OnApplicationShutdown {
             continue;
           }
 
-          const deliveredAt = new Date();
-          await this.escrowRepository.markDelivered(escrow.id, deliveredAt);
-          await this.contractService.recordDelivery(escrow.id);
+          // Claim the escrow before any network call. This follows the same
+          // claim-and-release pattern as AutoReleaseWorker (#507): if the
+          // contract call fails, the claim is cleared so the next poll cycle
+          // retries. Without this, a failed recordDelivery leaves the escrow
+          // in DELIVERED state permanently out of sync with the chain.
+          const claimed = await this.escrowRepository.claimDelivery(escrow.id);
+          if (!claimed) {
+            continue;
+          }
+
+          try {
+            await this.contractService.recordDelivery(escrow.id);
+            await this.escrowRepository.markDelivered(escrow.id, new Date());
+          } catch (error) {
+            // Release the claim so the next poll cycle can retry.
+            await this.escrowRepository.clearDeliveryClaim(escrow.id);
+            throw error;
+          }
         } catch (error) {
           this.logger.error(
             JSON.stringify({

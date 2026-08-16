@@ -1,9 +1,14 @@
-import { BadRequestException, InternalServerErrorException, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  InternalServerErrorException,
+  UnauthorizedException,
+} from '@nestjs/common';
+import { Logger } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import * as crypto from 'crypto';
 import { ConfigService } from '../../src/config/config.service';
 import { EscrowRepository } from '../../src/escrow/escrow.repository';
-import { EscrowRecord } from '../../src/prisma/prisma.service';
+import { NotificationsService } from '../../src/notifications/notifications.service';
 import { StellarWebhookDto } from '../../src/webhooks/dto/stellar-webhook.dto';
 import { StellarWebhookService } from '../../src/webhooks/stellar-webhook.service';
 
@@ -11,6 +16,7 @@ describe('StellarWebhookService (issue #76)', () => {
   let service: StellarWebhookService;
   let configService: jest.Mocked<ConfigService>;
   let escrowRepository: jest.Mocked<EscrowRepository>;
+  let notificationsService: jest.Mocked<NotificationsService>;
 
   const SECRET = 'test-webhook-secret';
 
@@ -66,11 +72,16 @@ describe('StellarWebhookService (issue #76)', () => {
       updateState: jest.fn(),
     } as unknown as jest.Mocked<EscrowRepository>;
 
+    notificationsService = {
+      notifyFunded: jest.fn(),
+    } as unknown as jest.Mocked<NotificationsService>;
+
     const moduleRef = await Test.createTestingModule({
       providers: [
         StellarWebhookService,
         { provide: ConfigService, useValue: configService },
         { provide: EscrowRepository, useValue: escrowRepository },
+        { provide: NotificationsService, useValue: notificationsService },
       ],
     }).compile();
 
@@ -78,6 +89,16 @@ describe('StellarWebhookService (issue #76)', () => {
   });
 
   // ── Signature verification ─────────────────────────────────────────────────
+
+  it('rejects when STELLAR_WEBHOOK_SECRET is not configured', async () => {
+    configService.get.mockReturnValue(undefined);
+    const dto = makeDto();
+    const raw = Buffer.from(JSON.stringify(dto));
+
+    await expect(service.handleEvent(raw, undefined, dto)).rejects.toThrow(
+      InternalServerErrorException,
+    );
+  });
 
   it('accepts a valid HMAC-SHA256 signature', async () => {
     configService.get.mockReturnValue(SECRET);
@@ -112,47 +133,20 @@ describe('StellarWebhookService (issue #76)', () => {
     );
   });
 
-  it('rejects with InternalServerErrorException when STELLAR_WEBHOOK_SECRET is not configured', async () => {
-    configService.get.mockReturnValue(undefined);
-    const dto = makeDto();
-    const raw = Buffer.from(JSON.stringify(dto));
-
-    await expect(service.handleEvent(raw, undefined, dto)).rejects.toThrow(
-      InternalServerErrorException,
-    );
-  });
-
-  it('logs a configuration error when STELLAR_WEBHOOK_SECRET is missing', async () => {
-    configService.get.mockReturnValue(undefined);
-    const dto = makeDto();
-    const raw = Buffer.from(JSON.stringify(dto));
-    const loggerSpy = jest
-      .spyOn(service['logger'], 'error')
-      .mockImplementation();
-
-    await expect(service.handleEvent(raw, undefined, dto)).rejects.toThrow(
-      InternalServerErrorException,
-    );
-
-    expect(loggerSpy).toHaveBeenCalledWith(
-      expect.stringContaining('stellar.webhook.config_error'),
-      undefined,
-    );
-  });
-
   // ── Idempotency ────────────────────────────────────────────────────────────
 
   it('deduplicates events with the same operation id', async () => {
-    configService.get.mockReturnValue(undefined);
+    configService.get.mockReturnValue(SECRET);
     const dto = makeDto({ id: 'op-dup' });
     const raw = Buffer.from(JSON.stringify(dto));
+    const sig = sign(raw, SECRET);
 
     escrowRepository.findByVendor.mockResolvedValue([]);
 
     // First call – processed
-    await service.handleEvent(raw, undefined, dto);
+    await service.handleEvent(raw, sig, dto);
     // Second call – duplicate
-    const result = await service.handleEvent(raw, undefined, dto);
+    const result = await service.handleEvent(raw, sig, dto);
 
     expect(result).toEqual({
       received: true,
@@ -166,20 +160,25 @@ describe('StellarWebhookService (issue #76)', () => {
   // ── Payment handling ───────────────────────────────────────────────────────
 
   it('updates escrow state on a confirmed deposit', async () => {
-    configService.get.mockReturnValue(undefined);
+    configService.get.mockReturnValue(SECRET);
     // dto.to = vendor address; amount and asset_code match the escrow fixture.
-    const dto = makeDto({ to: 'GVENDOR001', amount: '100.00', asset_code: 'USDC' });
+    const dto = makeDto({
+      to: 'GVENDOR001',
+      amount: '100.00',
+      asset_code: 'USDC',
+    });
     const raw = Buffer.from(JSON.stringify(dto));
+    const sig = sign(raw, SECRET);
 
     const createdEscrow = makeCreatedEscrow();
 
-    escrowRepository.findByVendor.mockResolvedValue([createdEscrow] as never as EscrowRecord[]);
+    escrowRepository.findByVendor.mockResolvedValue([createdEscrow]);
     escrowRepository.updateState.mockResolvedValue({
       ...createdEscrow,
       state: 'FUNDED',
-    } as never as EscrowRecord);
+    } as any);
 
-    const result = await service.handleEvent(raw, undefined, dto);
+    const result = await service.handleEvent(raw, sig, dto);
 
     expect(result).toEqual({ received: true });
     expect(escrowRepository.findByVendor).toHaveBeenCalledWith('GVENDOR001');
@@ -187,40 +186,47 @@ describe('StellarWebhookService (issue #76)', () => {
       'escrow-1',
       'FUNDED',
     );
+    expect(notificationsService.notifyFunded).toHaveBeenCalledWith({
+      ...createdEscrow,
+      state: 'FUNDED',
+    });
   });
 
   it('does nothing when no matching escrow is found', async () => {
-    configService.get.mockReturnValue(undefined);
+    configService.get.mockReturnValue(SECRET);
     const dto = makeDto({ to: 'GUNKNOWN' });
     const raw = Buffer.from(JSON.stringify(dto));
+    const sig = sign(raw, SECRET);
 
     escrowRepository.findByVendor.mockResolvedValue([]);
 
-    const result = await service.handleEvent(raw, undefined, dto);
+    const result = await service.handleEvent(raw, sig, dto);
 
     expect(result).toEqual({ received: true });
     expect(escrowRepository.updateState).not.toHaveBeenCalled();
   });
 
   it('throws BadRequestException when payment event has no destination', async () => {
-    configService.get.mockReturnValue(undefined);
+    configService.get.mockReturnValue(SECRET);
     const dto = makeDto({ to: undefined });
     const raw = Buffer.from(JSON.stringify(dto));
+    const sig = sign(raw, SECRET);
 
-    await expect(service.handleEvent(raw, undefined, dto)).rejects.toThrow(
+    await expect(service.handleEvent(raw, sig, dto)).rejects.toThrow(
       BadRequestException,
     );
   });
 
   it('logs webhook processing failures with event context before rethrowing', async () => {
-    configService.get.mockReturnValue(undefined);
+    configService.get.mockReturnValue(SECRET);
     const dto = makeDto({ id: 'op-fail', to: undefined });
     const raw = Buffer.from(JSON.stringify(dto));
+    const sig = sign(raw, SECRET);
     const loggerSpy = jest
-      .spyOn(service['logger'], 'error')
+      .spyOn(Logger.prototype, 'error')
       .mockImplementation();
 
-    await expect(service.handleEvent(raw, undefined, dto)).rejects.toThrow(
+    await expect(service.handleEvent(raw, sig, dto)).rejects.toThrow(
       BadRequestException,
     );
 
@@ -231,11 +237,12 @@ describe('StellarWebhookService (issue #76)', () => {
   });
 
   it('silently ignores unhandled event types', async () => {
-    configService.get.mockReturnValue(undefined);
+    configService.get.mockReturnValue(SECRET);
     const dto = makeDto({ type: 'account_created', to: undefined });
     const raw = Buffer.from(JSON.stringify(dto));
+    const sig = sign(raw, SECRET);
 
-    const result = await service.handleEvent(raw, undefined, dto);
+    const result = await service.handleEvent(raw, sig, dto);
 
     expect(result).toEqual({ received: true });
     expect(escrowRepository.findByVendor).not.toHaveBeenCalled();

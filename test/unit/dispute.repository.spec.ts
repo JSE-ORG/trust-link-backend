@@ -9,14 +9,60 @@ describe('DisputeRepository (issue #14)', () => {
   let prisma: PrismaService;
 
   beforeEach(async () => {
+    prisma = new PrismaService();
     const moduleRef = await Test.createTestingModule({
-      providers: [DisputeRepository, EscrowRepository, PrismaService],
+      providers: [
+        DisputeRepository,
+        EscrowRepository,
+        { provide: PrismaService, useValue: prisma },
+      ],
     }).compile();
 
     disputeRepository = moduleRef.get(DisputeRepository);
     escrowRepository = moduleRef.get(EscrowRepository);
-    prisma = moduleRef.get(PrismaService);
     await prisma.reset();
+    await prisma.vendorProfile.createMany({
+      data: [{ address: 'vendor-1', businessName: 'Vendor 1' }],
+      skipDuplicates: true,
+    });
+    await prisma.escrow.createMany({
+      data: [
+        {
+          id: 'escrow-1',
+          itemName: 'Item 1',
+          itemRef: 'ref-1',
+          amount: 10,
+          currency: 'USDC',
+          buyerAddress: 'buyer-1',
+          vendorAddress: 'vendor-1',
+        },
+        {
+          id: 'escrow-2',
+          itemName: 'Item 2',
+          itemRef: 'ref-2',
+          amount: 10,
+          currency: 'USDC',
+          buyerAddress: 'buyer-1',
+          vendorAddress: 'vendor-1',
+        },
+        {
+          id: 'escrow-3',
+          itemName: 'Item 3',
+          itemRef: 'ref-3',
+          amount: 10,
+          currency: 'USDC',
+          buyerAddress: 'buyer-1',
+          vendorAddress: 'vendor-1',
+        },
+      ],
+    });
+  });
+
+  afterEach(async () => {
+    // Each `new PrismaService()` opens its own connection pool. Constructed in
+    // beforeEach across ~100 suites, undisconnected clients exhaust Postgres
+    // (`sorry, too many clients already`) partway through a full run.
+    await prisma?.$disconnect();
   });
 
   it('returns open disputes only', async () => {
@@ -45,6 +91,7 @@ describe('DisputeRepository (issue #14)', () => {
     const escrow = await prisma.escrow.create({
       data: {
         itemName: 'Shoes',
+        itemRef: 'ref-shoes',
         amount: 90,
         currency: 'USDC',
         buyerAddress: 'buyer-1',

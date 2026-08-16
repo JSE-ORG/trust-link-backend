@@ -3,11 +3,7 @@ import { ContractService } from '../stellar/contract.service';
 import { EscrowRepository } from './escrow.repository';
 import { AUTO_RELEASE_DAYS } from './escrow.constants';
 import { MILLISECONDS_PER_DAY } from '../common/constants/time.constants';
-
-// Stellar address of the auto-release signing account. Must be set in production.
-const AUTO_RELEASE_SOURCE =
-  process.env.AUTO_RELEASE_SOURCE_ADDRESS ??
-  'GAUTORELEASE000000000000000000000000000000000000000000000';
+import { ConfigService } from '../config/config.service';
 
 @Injectable()
 export class AutoReleaseService {
@@ -16,7 +12,29 @@ export class AutoReleaseService {
   constructor(
     private readonly escrowRepository: EscrowRepository,
     private readonly contractService: ContractService,
+    private readonly configService: ConfigService,
   ) {}
+
+  /**
+   * Returns the configured auto-release signing address, or throws.
+   *
+   * Resolved on use through `ConfigService`, matching `dlq.controller.ts`.
+   * `AUTO_RELEASE_SOURCE_ADDRESS` is deliberately optional, so this is not a
+   * constructor dependency: throwing at construction would prevent Nest from
+   * instantiating this service whenever the variable is unset (issue #500).
+   */
+  private requireAutoReleaseSource(): string {
+    const address = this.configService.get<string>(
+      'AUTO_RELEASE_SOURCE_ADDRESS',
+    );
+    if (!address) {
+      throw new Error(
+        'AUTO_RELEASE_SOURCE_ADDRESS is not configured; refusing to submit ' +
+          'auto-release transactions.',
+      );
+    }
+    return address;
+  }
 
   /** Scans eligible delivered escrows and submits guarded auto-release transactions. */
   async run(): Promise<void> {
@@ -47,7 +65,7 @@ export class AutoReleaseService {
       try {
         const txHash = await this.contractService.submitAutoRelease(
           escrow.id,
-          AUTO_RELEASE_SOURCE,
+          this.requireAutoReleaseSource(),
         );
         await this.escrowRepository.markAutoReleased(escrow.id, txHash);
       } catch (err: unknown) {

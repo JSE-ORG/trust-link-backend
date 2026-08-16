@@ -1,8 +1,12 @@
-import { InternalServerErrorException, UnauthorizedException } from '@nestjs/common';
+import {
+  InternalServerErrorException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import * as crypto from 'crypto';
 import { ConfigService } from '../../src/config/config.service';
 import { EscrowRepository } from '../../src/escrow/escrow.repository';
+import { NotificationsService } from '../../src/notifications/notifications.service';
 import { StellarWebhookDto } from '../../src/webhooks/dto/stellar-webhook.dto';
 import { StellarWebhookService } from '../../src/webhooks/stellar-webhook.service';
 
@@ -15,6 +19,7 @@ import { StellarWebhookService } from '../../src/webhooks/stellar-webhook.servic
  *  - a signature computed over the EXACT raw body bytes is accepted, and
  *  - any deviation (tampered body, wrong secret, malformed/short/long signature,
  *    missing header) is strictly rejected with UnauthorizedException.
+ *  - a missing STELLAR_WEBHOOK_SECRET is rejected with InternalServerErrorException.
  */
 describe('StellarWebhookService — HMAC signature verification (issue #48)', () => {
   let service: StellarWebhookService;
@@ -58,10 +63,28 @@ describe('StellarWebhookService — HMAC signature verification (issue #48)', ()
         StellarWebhookService,
         { provide: ConfigService, useValue: configService },
         { provide: EscrowRepository, useValue: escrowRepository },
+        {
+          provide: NotificationsService,
+          useValue: { notifyFunded: jest.fn() },
+        },
       ],
     }).compile();
 
     service = moduleRef.get(StellarWebhookService);
+  });
+
+  // ── Configuration error: missing secret ───────────────────────────────────
+
+  describe('missing secret', () => {
+    it('rejects when STELLAR_WEBHOOK_SECRET is not configured', async () => {
+      configService.get.mockReturnValue(undefined);
+      const dto = makeDto();
+      const raw = Buffer.from(JSON.stringify(dto), 'utf8');
+
+      await expect(service.handleEvent(raw, 'irrelevant', dto)).rejects.toThrow(
+        InternalServerErrorException,
+      );
+    });
   });
 
   // ── Valid payloads pass verification cleanly ───────────────────────────────
@@ -240,17 +263,5 @@ describe('StellarWebhookService — HMAC signature verification (issue #48)', ()
         UnauthorizedException,
       );
     });
-  });
-
-  // ── Verification is skipped only when no secret is configured ──────────────
-
-  it('rejects with InternalServerErrorException when no secret is configured', async () => {
-    configService.get.mockReturnValue(undefined);
-    const dto = makeDto();
-    const raw = Buffer.from(JSON.stringify(dto), 'utf8');
-
-    await expect(service.handleEvent(raw, 'whatever', dto)).rejects.toThrow(
-      InternalServerErrorException,
-    );
   });
 });

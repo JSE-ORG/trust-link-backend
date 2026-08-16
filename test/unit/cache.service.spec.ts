@@ -118,6 +118,18 @@ describe('CacheService (issue #285) — Redis mode', () => {
 describe('CacheService (issue #285) — in-memory fallback mode', () => {
   let service: CacheService;
 
+  /** Access the private `memory` map for assertions. */
+  function memorySize(): number {
+    return (service as unknown as Record<string, unknown>).memory instanceof Map
+      ? (
+          (service as unknown as Record<string, unknown>).memory as Map<
+            string,
+            unknown
+          >
+        ).size
+      : -1;
+  }
+
   beforeEach(() => {
     MockRedis.mockImplementation(() => {
       throw new Error('should not construct Redis in fallback mode');
@@ -195,6 +207,79 @@ describe('CacheService (issue #285) — in-memory fallback mode', () => {
   describe('onModuleDestroy()', () => {
     it('resolves without error when there is no Redis client', async () => {
       await expect(service.onModuleDestroy()).resolves.toBeUndefined();
+    });
+
+    it('clears the in-memory map', async () => {
+      await service.set('a', 1, 60);
+      await service.set('b', 2, 60);
+      expect(memorySize()).toBe(2);
+      await service.onModuleDestroy();
+      expect(memorySize()).toBe(0);
+    });
+  });
+
+  // ── Issue #506: in-memory fallback eviction ────────────────────────────────
+
+  describe('sweep (issue #506)', () => {
+    it('removes expired entries via periodic sweep without a get() for that key', async () => {
+      jest.useFakeTimers();
+      await service.set('expires-fast', 'gone', 1);
+      await service.set('stays', 'here', 3600);
+
+      // Advance past TTL of first entry but within sweep interval
+      jest.advanceTimersByTime(1500);
+      // After TTL but before sweep, a get() would lazily delete it
+      // Now advance past the sweep interval so the timer fires
+      jest.advanceTimersByTime(61_000);
+
+      // The expired entry should have been swept — verify it's gone
+      expect(await service.get('expires-fast')).toBeNull();
+      // The valid entry is unaffected
+      expect(await service.get('stays')).toBe('here');
+
+      jest.useRealTimers();
+    });
+
+    it('does not remove entries that are still within their TTL window', async () => {
+      jest.useFakeTimers();
+      await service.set('valid-1', 'a', 3600);
+      await service.set('valid-2', 'b', 3600);
+
+      jest.advanceTimersByTime(61_000);
+
+      expect(await service.get('valid-1')).toBe('a');
+      expect(await service.get('valid-2')).toBe('b');
+      jest.useRealTimers();
+    });
+  });
+
+  describe('bounded capacity (issue #506)', () => {
+    it('evicts the soonest-expiring entry when the map exceeds MAX_MEMORY_ENTRIES', async () => {
+      jest.useFakeTimers();
+      // Fill to capacity with 30s TTL entries
+      for (let i = 0; i < 1_000; i++) {
+        await service.set(`key-${i}`, i, 30);
+      }
+      expect(memorySize()).toBe(1_000);
+
+      // Add one more — this triggers eviction
+      await service.set('newest', 'val', 3600);
+      // Map should still be at capacity (the soonest-expiring entry was removed)
+      expect(memorySize()).toBe(1_000);
+
+      // The entry with the longest TTL (3600s) should still be present
+      expect(await service.get('newest')).toBe('val');
+      jest.useRealTimers();
+    });
+
+    it('does not grow without bound under repeated writes', async () => {
+      jest.useFakeTimers();
+      const total = 2_500;
+      for (let i = 0; i < total; i++) {
+        await service.set(`bulk-${i}`, i, 60);
+      }
+      expect(memorySize()).toBeLessThanOrEqual(1_000);
+      jest.useRealTimers();
     });
   });
 });

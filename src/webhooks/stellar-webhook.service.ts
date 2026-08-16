@@ -9,6 +9,7 @@ import {
 import * as crypto from 'crypto';
 import { ConfigService } from '../config/config.service';
 import { EscrowRepository } from '../escrow/escrow.repository';
+import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { StellarWebhookDto } from './dto/stellar-webhook.dto';
 
@@ -33,6 +34,7 @@ export class StellarWebhookService {
   constructor(
     private readonly configService: ConfigService,
     private readonly escrowRepository: EscrowRepository,
+    private readonly notificationsService: NotificationsService,
     @Optional()
     private readonly prisma?: PrismaService,
   ) {}
@@ -158,12 +160,9 @@ export class StellarWebhookService {
    * Verify HMAC-SHA256 signature.
    *
    * Horizon signs the raw body with the shared secret and sends the hex digest
-   * in the `X-Stellar-Signature` header. When the secret is not configured the
-   * request is rejected immediately: a missing secret is a server configuration
-   * error, not a valid reason to bypass verification.
-   *
-   * @throws InternalServerErrorException when STELLAR_WEBHOOK_SECRET is unset.
-   * @throws UnauthorizedException when the signature is missing or invalid.
+   * in the `X-Stellar-Signature` header.  Production deployments MUST configure
+   * STELLAR_WEBHOOK_SECRET — when the secret is missing the request is rejected
+   * immediately because there is no way to trust the caller.
    */
   private verifySignature(
     rawBody: Buffer,
@@ -173,13 +172,12 @@ export class StellarWebhookService {
     if (!secret) {
       this.logger.error(
         JSON.stringify({
-          msg: 'stellar.webhook.config_error',
-          reason: 'STELLAR_WEBHOOK_SECRET is not configured - rejecting webhook request',
+          msg: 'stellar.webhook.secret_missing',
+          reason:
+            'STELLAR_WEBHOOK_SECRET is not configured — rejecting request',
         }),
       );
-      throw new InternalServerErrorException(
-        'Webhook verification is not configured: STELLAR_WEBHOOK_SECRET is missing',
-      );
+      throw new InternalServerErrorException('Webhook secret not configured');
     }
 
     if (!signature) {
@@ -284,7 +282,8 @@ export class StellarWebhookService {
       // comparison.  We require an exact match: underpayments leave the escrow
       // underfunded, and overpayments are rejected (see method-level comment).
       const expectedAmount = Number(escrow.amount);
-      const receivedAmount = dto.amount !== undefined ? Number(dto.amount) : NaN;
+      const receivedAmount =
+        dto.amount !== undefined ? Number(dto.amount) : NaN;
 
       if (isNaN(receivedAmount) || receivedAmount !== expectedAmount) {
         this.logger.warn(
@@ -320,7 +319,11 @@ export class StellarWebhookService {
       }
 
       // ── State transition ─────────────────────────────────────────────────
-      await this.escrowRepository.updateState(escrow.id, 'FUNDED');
+      const updatedEscrow = await this.escrowRepository.updateState(
+        escrow.id,
+        'FUNDED',
+      );
+      await this.notificationsService.notifyFunded(updatedEscrow);
 
       this.logger.log(
         JSON.stringify({

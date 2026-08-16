@@ -4,6 +4,7 @@ import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { AutoReleaseWorker } from '../src/workers/auto-release.worker';
 import { ContractService } from '../src/stellar/contract.service';
+import { ensureVendors } from './prisma-helpers';
 
 describe('Auto-Release Worker E2E (issue #59)', () => {
   let app: INestApplication;
@@ -27,6 +28,8 @@ describe('Auto-Release Worker E2E (issue #59)', () => {
     contractService = app.get(ContractService);
 
     await prisma.reset();
+    // Escrow.vendorAddress is a foreign key onto VendorProfile.address (#475).
+    await ensureVendors(prisma, 'vendor-address', 'vendor-address-2');
 
     jest
       .spyOn(contractService, 'submitAutoRelease')
@@ -118,13 +121,21 @@ describe('Auto-Release Worker E2E (issue #59)', () => {
       },
     });
 
-    await prisma.dispute.create({
+    const dispute = await prisma.dispute.create({
       data: {
         escrowId: escrow.id,
         reason: 'ITEM_NOT_AS_DESCRIBED',
         description: 'Phone has defects',
         status: 'OPEN',
       },
+    });
+    // Mirror production: BuyerDisputeService links the dispute and transitions
+    // the escrow. The in-memory PrismaService applied that inside
+    // dispute.create itself, so the test got it for free; the real client does
+    // not (#475).
+    await prisma.escrow.update({
+      where: { id: escrow.id },
+      data: { disputeId: dispute.id, state: 'DISPUTED' },
     });
 
     await worker.run();
@@ -134,10 +145,8 @@ describe('Auto-Release Worker E2E (issue #59)', () => {
     const escrowAfter = await prisma.escrow.findUnique({
       where: { id: escrow.id },
     });
-    // Creating the dispute transitions the linked escrow to DISPUTED as a
-    // side effect (see PrismaService.dispute.create) — the worker's
-    // dispute-open check makes this redundant with the state/disputeId
-    // filters in findAutoReleaseEligible, but the escrow is no longer SHIPPED.
+    // The escrow was transitioned to DISPUTED above, so it no longer matches
+    // the state/disputeId filters in findAutoReleaseEligible.
     expect(escrowAfter?.state).toBe('DISPUTED');
     expect(escrowAfter?.autoReleaseTxHash).toBeNull();
   });

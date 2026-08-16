@@ -1,36 +1,45 @@
 import { NotificationsService } from './notifications.service';
-import { PrismaService } from '../prisma/prisma.service';
+import {
+  PrismaService,
+  toEscrowRecord,
+  type EscrowRecord,
+} from '../prisma/prisma.service';
+import { ensureVendors } from '../../test/prisma-helpers';
 
-const baseEscrow = {
-  id: 'esc-1',
-  itemName: 'Widget',
-  itemRef: 'ref-1',
-  amount: 100,
-  currency: 'USDC',
-  buyerAddress: 'GBUYER',
-  vendorAddress: 'GVENDOR',
-  state: 'FUNDED' as const,
-  trackingId: null,
-  shippedAt: null,
-  deliveredAt: null,
-  deliveryRecordedAt: null,
-  autoReleaseSubmittedAt: null,
-  autoReleaseTxHash: null,
-  disputeId: null,
-  buyerContactEmail: null,
-  buyerContactPhone: null,
-  cancelledAt: null,
-  createdAt: new Date(),
-  updatedAt: new Date(),
-};
+// Populated per test from a real row. Notification.escrowId is a foreign key
+// onto Escrow.id, and Escrow.vendorAddress onto VendorProfile.address, so a
+// hand-built literal is no longer enough to write a notification against (#475).
+let baseEscrow: EscrowRecord;
 
 describe('NotificationsService (#240)', () => {
   let prisma: PrismaService;
   let service: NotificationsService;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     prisma = new PrismaService();
+    await prisma.reset();
+    await ensureVendors(prisma, 'GVENDOR');
+    baseEscrow = toEscrowRecord(
+      await prisma.escrow.create({
+        data: {
+          itemName: 'Widget',
+          itemRef: 'ref-1',
+          amount: 100,
+          currency: 'USDC',
+          buyerAddress: 'GBUYER',
+          vendorAddress: 'GVENDOR',
+          state: 'FUNDED',
+        },
+      }),
+    );
     service = new NotificationsService(prisma);
+  });
+
+  afterEach(async () => {
+    // Each `new PrismaService()` opens its own connection pool. Constructed in
+    // beforeEach across ~100 suites, undisconnected clients exhaust Postgres
+    // (`sorry, too many clients already`) partway through a full run.
+    await prisma?.$disconnect();
   });
 
   it('creates a notification record with the message field set', async () => {
@@ -71,8 +80,29 @@ describe('NotificationsService (#240)', () => {
 describe('NotificationsService (#288) — email dispatch', () => {
   let prisma: PrismaService;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     prisma = new PrismaService();
+    // State now lives in a shared database rather than a per-instance Map, so
+    // rows leak between tests unless each one starts clean (#475).
+    await prisma.reset();
+    await ensureVendors(prisma, 'GVENDOR');
+    baseEscrow = toEscrowRecord(
+      await prisma.escrow.create({
+        data: {
+          itemName: 'Widget',
+          itemRef: 'ref-1',
+          amount: 100,
+          currency: 'USDC',
+          buyerAddress: 'GBUYER',
+          vendorAddress: 'GVENDOR',
+          state: 'FUNDED',
+        },
+      }),
+    );
+  });
+
+  afterEach(async () => {
+    await prisma?.$disconnect();
   });
 
   it('dispatches email via SendGrid and records EMAIL notification', async () => {

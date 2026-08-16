@@ -4,6 +4,8 @@ import { ConfigService as NestConfigService } from '@nestjs/config';
 export interface Config {
   PORT: number;
   DATABASE_URL: string;
+  CONTACT_ENCRYPTION_KEY?: string;
+  CREDENTIAL_ENCRYPTION_KEY?: string;
   DB_POOL_CONNECTION_LIMIT?: number;
   DB_POOL_TIMEOUT_MS?: number;
   SEP10_JWT_SECRET: string;
@@ -14,6 +16,7 @@ export interface Config {
   TWILIO_ACCOUNT_SID?: string;
   TWILIO_AUTH_TOKEN?: string;
   STELLAR_NETWORK: 'TESTNET' | 'MAINNET';
+  STELLAR_HORIZON_URL?: string;
   ALLOWED_ORIGINS?: string;
   STELLAR_WEBHOOK_SECRET?: string;
   LOG_LEVEL?: string;
@@ -32,6 +35,15 @@ export interface Config {
   GIT_SHA?: string;
   EVIDENCE_UPLOAD_LIMIT?: number;
   EVIDENCE_UPLOAD_TTL?: number;
+  GIGL_API_BASE_URL?: string;
+  GIGL_API_TOKEN?: string;
+  SOROBAN_RPC_URL?: string;
+  /** Always present: the config schema applies a validated default of 5000. */
+  SOROBAN_POLL_INTERVAL_MS: number;
+  /** Always present: the config schema applies a validated default of 4000. */
+  SOROBAN_RPC_TIMEOUT_MS: number;
+  SOROBAN_START_LEDGER?: number;
+  CONTRACT_ID?: string;
 }
 
 @Injectable()
@@ -52,8 +64,20 @@ export class ConfigService {
     return {
       PORT: this.get('PORT'),
       DATABASE_URL: this.get('DATABASE_URL'),
+      CONTACT_ENCRYPTION_KEY: this.nestConfigService.get(
+        'CONTACT_ENCRYPTION_KEY',
+        { infer: true },
+      ),
+      CREDENTIAL_ENCRYPTION_KEY: this.nestConfigService.get(
+        'CREDENTIAL_ENCRYPTION_KEY',
+        { infer: true },
+      ),
       SEP10_JWT_SECRET: this.get('SEP10_JWT_SECRET'),
       ADMIN_ADDRESS: this.get('ADMIN_ADDRESS'),
+      AUTO_RELEASE_SOURCE_ADDRESS: this.nestConfigService.get(
+        'AUTO_RELEASE_SOURCE_ADDRESS',
+        { infer: true },
+      ),
       NODE_ENV: this.get('NODE_ENV'),
       SENDGRID_API_KEY: this.nestConfigService.get('SENDGRID_API_KEY', {
         infer: true,
@@ -74,6 +98,14 @@ export class ConfigService {
       ),
       LOG_LEVEL: this.nestConfigService.get('LOG_LEVEL', { infer: true }),
       API_BASE_URL: this.nestConfigService.get('API_BASE_URL', { infer: true }),
+      GIGL_API_BASE_URL: this.nestConfigService.get('GIGL_API_BASE_URL', {
+        infer: true,
+      }),
+      GIGL_API_TOKEN: this.nestConfigService.get('GIGL_API_TOKEN', {
+        infer: true,
+      }),
+      SOROBAN_POLL_INTERVAL_MS: this.get('SOROBAN_POLL_INTERVAL_MS'),
+      SOROBAN_RPC_TIMEOUT_MS: this.get('SOROBAN_RPC_TIMEOUT_MS'),
     };
   }
 

@@ -5,7 +5,12 @@ import {
   SENDGRID_CLIENT,
   TWILIO_CLIENT,
 } from '../../src/notifications/notifications.tokens';
-import { EscrowRecord, PrismaService } from '../../src/prisma/prisma.service';
+import {
+  EscrowRecord,
+  PrismaService,
+  toEscrowRecord,
+} from '../../src/prisma/prisma.service';
+import { ensureVendors } from '../prisma-helpers';
 
 describe('NotificationsService (issue #18)', () => {
   let service: NotificationsService;
@@ -13,7 +18,9 @@ describe('NotificationsService (issue #18)', () => {
   let sendGrid: { send: jest.Mock };
   let twilio: { messages: { create: jest.Mock } };
 
-  const escrow: EscrowRecord = {
+  // Overwritten in beforeEach with the real persisted row: Notification
+  // .escrowId is a foreign key onto Escrow.id (#475).
+  let escrow: EscrowRecord = {
     id: 'escrow-1',
     itemName: 'Vintage jacket',
     itemRef: 'jacket-001',
@@ -51,6 +58,22 @@ describe('NotificationsService (issue #18)', () => {
 
     service = moduleRef.get(NotificationsService);
     prisma = moduleRef.get(PrismaService);
+
+    await prisma.reset();
+    await ensureVendors(prisma, escrow.vendorAddress);
+    escrow = toEscrowRecord(
+      await prisma.escrow.create({
+        data: {
+          itemName: escrow.itemName,
+          itemRef: escrow.itemRef,
+          amount: escrow.amount,
+          currency: escrow.currency,
+          buyerAddress: escrow.buyerAddress,
+          vendorAddress: escrow.vendorAddress,
+          state: escrow.state,
+        },
+      }),
+    );
 
     // Prevent actual timer delays in all tests
     jest.spyOn(service, 'sleep' as keyof NotificationsService).mockResolvedValue(undefined);

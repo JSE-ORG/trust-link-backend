@@ -4,7 +4,7 @@
  * Compares JavaScript-based aggregation vs database-level aggregation
  */
 
-import { EscrowCreateInput, EscrowState, PrismaService } from '../src/prisma/prisma.service';
+import { EscrowState, PrismaService } from '../src/prisma/prisma.service';
 
 interface DailyData {
   date: string;
@@ -32,7 +32,20 @@ class ChartAggregationBenchmark {
   /**
    * Old approach: Load all transactions into memory and aggregate in JavaScript
    */
-  private async oldApproach(vendorAddress: string, days: number): Promise<{ data: { date: string; totalVolume: number; transactionCount: number; completedCount: number; disputedCount: number; averageTransactionValue: number }[]; recordCount: number }> {
+  private async oldApproach(
+    vendorAddress: string,
+    days: number,
+  ): Promise<{
+    data: {
+      date: string;
+      totalVolume: number;
+      transactionCount: number;
+      completedCount: number;
+      disputedCount: number;
+      averageTransactionValue: number;
+    }[];
+    recordCount: number;
+  }> {
     const endDate = new Date();
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - days);
@@ -104,18 +117,24 @@ class ChartAggregationBenchmark {
   /**
    * New approach: Database-level aggregation using raw SQL
    */
-  private async newApproach(vendorAddress: string, days: number, timezone: string = 'UTC'): Promise<{ data: DailyData[]; recordCount: number }> {
+  private async newApproach(
+    vendorAddress: string,
+    days: number,
+    timezone: string = 'UTC',
+  ): Promise<{ data: DailyData[]; recordCount: number }> {
     const endDate = new Date();
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - days);
 
-    const aggregationResult = await this.prisma.$queryRaw<{
-      date: string;
-      totalVolume: number;
-      transactionCount: number;
-      completedCount: number;
-      disputedCount: number;
-    }>`
+    const aggregationResult = await this.prisma.$queryRaw<
+      Array<{
+        date: string;
+        totalVolume: number;
+        transactionCount: number;
+        completedCount: number;
+        disputedCount: number;
+      }>
+    >`
       SELECT 
         DATE("createdAt" AT TIME ZONE ${timezone})::date as date,
         COALESCE(SUM("amount"), 0) as "totalVolume",
@@ -146,11 +165,17 @@ class ChartAggregationBenchmark {
         transactionCount,
         completedCount,
         disputedCount,
-        averageTransactionValue: transactionCount > 0 ? totalVolume / transactionCount : 0,
+        averageTransactionValue:
+          transactionCount > 0 ? totalVolume / transactionCount : 0,
       });
     }
 
-    const filledData = this.fillDateGaps(dailyMap, startDate, endDate, timezone);
+    const filledData = this.fillDateGaps(
+      dailyMap,
+      startDate,
+      endDate,
+      timezone,
+    );
     const sortedData = filledData.sort((a, b) => a.date.localeCompare(b.date));
 
     return {
@@ -201,9 +226,12 @@ class ChartAggregationBenchmark {
   /**
    * Generate test data with varying record counts
    */
-  private async generateTestData(vendorAddress: string, recordCount: number): Promise<void> {
+  private async generateTestData(
+    vendorAddress: string,
+    recordCount: number,
+  ): Promise<void> {
     console.log(`Generating ${recordCount} test records...`);
-    
+
     const baseDate = new Date();
     baseDate.setDate(baseDate.getDate() - 30);
 
@@ -219,11 +247,12 @@ class ChartAggregationBenchmark {
         data: {
           vendorAddress,
           itemName: `Test Item ${i}`,
+          itemRef: `ref-${i}`,
           amount: Math.random() * 1000 + 50,
           currency: 'USD',
           buyerAddress: `0xBuyer${i}`,
           state: state as EscrowState,
-        } as unknown as EscrowCreateInput,
+        },
       });
     }
 
@@ -233,7 +262,11 @@ class ChartAggregationBenchmark {
   /**
    * Run benchmark for a specific record count
    */
-  private async runBenchmark(vendorAddress: string, recordCount: number, days: number = 30): Promise<void> {
+  private async runBenchmark(
+    vendorAddress: string,
+    recordCount: number,
+    days: number = 30,
+  ): Promise<void> {
     console.log(`\n${'='.repeat(60)}`);
     console.log(`Benchmark: ${recordCount} records`);
     console.log(`${'='.repeat(60)}`);
@@ -245,9 +278,9 @@ class ChartAggregationBenchmark {
     // Benchmark old approach
     const oldStartMemory = process.memoryUsage().heapUsed;
     const oldStartTime = performance.now();
-    
+
     const oldResult = await this.oldApproach(vendorAddress, days);
-    
+
     const oldEndTime = performance.now();
     const oldEndMemory = process.memoryUsage().heapUsed;
 
@@ -261,9 +294,9 @@ class ChartAggregationBenchmark {
     // Benchmark new approach
     const newStartMemory = process.memoryUsage().heapUsed;
     const newStartTime = performance.now();
-    
+
     const newResult = await this.newApproach(vendorAddress, days, 'UTC');
-    
+
     const newEndTime = performance.now();
     const newEndMemory = process.memoryUsage().heapUsed;
 
@@ -278,23 +311,37 @@ class ChartAggregationBenchmark {
     this.printBenchmarkResults(oldBenchmark, newBenchmark);
   }
 
-  private printBenchmarkResults(oldResult: BenchmarkResult, newResult: BenchmarkResult): void {
-    const durationImprovement = ((oldResult.duration - newResult.duration) / oldResult.duration) * 100;
-    const memoryImprovement = ((oldResult.memoryUsed - newResult.memoryUsed) / oldResult.memoryUsed) * 100;
+  private printBenchmarkResults(
+    oldResult: BenchmarkResult,
+    newResult: BenchmarkResult,
+  ): void {
+    const durationImprovement =
+      ((oldResult.duration - newResult.duration) / oldResult.duration) * 100;
+    const memoryImprovement =
+      ((oldResult.memoryUsed - newResult.memoryUsed) / oldResult.memoryUsed) *
+      100;
 
     console.log(`\n${oldResult.name}:`);
     console.log(`  Duration: ${oldResult.duration.toFixed(2)}ms`);
-    console.log(`  Memory Used: ${(oldResult.memoryUsed / 1024 / 1024).toFixed(2)}MB`);
+    console.log(
+      `  Memory Used: ${(oldResult.memoryUsed / 1024 / 1024).toFixed(2)}MB`,
+    );
     console.log(`  Records Processed: ${oldResult.recordCount}`);
 
     console.log(`\n${newResult.name}:`);
     console.log(`  Duration: ${newResult.duration.toFixed(2)}ms`);
-    console.log(`  Memory Used: ${(newResult.memoryUsed / 1024 / 1024).toFixed(2)}MB`);
+    console.log(
+      `  Memory Used: ${(newResult.memoryUsed / 1024 / 1024).toFixed(2)}MB`,
+    );
     console.log(`  Records Processed: ${newResult.recordCount}`);
 
     console.log(`\nImprovement:`);
-    console.log(`  Duration: ${durationImprovement > 0 ? '+' : ''}${durationImprovement.toFixed(2)}%`);
-    console.log(`  Memory: ${memoryImprovement > 0 ? '+' : ''}${memoryImprovement.toFixed(2)}%`);
+    console.log(
+      `  Duration: ${durationImprovement > 0 ? '+' : ''}${durationImprovement.toFixed(2)}%`,
+    );
+    console.log(
+      `  Memory: ${memoryImprovement > 0 ? '+' : ''}${memoryImprovement.toFixed(2)}%`,
+    );
   }
 
   async run(): Promise<void> {

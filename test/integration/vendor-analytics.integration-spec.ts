@@ -11,6 +11,7 @@ import request from 'supertest';
 import { AppModule } from '../../src/app.module';
 import { PrismaService } from '../../src/prisma/prisma.service';
 import { bearer } from '../auth-helper';
+import { ensureVendors } from '../prisma-helpers';
 
 describe('GET /vendor/analytics/chart (issue #290)', () => {
   let app: INestApplication;
@@ -32,6 +33,10 @@ describe('GET /vendor/analytics/chart (issue #290)', () => {
     await app.init();
     prisma = app.get(PrismaService);
     await prisma.reset();
+    // Escrow.vendorAddress (and the vendor settings/details tables) are
+    // foreign keys onto VendorProfile.address, so the parent rows must exist
+    // before any row referencing them can be written (#475).
+    await ensureVendors(prisma, 'GANALYTICS001', 'GANALYTICS002');
   });
 
   afterEach(async () => {
@@ -49,6 +54,11 @@ describe('GET /vendor/analytics/chart (issue #290)', () => {
     return d;
   }
 
+  // Escrow declares @@unique([vendorAddress, itemRef]), so every seeded escrow
+  // needs its own itemRef; a fixed one only worked against the constraint-free
+  // in-memory store (#475).
+  let seedCounter = 0;
+
   /**
    * Seeds an escrow directly in PrismaService with a controlled createdAt date.
    */
@@ -57,16 +67,17 @@ describe('GET /vendor/analytics/chart (issue #290)', () => {
     amount: number,
     createdAt: Date,
   ): Promise<void> {
-    const escrow = await prisma.escrow.create({
+    await prisma.escrow.create({
       data: {
         itemName: 'Test item',
+        itemRef: `ref-analytics-${++seedCounter}`,
         amount,
         currency: 'USDC',
         buyerAddress: 'GBUYER001',
         vendorAddress,
+        createdAt,
       },
     });
-    (prisma['escrows'] as Map<string, unknown>).set(escrow.id, { ...escrow, createdAt });
   }
 
   // ── Empty chart ──────────────────────────────────────────────────────────
