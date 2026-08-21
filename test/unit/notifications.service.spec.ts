@@ -76,7 +76,9 @@ describe('NotificationsService (issue #18)', () => {
     );
 
     // Prevent actual timer delays in all tests
-    jest.spyOn(service, 'sleep' as keyof NotificationsService).mockResolvedValue(undefined);
+    jest
+      .spyOn(service, 'sleep' as keyof NotificationsService)
+      .mockResolvedValue(undefined);
     jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
     jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
   });

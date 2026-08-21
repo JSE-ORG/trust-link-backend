@@ -197,7 +197,9 @@ describe('NotificationsService (#288) — email dispatch', () => {
     const service = new NotificationsService(prisma, sendGrid);
 
     // Spy on sleep so retries don't actually delay the test
-    jest.spyOn(service, 'sleep' as keyof NotificationsService).mockResolvedValue(undefined);
+    jest
+      .spyOn(service, 'sleep' as keyof NotificationsService)
+      .mockResolvedValue(undefined);
 
     await service.notifyFunded(baseEscrow);
 
@@ -218,7 +220,9 @@ describe('NotificationsService (#288) — email dispatch', () => {
     const sendGrid = { send: mockSend };
     const service = new NotificationsService(prisma, sendGrid);
 
-    jest.spyOn(service, 'sleep' as keyof NotificationsService).mockResolvedValue(undefined);
+    jest
+      .spyOn(service, 'sleep' as keyof NotificationsService)
+      .mockResolvedValue(undefined);
 
     await service.notifyFunded(baseEscrow);
 

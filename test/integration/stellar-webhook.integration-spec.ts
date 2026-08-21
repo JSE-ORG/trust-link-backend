@@ -16,12 +16,8 @@ describe('POST /webhooks/stellar (issue #294)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
 
-  const WEBHOOK_SECRET = 'test-webhook-hmac-secret-key-32ch';
   const BUYER_ADDR = 'GWEBHOOKBUYER001';
   const WEBHOOK_SECRET = 'test-webhook-integration-secret';
-
-  const sign = (body: Buffer, secret: string): string =>
-    crypto.createHmac('sha256', secret).update(body).digest('hex');
 
   const sign = (body: Buffer, secret: string): string =>
     crypto.createHmac('sha256', secret).update(body).digest('hex');

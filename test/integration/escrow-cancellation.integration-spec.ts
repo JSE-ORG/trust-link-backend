@@ -8,7 +8,6 @@ import {
   type EscrowState,
 } from '../../src/prisma/prisma.service';
 import { ContractService } from '../../src/stellar/contract.service';
-import { EscrowState } from '../../src/prisma/prisma.service';
 import { bearer } from '../auth-helper';
 import { ensureVendors } from '../prisma-helpers';
 
