@@ -212,6 +212,23 @@ export class NotificationRetryQueueService
         return;
       } catch (err) {
         lastError = err;
+        if (job.notificationId && this.prisma) {
+          await this.prisma.notification
+            .update({
+              where: { id: job.notificationId },
+              data: {
+                retryCount: attempt,
+                failedAt: new Date(),
+                lastError: err instanceof Error ? err.message : String(err),
+              },
+            })
+            .catch((dbErr) =>
+              this.logger.error(
+                'Failed to update notification status on error in worker',
+                dbErr,
+              ),
+            );
+        }
         if (attempt >= attempts) break;
         const delay = computeBackoffDelay(attempt + 1, this.options.backoff);
         this.logger.warn(
