@@ -163,6 +163,21 @@ describe('NotificationRetryQueueService (in-process fallback) (#73)', () => {
     expect(dlq).toHaveLength(0);
   });
 
+  it('asserts the dispatcher is called exactly attempts times when every attempt throws, and exactly once when the first attempt succeeds', async () => {
+    // Exactly once when first attempt succeeds
+    const dispatchSuccess = jest.fn().mockResolvedValue(undefined);
+    const successSetup = setup({ dispatcher: { dispatch: dispatchSuccess } });
+    await successSetup.service.enqueue(makeJob());
+    expect(dispatchSuccess).toHaveBeenCalledTimes(1);
+
+    // Exactly attempts times when every attempt throws
+    const dispatchFail = jest.fn().mockRejectedValue(new Error('fail'));
+    const backoff = { attempts: 4, delay: 1, maxDelayMs: 10 };
+    const failSetup = setup({ dispatcher: { dispatch: dispatchFail }, backoff });
+    await failSetup.service.enqueue(makeJob());
+    expect(dispatchFail).toHaveBeenCalledTimes(4);
+  });
+
   it('records to DLQ after attempts are exhausted', async () => {
     const dispatch = jest.fn().mockRejectedValue(new Error('always fails'));
     const { service, dispatcher, dlq } = setup({ dispatcher: { dispatch } });
@@ -186,7 +201,7 @@ describe('NotificationRetryQueueService (in-process fallback) (#73)', () => {
   // notification row, so an operator sees no attempt count and no provider
   // error until the final FAILED write. Marked failing so it turns red again
   // once the write is added, which is the signal to flip it back to `it`.
-  it.failing(
+  it(
     'records per-attempt failure state (retryCount, failedAt, lastError) on every failing attempt (#490)',
     async () => {
       const dispatch = jest
