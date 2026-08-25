@@ -57,7 +57,7 @@ describe('AutoReleaseWorker', () => {
   beforeEach(() => {
     escrowRepository = {
       findAutoReleaseEligible: jest.fn(),
-      markAutoReleaseCompleted: jest.fn(),
+      recordAutoReleaseSubmission: jest.fn(),
       markAutoReleaseSubmitting: jest
         .fn()
         .mockImplementation((id: string) =>
@@ -112,7 +112,9 @@ describe('AutoReleaseWorker', () => {
       await worker.run();
 
       expect(contractService.submitAutoRelease).not.toHaveBeenCalled();
-      expect(escrowRepository.markAutoReleaseCompleted).not.toHaveBeenCalled();
+      expect(
+        escrowRepository.recordAutoReleaseSubmission,
+      ).not.toHaveBeenCalled();
     });
 
     it('skips an escrow whose state is COMPLETED', async () => {
@@ -123,7 +125,9 @@ describe('AutoReleaseWorker', () => {
       await worker.run();
 
       expect(contractService.submitAutoRelease).not.toHaveBeenCalled();
-      expect(escrowRepository.markAutoReleaseCompleted).not.toHaveBeenCalled();
+      expect(
+        escrowRepository.recordAutoReleaseSubmission,
+      ).not.toHaveBeenCalled();
     });
 
     it('skips an escrow that already has an autoReleaseTxHash', async () => {
@@ -134,15 +138,17 @@ describe('AutoReleaseWorker', () => {
       await worker.run();
 
       expect(contractService.submitAutoRelease).not.toHaveBeenCalled();
-      expect(escrowRepository.markAutoReleaseCompleted).not.toHaveBeenCalled();
+      expect(
+        escrowRepository.recordAutoReleaseSubmission,
+      ).not.toHaveBeenCalled();
     });
 
-    it('calls markAutoReleaseCompleted with the txHash on success', async () => {
+    it('calls recordAutoReleaseSubmission with the txHash on success', async () => {
       const escrow = makeEscrow();
       escrowRepository.findAutoReleaseEligible.mockResolvedValue([escrow]);
       disputeRepository.findByEscrow.mockResolvedValue(null);
       contractService.submitAutoRelease.mockResolvedValue('tx-hash-abc');
-      escrowRepository.markAutoReleaseCompleted.mockResolvedValue(
+      escrowRepository.recordAutoReleaseSubmission.mockResolvedValue(
         makeEscrow({ state: 'COMPLETED', autoReleaseTxHash: 'tx-hash-abc' }),
       );
 
@@ -155,7 +161,7 @@ describe('AutoReleaseWorker', () => {
         'escrow-1',
         expect.any(String),
       );
-      expect(escrowRepository.markAutoReleaseCompleted).toHaveBeenCalledWith(
+      expect(escrowRepository.recordAutoReleaseSubmission).toHaveBeenCalledWith(
         'escrow-1',
         'tx-hash-abc',
       );
@@ -170,7 +176,9 @@ describe('AutoReleaseWorker', () => {
       await worker.run();
 
       expect(contractService.submitAutoRelease).not.toHaveBeenCalled();
-      expect(escrowRepository.markAutoReleaseCompleted).not.toHaveBeenCalled();
+      expect(
+        escrowRepository.recordAutoReleaseSubmission,
+      ).not.toHaveBeenCalled();
     });
 
     it('increments failureCount and records the error when submitAutoRelease throws, and still processes remaining escrows', async () => {
@@ -185,7 +193,7 @@ describe('AutoReleaseWorker', () => {
       contractService.submitAutoRelease
         .mockRejectedValueOnce(new Error('Stellar RPC timeout'))
         .mockResolvedValueOnce('tx-hash-ok');
-      escrowRepository.markAutoReleaseCompleted.mockResolvedValue(
+      escrowRepository.recordAutoReleaseSubmission.mockResolvedValue(
         makeEscrow({
           id: 'escrow-ok',
           state: 'COMPLETED',
@@ -199,10 +207,10 @@ describe('AutoReleaseWorker', () => {
         'escrow-fail',
       );
       expect(contractService.submitAutoRelease).toHaveBeenCalledTimes(2);
-      expect(escrowRepository.markAutoReleaseCompleted).toHaveBeenCalledTimes(
-        1,
-      );
-      expect(escrowRepository.markAutoReleaseCompleted).toHaveBeenCalledWith(
+      expect(
+        escrowRepository.recordAutoReleaseSubmission,
+      ).toHaveBeenCalledTimes(1);
+      expect(escrowRepository.recordAutoReleaseSubmission).toHaveBeenCalledWith(
         'escrow-ok',
         'tx-hash-ok',
       );
@@ -219,7 +227,9 @@ describe('AutoReleaseWorker', () => {
       await worker.run();
 
       expect(contractService.submitAutoRelease).not.toHaveBeenCalled();
-      expect(escrowRepository.markAutoReleaseCompleted).not.toHaveBeenCalled();
+      expect(
+        escrowRepository.recordAutoReleaseSubmission,
+      ).not.toHaveBeenCalled();
       expect(escrowRepository.clearAutoReleaseSubmitting).toHaveBeenCalledWith(
         'escrow-1',
       );

@@ -173,7 +173,7 @@ describe('Happy-Path E2E — full escrow lifecycle (issue #56)', () => {
     expect(delivered?.state).toBe('DELIVERED');
     expect(delivered?.deliveredAt).toBeTruthy();
 
-    // ── 6. Auto-release worker transitions escrow to COMPLETED ─────────────
+    // ── 6. Auto-release worker submits the transaction ─────────────────────
     // Back-date deliveredAt past the 48-hour threshold so the worker picks it
     // up. The state stays DELIVERED: this step used to roll it back to SHIPPED
     // to make the worker fire, which was the eligibility bug (#395) being
@@ -191,17 +191,39 @@ describe('Happy-Path E2E — full escrow lifecycle (issue #56)', () => {
       expect.any(String),
     );
 
-    const completed = await prisma.escrow.findUnique({
+    // Submission is not confirmation: the worker records the hash and stops.
+    const submitted = await prisma.escrow.findUnique({
       where: { id: escrowId },
     });
-    expect(completed?.state).toBe('COMPLETED');
-    expect(completed?.autoReleaseTxHash).toBe('tx-hash-auto-release-001');
+    expect(submitted?.state).toBe('DELIVERED');
+    expect(submitted?.autoReleaseTxHash).toBe('tx-hash-auto-release-001');
 
-    // ── 7. Notification rows written for all key transitions ───────────────
+    // ── 7. The AutoReleased chain event finalises the escrow ───────────────
+    // In production SorobanPollerService observes the contract event and calls
+    // this. It is what confirms the transaction landed, so it owns the
+    // terminal transition and the completion notification.
+    await escrowService.syncStateFromChain({
+      eventType: 'AutoReleased',
+      escrowId,
+      txHash: 'tx-hash-auto-release-001',
+    });
+
+    const released = await prisma.escrow.findUnique({
+      where: { id: escrowId },
+    });
+    expect(released?.state).toBe('RELEASED');
+    expect(released?.autoReleaseTxHash).toBe('tx-hash-auto-release-001');
+
+    // ── 8. Notification rows written for all key transitions ───────────────
+    // COMPLETED is asserted last because notifyCompleted is fired without
+    // await on the sync path, so the row lands just after syncStateFromChain
+    // resolves.
+    await new Promise((resolve) => setImmediate(resolve));
     const notifications = await prisma.notification.findMany();
     const types = notifications.map((n) => n.type);
     expect(types).toContain('FUNDED');
     expect(types).toContain('SHIPPED');
+    expect(types).toContain('COMPLETED');
   });
 
   // ── Buyer contact: email-only ──────────────────────────────────────────────

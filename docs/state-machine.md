@@ -48,7 +48,7 @@ stateDiagram-v2
     FUNDED --> DISPUTED: syncStateFromChain (DisputeRaised)
 
     SHIPPED --> DELIVERED: TrackingPollWorker
-    SHIPPED --> COMPLETED: AutoReleaseWorker
+    DELIVERED --> RELEASED: AutoReleaseWorker + AutoReleased event
     SHIPPED --> DISPUTED: syncStateFromChain (DisputeRaised)
 
     DELIVERED --> DISPUTED: syncStateFromChain (DisputeRaised)
@@ -75,7 +75,7 @@ stateDiagram-v2
 | `FUNDED` | `CANCELLED` | Buyer, seller, or admin cancels | `EscrowService.cancelEscrow` |
 | `FUNDED` | `DISPUTED` | Chain sync event (DisputeRaised) | `EscrowService.syncStateFromChain` (`DisputeRaised`) |
 | `SHIPPED` | `DELIVERED` | Carrier API reports delivery | `TrackingPollWorker.run` |
-| `SHIPPED` | `COMPLETED` | Auto-release after 48h (backend worker) | `AutoReleaseWorker.run` |
+| `DELIVERED` | `RELEASED` | Auto-release after 48h: worker submits, `AutoReleased` event finalises | `AutoReleaseWorker.run` + `EscrowService.syncStateFromChain` (`AutoReleased`) |
 | `SHIPPED` | `DISPUTED` | Chain sync event (DisputeRaised) | `EscrowService.syncStateFromChain` (`DisputeRaised`) |
 | `DELIVERED` | `DISPUTED` | Chain sync event (DisputeRaised) | `EscrowService.syncStateFromChain` (`DisputeRaised`) |
 | `DISPUTED` | `COMPLETED` | Admin resolves with RELEASE | `DisputeService.resolve` |
@@ -128,15 +128,24 @@ state transitions are permitted from any of them. This is enforced by the
   `deliveryRecordedAt`, and transitions to `DELIVERED`.
 - Also calls `contractService.recordDelivery()` on-chain.
 
-### `SHIPPED -> COMPLETED` (auto-release worker)
+### `DELIVERED -> RELEASED` (auto-release)
 
 - `AutoReleaseWorker` polls every 5 minutes.
-- Eligibility: state is `SHIPPED`, `deliveredAt` is at least 48 hours ago,
-  no dispute exists, no auto-release transaction has been submitted.
+- Eligibility: state is `DELIVERED`, `deliveredAt` is at least
+  `AUTO_RELEASE_WINDOW_HOURS` (48) ago, no dispute exists, no auto-release
+  transaction has been submitted.
+- The state predicate must match what `markDelivered` writes. `markDelivered`
+  is the only writer of `deliveredAt` and sets `DELIVERED` in the same update,
+  so any other state paired with a non-null `deliveredAt` matches nothing and
+  auto-release silently never fires (issue #395).
 - Uses an atomic `updateMany` optimistic lock (`markAutoReleaseSubmitting`) to
   prevent concurrent workers from double-submitting.
-- On success, calls `markAutoReleaseCompleted` which sets state to `COMPLETED`
-  and records the transaction hash.
+- On success, calls `recordAutoReleaseSubmission`, which records the
+  transaction hash and leaves the state at `DELIVERED`. Submission is not
+  confirmation.
+- The terminal transition belongs to the `AutoReleased` chain event, which
+  `syncStateFromChain` turns into `markAutoReleased` (`RELEASED`) plus the
+  completion notification.
 
 ### `DISPUTED -> COMPLETED` / `DISPUTED -> REFUNDED` (dispute resolution)
 

@@ -223,7 +223,10 @@ describe('Auto-release collision detection (issue #277)', () => {
       const after = await prisma.escrow.findUnique({
         where: { id: escrow.id },
       });
-      expect(after!.state).toBe('COMPLETED');
+      // A successful submission records the hash and leaves the escrow
+      // DELIVERED. The terminal transition belongs to the AutoReleased chain
+      // event, which is what confirms the transaction actually landed.
+      expect(after!.state).toBe('DELIVERED');
       expect(after!.autoReleaseTxHash).toBe('tx-hash-1');
     });
 
@@ -257,7 +260,7 @@ describe('Auto-release collision detection (issue #277)', () => {
       const afterSecond = await prisma.escrow.findUnique({
         where: { id: escrow.id },
       });
-      expect(afterSecond!.state).toBe('COMPLETED');
+      expect(afterSecond!.state).toBe('DELIVERED');
       expect(afterSecond!.autoReleaseTxHash).toBe('tx-hash-2');
     });
 
@@ -302,13 +305,13 @@ describe('Auto-release collision detection (issue #277)', () => {
       const after1 = await prisma.escrow.findUnique({
         where: { id: escrow1.id },
       });
-      expect(after1!.state).toBe('COMPLETED');
+      expect(after1!.state).toBe('DELIVERED');
       expect(after1!.autoReleaseTxHash).toBe('tx-hash-a');
 
       const after2 = await prisma.escrow.findUnique({
         where: { id: escrow2.id },
       });
-      expect(after2!.state).toBe('COMPLETED');
+      expect(after2!.state).toBe('DELIVERED');
       expect(after2!.autoReleaseTxHash).toBe('tx-hash-b');
     });
 

@@ -14,7 +14,7 @@ import { ensureVendors } from './prisma-helpers';
  * interleave at every `await` point. Both workers call findAutoReleaseEligible()
  * before either has finished processing, so both receive the same eligible escrow
  * in their snapshot. The collision guard relies on:
- *   1. The in-memory check: `escrow.state === 'COMPLETED' || escrow.autoReleaseTxHash`
+ *   1. The in-memory check: `TERMINAL_STATES.has(escrow.state) || escrow.autoReleaseTxHash`
  *      (stale snapshot — does NOT protect against concurrent runs that fetched
  *       the list before the first write completed).
  *   2. The DB-level guard: findAutoReleaseEligible filters autoReleaseTxHash: null,
@@ -126,8 +126,9 @@ describe('Auto-Release Worker — concurrent collision detection (issues #302/#3
     expect(after).not.toBeNull();
     expect(after!.autoReleaseTxHash).toBe(TX_HASH);
     expect(after!.autoReleaseSubmittedAt).toBeTruthy();
-    // State is set to COMPLETED by markAutoReleaseCompleted.
-    expect(after!.state).toBe('COMPLETED');
+    // recordAutoReleaseSubmission writes the hash and leaves the state
+    // DELIVERED; the AutoReleased chain event owns the terminal transition.
+    expect(after!.state).toBe('DELIVERED');
   });
 
   it('does not double-process an escrow when the second run starts after the first has already committed', async () => {
@@ -140,7 +141,7 @@ describe('Auto-Release Worker — concurrent collision detection (issues #302/#3
     // First run completes fully before the second starts.
     await worker.run();
 
-    // Escrow should now be COMPLETED and excluded from the second run's
+    // Escrow now carries a txHash and is excluded from the second run's
     // eligible query (autoReleaseTxHash is no longer null).
     await worker.run();
 
@@ -148,7 +149,7 @@ describe('Auto-Release Worker — concurrent collision detection (issues #302/#3
 
     const after = await prisma.escrow.findUnique({ where: { id: escrow.id } });
     expect(after!.autoReleaseTxHash).toBe(TX_HASH);
-    expect(after!.state).toBe('COMPLETED');
+    expect(after!.state).toBe('DELIVERED');
   });
 
   it('skips an escrow mid-loop when a sibling concurrent worker has already written autoReleaseTxHash to the DB', async () => {
@@ -176,7 +177,7 @@ describe('Auto-Release Worker — concurrent collision detection (issues #302/#3
 
     const after = await prisma.escrow.findUnique({ where: { id: escrow.id } });
     expect(after!.autoReleaseTxHash).toBe(TX_HASH);
-    expect(after!.state).toBe('COMPLETED');
+    expect(after!.state).toBe('DELIVERED');
   });
 
   it('processes multiple independent escrows exactly once each under concurrent workers', async () => {
@@ -208,9 +209,9 @@ describe('Auto-Release Worker — concurrent collision detection (issues #302/#3
 
     // Each escrow must be in a terminal auto-release state.
     expect(afterA!.autoReleaseTxHash).not.toBeNull();
-    expect(afterA!.state).toBe('COMPLETED');
+    expect(afterA!.state).toBe('DELIVERED');
     expect(afterB!.autoReleaseTxHash).not.toBeNull();
-    expect(afterB!.state).toBe('COMPLETED');
+    expect(afterB!.state).toBe('DELIVERED');
   });
 
   // Note: with the atomic markAutoReleaseSubmitting claim in place, only the
@@ -252,6 +253,6 @@ describe('Auto-Release Worker — concurrent collision detection (issues #302/#3
 
     const after = await prisma.escrow.findUnique({ where: { id: escrow.id } });
     expect(after!.autoReleaseTxHash).toBe(TX_HASH);
-    expect(after!.state).toBe('COMPLETED');
+    expect(after!.state).toBe('DELIVERED');
   });
 });

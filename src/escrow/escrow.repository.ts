@@ -214,16 +214,6 @@ export class EscrowRepository {
     return toEscrowRecord(result);
   }
 
-  /** Transitions the escrow to RELEASED and invalidates the cache. */
-  async markReleased(id: string): Promise<EscrowRecord> {
-    const result = await this.prisma.escrow.update({
-      where: { id },
-      data: { state: 'RELEASED' },
-    });
-    await this.invalidate(id);
-    return toEscrowRecord(result);
-  }
-
   /**
    * Transitions the escrow to DELIVERED, records both delivery timestamps,
    * and invalidates the cache.
@@ -245,10 +235,19 @@ export class EscrowRepository {
   }
 
   /**
-   * Transitions the escrow to COMPLETED and records the auto-release
-   * transaction hash and submission timestamp, then invalidates the cache.
+   * Records a submitted auto-release transaction without changing `state`.
+   *
+   * Submission is not confirmation. The worker knows only that the network
+   * accepted the transaction; whether it lands is decided on chain, and the
+   * `AutoReleased` event is what says so. Marking a terminal state here would
+   * make an escrow terminal on the strength of a transaction that may still
+   * fail, and would then cause `syncStateFromChain` to skip the real event as
+   * `terminal_state` — taking the completion notification with it.
+   *
+   * `autoReleaseTxHash` alone is enough to keep the escrow out of
+   * {@link findAutoReleaseEligible}, so no resubmission can follow.
    */
-  async markAutoReleaseCompleted(
+  async recordAutoReleaseSubmission(
     id: string,
     txHash: string,
     submittedAt = new Date(),
@@ -256,7 +255,6 @@ export class EscrowRepository {
     const result = await this.prisma.escrow.update({
       where: { id },
       data: {
-        state: 'COMPLETED',
         autoReleaseSubmittedAt: submittedAt,
         autoReleaseTxHash: txHash,
       },

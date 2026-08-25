@@ -136,7 +136,7 @@ describe('EscrowRepository (issue #13)', () => {
     expect(results[0].id).toBe(eligible.id);
   });
 
-  it('marks auto release completion atomically', async () => {
+  it('records an auto-release submission without advancing state', async () => {
     const escrow = await deliver(
       {
         itemRef: 'ref-camera-2',
@@ -147,13 +147,17 @@ describe('EscrowRepository (issue #13)', () => {
       new Date('2026-01-01T00:00:00.000Z'),
     );
 
-    const updated = await repository.markAutoReleaseCompleted(
+    const updated = await repository.recordAutoReleaseSubmission(
       escrow.id,
       'tx-hash',
     );
 
-    expect(updated.state).toBe('COMPLETED');
+    // Recording a submission must not advance state. The AutoReleased chain
+    // event owns the terminal transition; a hash here only says the network
+    // accepted the transaction, not that it landed.
+    expect(updated.state).toBe('DELIVERED');
     expect(updated.autoReleaseTxHash).toBe('tx-hash');
+    expect(updated.autoReleaseSubmittedAt).toBeInstanceOf(Date);
   });
 
   it('orders event history oldest-first and breaks timestamp ties by id', async () => {

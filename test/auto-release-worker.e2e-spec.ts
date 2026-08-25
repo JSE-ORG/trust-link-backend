@@ -127,14 +127,14 @@ describe('Auto-Release Worker E2E (issue #59)', () => {
     const escrow1After = await prisma.escrow.findUnique({
       where: { id: escrow1.id },
     });
-    expect(escrow1After?.state).toBe('COMPLETED');
+    expect(escrow1After?.state).toBe('DELIVERED');
     expect(escrow1After?.autoReleaseTxHash).toBe('tx-hash-auto-release');
     expect(escrow1After?.autoReleaseSubmittedAt).toBeTruthy();
 
     const escrow2After = await prisma.escrow.findUnique({
       where: { id: escrow2.id },
     });
-    expect(escrow2After?.state).toBe('COMPLETED');
+    expect(escrow2After?.state).toBe('DELIVERED');
     expect(escrow2After?.autoReleaseTxHash).toBe('tx-hash-auto-release');
   });
 
