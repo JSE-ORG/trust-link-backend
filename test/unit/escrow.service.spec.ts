@@ -132,7 +132,7 @@ describe('EscrowService.handleShipment (issue #16)', () => {
     notifications.notifyFunded.mockResolvedValue();
 
     await expect(
-      service.createEscrow(createDto as any, 'vendor-address'),
+      service.createEscrow(createDto, 'vendor-address'),
     ).resolves.toEqual(
       expect.objectContaining({
         id: 'escrow-2',
@@ -162,7 +162,7 @@ describe('EscrowService.handleShipment (issue #16)', () => {
     repository.findByVendorAndItem.mockResolvedValue(fundedEscrow);
 
     await expect(
-      service.createEscrow(createDto as any, 'vendor-address'),
+      service.createEscrow(createDto, 'vendor-address'),
     ).rejects.toThrow(ConflictException);
     expect(repository.create).not.toHaveBeenCalled();
   });
@@ -178,7 +178,7 @@ describe('EscrowService.handleShipment (issue #16)', () => {
     repository.findByVendorAndItem.mockResolvedValue(null);
 
     await expect(
-      service.createEscrow(createDto as any, 'vendor-address'),
+      service.createEscrow(createDto, 'vendor-address'),
     ).rejects.toThrow(BadRequestException);
     expect(repository.create).not.toHaveBeenCalled();
   });

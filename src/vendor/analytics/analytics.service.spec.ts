@@ -742,7 +742,7 @@ describe('AnalyticsService', () => {
       const endDate = new Date('2024-01-05');
 
       // Access private method using bracket notation
-      const filledData = (service as any).fillDateGaps(
+      const filledData = service['fillDateGaps'](
         dailyMap,
         startDate,
         endDate,
@@ -764,14 +764,14 @@ describe('AnalyticsService', () => {
   describe('formatDateInTimezone', () => {
     it('should format date correctly in UTC', () => {
       const date = new Date('2024-01-15T12:30:00Z');
-      const formatted = (service as any).formatDateInTimezone(date, 'UTC');
+      const formatted = service['formatDateInTimezone'](date, 'UTC');
       expect(formatted).toBe('2024-01-15');
     });
 
     it('attributes 2024-01-15T00:30Z to 2024-01-14 in America/New_York (UTC-5)', () => {
       // 00:30 UTC on Jan 15 is 19:30 on Jan 14 in New York (EST = UTC-5)
       const date = new Date('2024-01-15T00:30:00Z');
-      const formatted = (service as any).formatDateInTimezone(
+      const formatted = service['formatDateInTimezone'](
         date,
         'America/New_York',
       );
