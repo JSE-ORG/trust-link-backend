@@ -15,7 +15,7 @@ describe('AutoReleaseWorker (issue #10)', () => {
   beforeEach(async () => {
     escrowRepository = {
       findAutoReleaseEligible: jest.fn(),
-      markAutoReleaseCompleted: jest.fn(),
+      recordAutoReleaseSubmission: jest.fn(),
       markAutoReleaseSubmitting: jest
         .fn()
         .mockImplementation((id: string) =>
@@ -82,7 +82,7 @@ describe('AutoReleaseWorker (issue #10)', () => {
       'escrow-1',
       expect.any(String),
     );
-    expect(escrowRepository.markAutoReleaseCompleted).toHaveBeenCalledWith(
+    expect(escrowRepository.recordAutoReleaseSubmission).toHaveBeenCalledWith(
       'escrow-1',
       'tx-hash',
     );

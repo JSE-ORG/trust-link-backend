@@ -11,6 +11,17 @@ import { ConfigService } from '../config/config.service';
 
 const EVERY_5_MINUTES = 5 * 60 * 1000;
 
+/**
+ * States an escrow can no longer move out of. Mirrors the set in
+ * `escrow.service.ts`, which gates the chain-event handlers.
+ */
+const TERMINAL_STATES = new Set<string>([
+  'COMPLETED',
+  'RELEASED',
+  'REFUNDED',
+  'CANCELLED',
+]);
+
 @Injectable()
 export class AutoReleaseWorker implements OnModuleInit, OnApplicationShutdown {
   private readonly logger = new Logger(AutoReleaseWorker.name);
@@ -82,7 +93,10 @@ export class AutoReleaseWorker implements OnModuleInit, OnApplicationShutdown {
             continue;
           }
 
-          if (escrow.state === 'COMPLETED' || escrow.autoReleaseTxHash) {
+          // Belt and braces against a stale snapshot: findAutoReleaseEligible
+          // already excludes both of these, but two concurrent runs share one
+          // snapshot, and the chain event may have finalised the escrow since.
+          if (TERMINAL_STATES.has(escrow.state) || escrow.autoReleaseTxHash) {
             continue;
           }
 
@@ -103,7 +117,10 @@ export class AutoReleaseWorker implements OnModuleInit, OnApplicationShutdown {
               escrow.id,
               this.requireAutoReleaseSource(),
             );
-            await this.escrowRepository.markAutoReleaseCompleted(
+            // Record the submission only. The AutoReleased chain event
+            // owns the terminal transition and the completion notification;
+            // see EscrowRepository.recordAutoReleaseSubmission.
+            await this.escrowRepository.recordAutoReleaseSubmission(
               escrow.id,
               txHash,
             );
