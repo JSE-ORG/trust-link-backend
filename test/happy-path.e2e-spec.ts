@@ -6,6 +6,7 @@ import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { ContractService } from '../src/stellar/contract.service';
 import { AutoReleaseWorker } from '../src/workers/auto-release.worker';
+import { EscrowRepository } from '../src/escrow/escrow.repository';
 import { EscrowService } from '../src/escrow/escrow.service';
 import { bearer } from './auth-helper';
 
@@ -18,6 +19,7 @@ const BUYER_ADDRESS =
 describe('Happy-Path E2E — full escrow lifecycle (issue #56)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
+  let escrowRepository: EscrowRepository;
   let contractService: ContractService;
   let autoReleaseWorker: AutoReleaseWorker;
   let escrowService: EscrowService;
@@ -58,6 +60,7 @@ describe('Happy-Path E2E — full escrow lifecycle (issue #56)', () => {
     await app.init();
 
     prisma = app.get(PrismaService);
+    escrowRepository = app.get(EscrowRepository);
     contractService = app.get(ContractService);
     autoReleaseWorker = app.get(AutoReleaseWorker);
     escrowService = app.get(EscrowService);
@@ -159,17 +162,10 @@ describe('Happy-Path E2E — full escrow lifecycle (issue #56)', () => {
     expect(shipped?.shippedAt).toBeTruthy();
 
     // ── 5. Delivery recorded (simulates TrackingPollWorker outcome) ────────
-    // The worker calls escrowRepository.markDelivered internally. We drive it
-    // directly via PrismaService to avoid depending on the logistics API.
-    const deliveredAt = new Date();
-    await prisma.escrow.update({
-      where: { id: escrowId },
-      data: {
-        state: 'DELIVERED',
-        deliveredAt,
-        deliveryRecordedAt: deliveredAt,
-      },
-    });
+    // Driven through the same repository method the worker calls, rather than
+    // a raw Prisma update, so the row this test hands to auto-release is the
+    // row production would produce (#395).
+    await escrowRepository.markDelivered(escrowId, new Date());
 
     const delivered = await prisma.escrow.findUnique({
       where: { id: escrowId },
@@ -178,11 +174,14 @@ describe('Happy-Path E2E — full escrow lifecycle (issue #56)', () => {
     expect(delivered?.deliveredAt).toBeTruthy();
 
     // ── 6. Auto-release worker transitions escrow to COMPLETED ─────────────
-    // Back-date deliveredAt past the 48-hour threshold so the worker picks it up.
+    // Back-date deliveredAt past the 48-hour threshold so the worker picks it
+    // up. The state stays DELIVERED: this step used to roll it back to SHIPPED
+    // to make the worker fire, which was the eligibility bug (#395) being
+    // papered over in the one test that drives the whole lifecycle.
     const pastDelivery = new Date(Date.now() - 49 * 60 * 60 * 1000);
     await prisma.escrow.update({
       where: { id: escrowId },
-      data: { deliveredAt: pastDelivery, state: 'SHIPPED' },
+      data: { deliveredAt: pastDelivery },
     });
 
     await autoReleaseWorker.run();

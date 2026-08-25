@@ -8,7 +8,10 @@ import {
   toEscrowRecord,
 } from '../prisma/prisma.service';
 import { CreateEscrowDto } from './dto/create-escrow.dto';
-import { ESCROW_CACHE_TTL_SECONDS } from './escrow.constants';
+import {
+  AUTO_RELEASE_WINDOW_HOURS,
+  ESCROW_CACHE_TTL_SECONDS,
+} from './escrow.constants';
 import {
   AutoReleaseEligibleResult,
   EventsResult,
@@ -293,20 +296,29 @@ export class EscrowRepository {
   }
 
   /**
-   * Returns SHIPPED escrows whose deliveredAt is at or before the given
-   * referenceTime and have no open dispute or existing auto-release transaction.
-   * The caller (AutoReleaseService) is responsible for computing the cutoff.
+   * Returns DELIVERED escrows whose deliveredAt is at or before
+   * `referenceTime - AUTO_RELEASE_WINDOW_HOURS`, with no open dispute and no
+   * existing or in-flight auto-release transaction. Callers pass the reference
+   * time (normally now); this method derives the cutoff from it.
+   *
+   * The state predicate must stay in step with {@link markDelivered}, which is
+   * the only writer of `deliveredAt` and sets `state: 'DELIVERED'` in the same
+   * update. Querying any other state alongside a non-null `deliveredAt` asks
+   * for a combination the application cannot produce, so the query matches
+   * nothing and auto-release silently never fires (issue #395).
    *
    * @returns an {@link AutoReleaseEligibleResult} of eligible escrow records.
    */
   findAutoReleaseEligible(
     referenceTime = new Date(),
   ): Promise<AutoReleaseEligibleResult> {
-    const cutoff = new Date(referenceTime.getTime() - 48 * 60 * 60 * 1000);
+    const cutoff = new Date(
+      referenceTime.getTime() - AUTO_RELEASE_WINDOW_HOURS * 60 * 60 * 1000,
+    );
     return this.prisma.escrow
       .findMany({
         where: {
-          state: 'SHIPPED',
+          state: 'DELIVERED',
           deliveredAt: { lte: cutoff },
           disputeId: null,
           autoReleaseTxHash: null,

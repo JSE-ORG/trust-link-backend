@@ -2,6 +2,7 @@ import { INestApplication, Logger, ValidationPipe } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { EscrowRepository } from '../src/escrow/escrow.repository';
 import { AutoReleaseWorker } from '../src/workers/auto-release.worker';
 import { ContractService } from '../src/stellar/contract.service';
 import { ensureVendors } from './prisma-helpers';
@@ -33,6 +34,7 @@ describe('Auto-Release Worker — concurrent collision detection (issues #302/#3
   let prisma: PrismaService;
   let worker: AutoReleaseWorker;
   let contractService: ContractService;
+  let escrowRepository: EscrowRepository;
 
   beforeEach(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -48,6 +50,7 @@ describe('Auto-Release Worker — concurrent collision detection (issues #302/#3
     prisma = app.get(PrismaService);
     worker = app.get(AutoReleaseWorker);
     contractService = app.get(ContractService);
+    escrowRepository = app.get(EscrowRepository);
 
     await prisma.reset();
 
@@ -65,6 +68,11 @@ describe('Auto-Release Worker — concurrent collision detection (issues #302/#3
   /**
    * Helper: create a single escrow that is eligible for auto-release.
    * deliveredAt is 50 hours ago (well past the 48-hour threshold).
+   *
+   * Delivery goes through `EscrowRepository.markDelivered`, the only writer of
+   * `deliveredAt` in the application. Writing `deliveredAt` straight onto a
+   * SHIPPED row, as this helper used to, produces a combination production
+   * cannot reach and let the eligibility bug survive this suite (#395).
    */
   async function createEligibleEscrow(suffix: string) {
     const pastDelivery = new Date(Date.now() - 50 * 60 * 60 * 1000);
@@ -72,7 +80,7 @@ describe('Auto-Release Worker — concurrent collision detection (issues #302/#3
     // and this spec writes escrows directly rather than through the API, so it
     // has to create the parent row itself.
     await ensureVendors(prisma, `vendor-concurrent-${suffix}`);
-    return prisma.escrow.create({
+    const escrow = await prisma.escrow.create({
       data: {
         itemName: `Concurrent Item ${suffix}`,
         itemRef: `concurrent-item-${suffix}`,
@@ -83,10 +91,9 @@ describe('Auto-Release Worker — concurrent collision detection (issues #302/#3
         state: 'SHIPPED',
         trackingId: `TRK-CONCURRENT-${suffix}`,
         shippedAt: new Date(Date.now() - 60 * 60 * 60 * 1000),
-        deliveredAt: pastDelivery,
-        deliveryRecordedAt: pastDelivery,
       },
     });
+    return escrowRepository.markDelivered(escrow.id, pastDelivery);
   }
 
   it('calls submitAutoRelease exactly once when two workers race for the same eligible escrow', async () => {
@@ -236,7 +243,7 @@ describe('Auto-Release Worker — concurrent collision detection (issues #302/#3
     });
     expect(afterFailure!.autoReleaseTxHash).toBeNull();
     expect(afterFailure!.autoReleaseSubmittedAt).toBeNull();
-    expect(afterFailure!.state).toBe('SHIPPED');
+    expect(afterFailure!.state).toBe('DELIVERED');
 
     // The claim was released on failure — the next poll cycle retries and
     // this time succeeds.
