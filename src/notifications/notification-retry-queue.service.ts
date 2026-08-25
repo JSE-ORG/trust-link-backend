@@ -33,6 +33,7 @@ import * as crypto from 'crypto';
 import type { ConnectionOptions } from 'bullmq';
 
 import { PrismaService } from '../prisma/prisma.service';
+import { ConfigService } from '../config/config.service';
 import {
   NotificationRetryJobData,
   NotificationRetryBackoff,
@@ -102,6 +103,7 @@ export class NotificationRetryQueueService
   constructor(
     @Optional() options?: CommonOptions,
     @Optional() private readonly prisma?: PrismaService,
+    @Optional() private readonly configService?: ConfigService,
   ) {
     if (options?.backoff) this.options.backoff = options.backoff;
     this.options.deadLetterSink = options?.deadLetterSink;
@@ -178,23 +180,6 @@ export class NotificationRetryQueueService
         return;
       } catch (err) {
         lastError = err;
-        if (job.notificationId && this.prisma) {
-          await this.prisma.notification
-            .update({
-              where: { id: job.notificationId },
-              data: {
-                retryCount: attempt,
-                failedAt: new Date(),
-                lastError: err instanceof Error ? err.message : String(err),
-              },
-            })
-            .catch((dbErr) =>
-              this.logger.error(
-                'Failed to update notification status to FAILED/PENDING',
-                dbErr,
-              ),
-            );
-        }
         if (attempt >= attempts) break;
         const delay = computeBackoffDelay(attempt + 1, this.options.backoff);
         this.logger.warn(
@@ -264,7 +249,7 @@ export class NotificationRetryQueueService
   }
 
   async onModuleInit(): Promise<void> {
-    const url = process.env.REDIS_URL;
+    const url = this.configService?.get<string>('REDIS_URL');
     if (!url) {
       this.logger.warn(
         'REDIS_URL is not set; NotificationRetryQueueService is using the in-process retry runner. ' +

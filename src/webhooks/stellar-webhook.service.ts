@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Injectable,
+  InternalServerErrorException,
   Logger,
   Optional,
   UnauthorizedException,
@@ -8,6 +9,7 @@ import {
 import * as crypto from 'crypto';
 import { ConfigService } from '../config/config.service';
 import { EscrowRepository } from '../escrow/escrow.repository';
+import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { StellarWebhookDto } from './dto/stellar-webhook.dto';
 
@@ -32,6 +34,7 @@ export class StellarWebhookService {
   constructor(
     private readonly configService: ConfigService,
     private readonly escrowRepository: EscrowRepository,
+    private readonly notificationsService: NotificationsService,
     @Optional()
     private readonly prisma?: PrismaService,
   ) {}
@@ -157,8 +160,9 @@ export class StellarWebhookService {
    * Verify HMAC-SHA256 signature.
    *
    * Horizon signs the raw body with the shared secret and sends the hex digest
-   * in the `X-Stellar-Signature` header.  When no secret is configured we skip
-   * verification (useful for local development / tests).
+   * in the `X-Stellar-Signature` header.  Production deployments MUST configure
+   * STELLAR_WEBHOOK_SECRET — when the secret is missing the request is rejected
+   * immediately because there is no way to trust the caller.
    */
   private verifySignature(
     rawBody: Buffer,
@@ -166,13 +170,14 @@ export class StellarWebhookService {
   ): void {
     const secret = this.configService.get('STELLAR_WEBHOOK_SECRET');
     if (!secret) {
-      this.logger.warn(
+      this.logger.error(
         JSON.stringify({
-          msg: 'stellar.webhook.signature_check_skipped',
-          reason: 'STELLAR_WEBHOOK_SECRET not configured',
+          msg: 'stellar.webhook.secret_missing',
+          reason:
+            'STELLAR_WEBHOOK_SECRET is not configured — rejecting request',
         }),
       );
-      return;
+      throw new InternalServerErrorException('Webhook secret not configured');
     }
 
     if (!signature) {
@@ -314,7 +319,11 @@ export class StellarWebhookService {
       }
 
       // ── State transition ─────────────────────────────────────────────────
-      await this.escrowRepository.updateState(escrow.id, 'FUNDED');
+      const updatedEscrow = await this.escrowRepository.updateState(
+        escrow.id,
+        'FUNDED',
+      );
+      await this.notificationsService.notifyFunded(updatedEscrow);
 
       this.logger.log(
         JSON.stringify({

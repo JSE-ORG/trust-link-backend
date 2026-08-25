@@ -1,8 +1,8 @@
 blank_issues_enabled: false
 contact_links:
   - name: Report a security vulnerability
-    url: https://github.com/JSE-ORG/trust-link-backend/blob/main/SECURITY.md
+    url: https://github.com/JSE-ORG/trust-link-backend/blob/dev/SECURITY.md
     about: Do not open a public issue. Email security@trust-link.io. See SECURITY.md for the disclosure process.
   - name: Contributing guide
-    url: https://github.com/JSE-ORG/trust-link-backend/blob/main/CONTRIBUTING.md
+    url: https://github.com/JSE-ORG/trust-link-backend/blob/dev/CONTRIBUTING.md
     about: Setup, the Stellar Wave process, commit conventions, and the specification every PR must follow.

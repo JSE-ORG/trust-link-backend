@@ -5,6 +5,7 @@ import request from 'supertest';
 import { AppModule } from '../../src/app.module';
 import { PrismaService } from '../../src/prisma/prisma.service';
 import { bearer } from '../auth-helper';
+import { ensureVendors } from '../prisma-helpers';
 
 const VENDOR = 'GA36PERSXWPBG7HYKNBVT5PFLTOFYO4Q3CWGJZTYH5GU5OLTKHW7SJHE';
 const BUYER = 'GADRXQS5ZCXLBX6U67CY2WBJNDUXCWGHSQKR76AOJDQECYX36W5S6IYK';
@@ -27,6 +28,14 @@ describe('POST /escrow integration (issue #20)', () => {
     await app.init();
     prisma = app.get(PrismaService);
     await prisma.reset();
+    // Escrow.vendorAddress (and the vendor settings/details tables) are
+    // foreign keys onto VendorProfile.address, so the parent rows must exist
+    // before any row referencing them can be written (#475).
+    await ensureVendors(
+      prisma,
+      'GA36PERSXWPBG7HYKNBVT5PFLTOFYO4Q3CWGJZTYH5GU5OLTKHW7SJHE',
+      'GB3LCRCZEETCBYV4PEIPV2PD2R3AJMC6S2OOBMV5MA6WCOKEMN3XA3K3',
+    );
   });
 
   afterEach(async () => {
@@ -55,7 +64,7 @@ describe('POST /escrow integration (issue #20)', () => {
         amount: 75,
         vendorAddress: VENDOR,
         buyerAddress: BUYER,
-        state: 'FUNDED',
+        state: 'CREATED',
         paymentUrl: expect.stringContaining('/pay/'),
       }),
     );
@@ -166,7 +175,7 @@ describe('POST /escrow integration (issue #20)', () => {
       .get('/vendor/escrows')
       .set('Authorization', bearer(VENDOR))
       .query({
-        state: 'FUNDED',
+        state: 'CREATED',
         sort: 'amount',
         order: 'desc',
         page: 1,

@@ -1,5 +1,6 @@
 import { AdminStatsService } from './admin-stats.service';
 import { PrismaService } from '../../prisma/prisma.service';
+import { ensureVendors } from '../../../test/prisma-helpers';
 
 describe('AdminStatsService', () => {
   let service: AdminStatsService;
@@ -8,7 +9,22 @@ describe('AdminStatsService', () => {
   beforeEach(async () => {
     prisma = new PrismaService();
     await prisma.reset();
+    // Escrow.vendorAddress is a foreign key onto VendorProfile.address (#475).
+    await ensureVendors(
+      prisma,
+      'GVENDOR1',
+      'GVENDOR2',
+      'GVENDOR_A',
+      'GVENDOR_B',
+    );
     service = new AdminStatsService(prisma);
+  });
+
+  afterEach(async () => {
+    // Each `new PrismaService()` opens its own connection pool. Constructed in
+    // beforeEach across ~100 suites, undisconnected clients exhaust Postgres
+    // (`sorry, too many clients already`) partway through a full run.
+    await prisma?.$disconnect();
   });
 
   afterEach(async () => {
@@ -45,6 +61,7 @@ describe('AdminStatsService', () => {
       await prisma.escrow.create({
         data: {
           itemName: `item-${state}`,
+          itemRef: `ref-${state}`,
           amount: 100,
           currency: 'USDC',
           buyerAddress: 'GBUYER1',
@@ -62,14 +79,9 @@ describe('AdminStatsService', () => {
 
     const stats = await service.getStats();
 
-    // PrismaService.findMany filters out CANCELLED by default
-    expect(stats.totalEscrows).toBe(8);
+    expect(stats.totalEscrows).toBe(9);
     for (const state of states) {
-      if (state === 'CANCELLED') {
-        expect(stats.escrowsByState[state]).toBeUndefined();
-      } else {
-        expect(stats.escrowsByState[state]).toBe(1);
-      }
+      expect(stats.escrowsByState[state]).toBe(1);
     }
   });
 
@@ -77,6 +89,7 @@ describe('AdminStatsService', () => {
     await prisma.escrow.create({
       data: {
         itemName: 'item1',
+        itemRef: 'ref-item1-a',
         amount: 250.5,
         currency: 'USDC',
         buyerAddress: 'GBUYER1',
@@ -93,6 +106,7 @@ describe('AdminStatsService', () => {
     await prisma.escrow.create({
       data: {
         itemName: 'item2',
+        itemRef: 'ref-item2-a',
         amount: 749.5,
         currency: 'USDC',
         buyerAddress: 'GBUYER2',
@@ -117,6 +131,7 @@ describe('AdminStatsService', () => {
     await prisma.escrow.create({
       data: {
         itemName: 'item1',
+        itemRef: 'ref-item1-b',
         amount: 100,
         currency: 'USDC',
         buyerAddress: 'GBUYER_A',
@@ -133,6 +148,7 @@ describe('AdminStatsService', () => {
     await prisma.escrow.create({
       data: {
         itemName: 'item2',
+        itemRef: 'ref-item2-b',
         amount: 200,
         currency: 'USDC',
         buyerAddress: 'GBUYER_A',
@@ -157,6 +173,7 @@ describe('AdminStatsService', () => {
     const escrow = await prisma.escrow.create({
       data: {
         itemName: 'item1',
+        itemRef: 'ref-item1-c',
         amount: 100,
         currency: 'USDC',
         buyerAddress: 'GBUYER1',
@@ -182,6 +199,7 @@ describe('AdminStatsService', () => {
     const escrow2 = await prisma.escrow.create({
       data: {
         itemName: 'item2',
+        itemRef: 'ref-item2-c',
         amount: 200,
         currency: 'USDC',
         buyerAddress: 'GBUYER2',
@@ -204,9 +222,23 @@ describe('AdminStatsService', () => {
       },
     });
 
+    // A third dispute needs a third escrow: Dispute.escrowId is unique, so a
+    // second dispute on `escrow` is impossible against the real schema (#475).
+    const escrow3 = await prisma.escrow.create({
+      data: {
+        itemName: 'Item 3',
+        itemRef: 'ref-stats-3',
+        amount: 50,
+        currency: 'USDC',
+        buyerAddress: 'GBUYER1',
+        vendorAddress: 'GVENDOR1',
+        state: 'COMPLETED',
+      },
+    });
+
     await prisma.dispute.create({
       data: {
-        escrowId: escrow.id,
+        escrowId: escrow3.id,
         reason: 'Already resolved',
         status: 'RESOLVED',
       },
@@ -246,6 +278,7 @@ describe('AdminStatsService', () => {
       await prisma.escrow.create({
         data: {
           itemName: `item-${amount}`,
+          itemRef: `ref-${amount}`,
           amount,
           currency: 'USDC',
           buyerAddress: 'GBUYER1',
@@ -272,6 +305,7 @@ describe('AdminStatsService', () => {
     const escrow = await prisma.escrow.create({
       data: {
         itemName: 'item1',
+        itemRef: 'ref-item1-d',
         amount: 100,
         currency: 'USDC',
         buyerAddress: 'GBUYER1',

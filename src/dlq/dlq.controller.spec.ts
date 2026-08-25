@@ -1,5 +1,6 @@
 import { ServiceUnavailableException } from '@nestjs/common';
-import { Test, TestingModule } from '@nestjs/testing';
+import { Test } from '@nestjs/testing';
+import type { TestingModule } from '@nestjs/testing';
 import { DlqController } from './dlq.controller';
 import { DlqService } from './dlq.service';
 import { ContractService } from '../stellar/contract.service';
@@ -153,35 +154,47 @@ describe('DlqController', () => {
   });
 
   describe('GET /admin/dlq', () => {
-    it('passes query filters to dlq.list()', async () => {
+    it('passes query filters, page, and limit to dlq.list()', async () => {
       const { controller, dlq } = await buildController(
         'GAUTORELEASESOURCEADDRESS0000000000000000000000000000',
       );
-      dlq.list.mockResolvedValue([autoReleaseRecord]);
+      const paginated = {
+        data: [autoReleaseRecord],
+        total: 1,
+        page: 2,
+        limit: 10,
+      };
+      dlq.list.mockResolvedValue(paginated);
 
       const result = await controller.list(
         'PENDING_REVIEW',
         'submitAutoRelease',
         'escrow-123',
+        '2',
+        '10',
       );
 
       expect(dlq.list).toHaveBeenCalledWith({
         status: 'PENDING_REVIEW',
         operation: 'submitAutoRelease',
         escrowId: 'escrow-123',
+        page: 2,
+        limit: 10,
       });
-      expect(result).toEqual([autoReleaseRecord]);
+      expect(result).toEqual(paginated);
     });
 
     it('passes empty query when no filters are provided', async () => {
       const { controller, dlq } = await buildController(
         'GAUTORELEASESOURCEADDRESS0000000000000000000000000000',
       );
-      dlq.list.mockResolvedValue([]);
+      const emptyPaginated = { data: [], total: 0, page: 1, limit: 20 };
+      dlq.list.mockResolvedValue(emptyPaginated);
 
-      await controller.list();
+      const result = await controller.list();
 
       expect(dlq.list).toHaveBeenCalledWith({});
+      expect(result).toEqual(emptyPaginated);
     });
   });
 
@@ -207,7 +220,7 @@ describe('DlqController', () => {
       const abandonedRecord = {
         ...autoReleaseRecord,
         status: 'ABANDONED',
-      };
+      } as FailedTransactionRecord;
       dlq.abandon.mockResolvedValue(abandonedRecord);
 
       const result = await controller.abandon('failed-tx-1');

@@ -1,9 +1,17 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
+import {
+  Prisma,
+  FailedTransaction as PrismaFailedTransaction,
+} from '@prisma/client';
+import {
+  PrismaService,
+  toFailedTransactionRecord,
+} from '../prisma/prisma.service';
 import {
   EnqueueFailedTransactionInput,
   FailedTransactionRecord,
   ListFailedTransactionsQuery,
+  PaginatedFailedTransactions,
   ReplayFn,
 } from './dlq.types';
 
@@ -28,7 +36,10 @@ export class DlqService {
         operation: input.operation,
         escrowId: input.escrowId ?? null,
         errorMessage: input.errorMessage,
-        ledgerFeedback: input.ledgerFeedback ?? null,
+        ledgerFeedback:
+          input.ledgerFeedback == null
+            ? Prisma.DbNull
+            : (input.ledgerFeedback as Prisma.InputJsonValue),
         attempts: input.attempts ?? 1,
         status: 'PENDING_REVIEW',
       },
@@ -38,17 +49,33 @@ export class DlqService {
 
   async list(
     query: ListFailedTransactionsQuery = {},
-  ): Promise<FailedTransactionRecord[]> {
-    const where: Record<string, unknown> = {};
+  ): Promise<PaginatedFailedTransactions> {
+    const page = Math.max(1, Number(query.page) || 1);
+    const rawLimit = Number(query.limit) || 20;
+    const limit = Math.min(100, Math.max(1, rawLimit));
+    const skip = (page - 1) * limit;
+
+    const where: Prisma.FailedTransactionWhereInput = {};
     if (query.status) where.status = query.status;
     if (query.operation) where.operation = query.operation;
     if (query.escrowId) where.escrowId = query.escrowId;
 
-    const records = await this.prisma.failedTransaction.findMany({
-      where,
-      orderBy: { createdAt: 'desc' },
-    });
-    return records.map((r) => this.toRecord(r));
+    const [records, total] = await Promise.all([
+      this.prisma.failedTransaction.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      this.prisma.failedTransaction.count({ where }),
+    ]);
+
+    return {
+      data: records.map((r) => this.toRecord(r)),
+      total,
+      page,
+      limit,
+    };
   }
 
   async get(id: string): Promise<FailedTransactionRecord> {
@@ -133,9 +160,7 @@ export class DlqService {
     return this.get(id);
   }
 
-  private toRecord(
-    row: import('../prisma/prisma.service').FailedTransactionRecord,
-  ): FailedTransactionRecord {
-    return row;
+  private toRecord(row: PrismaFailedTransaction): FailedTransactionRecord {
+    return toFailedTransactionRecord(row);
   }
 }

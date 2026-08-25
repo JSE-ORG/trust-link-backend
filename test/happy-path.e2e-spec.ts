@@ -6,6 +6,8 @@ import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { ContractService } from '../src/stellar/contract.service';
 import { AutoReleaseWorker } from '../src/workers/auto-release.worker';
+import { EscrowRepository } from '../src/escrow/escrow.repository';
+import { EscrowService } from '../src/escrow/escrow.service';
 import { bearer } from './auth-helper';
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -17,8 +19,30 @@ const BUYER_ADDRESS =
 describe('Happy-Path E2E — full escrow lifecycle (issue #56)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
+  let escrowRepository: EscrowRepository;
   let contractService: ContractService;
   let autoReleaseWorker: AutoReleaseWorker;
+  let escrowService: EscrowService;
+
+  // Issue #494 changed escrow creation to start in CREATED, not FUNDED.
+  // There is no HTTP endpoint for funding — in production it happens via
+  // SorobanPollerService observing an on-chain payment and calling
+  // EscrowService.syncStateFromChain directly (see
+  // src/stellar/soroban-poller.service.ts). Tests that need a FUNDED escrow
+  // drive it through that same real code path rather than writing the state
+  // into Postgres by hand, so this also exercises the notifyFunded call and
+  // the funded-at bookkeeping that syncStateFromChain performs.
+  async function fundEscrow(escrowId: string): Promise<void> {
+    const result = await escrowService.syncStateFromChain({
+      eventType: 'EscrowFunded',
+      escrowId,
+    });
+    if (result.skipped) {
+      throw new Error(
+        `fundEscrow: syncStateFromChain skipped (${result.reason}) for ${escrowId}`,
+      );
+    }
+  }
 
   beforeEach(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -36,8 +60,10 @@ describe('Happy-Path E2E — full escrow lifecycle (issue #56)', () => {
     await app.init();
 
     prisma = app.get(PrismaService);
+    escrowRepository = app.get(EscrowRepository);
     contractService = app.get(ContractService);
     autoReleaseWorker = app.get(AutoReleaseWorker);
+    escrowService = app.get(EscrowService);
 
     await prisma.reset();
 
@@ -80,11 +106,11 @@ describe('Happy-Path E2E — full escrow lifecycle (issue #56)', () => {
 
     const escrowId: string = createRes.body.id;
     expect(escrowId).toBeDefined();
-    expect(createRes.body.state).toBe('FUNDED');
+    expect(createRes.body.state).toBe('CREATED');
 
     // DB sanity check
     const created = await prisma.escrow.findUnique({ where: { id: escrowId } });
-    expect(created?.state).toBe('FUNDED');
+    expect(created?.state).toBe('CREATED');
     expect(created?.vendorAddress).toBe(VENDOR_ADDRESS);
     expect(created?.buyerAddress).toBe(BUYER_ADDRESS);
 
@@ -104,6 +130,11 @@ describe('Happy-Path E2E — full escrow lifecycle (issue #56)', () => {
     expect(afterContact?.buyerContactEmail).not.toBe('buyer@example.com');
     expect(afterContact?.buyerContactPhone).toBeDefined();
     expect(afterContact?.buyerContactPhone).not.toBe('+2348012345678');
+    expect(afterContact?.state).toBe('CREATED');
+
+    // ── 2b. Buyer pays — the on-chain poller observes the payment and syncs
+    // the escrow to FUNDED (issue #494/#549) ───────────────────────────────
+    await fundEscrow(escrowId);
 
     // ── 3. GET /escrow/:id must not expose contact fields ─────────────────
     const publicRes = await request(app.getHttpServer())
@@ -131,17 +162,10 @@ describe('Happy-Path E2E — full escrow lifecycle (issue #56)', () => {
     expect(shipped?.shippedAt).toBeTruthy();
 
     // ── 5. Delivery recorded (simulates TrackingPollWorker outcome) ────────
-    // The worker calls escrowRepository.markDelivered internally. We drive it
-    // directly via PrismaService to avoid depending on the logistics API.
-    const deliveredAt = new Date();
-    await prisma.escrow.update({
-      where: { id: escrowId },
-      data: {
-        state: 'DELIVERED',
-        deliveredAt,
-        deliveryRecordedAt: deliveredAt,
-      },
-    });
+    // Driven through the same repository method the worker calls, rather than
+    // a raw Prisma update, so the row this test hands to auto-release is the
+    // row production would produce (#395).
+    await escrowRepository.markDelivered(escrowId, new Date());
 
     const delivered = await prisma.escrow.findUnique({
       where: { id: escrowId },
@@ -149,12 +173,15 @@ describe('Happy-Path E2E — full escrow lifecycle (issue #56)', () => {
     expect(delivered?.state).toBe('DELIVERED');
     expect(delivered?.deliveredAt).toBeTruthy();
 
-    // ── 6. Auto-release worker transitions escrow to COMPLETED ─────────────
-    // Back-date deliveredAt past the 48-hour threshold so the worker picks it up.
+    // ── 6. Auto-release worker submits the transaction ─────────────────────
+    // Back-date deliveredAt past the 48-hour threshold so the worker picks it
+    // up. The state stays DELIVERED: this step used to roll it back to SHIPPED
+    // to make the worker fire, which was the eligibility bug (#395) being
+    // papered over in the one test that drives the whole lifecycle.
     const pastDelivery = new Date(Date.now() - 49 * 60 * 60 * 1000);
     await prisma.escrow.update({
       where: { id: escrowId },
-      data: { deliveredAt: pastDelivery, state: 'SHIPPED' },
+      data: { deliveredAt: pastDelivery },
     });
 
     await autoReleaseWorker.run();
@@ -164,17 +191,39 @@ describe('Happy-Path E2E — full escrow lifecycle (issue #56)', () => {
       expect.any(String),
     );
 
-    const completed = await prisma.escrow.findUnique({
+    // Submission is not confirmation: the worker records the hash and stops.
+    const submitted = await prisma.escrow.findUnique({
       where: { id: escrowId },
     });
-    expect(completed?.state).toBe('COMPLETED');
-    expect(completed?.autoReleaseTxHash).toBe('tx-hash-auto-release-001');
+    expect(submitted?.state).toBe('DELIVERED');
+    expect(submitted?.autoReleaseTxHash).toBe('tx-hash-auto-release-001');
 
-    // ── 7. Notification rows written for all key transitions ───────────────
+    // ── 7. The AutoReleased chain event finalises the escrow ───────────────
+    // In production SorobanPollerService observes the contract event and calls
+    // this. It is what confirms the transaction landed, so it owns the
+    // terminal transition and the completion notification.
+    await escrowService.syncStateFromChain({
+      eventType: 'AutoReleased',
+      escrowId,
+      txHash: 'tx-hash-auto-release-001',
+    });
+
+    const released = await prisma.escrow.findUnique({
+      where: { id: escrowId },
+    });
+    expect(released?.state).toBe('RELEASED');
+    expect(released?.autoReleaseTxHash).toBe('tx-hash-auto-release-001');
+
+    // ── 8. Notification rows written for all key transitions ───────────────
+    // COMPLETED is asserted last because notifyCompleted is fired without
+    // await on the sync path, so the row lands just after syncStateFromChain
+    // resolves.
+    await new Promise((resolve) => setImmediate(resolve));
     const notifications = await prisma.notification.findMany();
     const types = notifications.map((n) => n.type);
     expect(types).toContain('FUNDED');
     expect(types).toContain('SHIPPED');
+    expect(types).toContain('COMPLETED');
   });
 
   // ── Buyer contact: email-only ──────────────────────────────────────────────
@@ -295,8 +344,12 @@ describe('Happy-Path E2E — full escrow lifecycle (issue #56)', () => {
 
     const escrowId: string = createRes.body.id;
 
+    // Issue #549: the escrow is CREATED (not FUNDED) at this point, so the
+    // FUNDED-only PATCH /escrow/:id/cancel is the wrong endpoint here — the
+    // CREATED-only DELETE /escrow/:id (cancelPendingEscrow) is what
+    // actually cancels it.
     await request(app.getHttpServer())
-      .patch(`/escrow/${escrowId}/cancel`)
+      .delete(`/escrow/${escrowId}`)
       .set('Authorization', bearer(VENDOR_ADDRESS))
       .expect(200);
 
@@ -323,6 +376,11 @@ describe('Happy-Path E2E — full escrow lifecycle (issue #56)', () => {
       .expect(201);
 
     const escrowId: string = createRes.body.id;
+
+    // Issue #549: shipment requires FUNDED; fund it through the real sync
+    // path first so the *first* ship succeeds and the test actually
+    // exercises "already shipped", not "not yet funded".
+    await fundEscrow(escrowId);
 
     await request(app.getHttpServer())
       .patch(`/escrow/${escrowId}/ship`)

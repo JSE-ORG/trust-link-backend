@@ -5,6 +5,7 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { JwtGuard } from '../../auth/guards/jwt.guard';
 import { AdminGuard } from '../guards/admin.guard';
 import { AdminStatsService } from './admin-stats.service';
@@ -23,6 +24,7 @@ export class AdminStatsController {
   })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   @ApiResponse({ status: 403, description: 'Admin access required.' })
+  @Throttle({ auth: { limit: 20, ttl: 60000 } })
   @Get()
   getStats() {
     return this.adminStatsService.getStats();

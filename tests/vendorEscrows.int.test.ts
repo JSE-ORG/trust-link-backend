@@ -15,7 +15,11 @@ interface AuthenticatedRequest extends Request {
   };
 }
 
-const mockAuthMiddleware = (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+const mockAuthMiddleware = (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction,
+) => {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return res.status(401).json({ error: 'Unauthorized' });
@@ -27,72 +31,80 @@ const mockAuthMiddleware = (req: AuthenticatedRequest, res: Response, next: Next
 };
 
 // GET /vendor/escrows controller
-app.get('/vendor/escrows', mockAuthMiddleware, async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const vendorAddress = req.user?.address;
-    if (!vendorAddress) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-
-    const { state, sort, order, page, limit } = req.query;
-
-    // Vendor isolation assertion parameter
-    // If request wants to query another vendor's data or check invalid context
-    const reqVendor = req.headers['x-query-vendor-address'] as string;
-    if (reqVendor && reqVendor !== vendorAddress) {
-      return res.status(403).json({ error: 'Forbidden' });
-    }
-
-    // Validation & Sorting whitelist
-    const allowedSortColumns = ['createdAt', 'amount'];
-    const sortColumn = allowedSortColumns.includes(sort as string) ? (sort as string) : 'createdAt';
-    const sortOrder = order === 'asc' ? 'asc' : 'desc';
-
-    // Pagination
-    const pageNum = parseInt(page as string, 10) || 1;
-    const limitNum = parseInt(limit as string, 10) || 10;
-    const skip = (pageNum - 1) * limitNum;
-
-    // Filter construction
-    const whereClause: any = {
-      vendorAddress: reqVendor || vendorAddress,
-    };
-
-    if (state) {
-      if (!Object.values(EscrowState).includes(state as EscrowState)) {
-        return res.status(400).json({ error: 'Invalid state parameter' });
+app.get(
+  '/vendor/escrows',
+  mockAuthMiddleware,
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      const vendorAddress = req.user?.address;
+      if (!vendorAddress) {
+        return res.status(401).json({ error: 'Unauthorized' });
       }
-      whereClause.state = state as EscrowState;
+
+      const { state, sort, order, page, limit } = req.query;
+
+      // Vendor isolation assertion parameter
+      // If request wants to query another vendor's data or check invalid context
+      const reqVendor = req.headers['x-query-vendor-address'] as string;
+      if (reqVendor && reqVendor !== vendorAddress) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+
+      // Validation & Sorting whitelist
+      const allowedSortColumns = ['createdAt', 'amount'];
+      const sortColumn = allowedSortColumns.includes(sort as string)
+        ? (sort as string)
+        : 'createdAt';
+      const sortOrder = order === 'asc' ? 'asc' : 'desc';
+
+      // Pagination
+      const pageNum = parseInt(page as string, 10) || 1;
+      const limitNum = parseInt(limit as string, 10) || 10;
+      const skip = (pageNum - 1) * limitNum;
+
+      // Filter construction
+      const whereClause: any = {
+        vendorAddress: reqVendor || vendorAddress,
+      };
+
+      if (state) {
+        if (!Object.values(EscrowState).includes(state as EscrowState)) {
+          return res.status(400).json({ error: 'Invalid state parameter' });
+        }
+        whereClause.state = state as EscrowState;
+      }
+
+      const [escrows, total] = await prisma.$transaction([
+        prisma.escrow.findMany({
+          where: whereClause,
+          orderBy: {
+            [sortColumn]: sortOrder,
+          },
+          skip,
+          take: limitNum,
+        }),
+        prisma.escrow.count({
+          where: whereClause,
+        }),
+      ]);
+
+      return res.status(200).json({
+        data: escrows,
+        total,
+        page: pageNum,
+        limit: limitNum,
+      });
+    } catch (error: any) {
+      return res.status(500).json({ error: error.message });
     }
-
-    const [escrows, total] = await prisma.$transaction([
-      prisma.escrow.findMany({
-        where: whereClause,
-        orderBy: {
-          [sortColumn]: sortOrder,
-        },
-        skip,
-        take: limitNum,
-      }),
-      prisma.escrow.count({
-        where: whereClause,
-      }),
-    ]);
-
-    return res.status(200).json({
-      data: escrows,
-      total,
-      page: pageNum,
-      limit: limitNum,
-    });
-  } catch (error: any) {
-    return res.status(500).json({ error: error.message });
-  }
-});
+  },
+);
 
 describe('GET /vendor/escrows Integration Tests', () => {
-  const vendorAddressA = 'GD3W57WQA63W6V5P2K7G2RD4M4JYZ736H72Z5TQX6Z62S7H3L2B2J5V6';
-  const vendorAddressB = 'GBRPDO4JDHPUC253QA46TQX6S7D67V72Z5TQX6Z62S7H3L2B2J5V6VND';
+  const vendorAddressA =
+    'GD3W57WQA63W6V5P2K7G2RD4M4JYZ736H72Z5TQX6Z62S7H3L2B2J5V6';
+  const vendorAddressB =
+    'GBRPDO4JDHPUC253QA46TQX6S7D67V72Z5TQX6Z62S7H3L2B2J5V6VND';
   const buyerAddress = 'GDBW53QA46TQX6S7D67V72Z5TQX6Z62S7H3L2B2J5V6BUY18274L2P';
 
   beforeAll(async () => {
@@ -109,17 +121,97 @@ describe('GET /vendor/escrows Integration Tests', () => {
     // Seed exactly 10 test escrows across multiple states
     const testEscrows = [
       // Vendor A
-      { itemName: 'Item 1', itemRef: 'REF-1', amount: new Prisma.Decimal('100.00'), currency: 'USD', buyerAddress, vendorAddress: vendorAddressA, state: EscrowState.SHIPPED },
-      { itemName: 'Item 2', itemRef: 'REF-2', amount: new Prisma.Decimal('250.00'), currency: 'USD', buyerAddress, vendorAddress: vendorAddressA, state: EscrowState.SHIPPED },
-      { itemName: 'Item 3', itemRef: 'REF-3', amount: new Prisma.Decimal('50.00'), currency: 'USD', buyerAddress, vendorAddress: vendorAddressA, state: EscrowState.CREATED },
-      { itemName: 'Item 4', itemRef: 'REF-4', amount: new Prisma.Decimal('500.00'), currency: 'USD', buyerAddress, vendorAddress: vendorAddressA, state: EscrowState.FUNDED },
-      { itemName: 'Item 5', itemRef: 'REF-5', amount: new Prisma.Decimal('75.00'), currency: 'USD', buyerAddress, vendorAddress: vendorAddressA, state: EscrowState.DELIVERED },
-      { itemName: 'Item 6', itemRef: 'REF-6', amount: new Prisma.Decimal('150.00'), currency: 'USD', buyerAddress, vendorAddress: vendorAddressA, state: EscrowState.COMPLETED },
-      { itemName: 'Item 7', itemRef: 'REF-7', amount: new Prisma.Decimal('300.00'), currency: 'USD', buyerAddress, vendorAddress: vendorAddressA, state: EscrowState.REFUNDED },
-      { itemName: 'Item 8', itemRef: 'REF-8', amount: new Prisma.Decimal('20.00'), currency: 'USD', buyerAddress, vendorAddress: vendorAddressA, state: EscrowState.DISPUTED },
+      {
+        itemName: 'Item 1',
+        itemRef: 'REF-1',
+        amount: new Prisma.Decimal('100.00'),
+        currency: 'USD',
+        buyerAddress,
+        vendorAddress: vendorAddressA,
+        state: EscrowState.SHIPPED,
+      },
+      {
+        itemName: 'Item 2',
+        itemRef: 'REF-2',
+        amount: new Prisma.Decimal('250.00'),
+        currency: 'USD',
+        buyerAddress,
+        vendorAddress: vendorAddressA,
+        state: EscrowState.SHIPPED,
+      },
+      {
+        itemName: 'Item 3',
+        itemRef: 'REF-3',
+        amount: new Prisma.Decimal('50.00'),
+        currency: 'USD',
+        buyerAddress,
+        vendorAddress: vendorAddressA,
+        state: EscrowState.CREATED,
+      },
+      {
+        itemName: 'Item 4',
+        itemRef: 'REF-4',
+        amount: new Prisma.Decimal('500.00'),
+        currency: 'USD',
+        buyerAddress,
+        vendorAddress: vendorAddressA,
+        state: EscrowState.FUNDED,
+      },
+      {
+        itemName: 'Item 5',
+        itemRef: 'REF-5',
+        amount: new Prisma.Decimal('75.00'),
+        currency: 'USD',
+        buyerAddress,
+        vendorAddress: vendorAddressA,
+        state: EscrowState.DELIVERED,
+      },
+      {
+        itemName: 'Item 6',
+        itemRef: 'REF-6',
+        amount: new Prisma.Decimal('150.00'),
+        currency: 'USD',
+        buyerAddress,
+        vendorAddress: vendorAddressA,
+        state: EscrowState.COMPLETED,
+      },
+      {
+        itemName: 'Item 7',
+        itemRef: 'REF-7',
+        amount: new Prisma.Decimal('300.00'),
+        currency: 'USD',
+        buyerAddress,
+        vendorAddress: vendorAddressA,
+        state: EscrowState.REFUNDED,
+      },
+      {
+        itemName: 'Item 8',
+        itemRef: 'REF-8',
+        amount: new Prisma.Decimal('20.00'),
+        currency: 'USD',
+        buyerAddress,
+        vendorAddress: vendorAddressA,
+        state: EscrowState.DISPUTED,
+      },
       // Vendor B
-      { itemName: 'Item 9', itemRef: 'REF-9', amount: new Prisma.Decimal('800.00'), currency: 'USD', buyerAddress, vendorAddress: vendorAddressB, state: EscrowState.SHIPPED },
-      { itemName: 'Item 10', itemRef: 'REF-10', amount: new Prisma.Decimal('90.00'), currency: 'USD', buyerAddress, vendorAddress: vendorAddressB, state: EscrowState.FUNDED },
+      {
+        itemName: 'Item 9',
+        itemRef: 'REF-9',
+        amount: new Prisma.Decimal('800.00'),
+        currency: 'USD',
+        buyerAddress,
+        vendorAddress: vendorAddressB,
+        state: EscrowState.SHIPPED,
+      },
+      {
+        itemName: 'Item 10',
+        itemRef: 'REF-10',
+        amount: new Prisma.Decimal('90.00'),
+        currency: 'USD',
+        buyerAddress,
+        vendorAddress: vendorAddressB,
+        state: EscrowState.FUNDED,
+      },
     ];
 
     for (const escrowData of testEscrows) {
