@@ -258,9 +258,23 @@ export class AppController {
     return { db, horizon, redis };
   }
 
+  /**
+   * Liveness check for the database connection.
+   *
+   * The query must stay bounded. `findMany({})` with no `where`, `take` or
+   * `select` returns every escrow row, and this runs on `GET /health/ready`
+   * and the legacy `GET /health`, both polled by a load balancer on a short
+   * interval. That was survivable while `PrismaService` was an in-memory fake;
+   * against the real client it is an unbounded `SELECT *` on every poll
+   * (issue #563). One id is all the probe needs to prove the connection and
+   * the schema are reachable.
+   */
   private async checkDatabase(): Promise<ComponentHealth> {
     try {
-      await this.prismaService.escrow.findMany({});
+      await this.prismaService.escrow.findMany({
+        select: { id: true },
+        take: 1,
+      });
       return { status: 'ok' };
     } catch (err) {
       const message =
