@@ -1,5 +1,4 @@
 import { Injectable, UnauthorizedException, Logger } from '@nestjs/common';
-import { Cron } from '@nestjs/schedule';
 import { createHmac, randomBytes } from 'crypto';
 import {
   Keypair,
@@ -69,18 +68,6 @@ export class Sep10Service {
         'The configured SEP-10 signing secret is not a valid Stellar secret key.',
       );
     }
-  }
-
-  /** Removes expired nonces from the database every 24 hours. */
-  @Cron('0 0 * * *')
-  async cleanupExpiredNonces(): Promise<void> {
-    const now = new Date();
-    const result = await this.prisma.nonce.deleteMany({
-      where: {
-        expiresAt: { lt: now },
-      },
-    });
-    this.logger.log(`Cleaned up ${result.count} expired nonces`);
   }
 
   /** Builds and stores a SEP-10 challenge transaction for a wallet account. */

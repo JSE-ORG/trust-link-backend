@@ -147,12 +147,38 @@ export class EscrowService {
       throw new ConflictException('Duplicate escrow for this item reference');
     }
 
+    await this.ensureVendorProfile(vendorAddress);
+
     const escrow = await this.escrowRepository.create(dto, vendorAddress);
-    await this.notificationsService.notifyFunded(escrow);
     return {
       ...escrow,
       paymentUrl: this.buildPaymentUrl(escrow.id),
     };
+  }
+
+  /**
+   * Guarantees the vendor has a VendorProfile row before an escrow references
+   * it.
+   *
+   * `Escrow.vendorAddress` is a foreign key onto `VendorProfile.address`. The
+   * previous in-memory store enforced no constraints, so a vendor could create
+   * an escrow without ever registering a profile. Against the real database
+   * (#475) that same request fails with
+   * `Foreign key constraint violated on the constraint: Escrow_vendorAddress_fkey`,
+   * surfacing as a 500 for every first-time vendor.
+   *
+   * The caller's address comes from a verified SEP-10 token, so creating a
+   * minimal profile here is safe: the vendor can fill in the real business
+   * details later via the vendor profile endpoints. `upsert` with an empty
+   * `update` leaves an existing profile untouched.
+   */
+  private async ensureVendorProfile(vendorAddress: string): Promise<void> {
+    if (!this.prisma) return;
+    await this.prisma.vendorProfile.upsert({
+      where: { address: vendorAddress },
+      create: { address: vendorAddress, businessName: vendorAddress },
+      update: {},
+    });
   }
 
   /** Wrapper for createEscrow that ensures idempotency via Redis caching. */

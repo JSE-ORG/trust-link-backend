@@ -1,13 +1,10 @@
 import { Injectable } from '@nestjs/common';
-import {
-  PrismaService,
-  VendorTrackingSettingsRecord,
-} from '../../prisma/prisma.service';
-import { ChartDataResponse, DailyVolumeData } from './analytics.dto';
+import { PrismaService } from '../../prisma/prisma.service';
+import { ChartDataResponse, DailyVolumeDataDto } from './analytics.dto';
 import {
   AnalyticsStatsResponse,
-  TransactionStats,
-  ChannelMetrics,
+  TransactionStatsDto,
+  ChannelMetricsDto,
 } from './analytics-stats.dto';
 
 @Injectable()
@@ -30,16 +27,35 @@ export class AnalyticsService {
     startDate.setDate(startDate.getDate() - days + 1);
     startDate.setUTCHours(0, 0, 0, 0);
 
-    // Use raw SQL for database-level aggregation with proper timezone handling
-    const aggregationResult = await this.prisma.$queryRaw<{
-      date: string;
-      totalVolume: number;
-      transactionCount: number;
-      completedCount: number;
-      disputedCount: number;
-    }>`
+    // Use raw SQL for database-level aggregation with proper timezone handling.
+    //
+    // Two things here are load-bearing:
+    //
+    // 1. `createdAt` is `timestamp without time zone` holding a UTC instant.
+    //    A single `AT TIME ZONE ${timezone}` would read that naive value as
+    //    *local* wall time and convert the wrong way, shifting the bucket by
+    //    the server's UTC offset and putting rows near midnight on the wrong
+    //    day. Attaching UTC first, then converting, is what actually yields
+    //    the calendar day in the caller's timezone. This is invisible on a
+    //    server running UTC (such as CI) and wrong everywhere else.
+    //
+    // 2. GROUP BY / ORDER BY reference the select item by ordinal rather than
+    //    repeating the expression: `${timezone}` is bound as a query
+    //    parameter, so a repeated expression arrives as a *different*
+    //    placeholder ($1 vs $3) and Postgres cannot match it to the grouped
+    //    column, failing with `column "Escrow.createdAt" must appear in the
+    //    GROUP BY clause`.
+    const aggregationResult = await this.prisma.$queryRaw<
+      Array<{
+        date: string;
+        totalVolume: number;
+        transactionCount: number;
+        completedCount: number;
+        disputedCount: number;
+      }>
+    >`
       SELECT 
-        DATE("createdAt" AT TIME ZONE ${timezone})::date as date,
+        DATE(("createdAt" AT TIME ZONE 'UTC') AT TIME ZONE ${timezone})::date as date,
         COALESCE(SUM("amount"), 0) as "totalVolume",
         COUNT(*) as "transactionCount",
         SUM(CASE WHEN "state" IN ('COMPLETED', 'RELEASED') THEN 1 ELSE 0 END) as "completedCount",
@@ -49,15 +65,19 @@ export class AnalyticsService {
         "vendorAddress" = ${vendorAddress}
         AND "createdAt" >= ${startDate}
         AND "createdAt" <= ${endDate}
-      GROUP BY DATE("createdAt" AT TIME ZONE ${timezone})::date
-      ORDER BY date ASC
+      GROUP BY 1
+      ORDER BY 1 ASC
     `;
 
     // Convert aggregation results to DailyVolumeData format
-    const dailyMap = new Map<string, DailyVolumeData>();
+    const dailyMap = new Map<string, DailyVolumeDataDto>();
 
     type AggRow = {
-      date: string;
+      // A Postgres `date` column comes back from the driver as a JS Date, not
+      // a string, so this is normalised below before being used as a map key —
+      // fillDateGaps looks the key up as 'YYYY-MM-DD' and would otherwise never
+      // match, silently reporting every day as zero.
+      date: string | Date;
       totalVolume: number | string;
       transactionCount: number | string;
       completedCount: number | string;
@@ -65,7 +85,7 @@ export class AnalyticsService {
     };
     for (const row of aggregationResult) {
       const r = row as AggRow;
-      const dateKey = r.date;
+      const dateKey = this.toDateKey(r.date);
       const totalVolume = Number(r.totalVolume);
       const transactionCount = Number(r.transactionCount);
       const completedCount = Number(r.completedCount);
@@ -121,12 +141,12 @@ export class AnalyticsService {
    * Ensures consistent time-series data even for days with no activity
    */
   private fillDateGaps(
-    dailyMap: Map<string, DailyVolumeData>,
+    dailyMap: Map<string, DailyVolumeDataDto>,
     startDate: Date,
     endDate: Date,
     timezone: string = 'UTC',
-  ): DailyVolumeData[] {
-    const result: DailyVolumeData[] = [];
+  ): DailyVolumeDataDto[] {
+    const result: DailyVolumeDataDto[] = [];
     const currentDate = new Date(startDate);
 
     while (currentDate <= endDate) {
@@ -160,6 +180,20 @@ export class AnalyticsService {
   }
 
   /**
+   * Normalises a `date` column from a raw query into a 'YYYY-MM-DD' key.
+   *
+   * The aggregation already casts to the caller's timezone in SQL, so the
+   * value returned is the calendar day itself. It is read in UTC rather than
+   * re-formatted in the caller's timezone, which would shift it by a day.
+   */
+  private toDateKey(value: string | Date): string {
+    if (value instanceof Date) {
+      return value.toISOString().slice(0, 10);
+    }
+    return String(value).slice(0, 10);
+  }
+
+  /**
    * Retrieves overall transaction statistics for a vendor.
    * Uses fast query paths with composite indexes on (vendorAddress, state).
    * Includes conversion metrics and channel preferences.
@@ -181,7 +215,7 @@ export class AnalyticsService {
     });
 
     // Calculate transaction statistics
-    const stats: TransactionStats = {
+    const stats: TransactionStatsDto = {
       totalVolume: 0,
       activeVolume: 0,
       totalTransactions: escrows.length,
@@ -232,16 +266,16 @@ export class AnalyticsService {
 
     // Fetch vendor tracking settings for channel preferences
     const trackingSettings =
-      (await this.prisma.vendorTrackingSettings.findUnique({
+      await this.prisma.vendorTrackingSettings.findUnique({
         where: { vendorAddress },
         select: {
           notificationChannels: true,
         },
-      })) as Pick<VendorTrackingSettingsRecord, 'notificationChannels'> | null;
+      });
 
     const notificationChannels = trackingSettings?.notificationChannels ?? [];
 
-    const channels: ChannelMetrics = {
+    const channels: ChannelMetricsDto = {
       email: {
         notificationsEnabled: notificationChannels.includes('EMAIL'),
       },

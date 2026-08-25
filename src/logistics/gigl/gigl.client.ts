@@ -56,6 +56,43 @@ export class GiglProviderError extends Error {
 }
 
 /**
+ * Typed error thrown when the GIGL API returns a 2xx response whose body
+ * does not match the expected `GiglTrackingResponse` shape. Guard against
+ * providers returning HTML error pages, truncated payloads, or success-with-
+ * empty-body under a 200 status.
+ */
+export class GiglInvalidResponseError extends Error {
+  constructor(trackingNumber: string, reason: string) {
+    super(
+      `GIGL API returned a malformed response for tracking number "${trackingNumber}": ${reason}`,
+    );
+    this.name = 'GiglInvalidResponseError';
+  }
+}
+
+/**
+ * Type guard that determines whether a value matches the
+ * `GiglTrackingResponse` shape returned by `GET /tracking/{trackingNumber}`.
+ *
+ * Used to surface providers or upstreams that respond with 2xx and an
+ * unexpected body (HTML error page, empty body, truncated JSON, etc.) as a
+ * typed `GiglInvalidResponseError` rather than leaking the bad payload to
+ * downstream consumers.
+ */
+function isValidGiglResponse(data: unknown): data is GiglTrackingResponse {
+  if (typeof data !== 'object' || data === null) return false;
+  const record = data as Record<string, unknown>;
+  return (
+    typeof record.tracking_number === 'string' &&
+    typeof record.current_status === 'string' &&
+    typeof record.carrier_code === 'string' &&
+    (typeof record.estimated_delivery === 'string' ||
+      record.estimated_delivery === null) &&
+    Array.isArray(record.events)
+  );
+}
+
+/**
  * Thin HTTP wrapper around the GIGL logistics tracking API.
  *
  * Responsible **only** for making the HTTP call and surfacing typed errors.
@@ -81,12 +118,20 @@ export class GiglClient {
    * @throws {GiglUnauthorizedError} on HTTP 401
    * @throws {GiglNetworkError} on network-level failures (timeout, ECONNREFUSED, …)
    * @throws {GiglProviderError} on any other non-2xx HTTP response
+   * @throws {GiglInvalidResponseError} when a 2xx response body does not match
+   *   the expected tracking-payload schema
    */
   async fetchTracking(trackingNumber: string): Promise<GiglTrackingResponse> {
     try {
       const response = await this.http.get<GiglTrackingResponse>(
         `/tracking/${encodeURIComponent(trackingNumber)}`,
       );
+      if (!isValidGiglResponse(response.data)) {
+        throw new GiglInvalidResponseError(
+          trackingNumber,
+          'response body is missing one or more required fields',
+        );
+      }
       return response.data;
     } catch (err) {
       if (axios.isAxiosError(err)) {

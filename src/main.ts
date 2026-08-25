@@ -2,31 +2,21 @@ import './tracing/tracing.bootstrap';
 import * as Sentry from '@sentry/nestjs';
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
-import { SwaggerModule } from '@nestjs/swagger';
 import compression from 'compression';
 import * as express from 'express';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { ConfigService } from './config/config.service';
 import { JsonLoggerService } from './common/logger/json-logger.service';
-import { createOpenApiDocument } from './openapi';
+import { createOpenApiDocument, setupOpenApiUi } from './openapi';
 import { SanitizationPipe } from './common/pipes/sanitization.pipe';
 import { SentryInterceptor } from './common/interceptors/sentry.interceptor';
 import { buildCspConnectSrc } from './common/security/csp.config';
+import { CORS_ALLOWED_HEADERS } from './common/security/cors.config';
 
 const bootstrapLogger = new JsonLoggerService('Bootstrap');
 
 async function bootstrap(): Promise<void> {
-  const sentryDsn = process.env.SENTRY_DSN;
-  if (sentryDsn) {
-    Sentry.init({
-      dsn: sentryDsn,
-      release: process.env.GIT_SHA,
-      environment: process.env.NODE_ENV ?? 'development',
-      tracesSampleRate: process.env.NODE_ENV === 'production' ? 0.2 : 1.0,
-    });
-  }
-
   const app = await NestFactory.create(AppModule, {
     bufferLogs: true,
     bodyParser: false,
@@ -36,6 +26,20 @@ async function bootstrap(): Promise<void> {
   app.useLogger(jsonLogger);
 
   const configService = app.get(ConfigService);
+
+  const sentryDsn = configService.get<string | undefined>('SENTRY_DSN');
+  if (sentryDsn) {
+    Sentry.init({
+      dsn: sentryDsn,
+      release: configService.get<string | undefined>('GIT_SHA'),
+      environment:
+        configService.get<string | undefined>('NODE_ENV') ?? 'development',
+      tracesSampleRate:
+        configService.get<string | undefined>('NODE_ENV') === 'production'
+          ? 0.2
+          : 1.0,
+    });
+  }
   const connectSrc = buildCspConnectSrc({
     stellarNetwork: configService.get('STELLAR_NETWORK'),
     stellarHorizonUrl: configService.get<string | undefined>(
@@ -85,6 +89,8 @@ async function bootstrap(): Promise<void> {
   // vulnerabilities. The CSP connect-src is widened to the Stellar network so
   // the app can still reach the required blockchain API systems (Horizon and
   // Soroban RPC, on both mainnet and testnet).
+  const isProduction = configService.isProduction();
+
   app.use(
     helmet({
       contentSecurityPolicy: {
@@ -99,6 +105,11 @@ async function bootstrap(): Promise<void> {
       },
       crossOriginResourcePolicy: { policy: 'cross-origin' },
       frameguard: { action: 'deny' },
+      // HSTS is configured through helmet so it can be turned off outside
+      // production rather than being set unconditionally in middleware.
+      strictTransportSecurity: isProduction
+        ? { maxAge: 31536000, includeSubDomains: true }
+        : false,
     }),
   );
 
@@ -117,22 +128,16 @@ async function bootstrap(): Promise<void> {
         if (allowedOrigins.includes(origin)) {
           callback(null, true);
         } else {
-          callback(new Error(`Origin ${origin} is not allowed by CORS policy`));
+          callback(null, false);
         }
       },
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-      allowedHeaders: [
-        'Origin',
-        'X-Requested-With',
-        'Content-Type',
-        'Accept',
-        'Authorization',
-      ],
+      allowedHeaders: CORS_ALLOWED_HEADERS,
       credentials: true,
       maxAge: 86400,
     });
   } else {
-    if (configService.isProduction()) {
+    if (isProduction) {
       app.enableCors({ origin: false });
     } else {
       app.enableCors({ origin: true });
@@ -156,7 +161,7 @@ async function bootstrap(): Promise<void> {
   );
 
   const document = createOpenApiDocument(app);
-  SwaggerModule.setup('api/docs', app, document);
+  setupOpenApiUi(app, document, isProduction);
 
   app.enableShutdownHooks();
 

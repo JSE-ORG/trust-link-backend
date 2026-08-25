@@ -6,6 +6,7 @@ import { AppService } from '../../src/app.service';
 import { ConfigService } from '../../src/config/config.service';
 import { PrismaService } from '../../src/prisma/prisma.service';
 import { CacheService } from '../../src/cache/cache.service';
+import { HorizonService } from '../../src/stellar/horizon.service';
 
 const mockFetch = jest.fn();
 
@@ -49,6 +50,10 @@ describe('GET /health integration (issue #55)', () => {
         { provide: ConfigService, useValue: mockConfigService },
         { provide: PrismaService, useValue: prisma },
         { provide: CacheService, useValue: { ping: cachePingMock } },
+        // The real service, not a double: the Horizon scenarios below are
+        // driven through the mocked global.fetch, and #562 moved that call out
+        // of AppController and into HorizonService.
+        HorizonService,
       ],
     }).compile();
 

@@ -7,12 +7,13 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import {
-  ApiTags,
-  ApiOperation,
-  ApiResponse,
   ApiBearerAuth,
+  ApiOperation,
   ApiQuery,
+  ApiResponse,
+  ApiTags,
 } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import type { AuthUser } from '../../auth/auth-user';
 import { JwtGuard } from '../../auth/guards/jwt.guard';
@@ -45,8 +46,10 @@ export class AnalyticsController {
     description: 'Vendor transaction statistics returned.',
   })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
+  @ApiResponse({ status: 403, description: 'Forbidden.' })
   @ApiResponse({ status: 429, description: 'Too many requests.' })
   @ApiResponse({ status: 500, description: 'Internal server error.' })
+  @Throttle({ auth: { limit: 20, ttl: 60000 } })
   @Get()
   @HttpCode(HttpStatus.OK)
   async getTransactionStats(
@@ -86,8 +89,10 @@ export class AnalyticsController {
     description: 'Daily volume chart data returned.',
   })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
+  @ApiResponse({ status: 403, description: 'Forbidden.' })
   @ApiResponse({ status: 429, description: 'Too many requests.' })
   @ApiResponse({ status: 500, description: 'Internal server error.' })
+  @Throttle({ auth: { limit: 20, ttl: 60000 } })
   @Get('chart')
   @HttpCode(HttpStatus.OK)
   async getDailyVolumeChart(

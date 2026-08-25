@@ -77,6 +77,7 @@ model EscrowEvent {
   escrow Escrow @relation(fields: [escrowId], references: [id], onDelete: Cascade)
 
   @@index([escrowId])
+  @@index([escrowId, createdAt, id])
 }
 
 model Dispute {
@@ -85,7 +86,13 @@ model Dispute {
   reason       String
   description  String        @default("")
   evidenceUrls String[]      @default([])
-  status       DisputeStatus @default(OPEN)
+  // Stored as text, not the DisputeStatus enum. Migration
+  // 20260529120000_add_state_deliveredat_composite_index deliberately
+  // converted this column with `ALTER COLUMN "status" TYPE TEXT`, but the
+  // model was never updated to match. The resulting drift made the generated
+  // client compare a text column against an enum, which Postgres rejects with
+  // `operator does not exist: text = "DisputeStatus"`.
+  status       String        @default("OPEN")
   resolvedAt   DateTime?
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
@@ -114,6 +121,9 @@ model Notification {
   sentAt           DateTime?
   failedAt         DateTime?
   lastError        String?
+  providerMessageId String?
+  attemptCount     Int                @default(0)
+  lastResponseCode Int?
   createdAt        DateTime           @default(now())
   updatedAt        DateTime           @updatedAt
   escrow           Escrow             @relation(fields: [escrowId], references: [id], onDelete: Cascade)
@@ -259,4 +269,14 @@ model FailedTransaction {
   @@index([status])
   @@index([escrowId])
   @@index([createdAt])
+}
+
+// Issues #498, #499 - Persistent storage for rotated provider credentials
+// (e.g. the logistics API key), so a rotation survives restarts and
+// propagates across replicas instead of living only in process memory.
+model ProviderCredential {
+  provider     String   @id
+  encryptedKey String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 }

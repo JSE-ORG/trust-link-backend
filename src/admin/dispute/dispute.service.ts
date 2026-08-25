@@ -8,6 +8,7 @@ import {
   DisputeState,
   EscrowRecord,
   PrismaService,
+  toDisputeRecord,
 } from '../../prisma/prisma.service';
 import { EscrowRepository } from '../../escrow/escrow.repository';
 import { ContractService } from '../../stellar/contract.service';
@@ -30,18 +31,24 @@ export class DisputeService {
     page: number;
     limit: number;
   }> {
-    const page = query.page ?? 1;
-    const limit = query.limit ?? 20;
-    const allDisputes = await this.prisma.dispute.findMany({
-      where: query.status
-        ? { status: query.status as DisputeState }
-        : undefined,
-    });
+    const page = Math.max(1, query.page ?? 1);
+    const limit = Math.min(100, Math.max(1, query.limit ?? 20));
+    const skip = (page - 1) * limit;
 
-    const total = allDisputes.length;
-    const start = (page - 1) * limit;
-    const data = allDisputes.slice(start, start + limit);
-    return { data, total, page, limit };
+    const where = query.status
+      ? { status: query.status as DisputeState }
+      : undefined;
+
+    const [data, total] = await Promise.all([
+      this.prisma.dispute.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      this.prisma.dispute.count({ where }),
+    ]);
+    return { data: data.map(toDisputeRecord), total, page, limit };
   }
 
   /** Resolves a dispute by submitting the contract action and finalizing escrow state. */
