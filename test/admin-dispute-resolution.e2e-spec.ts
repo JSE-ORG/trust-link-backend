@@ -105,8 +105,7 @@ describe('Admin Dispute Resolution Flow E2E (issue #299)', () => {
 
   describe('Dispute creation by buyer', () => {
     it('buyer can open a dispute on a funded escrow', async () => {
-      const { escrowId, disputeId } =
-        await createEscrowAndDispute();
+      const { escrowId, disputeId } = await createEscrowAndDispute();
       expect(disputeId).toBeDefined();
 
       const fromDb = await prisma.dispute.findUnique({
