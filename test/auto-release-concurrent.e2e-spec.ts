@@ -35,6 +35,7 @@ describe('Auto-Release Worker — concurrent collision detection (issues #302/#3
   let worker: AutoReleaseWorker;
   let contractService: ContractService;
   let escrowRepository: EscrowRepository;
+  let nextContractEscrowId = 1n;
 
   beforeEach(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -52,6 +53,7 @@ describe('Auto-Release Worker — concurrent collision detection (issues #302/#3
     contractService = app.get(ContractService);
     escrowRepository = app.get(EscrowRepository);
 
+    nextContractEscrowId = 1n;
     await prisma.reset();
 
     // Silence expected skip/collision warnings so the test output stays
@@ -89,6 +91,9 @@ describe('Auto-Release Worker — concurrent collision detection (issues #302/#3
         buyerAddress: `buyer-concurrent-${suffix}`,
         vendorAddress: `vendor-concurrent-${suffix}`,
         state: 'SHIPPED',
+        // Every on-chain call addresses the escrow by the contract's own
+        // u64, so a fixture without one can never reach ContractService.
+        contractEscrowId: nextContractEscrowId++,
         trackingId: `TRK-CONCURRENT-${suffix}`,
         shippedAt: new Date(Date.now() - 60 * 60 * 60 * 1000),
       },
@@ -117,7 +122,7 @@ describe('Auto-Release Worker — concurrent collision detection (issues #302/#3
     // Only one on-chain submission should have been made.
     expect(contractService.submitAutoRelease).toHaveBeenCalledTimes(1);
     expect(contractService.submitAutoRelease).toHaveBeenCalledWith(
-      escrow.id,
+      escrow.contractEscrowId,
       expect.any(String),
     );
 
@@ -156,11 +161,11 @@ describe('Auto-Release Worker — concurrent collision detection (issues #302/#3
     const TX_HASH = 'tx-hash-midloop-003';
 
     // Track invocation order to confirm only one submission was attempted.
-    const callOrder: string[] = [];
+    const callOrder: bigint[] = [];
 
     jest
       .spyOn(contractService, 'submitAutoRelease')
-      .mockImplementation(async (id: string) => {
+      .mockImplementation(async (id: bigint) => {
         callOrder.push(id);
         // Pause long enough for the second worker's loop to reach its own
         // in-memory check, giving the test a deterministic interleave window.
@@ -173,7 +178,9 @@ describe('Auto-Release Worker — concurrent collision detection (issues #302/#3
     await Promise.all([worker.run(), worker.run()]);
 
     // Regardless of interleave order, the escrow must only be submitted once.
-    expect(callOrder.filter((id) => id === escrow.id)).toHaveLength(1);
+    expect(
+      callOrder.filter((id) => id === escrow.contractEscrowId),
+    ).toHaveLength(1);
 
     const after = await prisma.escrow.findUnique({ where: { id: escrow.id } });
     expect(after!.autoReleaseTxHash).toBe(TX_HASH);

@@ -3,6 +3,8 @@ import { ContractCallFailedException } from '../../src/stellar/contract-call-fai
 import { ContractService } from '../../src/stellar/contract.service';
 import { STELLAR_SERVER } from '../../src/stellar/stellar.tokens';
 
+const ESCROW = 42n;
+const ADMIN = 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5';
 const SOURCE = 'GAGRQY3NU3KFQMBABDJBSJKMT6LSTC2RXAYSAMSYB3Y6XUZRHI3ZGR7T';
 
 describe('ContractService.submitAutoRelease (issue #19)', () => {
@@ -27,7 +29,7 @@ describe('ContractService.submitAutoRelease (issue #19)', () => {
   it('returns the hash after successful submission', async () => {
     server.submitTransaction.mockResolvedValue({ hash: 'tx-hash' });
 
-    await expect(service.submitAutoRelease('escrow-1', SOURCE)).resolves.toBe(
+    await expect(service.submitAutoRelease(ESCROW, SOURCE)).resolves.toBe(
       'tx-hash',
     );
   });
@@ -35,7 +37,7 @@ describe('ContractService.submitAutoRelease (issue #19)', () => {
   it('throws ContractCallFailedException for TxFailed results', async () => {
     server.submitTransaction.mockResolvedValue({ resultXdr: 'TxFailed' });
 
-    await expect(service.submitAutoRelease('escrow-1', SOURCE)).rejects.toThrow(
+    await expect(service.submitAutoRelease(ESCROW, SOURCE)).rejects.toThrow(
       ContractCallFailedException,
     );
   });
@@ -45,7 +47,7 @@ describe('ContractService.submitAutoRelease (issue #19)', () => {
       .mockRejectedValueOnce(new Error('bad sequence number'))
       .mockResolvedValueOnce({ hash: 'retry-hash' });
 
-    await expect(service.submitAutoRelease('escrow-1', SOURCE)).resolves.toBe(
+    await expect(service.submitAutoRelease(ESCROW, SOURCE)).resolves.toBe(
       'retry-hash',
     );
     expect(server.submitTransaction).toHaveBeenCalledTimes(2);
@@ -54,9 +56,9 @@ describe('ContractService.submitAutoRelease (issue #19)', () => {
   it('throws when max retries are exceeded', async () => {
     server.submitTransaction.mockRejectedValue(new Error('sequence mismatch'));
 
-    await expect(
-      service.submitAutoRelease('escrow-1', SOURCE, 1),
-    ).rejects.toThrow('Max retries exceeded');
+    await expect(service.submitAutoRelease(ESCROW, SOURCE, 1)).rejects.toThrow(
+      'Max retries exceeded',
+    );
     expect(server.submitTransaction).toHaveBeenCalledTimes(2);
   });
 
@@ -70,7 +72,7 @@ describe('ContractService.submitAutoRelease (issue #19)', () => {
       .mockRejectedValueOnce(new Error('sequence error'))
       .mockResolvedValueOnce({ hash: 'fresh-hash' });
 
-    const hash = await service.submitAutoRelease('escrow-1', SOURCE, 1);
+    const hash = await service.submitAutoRelease(ESCROW, SOURCE, 1);
 
     expect(hash).toBe('fresh-hash');
     expect(server.loadAccount).toHaveBeenCalledTimes(2);
@@ -88,12 +90,12 @@ describe('ContractService.submitAutoRelease (issue #19)', () => {
     server.loadAccount.mockResolvedValue({ sequence: '42' });
     server.submitTransaction.mockResolvedValue({ hash: 'tx-ok' });
 
-    await service.submitAutoRelease('escrow-2', SOURCE);
+    await service.submitAutoRelease(ESCROW, SOURCE);
 
     expect(server.submitTransaction).toHaveBeenCalledWith(
       expect.objectContaining({
         operation: 'autoRelease',
-        escrowId: 'escrow-2',
+        contractEscrowId: '42',
         sourceAddress: SOURCE,
         sequence: '42',
       }),
@@ -103,13 +105,13 @@ describe('ContractService.submitAutoRelease (issue #19)', () => {
   it('records delivery with a contract transaction', async () => {
     server.submitTransaction.mockResolvedValue({ hash: 'delivery-hash' });
 
-    await expect(service.recordDelivery('escrow-2')).resolves.toBe(
+    await expect(service.recordDelivery(ESCROW, ADMIN)).resolves.toBe(
       'delivery-hash',
     );
     expect(server.submitTransaction).toHaveBeenCalledWith(
       expect.objectContaining({
         operation: 'recordDelivery',
-        escrowId: 'escrow-2',
+        contractEscrowId: '42',
       }),
     );
   });

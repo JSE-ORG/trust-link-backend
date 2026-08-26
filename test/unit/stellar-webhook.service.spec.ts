@@ -40,6 +40,7 @@ describe('StellarWebhookService (issue #76)', () => {
   /** Minimal CREATED escrow fixture matching makeDto defaults. */
   const makeCreatedEscrow = (overrides: Record<string, unknown> = {}) => ({
     id: 'escrow-1',
+    contractEscrowId: null,
     state: 'CREATED' as const,
     buyerAddress: 'GBUYER001',
     vendorAddress: 'GVENDOR001',

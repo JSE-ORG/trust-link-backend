@@ -28,6 +28,12 @@ enum DisputeStatus {
 
 model Escrow {
   id                     String        @id @default(uuid())
+  /// The escrow's id in the Soroban contract, which mints its own `u64` from an
+  /// on-chain counter. The backend mints `id` as a UUID before any chain call,
+  /// so the two identifiers are unrelated and this column is what joins them.
+  /// Null until the on-chain escrow exists and has been matched to this row;
+  /// every contract call and every inbound chain event resolves through it.
+  contractEscrowId       BigInt?       @unique
   itemName               String
   itemRef                String
   amount                 Decimal       @db.Decimal(18, 8)

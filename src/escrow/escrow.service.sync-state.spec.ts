@@ -18,6 +18,7 @@ import { ContractService } from '../stellar/contract.service';
 function makeEscrow(overrides: Partial<EscrowRecord> = {}): EscrowRecord {
   return {
     id: 'escrow-1',
+    contractEscrowId: null,
     itemName: 'Widget',
     itemRef: 'REF-001',
     amount: 100,

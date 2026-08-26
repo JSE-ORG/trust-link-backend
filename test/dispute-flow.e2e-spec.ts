@@ -9,6 +9,7 @@ import { ConfigService } from '../src/config/config.service';
 import { bearer } from './auth-helper';
 
 describe('Dispute Flow E2E (issue #57)', () => {
+  let nextContractEscrowId = 1n;
   let app: INestApplication;
   let prisma: PrismaService;
   let contractService: ContractService;
@@ -29,6 +30,7 @@ describe('Dispute Flow E2E (issue #57)', () => {
     contractService = app.get(ContractService);
     adminAddress = app.get(ConfigService).get('ADMIN_ADDRESS');
 
+    nextContractEscrowId = 1n;
     await prisma.reset();
 
     jest
@@ -60,6 +62,13 @@ describe('Dispute Flow E2E (issue #57)', () => {
       .expect(201);
 
     const escrowId = createResponse.body.id;
+    // resolve_dispute addresses the escrow by the contract's own u64;
+    // the HTTP creation flow never sets it, so the test supplies it.
+    const contractEscrowId = nextContractEscrowId++;
+    await prisma.escrow.update({
+      where: { id: escrowId },
+      data: { contractEscrowId },
+    });
 
     const disputeResponse = await request(app.getHttpServer())
       .post(`/escrow/${escrowId}/dispute`)
@@ -95,8 +104,9 @@ describe('Dispute Flow E2E (issue #57)', () => {
 
     expect(resolveResponse.body.state).toBe('COMPLETED');
     expect(contractService.resolveDispute).toHaveBeenCalledWith(
-      escrowId,
+      contractEscrowId,
       'RELEASE',
+      expect.any(String),
     );
 
     const escrowAfter = await prisma.escrow.findUnique({
@@ -130,6 +140,13 @@ describe('Dispute Flow E2E (issue #57)', () => {
       .expect(201);
 
     const escrowId = createResponse.body.id;
+    // resolve_dispute addresses the escrow by the contract's own u64;
+    // the HTTP creation flow never sets it, so the test supplies it.
+    const contractEscrowId = nextContractEscrowId++;
+    await prisma.escrow.update({
+      where: { id: escrowId },
+      data: { contractEscrowId },
+    });
 
     await request(app.getHttpServer())
       .post(`/escrow/${escrowId}/dispute`)
@@ -152,8 +169,9 @@ describe('Dispute Flow E2E (issue #57)', () => {
 
     expect(resolveResponse.body.state).toBe('REFUNDED');
     expect(contractService.resolveDispute).toHaveBeenCalledWith(
-      escrowId,
+      contractEscrowId,
       'REFUND',
+      expect.any(String),
     );
 
     const escrowAfter = await prisma.escrow.findUnique({
@@ -212,6 +230,13 @@ describe('Dispute Flow E2E (issue #57)', () => {
       .expect(201);
 
     const escrowId = createResponse.body.id;
+    // resolve_dispute addresses the escrow by the contract's own u64;
+    // the HTTP creation flow never sets it, so the test supplies it.
+    const contractEscrowId = nextContractEscrowId++;
+    await prisma.escrow.update({
+      where: { id: escrowId },
+      data: { contractEscrowId },
+    });
 
     await request(app.getHttpServer())
       .post(`/escrow/${escrowId}/dispute`)

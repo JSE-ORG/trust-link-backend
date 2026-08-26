@@ -56,6 +56,7 @@ describe('AutoReleaseWorker (issue #10)', () => {
     escrowRepository.findAutoReleaseEligible.mockResolvedValue([
       {
         id: 'escrow-1',
+        contractEscrowId: 7n,
         itemName: 'Camera',
         amount: 250,
         currency: 'USDC',
@@ -79,7 +80,7 @@ describe('AutoReleaseWorker (issue #10)', () => {
     await worker.run(new Date('2026-05-26T00:00:00.000Z'));
 
     expect(contractService.submitAutoRelease).toHaveBeenCalledWith(
-      'escrow-1',
+      7n,
       expect.any(String),
     );
     expect(escrowRepository.recordAutoReleaseSubmission).toHaveBeenCalledWith(
@@ -92,6 +93,7 @@ describe('AutoReleaseWorker (issue #10)', () => {
     escrowRepository.findAutoReleaseEligible.mockResolvedValue([
       {
         id: 'escrow-1',
+        contractEscrowId: 7n,
         itemName: 'Camera',
         amount: 250,
         currency: 'USDC',

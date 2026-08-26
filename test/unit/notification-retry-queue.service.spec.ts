@@ -40,6 +40,7 @@ jest.mock('bullmq', () => ({
 
 const escrow: EscrowRecord = {
   id: 'escrow-1',
+  contractEscrowId: null,
   itemName: 'Vintage jacket',
   itemRef: 'jacket-001',
   amount: 80,

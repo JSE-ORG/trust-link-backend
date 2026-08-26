@@ -407,13 +407,29 @@ export class EscrowService {
       );
     }
 
-    const chainState = await this.contractService.getEscrowState(escrowId);
+    // Both contract calls address the escrow by the contract's own u64. An
+    // unmapped escrow has no on-chain counterpart to inspect or cancel, so the
+    // chain step is skipped rather than guessed at; the backend-side
+    // cancellation below still applies.
+    if (escrow.contractEscrowId === null) {
+      this.logger.log(
+        `Escrow ${escrowId} has no contractEscrowId; skipping the on-chain cancellation check`,
+      );
+      return this.escrowRepository.markCancelled(escrowId);
+    }
+
+    const chainState = await this.contractService.getEscrowState(
+      escrow.contractEscrowId,
+    );
 
     if (chainState.exists && chainState.state === 'FUNDED') {
       this.logger.log(
         `Escrow ${escrowId} funded on-chain — submitting on-chain refund before cancellation`,
       );
-      const txHash = await this.contractService.cancelEscrowOnChain(escrowId);
+      const txHash = await this.contractService.cancelEscrowOnChain(
+        escrow.contractEscrowId,
+        callerAddress,
+      );
       this.logger.log(
         `On-chain refund submitted for escrow ${escrowId}: ${txHash}`,
       );
@@ -542,6 +558,15 @@ export class EscrowService {
     );
 
     return { message: 'Buyer contact information saved.' };
+  }
+
+  /**
+   * Resolves a Soroban contract escrow id to the backend escrow's UUID.
+   * Delegates to the repository; see `findIdByContractEscrowId` there for why
+   * the two identifier spaces are separate.
+   */
+  findIdByContractEscrowId(contractEscrowId: bigint): Promise<string | null> {
+    return this.escrowRepository.findIdByContractEscrowId(contractEscrowId);
   }
 
   // ── Issue #40: on-chain event handler ─────────────────────────────────────

@@ -179,15 +179,21 @@ describe('Happy-Path E2E — full escrow lifecycle (issue #56)', () => {
     // to make the worker fire, which was the eligibility bug (#395) being
     // papered over in the one test that drives the whole lifecycle.
     const pastDelivery = new Date(Date.now() - 49 * 60 * 60 * 1000);
+    // The on-chain escrow is minted by the contract with its own u64, and
+    // every contract call addresses it by that rather than this row's UUID.
+    // In production the mapping is populated when the on-chain escrow is
+    // matched to this row; the API flow above never sets it, so the test
+    // supplies it here.
+    const CONTRACT_ESCROW_ID = 1n;
     await prisma.escrow.update({
       where: { id: escrowId },
-      data: { deliveredAt: pastDelivery },
+      data: { deliveredAt: pastDelivery, contractEscrowId: CONTRACT_ESCROW_ID },
     });
 
     await autoReleaseWorker.run();
 
     expect(contractService.submitAutoRelease).toHaveBeenCalledWith(
-      escrowId,
+      CONTRACT_ESCROW_ID,
       expect.any(String),
     );
 

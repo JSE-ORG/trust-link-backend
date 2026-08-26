@@ -21,6 +21,7 @@ import { AuditLogService } from '../../src/audit-log/audit-log.service';
 
 const shippedEscrow: EscrowRecord = {
   id: 'escrow-1',
+  contractEscrowId: 42n,
   itemName: 'Vintage camera',
   itemRef: 'camera-001',
   amount: 200,
@@ -72,6 +73,16 @@ describe('DisputeService (issue #25)', () => {
         { provide: EscrowRepository, useValue: repository },
         { provide: ContractService, useValue: contractService },
         { provide: PrismaService, useValue: prisma },
+        {
+          // resolve_dispute require_auth()s the caller, which must be the
+          // contract admin, so DisputeService resolves ADMIN_ADDRESS on use.
+          provide: ConfigService,
+          useValue: {
+            get: jest.fn(
+              () => 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
+            ),
+          },
+        },
       ],
     }).compile();
 
@@ -92,8 +103,9 @@ describe('DisputeService (issue #25)', () => {
     const result = await service.resolve('escrow-1', 'RELEASE');
 
     expect(contractService.resolveDispute).toHaveBeenCalledWith(
-      'escrow-1',
+      42n,
       'RELEASE',
+      'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
     );
     expect(prisma.dispute.update).toHaveBeenCalledWith({
       where: { id: 'dispute-1' },
@@ -112,8 +124,9 @@ describe('DisputeService (issue #25)', () => {
     const result = await service.resolve('escrow-1', 'REFUND');
 
     expect(contractService.resolveDispute).toHaveBeenCalledWith(
-      'escrow-1',
+      42n,
       'REFUND',
+      'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
     );
     expect(repository.markRefunded).toHaveBeenCalledWith('escrow-1');
     expect(result.state).toBe('REFUNDED');

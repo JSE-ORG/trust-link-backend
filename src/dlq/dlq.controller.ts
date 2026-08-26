@@ -25,6 +25,7 @@ import type {
 } from './dlq.types';
 import { ContractService } from '../stellar/contract.service';
 import { ConfigService } from '../config/config.service';
+import { PrismaService } from '../prisma/prisma.service';
 
 /**
  * Admin endpoints for reviewing and re-executing failed Stellar contract
@@ -40,6 +41,7 @@ export class DlqController {
     private readonly dlq: DlqService,
     private readonly contract: ContractService,
     private readonly config: ConfigService,
+    private readonly prisma: PrismaService,
   ) {}
 
   /**
@@ -172,8 +174,21 @@ export class DlqController {
     const record = await this.dlq.get(id);
     return this.dlq.replay(record.id, async (r) => {
       if (r.operation === 'submitAutoRelease' && r.escrowId) {
+        // `auto_release(env, escrow_id: u64)` takes the contract's own id.
+        // The DLQ record carries the backend UUID, so it has to be translated
+        // before replay; without a mapping there is no valid call to make.
+        const escrow = await this.prisma.escrow.findUnique({
+          where: { id: r.escrowId },
+          select: { contractEscrowId: true },
+        });
+        if (!escrow?.contractEscrowId) {
+          throw new Error(
+            `Escrow "${r.escrowId}" has no contractEscrowId, so auto-release ` +
+              `cannot be replayed on-chain.`,
+          );
+        }
         return this.contract.submitAutoRelease(
-          r.escrowId,
+          escrow.contractEscrowId,
           this.requireAutoReleaseSource(),
         );
       }

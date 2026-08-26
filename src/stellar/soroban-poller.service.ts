@@ -77,6 +77,40 @@ interface GetEventsResponse {
  * malformed/unprocessable event within a few minutes at the default 5s poll
  * interval, rather than blocking every escrow behind it indefinitely.
  */
+/**
+ * Topic pairs whose naive concatenation does not match a `syncStateFromChain`
+ * case. The contract emits auto-release under ("Escrow", "Released"), which
+ * concatenates to "EscrowReleased"; the handler's case is "AutoReleased".
+ */
+const EVENT_TYPE_OVERRIDES: Readonly<Record<string, string>> = {
+  EscrowReleased: 'AutoReleased',
+};
+
+/**
+ * Normalises a contract `u64` escrow id to bigint.
+ *
+ * A u64 exceeds Number.MAX_SAFE_INTEGER at the top of its range, so decoders
+ * hand it back as a number for small values, a bigint or decimal string for
+ * large ones. Anything that is not a non-negative integer is rejected rather
+ * than coerced: a wrong id would address someone else's escrow.
+ */
+function toContractEscrowId(value: unknown): bigint | null {
+  try {
+    if (typeof value === 'bigint') {
+      return value >= 0n ? value : null;
+    }
+    if (typeof value === 'number') {
+      return Number.isSafeInteger(value) && value >= 0 ? BigInt(value) : null;
+    }
+    if (typeof value === 'string' && /^\d+$/.test(value)) {
+      return BigInt(value);
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
 const MAX_SYNC_RETRIES = 5;
 
 @Injectable()
@@ -355,9 +389,12 @@ export class SorobanPollerService implements OnModuleInit, OnModuleDestroy {
    * Parse and dispatch a single raw event. The event name is derived from both
    * topic symbols to match the switch cases in EscrowService.syncStateFromChain.
    *
-   * Contract topic layout (base64-encoded XDR ScVals):
-   *   topics[0] = Symbol("Escrow" | "Dispute" | "Auto")
-   *   topics[1] = Symbol("Funded" | "Shipped" | "Completed" | "Raised" | "Resolved" | "Released")
+   * Contract topic layout (base64-encoded XDR ScVals), verified against
+   * `contracts/escrow/src/events.rs` in trust-link-contract:
+   *   topics[0] = Symbol("Escrow" | "Dispute")
+   *   topics[1] = Symbol("Funded" | "Shipped" | "Completed" | "Delivered" |
+   *                      "Released" | "Canceled" | "Raised" | "Resolved")
+   *   topics[2] = Address (an actor, e.g. the seller) — unused here
    *
    * Mapping:
    *   ("Escrow",  "Funded")   → EscrowFunded
@@ -365,7 +402,13 @@ export class SorobanPollerService implements OnModuleInit, OnModuleDestroy {
    *   ("Escrow",  "Completed")→ EscrowCompleted
    *   ("Dispute", "Raised")   → DisputeRaised
    *   ("Dispute", "Resolved") → DisputeResolved
-   *   ("Auto",    "Released") → AutoReleased
+   *   ("Escrow",  "Released") → AutoReleased   (see EVENT_TYPE_OVERRIDES)
+   *
+   * Note the last one. This previously documented `("Auto", "Released")`, a
+   * topic pair the contract never emits: `emit_auto_released` publishes
+   * `(symbol_short!("Escrow"), symbol_short!("Released"), seller)`. Naive
+   * concatenation yields "EscrowReleased", which `syncStateFromChain` has no
+   * case for, so a confirmed auto-release would have been dropped.
    *
    * Issue #554 — two distinct failure classes, handled differently:
    *
@@ -416,17 +459,38 @@ export class SorobanPollerService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
-    const eventType = `${topic0}${topic1}`;
+    const rawEventType = `${topic0}${topic1}`;
+    const eventType = EVENT_TYPE_OVERRIDES[rawEventType] ?? rawEventType;
 
-    // The contract value payload is expected to contain { escrowId, ...extras }.
+    // The contract payload is a #[contracttype] struct whose id field is
+    // `escrow_id: u64`, not `escrowId: string`. Across the XDR boundary a u64
+    // arrives as a number, a bigint, or a decimal string depending on
+    // magnitude and decoder, so accept all three and normalise to bigint.
     const data = parsed.data as Record<string, unknown> | null;
-    const escrowId = typeof data?.escrowId === 'string' ? data.escrowId : null;
+    const contractEscrowId = toContractEscrowId(data?.escrow_id);
+
+    if (contractEscrowId === null) {
+      await this.deadLetter(
+        raw,
+        null,
+        `event "${eventType}" payload is missing a usable escrow_id ` +
+          `(got ${JSON.stringify(data?.escrow_id ?? null)})`,
+      );
+      return;
+    }
+
+    // The contract mints its own u64; the backend mints a UUID. Escrow.
+    // contractEscrowId is the join. An unmapped id is not retryable, so it is
+    // dead-lettered rather than left to spin.
+    const escrowId =
+      await this.escrowService.findIdByContractEscrowId(contractEscrowId);
 
     if (!escrowId) {
       await this.deadLetter(
         raw,
         null,
-        `event "${eventType}" payload is missing escrowId`,
+        `event "${eventType}" references contract escrow ` +
+          `${contractEscrowId.toString()}, which maps to no backend escrow`,
       );
       return;
     }

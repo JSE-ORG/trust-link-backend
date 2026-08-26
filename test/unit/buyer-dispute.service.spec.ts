@@ -22,6 +22,7 @@ const ADMIN = 'GADMIN7IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5';
 
 const shippedEscrow: EscrowRecord = {
   id: 'escrow-abc',
+  contractEscrowId: null,
   itemName: 'Sony A7 IV',
   itemRef: 'SKU-CAM-001',
   amount: 2499.99,
