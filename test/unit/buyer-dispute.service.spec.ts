@@ -138,6 +138,10 @@ describe('BuyerDisputeService.openDispute (issue #41)', () => {
         description: openDisputeDto.description,
         evidenceUrls: openDisputeDto.evidenceUrls,
       });
+      expect(escrowRepository.updateState).toHaveBeenCalledWith(
+        'escrow-abc',
+        'DISPUTED',
+      );
       expect(result.id).toBe('dispute-xyz');
       expect(result.escrowId).toBe('escrow-abc');
       expect(result.status).toBe('OPEN');
@@ -271,6 +275,82 @@ describe('BuyerDisputeService.openDispute (issue #41)', () => {
       ).rejects.toThrow('DB error');
 
       expect(notificationsService.notifyDisputed).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getDispute', () => {
+    it.each([
+      ['buyer', BUYER],
+      ['vendor', VENDOR],
+      ['admin', ADMIN],
+    ])(
+      'returns the dispute to the escrow %s',
+      async (_role, callerAddress) => {
+        escrowRepository.findById.mockResolvedValue(shippedEscrow);
+        disputeRepository.findByEscrow.mockResolvedValue(createdDispute);
+
+        const result = await service.getDispute('escrow-abc', callerAddress);
+
+        expect(disputeRepository.findByEscrow).toHaveBeenCalledWith(
+          'escrow-abc',
+        );
+        expect(result).toMatchObject({
+          id: createdDispute.id,
+          escrowId: 'escrow-abc',
+          description: createdDispute.description,
+          evidenceUrls: createdDispute.evidenceUrls,
+          status: 'OPEN',
+        });
+      },
+    );
+
+    it('formats nullable dispute fields into a safe response', async () => {
+      const disputeWithoutOptionalFields = {
+        ...createdDispute,
+        description: null,
+        evidenceUrls: null,
+      } as unknown as DisputeRecord;
+      escrowRepository.findById.mockResolvedValue(shippedEscrow);
+      disputeRepository.findByEscrow.mockResolvedValue(
+        disputeWithoutOptionalFields,
+      );
+      s3PresignService.presignAll.mockReturnValue([]);
+
+      const result = await service.getDispute('escrow-abc', BUYER);
+
+      expect(s3PresignService.presignAll).toHaveBeenCalledWith([]);
+      expect(result.description).toBe('');
+      expect(result.evidenceUrls).toEqual([]);
+    });
+
+    it('rejects a request for a missing escrow before looking up disputes', async () => {
+      escrowRepository.findById.mockResolvedValue(null);
+
+      await expect(service.getDispute('missing-id', BUYER)).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(disputeRepository.findByEscrow).not.toHaveBeenCalled();
+    });
+
+    it('rejects a caller who is not an escrow participant', async () => {
+      escrowRepository.findById.mockResolvedValue(shippedEscrow);
+
+      await expect(
+        service.getDispute(
+          'escrow-abc',
+          'GOUTSIDER7IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLF',
+        ),
+      ).rejects.toThrow(ForbiddenException);
+      expect(disputeRepository.findByEscrow).not.toHaveBeenCalled();
+    });
+
+    it('reports when an authorized caller requests an escrow without a dispute', async () => {
+      escrowRepository.findById.mockResolvedValue(shippedEscrow);
+      disputeRepository.findByEscrow.mockResolvedValue(null);
+
+      await expect(service.getDispute('escrow-abc', BUYER)).rejects.toThrow(
+        'No dispute found for escrow escrow-abc',
+      );
     });
   });
 });
