@@ -442,4 +442,166 @@ describe('EscrowRepository', () => {
       expect(data[2].amount).toBe(100);
     });
   });
+
+  describe('lifecycle writes and lookup helpers', () => {
+    it.each([
+      ['updateState', (id: string) => repo.updateState(id, 'FUNDED'), 'FUNDED'],
+      ['markCompleted', (id: string) => repo.markCompleted(id), 'COMPLETED'],
+      ['markRefunded', (id: string) => repo.markRefunded(id), 'REFUNDED'],
+      [
+        'markAutoReleased',
+        (id: string) => repo.markAutoReleased(id, 'release-hash'),
+        'RELEASED',
+      ],
+    ])('%s persists its resulting state', async (_name, mutate, state) => {
+      const escrow = await repo.create(
+        { ...makeDto(), itemRef: `lifecycle-${state}` },
+        'vendor-addr',
+      );
+
+      const updated = await mutate(escrow.id);
+
+      expect(updated.state).toBe(state);
+      expect((await repo.findById(escrow.id))?.state).toBe(state);
+    });
+
+    it('records shipment, delivery, cancellation, tracking, and release metadata', async () => {
+      const escrow = await repo.create(
+        { ...makeDto(), itemRef: 'metadata' },
+        'vendor-addr',
+      );
+      const deliveredAt = new Date('2026-08-01T12:00:00.000Z');
+
+      expect((await repo.updateTracking(escrow.id, 'TRACK-1')).trackingId).toBe(
+        'TRACK-1',
+      );
+      const shipped = await repo.markShipped(escrow.id, 'TRACK-2');
+      expect(shipped).toMatchObject({
+        state: 'SHIPPED',
+        trackingId: 'TRACK-2',
+      });
+      expect(shipped.shippedAt).toBeInstanceOf(Date);
+
+      const delivered = await repo.markDelivered(escrow.id, deliveredAt);
+      expect(delivered).toMatchObject({
+        state: 'DELIVERED',
+        deliveredAt,
+        deliveryRecordedAt: deliveredAt,
+      });
+      const submitted = await repo.recordAutoReleaseSubmission(
+        escrow.id,
+        'submit-hash',
+        deliveredAt,
+      );
+      expect(submitted).toMatchObject({
+        state: 'DELIVERED',
+        autoReleaseTxHash: 'submit-hash',
+        autoReleaseSubmittedAt: deliveredAt,
+      });
+
+      const cancelled = await repo.markCancelled(escrow.id);
+      expect(cancelled.state).toBe('CANCELLED');
+      expect(cancelled.cancelledAt).toBeInstanceOf(Date);
+    });
+
+    it('resolves contract ids, filters shipped tracking work, and returns null for unknown ids', async () => {
+      const tracked = await repo.create(
+        { ...makeDto(), itemRef: 'tracked' },
+        'vendor-addr',
+      );
+      const untracked = await repo.create(
+        { ...makeDto(), itemRef: 'untracked' },
+        'vendor-addr',
+      );
+      await prisma.escrow.update({
+        where: { id: tracked.id },
+        data: {
+          state: 'SHIPPED',
+          trackingId: 'TRACK-3',
+          contractEscrowId: 99n,
+        },
+      });
+      await prisma.escrow.update({
+        where: { id: untracked.id },
+        data: { state: 'SHIPPED' },
+      });
+
+      await expect(repo.findIdByContractEscrowId(99n)).resolves.toBe(
+        tracked.id,
+      );
+      await expect(repo.findIdByContractEscrowId(100n)).resolves.toBeNull();
+      await expect(repo.findShippedWithTracking()).resolves.toEqual([
+        expect.objectContaining({ id: tracked.id, trackingId: 'TRACK-3' }),
+      ]);
+    });
+
+    it('claims auto-release once and allows it to be cleared for a retry', async () => {
+      const escrow = await repo.create(
+        { ...makeDto(), itemRef: 'auto-claim' },
+        'vendor-addr',
+      );
+
+      const claimed = await repo.markAutoReleaseSubmitting(escrow.id);
+      expect(claimed?.autoReleaseSubmittedAt).toBeInstanceOf(Date);
+      await expect(
+        repo.markAutoReleaseSubmitting(escrow.id),
+      ).resolves.toBeNull();
+      await expect(
+        repo.clearAutoReleaseSubmitting(escrow.id),
+      ).resolves.toMatchObject({ autoReleaseSubmittedAt: null });
+      await expect(repo.markAutoReleaseSubmitting(escrow.id)).resolves.toEqual(
+        expect.objectContaining({
+          id: escrow.id,
+          autoReleaseSubmittedAt: expect.any(Date),
+        }),
+      );
+    });
+
+    it('claims delivery only for an unclaimed shipped escrow and supports clearing the claim', async () => {
+      const escrow = await repo.create(
+        { ...makeDto(), itemRef: 'delivery-claim' },
+        'vendor-addr',
+      );
+      await expect(repo.claimDelivery('missing')).resolves.toBeNull();
+      await expect(repo.claimDelivery(escrow.id)).resolves.toBeNull();
+
+      await repo.markShipped(escrow.id, 'TRACK-4');
+      const claimed = await repo.claimDelivery(escrow.id);
+      expect(claimed?.deliveryRecordedAt).toBeInstanceOf(Date);
+      await expect(repo.claimDelivery(escrow.id)).resolves.toBeNull();
+      await expect(repo.clearDeliveryClaim(escrow.id)).resolves.toMatchObject({
+        deliveryRecordedAt: null,
+      });
+    });
+
+    it('uses cached records before the database and invalidates them after a write', async () => {
+      const values = new Map<string, unknown>();
+      const cache = {
+        get: jest.fn(async (key: string) => values.get(key)),
+        set: jest.fn(async (key: string, value: unknown) =>
+          values.set(key, value),
+        ),
+        del: jest.fn(async (key: string) => values.delete(key)),
+      };
+      const cachedRepo = new EscrowRepository(prisma, cache as never);
+      const escrow = await repo.create(
+        { ...makeDto(), itemRef: 'cached' },
+        'vendor-addr',
+      );
+      const findUnique = jest.spyOn(prisma.escrow, 'findUnique');
+
+      const first = await cachedRepo.findById(escrow.id);
+      const second = await cachedRepo.findById(escrow.id);
+      await cachedRepo.updateState(escrow.id, 'FUNDED');
+
+      expect(first?.id).toBe(escrow.id);
+      expect(second).toEqual(first);
+      expect(findUnique).toHaveBeenCalledTimes(1);
+      expect(cache.set).toHaveBeenCalledWith(`escrow:${escrow.id}`, first, 60);
+      expect(cache.del).toHaveBeenCalledWith(`escrow:${escrow.id}`);
+      await expect(cachedRepo.findById('missing')).resolves.toBeNull();
+      await cachedRepo.invalidateCache(escrow.id);
+      expect(cache.del).toHaveBeenCalledTimes(2);
+    });
+  });
 });
