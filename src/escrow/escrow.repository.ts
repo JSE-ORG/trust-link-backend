@@ -194,6 +194,25 @@ export class EscrowRepository {
     return toEscrowRecord(result);
   }
 
+  /**
+   * Resolves a Soroban contract escrow id (`u64`) to the backend escrow's UUID.
+   *
+   * The contract mints its own identifier from an on-chain counter and the
+   * backend mints a UUID, so inbound chain events carry an id this side cannot
+   * use directly. `contractEscrowId` is the only join between them, and it is
+   * unique, so at most one row can match. Returns null when the on-chain escrow
+   * has not been mapped to a backend row yet.
+   */
+  async findIdByContractEscrowId(
+    contractEscrowId: bigint,
+  ): Promise<string | null> {
+    const row = await this.prisma.escrow.findUnique({
+      where: { contractEscrowId },
+      select: { id: true },
+    });
+    return row?.id ?? null;
+  }
+
   /** Transitions the escrow to COMPLETED and invalidates the cache. */
   async markCompleted(id: string): Promise<EscrowRecord> {
     const result = await this.prisma.escrow.update({

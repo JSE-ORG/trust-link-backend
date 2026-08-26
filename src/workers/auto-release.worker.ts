@@ -100,6 +100,20 @@ export class AutoReleaseWorker implements OnModuleInit, OnApplicationShutdown {
             continue;
           }
 
+          // `auto_release(env, escrow_id: u64)` addresses the escrow by the
+          // contract's own id, not this row's UUID. Without the mapping there
+          // is no call to make, and guessing would target another escrow.
+          if (escrow.contractEscrowId === null) {
+            this.logger.warn(
+              JSON.stringify({
+                msg: 'auto_release.unmapped_escrow',
+                escrowId: escrow.id,
+                eventType: 'auto_release',
+              }),
+            );
+            continue;
+          }
+
           // Atomically claim the escrow before any network call. This is the
           // guard against the race where two concurrent runs fetch the same
           // stale eligible snapshot — a stale in-memory check alone cannot
@@ -114,7 +128,7 @@ export class AutoReleaseWorker implements OnModuleInit, OnApplicationShutdown {
 
           try {
             const txHash = await this.contractService.submitAutoRelease(
-              escrow.id,
+              escrow.contractEscrowId,
               this.requireAutoReleaseSource(),
             );
             // Record the submission only. The AutoReleased chain event

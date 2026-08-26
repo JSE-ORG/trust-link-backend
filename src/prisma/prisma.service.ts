@@ -28,6 +28,13 @@ export type DisputeState =
 
 export interface EscrowRecord {
   id: string;
+  /**
+   * The escrow's id in the Soroban contract (`u64`), or null while the
+   * on-chain escrow has not been matched to this row. Every contract call and
+   * every inbound chain event resolves through it; see the schema comment on
+   * `Escrow.contractEscrowId`.
+   */
+  contractEscrowId: bigint | null;
   itemName: string;
   itemRef: string;
   amount: number;

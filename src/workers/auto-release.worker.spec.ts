@@ -11,6 +11,7 @@ const TEST_AUTO_RELEASE_SOURCE =
 function makeEscrow(overrides: Partial<EscrowRecord> = {}): EscrowRecord {
   return {
     id: 'escrow-1',
+    contractEscrowId: 7n,
     itemName: 'Widget',
     itemRef: 'REF-001',
     amount: 100,
@@ -158,7 +159,7 @@ describe('AutoReleaseWorker', () => {
         'escrow-1',
       );
       expect(contractService.submitAutoRelease).toHaveBeenCalledWith(
-        'escrow-1',
+        7n,
         expect.any(String),
       );
       expect(escrowRepository.recordAutoReleaseSubmission).toHaveBeenCalledWith(
@@ -244,7 +245,7 @@ describe('AutoReleaseWorker', () => {
       await worker.run();
 
       expect(contractService.submitAutoRelease).toHaveBeenCalledWith(
-        'escrow-1',
+        7n,
         TEST_AUTO_RELEASE_SOURCE,
       );
     });

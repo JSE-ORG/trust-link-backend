@@ -26,6 +26,7 @@ const BUYER = 'GB1BUYER0000000000000000000000000000000000000000000000000';
 
 const makeEscrow = (overrides: Partial<EscrowRecord> = {}): EscrowRecord => ({
   id: ESCROW_ID,
+  contractEscrowId: null,
   itemName: 'Laptop',
   itemRef: 'laptop-001',
   amount: 500,

@@ -19,6 +19,7 @@ describe('EscrowService.handleShipment (issue #16)', () => {
 
   const fundedEscrow: EscrowRecord = {
     id: 'escrow-1',
+    contractEscrowId: 7n,
     itemName: 'Leather bag',
     itemRef: 'bag-123',
     amount: 125,
@@ -125,6 +126,7 @@ describe('EscrowService.handleShipment (issue #16)', () => {
     const createdEscrow: EscrowRecord = {
       ...fundedEscrow,
       id: 'escrow-2',
+      contractEscrowId: 7n,
       state: 'CREATED',
     };
     repository.findByVendorAndItem.mockResolvedValue(null);
@@ -136,6 +138,7 @@ describe('EscrowService.handleShipment (issue #16)', () => {
     ).resolves.toEqual(
       expect.objectContaining({
         id: 'escrow-2',
+        contractEscrowId: 7n,
         paymentUrl: 'https://trust-link.local/pay/escrow-2',
       }),
     );
@@ -249,8 +252,11 @@ describe('EscrowService.handleShipment (issue #16)', () => {
       await expect(
         service.cancelPendingEscrow(escrow.id, escrow.vendorAddress, false),
       ).resolves.toHaveProperty('state', 'CANCELLED');
+      // cancel_escrow(env, caller: Address, escrow_id: u64) addresses the
+      // escrow by the contract's own id and require_auth()s the caller.
       expect(contractService.cancelEscrowOnChain).toHaveBeenCalledWith(
-        escrow.id,
+        escrow.contractEscrowId,
+        escrow.vendorAddress,
       );
 
       // stranger rejected

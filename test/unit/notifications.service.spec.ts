@@ -22,6 +22,7 @@ describe('NotificationsService (issue #18)', () => {
   // .escrowId is a foreign key onto Escrow.id (#475).
   let escrow: EscrowRecord = {
     id: 'escrow-1',
+    contractEscrowId: null,
     itemName: 'Vintage jacket',
     itemRef: 'jacket-001',
     amount: 80,
