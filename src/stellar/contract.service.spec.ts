@@ -1,3 +1,4 @@
+import { Account } from '@stellar/stellar-sdk';
 import { ContractService } from './contract.service';
 import { ContractCallFailedException } from './contract-call-failed.exception';
 import { DEFAULT_AUTO_RELEASE_MAX_RETRIES } from './contract.constants';
@@ -404,6 +405,42 @@ describe('ContractService', () => {
       });
       const resultFail = await svc.getEscrowState(ESCROW);
       expect(resultFail).toEqual({ state: 'UNKNOWN', exists: false });
+    });
+
+    it('fetchAccount returns the SDK Account instance directly when getAccount does', async () => {
+      const server = makeSorobanRpcServer();
+      const realAccount = new Account(SOURCE, '55');
+      server.getAccount.mockResolvedValue(realAccount);
+
+      const svc = new ContractService(server);
+      const hash = await svc.resolveDispute(ESCROW, 'RELEASE', ADMIN);
+
+      expect(hash).toBe('soroban-hash-1');
+    });
+
+    it('falls back to getTransaction when the server has no pollTransaction', async () => {
+      const server = makeSorobanRpcServer();
+      // @ts-expect-error — exercising the pollTransactionStatus fallback path
+      delete server.pollTransaction;
+      server.getTransaction.mockResolvedValue({ status: 'SUCCESS' });
+
+      const svc = new ContractService(server);
+      const hash = await svc.resolveDispute(ESCROW, 'RELEASE', ADMIN);
+
+      expect(hash).toBe('soroban-hash-1');
+      expect(server.getTransaction).toHaveBeenCalledWith('soroban-hash-1');
+    });
+  });
+
+  describe('submitAutoRelease — invalid maxRetries', () => {
+    it('throws immediately without any network call when maxRetries is negative', async () => {
+      const server = makeServer();
+      const svc = new ContractService(server);
+
+      await expect(
+        svc.submitAutoRelease(ESCROW, SOURCE, -1),
+      ).rejects.toThrow('Max retries exceeded');
+      expect(server.loadAccount).not.toHaveBeenCalled();
     });
   });
 });
