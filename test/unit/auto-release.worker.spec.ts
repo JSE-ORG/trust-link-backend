@@ -28,7 +28,7 @@ describe('AutoReleaseWorker (issue #10)', () => {
         ),
     } as unknown as jest.Mocked<EscrowRepository>;
     disputeRepository = {
-      findByEscrow: jest.fn(),
+      findByEscrowIds: jest.fn(),
     } as unknown as jest.Mocked<DisputeRepository>;
     contractService = {
       submitAutoRelease: jest.fn(),
@@ -79,11 +79,12 @@ describe('AutoReleaseWorker (issue #10)', () => {
         updatedAt: new Date(),
       },
     ]);
-    disputeRepository.findByEscrow.mockResolvedValue(null);
+    disputeRepository.findByEscrowIds.mockResolvedValue([]);
     contractService.submitAutoRelease.mockResolvedValue('tx-hash');
 
     await worker.run(new Date('2026-05-26T00:00:00.000Z'));
 
+    expect(disputeRepository.findByEscrowIds).toHaveBeenCalledTimes(1);
     expect(contractService.submitAutoRelease).toHaveBeenCalledWith(
       7n,
       expect.any(String),
@@ -106,7 +107,7 @@ describe('AutoReleaseWorker (issue #10)', () => {
         buyerAddress: 'buyer-1',
         vendorAddress: 'vendor-1',
         state: 'SHIPPED',
-        trackingId: 'TRK-1',
+        trackingId: 'TRK_1',
         deliveredAt: new Date('2026-01-01T00:00:00.000Z'),
         deliveryRecordedAt: null,
         autoReleaseSubmittedAt: null,
@@ -116,21 +117,95 @@ describe('AutoReleaseWorker (issue #10)', () => {
         updatedAt: new Date(),
       },
     ]);
-    disputeRepository.findByEscrow.mockResolvedValue({
-      id: 'dispute-1',
-      escrowId: 'escrow-1',
-      reason: 'Open dispute',
-      description: '',
-      evidenceUrls: [],
-      status: 'OPEN',
-      resolvedAt: null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    });
+    disputeRepository.findByEscrowIds.mockResolvedValue([
+      {
+        id: 'dispute-1',
+        escrowId: 'escrow-1',
+        reason: 'Open dispute',
+        description: '',
+        evidenceUrls: [],
+        status: 'OPEN',
+        resolvedAt: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    ]);
 
     await worker.run();
 
+    expect(disputeRepository.findByEscrowIds).toHaveBeenCalledTimes(1);
     expect(contractService.submitAutoRelease).not.toHaveBeenCalled();
+  });
+
+  it('skips a disputed escrow in a multi-escrow batch while others proceed', async () => {
+    escrowRepository.findAutoReleaseEligible.mockResolvedValue([
+      {
+        id: 'escrow-1',
+        contractEscrowId: 7n,
+        itemName: 'Camera',
+        amount: 250,
+        currency: 'USDC',
+        itemRef: 'ref-1',
+        buyerAddress: 'buyer-1',
+        vendorAddress: 'vendor-1',
+        state: 'SHIPPED',
+        trackingId: 'TRK_1',
+        deliveredAt: new Date('2026-01-01T00:00:00.000Z'),
+        deliveryRecordedAt: null,
+        autoReleaseSubmittedAt: null,
+        autoReleaseTxHash: null,
+        disputeId: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      {
+        id: 'escrow-2',
+        contractEscrowId: 8n,
+        itemName: 'Laptop',
+        amount: 900,
+        currency: 'USDC',
+        itemRef: 'ref-2',
+        buyerAddress: 'buyer-2',
+        vendorAddress: 'vendor-2',
+        state: 'SHIPPED',
+        trackingId: 'TRK_2',
+        deliveredAt: new Date('2026-01-02T00:00:00.000Z'),
+        deliveryRecordedAt: null,
+        autoReleaseSubmittedAt: null,
+        autoReleaseTxHash: null,
+        disputeId: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    ]);
+    disputeRepository.findByEscrowIds.mockResolvedValue([
+      {
+        id: 'dispute-2',
+        escrowId: 'escrow-2',
+        reason: 'Open dispute',
+        description: '',
+        evidenceUrls: [],
+        status: 'OPEN',
+        resolvedAt: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    ]);
+    contractService.submitAutoRelease.mockResolvedValue('tx-hash');
+
+    await worker.run();
+
+    expect(disputeRepository.findByEscrowIds).toHaveBeenCalledTimes(1);
+    expect(contractService.submitAutoRelease).toHaveBeenCalledTimes(1);
+    expect(contractService.submitAutoRelease).toHaveBeenCalledWith(
+      7n,
+      expect.any(String),
+    );
+    expect(escrowRepository.recordAutoReleaseSubmission).toHaveBeenCalledTimes(1);
+    expect(escrowRepository.recordAutoReleaseSubmission).toHaveBeenCalledWith(
+      'escrow-1',
+      'tx-hash',
+    );
   });
 
   it('catches top-level worker failures so interval handlers do not reject', async () => {
@@ -148,4 +223,4 @@ describe('AutoReleaseWorker (issue #10)', () => {
       expect.any(String),
     );
   });
-});
+})
