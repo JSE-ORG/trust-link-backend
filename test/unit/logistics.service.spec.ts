@@ -50,7 +50,9 @@ describe('LogisticsService & LogisticsModule (issue #479)', () => {
 
   beforeEach(() => {
     mockAxiosInstance = { get: jest.fn() };
-    mockedAxios.create.mockReturnValue(mockAxiosInstance as any);
+    mockedAxios.create.mockReturnValue(
+      mockAxiosInstance as unknown as import('axios').AxiosInstance,
+    );
   });
 
   describe('Runtime API key management', () => {
@@ -76,7 +78,10 @@ describe('LogisticsService & LogisticsModule (issue #479)', () => {
 
     it('logs warning at startup when unconfigured', async () => {
       const loggerSpy = jest
-        .spyOn((service as any).logger, 'warn')
+        .spyOn(
+          (service as unknown as { logger: { warn: jest.Mock } }).logger,
+          'warn',
+        )
         .mockImplementation();
       await service.onModuleInit();
       expect(loggerSpy).toHaveBeenCalledWith(
@@ -95,10 +100,17 @@ describe('LogisticsService & LogisticsModule (issue #479)', () => {
       return {
         providerCredential: {
           findUnique: jest.fn(
-            async ({ where: { provider } }: any) => store.get(provider) ?? null,
+            async ({
+              where: { provider },
+            }: import('@prisma/client').Prisma.ProviderCredentialFindUniqueArgs) =>
+              store.get(provider) ?? null,
           ),
           upsert: jest.fn(
-            async ({ where: { provider }, update, create }: any) => {
+            async ({
+              where: { provider },
+              update,
+              create,
+            }: import('@prisma/client').Prisma.ProviderCredentialUpsertArgs) => {
               const existing = store.get(provider);
               const record = existing
                 ? { ...existing, ...update }
@@ -114,7 +126,10 @@ describe('LogisticsService & LogisticsModule (issue #479)', () => {
 
     it('rotates to the submitted key on first set (nothing previously stored)', async () => {
       const prisma = createFakePrisma();
-      const svc = new LogisticsService(prisma as any, encryptionKeyConfig);
+      const svc = new LogisticsService(
+        prisma as unknown as import('../../src/prisma/prisma.service').PrismaService,
+        encryptionKeyConfig,
+      );
 
       expect(svc.getApiKey()).toBeNull();
       await svc.rotateApiKey('first-key');
@@ -125,7 +140,10 @@ describe('LogisticsService & LogisticsModule (issue #479)', () => {
 
     it('rotates to the submitted key when a key already exists, and the stored value actually changes', async () => {
       const prisma = createFakePrisma();
-      const svc = new LogisticsService(prisma as any, encryptionKeyConfig);
+      const svc = new LogisticsService(
+        prisma as unknown as import('../../src/prisma/prisma.service').PrismaService,
+        encryptionKeyConfig,
+      );
 
       await svc.rotateApiKey('old-key');
       const encryptedAfterFirst = svc.getEncryptedApiKey();
@@ -141,10 +159,16 @@ describe('LogisticsService & LogisticsModule (issue #479)', () => {
 
     it('persists the rotated key so a freshly constructed service instance loads it (issue #499)', async () => {
       const prisma = createFakePrisma();
-      const svc1 = new LogisticsService(prisma as any, encryptionKeyConfig);
+      const svc1 = new LogisticsService(
+        prisma as unknown as import('../../src/prisma/prisma.service').PrismaService,
+        encryptionKeyConfig,
+      );
       await svc1.rotateApiKey('rotated-secret');
 
-      const svc2 = new LogisticsService(prisma as any, encryptionKeyConfig);
+      const svc2 = new LogisticsService(
+        prisma as unknown as import('../../src/prisma/prisma.service').PrismaService,
+        encryptionKeyConfig,
+      );
       await svc2.onModuleInit();
 
       expect(svc2.getApiKey()).toBe('rotated-secret');
@@ -156,7 +180,10 @@ describe('LogisticsService & LogisticsModule (issue #479)', () => {
       process.env.LOGISTICS_API_KEY = 'env-fallback-token';
 
       try {
-        const svc = new LogisticsService(prisma as any, encryptionKeyConfig);
+        const svc = new LogisticsService(
+          prisma as unknown as import('../../src/prisma/prisma.service').PrismaService,
+          encryptionKeyConfig,
+        );
         await svc.onModuleInit();
         expect(svc.getApiKey()).toBe('env-fallback-token');
       } finally {
@@ -174,10 +201,16 @@ describe('LogisticsService & LogisticsModule (issue #479)', () => {
       process.env.LOGISTICS_API_KEY = 'env-fallback-token';
 
       try {
-        const svc1 = new LogisticsService(prisma as any, encryptionKeyConfig);
+        const svc1 = new LogisticsService(
+          prisma as unknown as import('../../src/prisma/prisma.service').PrismaService,
+          encryptionKeyConfig,
+        );
         await svc1.rotateApiKey('rotated-secret');
 
-        const svc2 = new LogisticsService(prisma as any, encryptionKeyConfig);
+        const svc2 = new LogisticsService(
+          prisma as unknown as import('../../src/prisma/prisma.service').PrismaService,
+          encryptionKeyConfig,
+        );
         await svc2.onModuleInit();
 
         expect(svc2.getApiKey()).toBe('rotated-secret');
@@ -260,7 +293,10 @@ describe('LogisticsService & LogisticsModule (issue #479)', () => {
     });
 
     it('handles provider timeout (network error)', async () => {
-      const timeoutError = new Error('request timed out') as any;
+      const timeoutError = new Error('request timed out') as Error & {
+        isAxiosError: boolean;
+        code: string;
+      };
       timeoutError.isAxiosError = true;
       timeoutError.code = 'ECONNABORTED';
 
@@ -278,7 +314,10 @@ describe('LogisticsService & LogisticsModule (issue #479)', () => {
     });
 
     it('handles 404 response (provider error)', async () => {
-      const notFoundError = new Error('Not found') as any;
+      const notFoundError = new Error('Not found') as Error & {
+        isAxiosError: boolean;
+        response: { status: number };
+      };
       notFoundError.isAxiosError = true;
       notFoundError.response = { status: 404 };
 
@@ -299,7 +338,10 @@ describe('LogisticsService & LogisticsModule (issue #479)', () => {
     });
 
     it('handles 401 response (unauthorized)', async () => {
-      const unauthorizedError = new Error('Unauthorized') as any;
+      const unauthorizedError = new Error('Unauthorized') as Error & {
+        isAxiosError: boolean;
+        response: { status: number };
+      };
       unauthorizedError.isAxiosError = true;
       unauthorizedError.response = { status: 401 };
 
@@ -347,7 +389,11 @@ describe('LogisticsService & LogisticsModule (issue #479)', () => {
       const logisticsService = moduleRef.get(LogisticsService);
 
       const loggerSpy = jest
-        .spyOn((logisticsService as any).logger, 'warn')
+        .spyOn(
+          (logisticsService as unknown as { logger: { warn: jest.Mock } })
+            .logger,
+          'warn',
+        )
         .mockImplementation();
 
       await logisticsService.onModuleInit();
