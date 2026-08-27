@@ -175,6 +175,33 @@ describe('EscrowService.syncStateFromChain', () => {
       });
       expect(repo.markShipped).not.toHaveBeenCalled();
     });
+
+    it('skips when escrow is in a terminal state other than SHIPPED', async () => {
+      repo.findById.mockResolvedValue(makeEscrow({ state: 'COMPLETED' }));
+
+      const result = await service.syncStateFromChain(
+        makeEvent('EscrowShipped', { trackingId: 'TRK-123' }),
+      );
+
+      expect(result).toEqual({
+        skipped: true,
+        reason: 'already_shipped_or_terminal',
+      });
+      expect(repo.markShipped).not.toHaveBeenCalled();
+    });
+
+    it('falls back to the escrow\'s existing trackingId when the event omits one', async () => {
+      const shipped = makeEscrow({ state: 'SHIPPED', trackingId: 'TRK-EXISTING' });
+      repo.findById.mockResolvedValue(
+        makeEscrow({ state: 'FUNDED', trackingId: 'TRK-EXISTING' }),
+      );
+      repo.markShipped.mockResolvedValue(shipped);
+
+      const result = await service.syncStateFromChain(makeEvent('EscrowShipped'));
+
+      expect(result).toEqual({ skipped: false });
+      expect(repo.markShipped).toHaveBeenCalledWith('escrow-1', 'TRK-EXISTING');
+    });
   });
 
   // ── EscrowCompleted ──────────────────────────────────────────────────────
@@ -246,6 +273,54 @@ describe('EscrowService.syncStateFromChain', () => {
       expect(result).toEqual({ skipped: true, reason: 'already_disputed' });
       expect(prisma.dispute.create).not.toHaveBeenCalled();
     });
+
+    it('skips when escrow is in a terminal state (not DISPUTED itself)', async () => {
+      repo.findById.mockResolvedValue(makeEscrow({ state: 'COMPLETED' }));
+
+      const result = await service.syncStateFromChain(
+        makeEvent('DisputeRaised'),
+      );
+
+      expect(result).toEqual({ skipped: true, reason: 'terminal_state' });
+      expect(prisma.dispute.create).not.toHaveBeenCalled();
+    });
+
+    it('defaults the dispute reason when the event omits one', async () => {
+      const disputed = makeEscrow({ state: 'DISPUTED' });
+      repo.findById.mockResolvedValue(makeEscrow({ state: 'FUNDED' }));
+      repo.updateState.mockResolvedValue(disputed);
+
+      await service.syncStateFromChain(makeEvent('DisputeRaised'));
+
+      expect(prisma.dispute.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ reason: 'on-chain dispute' }),
+        }),
+      );
+    });
+
+    it('still transitions to DISPUTED when no PrismaService is configured', async () => {
+      const disputed = makeEscrow({ state: 'DISPUTED' });
+      repo.findById.mockResolvedValue(makeEscrow({ state: 'FUNDED' }));
+      repo.updateState.mockResolvedValue(disputed);
+
+      const noPrismaService = new EscrowService(
+        repo,
+        notifications,
+        {} as S3PresignService,
+        {} as ContractService,
+        undefined,
+        undefined,
+        undefined, // prisma
+      );
+
+      const result = await noPrismaService.syncStateFromChain(
+        makeEvent('DisputeRaised', { reason: 'no prisma configured' }),
+      );
+
+      expect(result).toEqual({ skipped: false });
+      expect(repo.updateState).toHaveBeenCalledWith('escrow-1', 'DISPUTED');
+    });
   });
 
   // ── DisputeResolved ──────────────────────────────────────────────────────
@@ -291,6 +366,44 @@ describe('EscrowService.syncStateFromChain', () => {
       });
       expect(repo.markCompleted).not.toHaveBeenCalled();
     });
+
+    it('completes the escrow without updating a dispute when none is found', async () => {
+      const completed = makeEscrow({ state: 'COMPLETED' });
+      repo.findById.mockResolvedValue(makeEscrow({ state: 'DISPUTED' }));
+      repo.markCompleted.mockResolvedValue(completed);
+      prisma.dispute.findFirst = jest.fn().mockResolvedValue(null);
+
+      const result = await service.syncStateFromChain(
+        makeEvent('DisputeResolved'),
+      );
+
+      expect(result).toEqual({ skipped: false });
+      expect(prisma.dispute.update).not.toHaveBeenCalled();
+      expect(repo.markCompleted).toHaveBeenCalledWith('escrow-1');
+    });
+
+    it('still completes the escrow when no PrismaService is configured', async () => {
+      const completed = makeEscrow({ state: 'COMPLETED' });
+      repo.findById.mockResolvedValue(makeEscrow({ state: 'DISPUTED' }));
+      repo.markCompleted.mockResolvedValue(completed);
+
+      const noPrismaService = new EscrowService(
+        repo,
+        notifications,
+        {} as S3PresignService,
+        {} as ContractService,
+        undefined,
+        undefined,
+        undefined, // prisma
+      );
+
+      const result = await noPrismaService.syncStateFromChain(
+        makeEvent('DisputeResolved'),
+      );
+
+      expect(result).toEqual({ skipped: false });
+      expect(repo.markCompleted).toHaveBeenCalledWith('escrow-1');
+    });
   });
 
   // ── AutoReleased ─────────────────────────────────────────────────────────
@@ -322,6 +435,28 @@ describe('EscrowService.syncStateFromChain', () => {
       );
 
       expect(result).toEqual({ skipped: true, reason: 'already_released' });
+    });
+
+    it('skips when escrow is in a terminal state other than RELEASED', async () => {
+      repo.findById.mockResolvedValue(makeEscrow({ state: 'COMPLETED' }));
+
+      const result = await service.syncStateFromChain(
+        makeEvent('AutoReleased', { txHash: 'TX-ABC' }),
+      );
+
+      expect(result).toEqual({ skipped: true, reason: 'terminal_state' });
+      expect(repo.markAutoReleased).not.toHaveBeenCalled();
+    });
+
+    it('defaults txHash to an empty string when the event omits one', async () => {
+      const released = makeEscrow({ state: 'RELEASED', autoReleaseTxHash: '' });
+      repo.findById.mockResolvedValue(makeEscrow({ state: 'SHIPPED' }));
+      repo.markAutoReleased = jest.fn().mockResolvedValue(released);
+
+      const result = await service.syncStateFromChain(makeEvent('AutoReleased'));
+
+      expect(result).toEqual({ skipped: false });
+      expect(repo.markAutoReleased).toHaveBeenCalledWith('escrow-1', '');
     });
   });
 

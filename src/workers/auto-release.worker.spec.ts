@@ -2,7 +2,10 @@ import { AutoReleaseWorker } from './auto-release.worker';
 import { EscrowRepository } from '../escrow/escrow.repository';
 import { DisputeRepository } from '../dispute/dispute.repository';
 import { ContractService } from '../stellar/contract.service';
-import { ConfigService } from '../config/config.service';
+import {
+  AutoReleaseSourceNotConfiguredError,
+  ConfigService,
+} from '../config/config.service';
 import { EscrowRecord, DisputeRecord } from '../prisma/prisma.service';
 
 const TEST_AUTO_RELEASE_SOURCE =
@@ -85,6 +88,17 @@ describe('AutoReleaseWorker', () => {
           return process.env.NODE_ENV ?? 'test';
         }
         return TEST_AUTO_RELEASE_SOURCE;
+      }),
+      // Mirrors the real ConfigService (#672): reads through `get` and throws
+      // the shared error when the address is falsy, so the "unset" test
+      // (which stubs `get` to return undefined) still exercises the
+      // no-submit / clear-claim path.
+      requireAutoReleaseSourceAddress: jest.fn((): string => {
+        const address = configService.get('AUTO_RELEASE_SOURCE_ADDRESS');
+        if (!address) {
+          throw new AutoReleaseSourceNotConfiguredError();
+        }
+        return address;
       }),
     } as unknown as jest.Mocked<ConfigService>;
 

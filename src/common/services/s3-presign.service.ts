@@ -20,7 +20,16 @@ export class S3PresignService {
     return `${url}?X-Expires=${expiresAt}&X-Signature=${sig}`;
   }
 
-  /** Pre-signs each provided evidence URL using the same simulated scheme. */
+  /**
+   * Pre-signs each URL in `urls` via {@link presign}, preserving order.
+   *
+   * Every URL is signed against the same per-instance secret with the same
+   * 1-hour expiry computed at call time, so all returned URLs in one call
+   * expire together. An empty input yields an empty array. Like `presign`
+   * this is the simulated scheme — the signing key is a random value
+   * generated at construction and is not shared across replicas, so a URL
+   * signed by one instance will not verify against another.
+   */
   presignAll(urls: string[]): string[] {
     return urls.map((u) => this.presign(u));
   }

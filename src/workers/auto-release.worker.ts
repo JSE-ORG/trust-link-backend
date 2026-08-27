@@ -3,7 +3,7 @@ import {
   Logger,
   OnApplicationShutdown,
   OnModuleInit,
-} from '@nest/common';
+} from '@nestjs/common';
 import { DisputeRepository } from '../dispute/dispute.repository';
 import { EscrowRepository } from '../escrow/escrow.repository';
 import { ContractService } from '../stellar/contract.service';
@@ -22,4 +22,173 @@ const TERMINAL_STATES = new Set<string>([
   'CANCELLED',
 ]);
 
-@Injectable()\nexport class AutoReleaseWorker implements OnModuleInit, OnApplicationShutdown {\n  private readonly logger = new Logger(AutoReleaseWorker.name);\n  private timer: Node.js.Timeouter | null = null;\n\n  constructor(\n    private readonly escrowRepository: EscrowRepository,\n    private readonly disputeRepository: DisputeRepository,\n    private readonly contractService: ContractService,\n    private readonly configService: ConfigService,\n  ) {}\n\n  /**\n   * Returns the configured auto-release signing address, or throws.\n   *\n   * Resolved on use through `ConfigService`, matching `dlq.controller.ts`.\n   * `AUTO_RELEASE_SOURCE_ADDRESS` is deliberately optional (issue #500's\n   * technical notes), so this cannot be a constructor dependency: throwing at\n   * construction would make Nest refuse to instantiate this worker whenever\n   * the variable is unset, taking down the whole application boot instead of\n   * just the auto-release path.\n   */\n  private requireAutoReleaseSource(): string {\n    const address = this.configService.get<string>(\n      'AUTO_RELEASE_SOURCE_ADDRESS',\n    );\n    if (!address) {\n      throw new Error(\n        'AUTO_RELEASE_SOURCE_ADDRESS is not configured; refusing to submit '+\n          'auto-release transactions.',\n      );\n    }\n    return address;\n  }\n\n  onModuleInit(): void {\n    if (this.configService.get('NODE_EN') === 'test') {\n      return;\n    }\n\n    this.timer = setInterval(() => {\n      void this.run();\n    }, EVERY_5_MINUTES);\n  }\n\n  onApplicationShutdown(): void {\n    if (this.timer) {\n      clearInterval(this.timer);\n      this.timer = null;\n    }\n  }\n\n  async run(referenceTime = new Date()): Promise<void> {\n    let eligible: Awaited<\n      ReturnType<of this.escrowRepository.findAutoReleaseEligible>\n    > = [];\n    let successCount = 0;\n    let failureCount = 0;\n    const failures: { escrowId: string; error: string }[] = [];\n\n    try {\n      eligible =\n        await this.escrowRepository.findAutoReleaseEligible(referenceTime);\n\n      // Batch the dispute lookup so that we issue a single query for the whole\n      // batch instead of one query per eligible escrow.\n      const eligibleIds = eligible.map((escrow) => escrow.id);\n      const disputes =\n        eligibleIds.length > 0\n          ? await this.disputeRepository.findMany({\n              where: { escrowId: { in: eligibleIds } },\n            })\n          : [];\n      const disputedEscrowIds = new Set(\n        disputes.map((dispute) => dispute.escrowId),\n      );\n\n      for (const escrow of eligible) {\n        try {\n          if (disputedEscrowIds.has(escrow.id)) {\n            continue;\n          }\n\n          // Belt and braces against a stale snapshot: findAutoReleaseEligible\n          // already excludes both of these, but two concurrent runs share one\n          // snapshot, and the chain event may have finalised the escrow since.\n          if (TERMINAL_STATES.has(escrow.state) || escrow.autoReleaseTxHash) {\n            continue;\n          }\n\n          // `auto_release(env, escrow_id: u64)` addresses the escrow by the\n          // contract's own id, not this row's UUID. Without the mapping there\n          // is no call to make, and guessing would target another escrow.\n          if (escrow.contractEscrowId === null) {\n            this.logger.warn(\n              JSON.stringify({\n                msg: 'auto_release.unmapped_escrow',\n                escrowId: escrow.id,\n                eventType: 'auto_release',\n              }),\n            );\n            continue;\n          }\n\n          // Atomically claim the escrow before any network call. This is the\n          // guard against the race where two concurrent runs fetch the same\n          // stale eligible snapshot — a stale in-memory check alone cannot\n          // prevent both from submitting. Returns null if another run\n          // already holds the claim.\n          const claimed = await this.escrowRepository.markAutoReleaseSubmitting(\n            escrow.id,\n          );\n          if (!claimed) {\n            continue;\n          }\n\n          try {\n            const txHash = await this.contractService.submitAutoRelease(\n              escrow.contractEscrowId,\n              this.requireAutoReleaseSource(),\n            );\n            // Record the submission only. The AutoReleased chain event\n            // owns the terminal transition and the completion notification;\n            // see EscrowRepository.recordAutoReleaseSubmission.\n            await this.escrowRepository.recordAutoReleaseSubmission(\n              escrow.id,\n              txHash,\n            );\n            successCount++;\n          } catch (error) {\n            // Release the claim so the next poll cycle can retry.\n            await this.escrowRepository.clearAutoReleaseSubmitting(escrow.id);\n            throw error;\n          }\n        } catch (error) {\n          failureCount++;\n          failures.push({\n            escrowId: escrow.id,\n            error: error instanceof Error ? error.message : String(error),\n          });\n          this.logger.error(\n            JSON.stringify({\n              msg: 'auto_release.escrow_failed',\n              escrowId: escrow.id,\n              eventType: 'auto_release',\n              error: error instanceof Error ? error.message : String(error),\n            }),\n            error instanceof Error ? error.stack : undefined,\n          );\n        }\n      }\n    } catch (error) {\n      this.logger.error(\n        JSON.stringify({\n          msg: 'auto_release.worker_failed',\n          eventType: 'auto_release',\n          error: error instanceof Error ? error.message : String(error),\n        }),\n        error instanceof Error ? error.stack : undefined,\n      );\n    }\n\n    // Summary log for batch processing\n    this.logger.log(\n      `Batch complete: ${successCount} succeeded, ${failureCount} failed out of ${eligible.length} total`,\n    );\n\n    if (failures.length > 0) {\n      this.logger.warn(\n        `Failed escrows: ${failures.map((f) => `${f.escrowId} (${f.error})`).join(', ')},\n      );\n    }\n  }\n}\n
+@Injectable()
+export class AutoReleaseWorker implements OnModuleInit, OnApplicationShutdown {
+  private readonly logger = new Logger(AutoReleaseWorker.name);
+  private timer: NodeJS.Timeout | null = null;
+
+  constructor(
+    private readonly escrowRepository: EscrowRepository,
+    private readonly disputeRepository: DisputeRepository,
+    private readonly contractService: ContractService,
+    private readonly configService: ConfigService,
+  ) {}
+
+  /**
+   * Returns the configured auto-release signing address.
+   *
+   * Delegates to `ConfigService.requireAutoReleaseSourceAddress` (#672) — the
+   * single copy of this check, shared with `dlq.controller.ts`. On the unset
+   * path it throws `AutoReleaseSourceNotConfiguredError` (an `Error`
+   * subclass), which this worker's own cycle handler catches and logs, then
+   * clears the auto-release claim — same observable behaviour as before,
+   * just a named error and a slightly different message.
+   *
+   * Resolved on use, not as a constructor dependency:
+   * `AUTO_RELEASE_SOURCE_ADDRESS` is deliberately optional (#500), so a
+   * constructor throw would block the whole application boot when it is
+   * unset, not just the auto-release path.
+   */
+  private requireAutoReleaseSource(): string {
+    return this.configService.requireAutoReleaseSourceAddress();
+  }
+
+  onModuleInit(): void {
+    if (this.configService.get('NODE_ENV') === 'test') {
+      return;
+    }
+
+    this.timer = setInterval(() => {
+      void this.run();
+    }, EVERY_5_MINUTES);
+  }
+
+  onApplicationShutdown(): void {
+    if (this.timer) {
+      clearInterval(this.timer);
+      this.timer = null;
+    }
+  }
+
+  async run(referenceTime = new Date()): Promise<void> {
+    let eligible: Awaited<
+      ReturnType<typeof this.escrowRepository.findAutoReleaseEligible>
+    > = [];
+    let successCount = 0;
+    let failureCount = 0;
+    const failures: { escrowId: string; error: string }[] = [];
+
+    try {
+      eligible =
+        await this.escrowRepository.findAutoReleaseEligible(referenceTime);
+
+      // Batch the dispute lookup so that we issue a single query for the whole
+      // batch instead of one query per eligible escrow.
+      const eligibleIds = eligible.map((escrow) => escrow.id);
+      const disputes =
+        eligibleIds.length > 0
+          ? await this.disputeRepository.findMany({
+              where: { escrowId: { in: eligibleIds } },
+            })
+          : [];
+      const disputedEscrowIds = new Set(
+        disputes.map((dispute) => dispute.escrowId),
+      );
+
+      for (const escrow of eligible) {
+        try {
+          if (disputedEscrowIds.has(escrow.id)) {
+            continue;
+          }
+
+          // Belt and braces against a stale snapshot: findAutoReleaseEligible
+          // already excludes both of these, but two concurrent runs share one
+          // snapshot, and the chain event may have finalised the escrow since.
+          if (TERMINAL_STATES.has(escrow.state) || escrow.autoReleaseTxHash) {
+            continue;
+          }
+
+          // `auto_release(env, escrow_id: u64)` addresses the escrow by the
+          // contract's own id, not this row's UUID. Without the mapping there
+          // is no call to make, and guessing would target another escrow.
+          if (escrow.contractEscrowId === null) {
+            this.logger.warn(
+              JSON.stringify({
+                msg: 'auto_release.unmapped_escrow',
+                escrowId: escrow.id,
+                eventType: 'auto_release',
+              }),
+            );
+            continue;
+          }
+
+          // Atomically claim the escrow before any network call. This is the
+          // guard against the race where two concurrent runs fetch the same
+          // stale eligible snapshot — a stale in-memory check alone cannot
+          // prevent both from submitting. Returns null if another run
+          // already holds the claim.
+          const claimed = await this.escrowRepository.markAutoReleaseSubmitting(
+            escrow.id,
+          );
+          if (!claimed) {
+            continue;
+          }
+
+          try {
+            const txHash = await this.contractService.submitAutoRelease(
+              escrow.contractEscrowId,
+              this.requireAutoReleaseSource(),
+            );
+            // Record the submission only. The AutoReleased chain event
+            // owns the terminal transition and the completion notification;
+            // see EscrowRepository.recordAutoReleaseSubmission.
+            await this.escrowRepository.recordAutoReleaseSubmission(
+              escrow.id,
+              txHash,
+            );
+            successCount++;
+          } catch (error) {
+            // Release the claim so the next poll cycle can retry.
+            await this.escrowRepository.clearAutoReleaseSubmitting(escrow.id);
+            throw error;
+          }
+        } catch (error) {
+          failureCount++;
+          failures.push({
+            escrowId: escrow.id,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          this.logger.error(
+            JSON.stringify({
+              msg: 'auto_release.escrow_failed',
+              escrowId: escrow.id,
+              eventType: 'auto_release',
+              error: error instanceof Error ? error.message : String(error),
+            }),
+            error instanceof Error ? error.stack : undefined,
+          );
+        }
+      }
+    } catch (error) {
+      this.logger.error(
+        JSON.stringify({
+          msg: 'auto_release.worker_failed',
+          eventType: 'auto_release',
+          error: error instanceof Error ? error.message : String(error),
+        }),
+        error instanceof Error ? error.stack : undefined,
+      );
+    }
+
+    // Summary log for batch processing
+    this.logger.log(
+      `Batch complete: ${successCount} succeeded, ${failureCount} failed out of ${eligible.length} total`,
+    );
+
+    if (failures.length > 0) {
+      this.logger.warn(
+        `Failed escrows: ${failures.map((f) => `${f.escrowId} (${f.error})`).join(', ')}`,
+      );
+    }
+  }
+}

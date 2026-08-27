@@ -4,7 +4,16 @@
   "testEnvironment": "node",
   "testRegex": "test/integration/.*\\.integration-spec\\.ts$",
   "transform": {
-    "^.+\\.(t|j)s$": "ts-jest"
+    "^.+\\.(t|j)s$": [
+      "ts-jest",
+      {
+        "tsconfig": {
+          "module": "commonjs",
+          "moduleResolution": "node",
+          "resolvePackageJsonExports": false
+        }
+      }
+    ]
   },
   "maxWorkers": 1,
   "testTimeout": 60000,

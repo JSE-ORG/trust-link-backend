@@ -16,7 +16,8 @@ import {
   NotificationRetryJobData,
   computeBackoffDelay,
 } from '../../src/notifications/notification-retry-queue.types';
-import { EscrowRecord } from '../../src/prisma/prisma.service';
+import { EscrowRecord, PrismaService } from '../../src/prisma/prisma.service';
+import { Job } from 'bullmq';
 import { ConfigService } from '../../src/config/config.service';
 
 /**
@@ -326,7 +327,7 @@ describe('NotificationRetryQueueService (in-process with Prisma) (#73)', () => {
         backoff: { attempts: 3, delay: 1, maxDelayMs: 10 },
         scheduleDelayed: synchronousScheduler,
       },
-      prisma as any,
+      prisma as unknown as PrismaService,
     );
     service.registerDispatcher('EMAIL', { dispatch });
     await service.enqueue(makeJob({ notificationId: 'n-1' }));
@@ -347,7 +348,7 @@ describe('NotificationRetryQueueService (in-process with Prisma) (#73)', () => {
         backoff: { attempts: 3, delay: 1, maxDelayMs: 10 },
         scheduleDelayed: synchronousScheduler,
       },
-      prisma as any,
+      prisma as unknown as PrismaService,
     );
     service.registerDispatcher('EMAIL', { dispatch });
     await service.enqueue(makeJob({ notificationId: 'n-1' }));
@@ -367,7 +368,7 @@ describe('NotificationRetryQueueService (in-process with Prisma) (#73)', () => {
         backoff: { attempts: 2, delay: 1, maxDelayMs: 5 },
         scheduleDelayed: synchronousScheduler,
       },
-      prisma as any,
+      prisma as unknown as PrismaService,
     );
     service.registerDispatcher('EMAIL', { dispatch });
     await service.enqueue(makeJob({ notificationId: undefined }));
@@ -386,7 +387,7 @@ describe('NotificationRetryQueueService (in-process with Prisma) (#73)', () => {
         backoff: { attempts: 2, delay: 1, maxDelayMs: 5 },
         scheduleDelayed: synchronousScheduler,
       },
-      prisma as any,
+      prisma as unknown as PrismaService,
     );
     service.registerDispatcher('EMAIL', { dispatch });
     await expect(
@@ -406,7 +407,7 @@ describe('NotificationRetryQueueService (in-process with Prisma) (#73)', () => {
         backoff: { attempts: 2, delay: 1, maxDelayMs: 5 },
         scheduleDelayed: synchronousScheduler,
       },
-      prisma as any,
+      prisma as unknown as PrismaService,
     );
     service.registerDispatcher('EMAIL', { dispatch });
     await expect(
@@ -424,7 +425,7 @@ describe('NotificationRetryQueueService (in-process with Prisma) (#73)', () => {
         deadLetterSink: { record: (entry) => void dlqSink.push(entry) },
         scheduleDelayed: synchronousScheduler,
       },
-      prisma as any,
+      prisma as unknown as PrismaService,
     );
     service.registerDispatcher('EMAIL', { dispatch });
     await service.enqueue(
@@ -457,7 +458,7 @@ describe('NotificationRetryQueueService (BullMQ integration) (#73)', () => {
     close: jest.fn().mockResolvedValue(undefined),
     on: jest.fn(),
   };
-  let failedHandler: ((job: any, error: any) => void) | undefined;
+  let failedHandler: ((job: Job | { data: NotificationRetryJobData; attemptsMade: number; opts: { attempts: number } } | null, error: Error) => void) | undefined;
 
   beforeAll(() => {
     const mod = jest.requireMock('bullmq');
@@ -482,7 +483,7 @@ describe('NotificationRetryQueueService (BullMQ integration) (#73)', () => {
       return queueCallCount === 1 ? mockQueueInstance : mockDlqInstance;
     });
 
-    mockWorkerInstance.on.mockImplementation((event: string, handler: any) => {
+    mockWorkerInstance.on.mockImplementation((event: string, handler: (...args: unknown[]) => void) => {
       if (event === 'failed') failedHandler = handler;
     });
     MockWorker.mockReturnValue(mockWorkerInstance);
@@ -559,7 +560,7 @@ describe('NotificationRetryQueueService (BullMQ integration) (#73)', () => {
     const service = new NotificationRetryQueueService({
       backoff: { attempts: 3, delay: 1_000, maxDelayMs: 300_000 },
     });
-    (service as any).bullQueue = mockQueueInstance;
+    service['bullQueue'] = mockQueueInstance;
     await service.enqueue(makeJob({ requestId: 'req-1' }));
     expect(mockQueueInstance.add).toHaveBeenCalledWith(
       'EMAIL-FUNDED',
@@ -573,9 +574,9 @@ describe('NotificationRetryQueueService (BullMQ integration) (#73)', () => {
 
   it('onModuleDestroy closes worker, queue, and dlq', async () => {
     const service = new NotificationRetryQueueService();
-    (service as any).bullWorker = mockWorkerInstance;
-    (service as any).bullQueue = mockQueueInstance;
-    (service as any).bullDlq = mockDlqInstance;
+    service['bullWorker'] = mockWorkerInstance;
+    service['bullQueue'] = mockQueueInstance;
+    service['bullDlq'] = mockDlqInstance;
     await service.onModuleDestroy();
     expect(mockWorkerInstance.close).toHaveBeenCalledTimes(1);
     expect(mockQueueInstance.close).toHaveBeenCalledTimes(1);
@@ -584,9 +585,9 @@ describe('NotificationRetryQueueService (BullMQ integration) (#73)', () => {
 
   it('onModuleDestroy handles null connections gracefully', async () => {
     const service = new NotificationRetryQueueService();
-    (service as any).bullWorker = null;
-    (service as any).bullQueue = null;
-    (service as any).bullDlq = null;
+    service['bullWorker'] = null;
+    service['bullQueue'] = null;
+    service['bullDlq'] = null;
     await expect(service.onModuleDestroy()).resolves.toBeUndefined();
   });
 
@@ -594,8 +595,8 @@ describe('NotificationRetryQueueService (BullMQ integration) (#73)', () => {
     const service = new NotificationRetryQueueService({
       backoff: { attempts: 3, delay: 1, maxDelayMs: 10 },
     });
-    (service as any).bullDlq = mockDlqInstance;
-    await (service as any).recordDeadLetter(
+    service['bullDlq'] = mockDlqInstance;
+    await service['recordDeadLetter'](
       makeJob({ requestId: 'dlq-test' }),
       3,
       new Error('epic fail'),
@@ -618,7 +619,7 @@ describe('NotificationRetryQueueService (BullMQ integration) (#73)', () => {
       backoff: { attempts: 2, delay: 1, maxDelayMs: 5 },
       deadLetterSink: { record: (entry) => void sink.push(entry) },
     });
-    await (service as any).recordDeadLetter(makeJob(), 2, 'string error');
+    await service['recordDeadLetter'](makeJob(), 2, 'string error');
     expect(sink).toHaveLength(1);
     expect(sink[0].lastError).toBe('unknown error');
   });
@@ -729,7 +730,7 @@ describe('NotificationRetryQueueService (BullMQ integration) (#73)', () => {
         backoff: { attempts: 3, delay: 1, maxDelayMs: 10 },
         deadLetterSink: { record: (entry) => void sink.push(entry) },
       },
-      prisma as any,
+      prisma as unknown as PrismaService,
       configWith({ REDIS_URL: 'redis://localhost:6379' }),
     );
     service.registerDispatcher('EMAIL', { dispatch: jest.fn() });

@@ -8,6 +8,20 @@ export class NonceCleanupService {
 
   constructor(private readonly prisma: PrismaService) {}
 
+  /**
+   * Deletes every SEP-10 challenge nonce whose `expiresAt` is in the past.
+   *
+   * Runs on a daily cron (`0 0 * * *`) but is safe to invoke directly at any
+   * time — it is idempotent and holds no cross-call state. It only removes
+   * rows that can no longer be redeemed: `Sep10Service.verifyAndIssueToken`
+   * already rejects an expired nonce before this ever deletes it, so a
+   * concurrent verify is never affected. Unexpired nonces, used or not, are
+   * left untouched (a used-but-unexpired nonce still needs to exist so a
+   * replay is caught as "already used" rather than "not found").
+   *
+   * Does not throw on an empty result; a Prisma failure propagates to the
+   * scheduler, which logs it.
+   */
   @Cron('0 0 * * *')
   async cleanupExpiredNonces(): Promise<void> {
     this.logger.log('Starting expired nonce cleanup');

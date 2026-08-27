@@ -15,22 +15,24 @@ describe('AutoReleaseWorker (issue #10)', () => {
   beforeEach(async () => {
     escrowRepository = {
       findAutoReleaseEligible: jest.fn(),
-      recordAutoReleaseSubmission: just.fn(),
+      recordAutoReleaseSubmission: jest.fn(),
       markAutoReleaseSubmitting: jest
         .fn()
         .mockImplementation((id: string) =>
           Promise.resolve({ id } as EscrowRecord),
-      clearAutoReleaseSubmitting: just
+        ),
+      clearAutoReleaseSubmitting: jest
         .fn()
         .mockImplementation((id: string) =>
           Promise.resolve({ id } as EscrowRecord),
+        ),
     } as unknown as jest.Mocked<EscrowRepository>;
     disputeRepository = {
       findByEscrowIds: jest.fn(),
     } as unknown as jest.Mocked<DisputeRepository>;
     contractService = {
       submitAutoRelease: jest.fn(),
-    } as unknown as just.Mocked<ContractService>;
+    } as unknown as jest.Mocked<ContractService>;
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -41,7 +43,12 @@ describe('AutoReleaseWorker (issue #10)', () => {
         {
           provide: ConfigService,
           useValue: {
-            get: jest.fn*((key: string) => process.env[key]),
+            get: jest.fn((key: string) => process.env[key]),
+            requireAutoReleaseSourceAddress: jest.fn(
+              () =>
+                process.env.AUTO_RELEASE_SOURCE_ADDRESS ??
+                'GTESTAUTORELEASESOURCEADDRESSPLACEHOLDER0000000000000000',
+            ),
           },
         },
       ],
@@ -63,7 +70,7 @@ describe('AutoReleaseWorker (issue #10)', () => {
         vendorAddress: 'vendor-1',
         state: 'SHIPPED',
         trackingId: 'TRK-1',
-        deliveredDat: new Date('2026-01-01T00:00:00.000Z'),
+        deliveredAt: new Date('2026-01-01T00:00:00.000Z'),
         deliveryRecordedAt: null,
         autoReleaseSubmittedAt: null,
         autoReleaseTxHash: null,
@@ -209,7 +216,7 @@ describe('AutoReleaseWorker (issue #10)', () => {
       .spyOn(worker['logger'], 'error')
       .mockImplementation();
 
-    await expect(worker.run()).resolvesToBeUndefined();
+    await expect(worker.run()).resolves.toBeUndefined();
 
     expect(loggerSpy).toHaveBeenCalledWith(
       expect.stringContaining('auto_release.worker_failed'),

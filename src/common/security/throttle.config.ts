@@ -22,6 +22,15 @@ const toPositiveInt = (raw: string | undefined, fallback: number): number => {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 };
 
+/**
+ * The rolling window every route-level `@Throttle()` counts requests over,
+ * in **milliseconds** (60_000 = one minute). Defined once here instead of
+ * repeating `ttl: 60000` inline at every decorator (#667): each site only
+ * varies its `limit`, so changing the window used to mean editing ~30 call
+ * sites and hoping none were missed. Per-route limits are unchanged.
+ */
+export const THROTTLE_WINDOW_MS = 60_000;
+
 export const EVIDENCE_UPLOAD_THROTTLE = {
   ttl: toPositiveInt(process.env.EVIDENCE_UPLOAD_TTL, 60_000),
   limit: toPositiveInt(process.env.EVIDENCE_UPLOAD_LIMIT, 10),

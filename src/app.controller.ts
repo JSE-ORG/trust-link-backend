@@ -13,6 +13,7 @@ import {
   ApiResponse,
 } from '@nestjs/swagger';
 import { SkipThrottle, Throttle } from '@nestjs/throttler';
+import { THROTTLE_WINDOW_MS } from './common/security/throttle.config';
 import type { Response } from 'express';
 import { AppService } from './app.service';
 import { getAppVersion } from './common/version';
@@ -55,7 +56,7 @@ export class AppController {
 
   @ApiOperation({ summary: 'Root endpoint — welcome message' })
   @ApiResponse({ status: 200, description: 'Service welcome message.' })
-  @Throttle({ public: { limit: 100, ttl: 60000 } })
+  @Throttle({ public: { limit: 100, ttl: THROTTLE_WINDOW_MS } })
   @Get()
   getHello(): string {
     return this.appService.getHello();
@@ -238,7 +239,7 @@ export class AppController {
    */
   @ApiOperation({ summary: 'Get current application version and environment' })
   @ApiResponse({ status: 200, description: 'Version information returned.' })
-  @Throttle({ public: { limit: 100, ttl: 60000 } })
+  @Throttle({ public: { limit: 100, ttl: THROTTLE_WINDOW_MS } })
   @Get('version')
   @HttpCode(HttpStatus.OK)
   getVersion() {
