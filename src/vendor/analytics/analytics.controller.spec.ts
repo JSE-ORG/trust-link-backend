@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { UnauthorizedException } from '@nestjs/common';
 import { AnalyticsController } from './analytics.controller';
 import { AnalyticsService } from './analytics.service';
 import type { AuthUser } from '../../auth/auth-user';
@@ -29,6 +30,22 @@ describe('AnalyticsController', () => {
   });
 
   afterEach(() => jest.clearAllMocks());
+
+  describe('missing authenticated user (#671)', () => {
+    it('getTransactionStats throws UnauthorizedException, not a 500', async () => {
+      await expect(controller.getTransactionStats(undefined)).rejects.toThrow(
+        UnauthorizedException,
+      );
+      expect(service.getTransactionStats).not.toHaveBeenCalled();
+    });
+
+    it('getDailyVolumeChart throws UnauthorizedException, not a 500', async () => {
+      await expect(
+        controller.getDailyVolumeChart(undefined, undefined, undefined),
+      ).rejects.toThrow(UnauthorizedException);
+      expect(service.getDailyVolumeChart).not.toHaveBeenCalled();
+    });
+  });
 
   describe('GET /vendor/analytics', () => {
     it('delegates to service with user address', async () => {

@@ -36,18 +36,19 @@ export class DisputeRepository {
       .then((row) => (row ? toDisputeRecord(row) : null));
   }
 
-  /** Returns all disputes in OPEN or UNDER_REVIEW status. */
+  /**
+   * Returns all disputes in OPEN or UNDER_REVIEW status.
+   *
+   * Kept rather than deleted (it has no production caller today, only a
+   * repository test) because an admin "open disputes" view is a natural near
+   * addition and the fix is a one-liner. The status filter is now a `where`
+   * clause so Postgres can use `@@index([status])` instead of loading every
+   * dispute row and filtering in memory (#670).
+   */
   findAllOpen(): Promise<DisputeRecord[]> {
     return this.prisma.dispute
-      .findMany()
-      .then((disputes) =>
-        disputes
-          .map(toDisputeRecord)
-          .filter(
-            (dispute) =>
-              dispute.status === 'OPEN' || dispute.status === 'UNDER_REVIEW',
-          ),
-      );
+      .findMany({ where: { status: { in: ['OPEN', 'UNDER_REVIEW'] } } })
+      .then((disputes) => disputes.map(toDisputeRecord));
   }
 
   /**

@@ -24,7 +24,10 @@ import type {
   ListFailedTransactionsQuery,
 } from './dlq.types';
 import { ContractService } from '../stellar/contract.service';
-import { ConfigService } from '../config/config.service';
+import {
+  AutoReleaseSourceNotConfiguredError,
+  ConfigService,
+} from '../config/config.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 /**
@@ -45,25 +48,24 @@ export class DlqController {
   ) {}
 
   /**
-   * Returns the auto-release signing address, or throws if it is not configured.
+   * Returns the auto-release signing address, translating the shared
+   * "not configured" error into a 503 for this HTTP path (#672).
    *
-   * Resolved on use rather than in the constructor. `AUTO_RELEASE_SOURCE_ADDRESS`
-   * is declared optional in `config.module.ts`, so throwing at construction made
-   * an optional variable mandatory for the whole application: Nest could not
-   * instantiate this controller, so `NestFactory.create` failed and nothing
-   * booted, including `npm run start` and the OpenAPI generation script.
-   *
-   * Failing here instead keeps the failure proportionate. Only the replay
-   * endpoint is unavailable, and it still fails loudly with a clear message.
+   * The check itself lives in `ConfigService.requireAutoReleaseSourceAddress`
+   * and is resolved on use, not at construction: `AUTO_RELEASE_SOURCE_ADDRESS`
+   * is optional in `config.module.ts`, so a constructor throw would stop Nest
+   * from instantiating this controller and take the whole app down. Here only
+   * the replay endpoint degrades, and it does so with a clear 503.
    */
   private requireAutoReleaseSource(): string {
-    const address = this.config.get<string>('AUTO_RELEASE_SOURCE_ADDRESS');
-    if (!address) {
-      throw new ServiceUnavailableException(
-        'AUTO_RELEASE_SOURCE_ADDRESS is not configured, so auto-release replay is unavailable.',
-      );
+    try {
+      return this.config.requireAutoReleaseSourceAddress();
+    } catch (err) {
+      if (err instanceof AutoReleaseSourceNotConfiguredError) {
+        throw new ServiceUnavailableException(err.message);
+      }
+      throw err;
     }
-    return address;
   }
 
   @ApiOperation({ summary: 'List failed transactions (admin DLQ)' })
