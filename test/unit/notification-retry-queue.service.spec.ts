@@ -348,6 +348,7 @@ describe('NotificationRetryQueueService (in-process with Prisma) (#73)', () => {
         backoff: { attempts: 3, delay: 1, maxDelayMs: 10 },
         scheduleDelayed: synchronousScheduler,
       },
+      prisma as unknown as import('../../src/prisma/prisma.service').PrismaService,
       prisma as unknown as PrismaService,
     );
     service.registerDispatcher('EMAIL', { dispatch });
@@ -368,6 +369,7 @@ describe('NotificationRetryQueueService (in-process with Prisma) (#73)', () => {
         backoff: { attempts: 2, delay: 1, maxDelayMs: 5 },
         scheduleDelayed: synchronousScheduler,
       },
+      prisma as unknown as import('../../src/prisma/prisma.service').PrismaService,
       prisma as unknown as PrismaService,
     );
     service.registerDispatcher('EMAIL', { dispatch });
@@ -387,6 +389,7 @@ describe('NotificationRetryQueueService (in-process with Prisma) (#73)', () => {
         backoff: { attempts: 2, delay: 1, maxDelayMs: 5 },
         scheduleDelayed: synchronousScheduler,
       },
+      prisma as unknown as import('../../src/prisma/prisma.service').PrismaService,
       prisma as unknown as PrismaService,
     );
     service.registerDispatcher('EMAIL', { dispatch });
@@ -407,6 +410,7 @@ describe('NotificationRetryQueueService (in-process with Prisma) (#73)', () => {
         backoff: { attempts: 2, delay: 1, maxDelayMs: 5 },
         scheduleDelayed: synchronousScheduler,
       },
+      prisma as unknown as import('../../src/prisma/prisma.service').PrismaService,
       prisma as unknown as PrismaService,
     );
     service.registerDispatcher('EMAIL', { dispatch });
@@ -425,6 +429,7 @@ describe('NotificationRetryQueueService (in-process with Prisma) (#73)', () => {
         deadLetterSink: { record: (entry) => void dlqSink.push(entry) },
         scheduleDelayed: synchronousScheduler,
       },
+      prisma as unknown as import('../../src/prisma/prisma.service').PrismaService,
       prisma as unknown as PrismaService,
     );
     service.registerDispatcher('EMAIL', { dispatch });
