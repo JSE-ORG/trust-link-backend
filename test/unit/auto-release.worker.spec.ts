@@ -44,6 +44,11 @@ describe('AutoReleaseWorker (issue #10)', () => {
           provide: ConfigService,
           useValue: {
             get: jest.fn((key: string) => process.env[key]),
+            requireAutoReleaseSourceAddress: jest.fn(
+              () =>
+                process.env.AUTO_RELEASE_SOURCE_ADDRESS ??
+                'GTESTAUTORELEASESOURCEADDRESSPLACEHOLDER0000000000000000',
+            ),
           },
         },
       ],

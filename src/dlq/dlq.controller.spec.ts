@@ -5,7 +5,10 @@ import { DlqController } from './dlq.controller';
 import { DlqService } from './dlq.service';
 import { ContractService } from '../stellar/contract.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { ConfigService } from '../config/config.service';
+import {
+  AutoReleaseSourceNotConfiguredError,
+  ConfigService,
+} from '../config/config.service';
 import { FailedTransactionRecord } from './dlq.types';
 
 describe('DlqController', () => {
@@ -40,6 +43,12 @@ describe('DlqController', () => {
 
     const config = {
       get: jest.fn().mockReturnValue(autoReleaseSourceAddress),
+      requireAutoReleaseSourceAddress: jest.fn((): string => {
+        if (!autoReleaseSourceAddress) {
+          throw new AutoReleaseSourceNotConfiguredError();
+        }
+        return autoReleaseSourceAddress;
+      }),
     } as unknown as jest.Mocked<ConfigService>;
 
     const moduleRef: TestingModule = await Test.createTestingModule({
