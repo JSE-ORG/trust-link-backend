@@ -52,6 +52,7 @@ const EMPTY_STRING = '';
 const VALID_ENV = {
   DATABASE_URL: 'postgresql://test:test@localhost:5432/test',
   SEP10_JWT_SECRET: 'test-jwt-secret-32-characters-long!!',
+  PRESIGN_SECRET: 'test-presign-secret-64hexcharacters-for-hmac',
   SYSTEM_SIGNER_SECRET: VALID_SECRET_KEY,
   SEP10_SIGNING_SECRET: ANOTHER_VALID_SECRET,
   ADMIN_ADDRESS: VALID_PUBLIC_KEY,
@@ -651,6 +652,47 @@ describe('ConfigModule — Stellar Key Validation', () => {
 
       expect(error).toBeDefined();
       expect(error?.message).toContain('SYSTEM_SIGNER_SECRET');
+    });
+  });
+
+  describe('PRESIGN_SECRET — required presign HMAC secret', () => {
+    it('accepts a configured PRESIGN_SECRET', () => {
+      const { error, value } = configValidationSchema.validate(
+        { ...VALID_ENV },
+        VALIDATE_OPTIONS,
+      );
+
+      expect(error).toBeUndefined();
+      expect(value.PRESIGN_SECRET).toBe(VALID_ENV.PRESIGN_SECRET);
+    });
+
+    it('rejects a missing PRESIGN_SECRET rather than falling back', () => {
+      const { error } = configValidationSchema.validate(
+        { ...VALID_ENV, PRESIGN_SECRET: undefined },
+        VALIDATE_OPTIONS,
+      );
+
+      expect(error).toBeDefined();
+      expect(error?.message).toContain('PRESIGN_SECRET');
+    });
+
+    it('error messages for a missing PRESIGN_SECRET name the variable and explain why', () => {
+      const { error } = configValidationSchema.validate(
+        { ...VALID_ENV, PRESIGN_SECRET: undefined },
+        VALIDATE_OPTIONS,
+      );
+
+      expect(error?.message).toContain('PRESIGN_SECRET');
+      expect(error?.message.toLowerCase()).toContain('required');
+    });
+
+    it('refuses to boot when PRESIGN_SECRET is unreachable', async () => {
+      await expect(
+        buildConfigService({
+          ...VALID_ENV,
+          PRESIGN_SECRET: undefined,
+        }),
+      ).rejects.toThrow(/PRESIGN_SECRET/);
     });
   });
 });

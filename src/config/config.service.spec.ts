@@ -17,6 +17,7 @@ const validationSchema = Joi.object({
   PORT: Joi.number().default(3000),
   DATABASE_URL: Joi.string().required(),
   SEP10_JWT_SECRET: Joi.string().min(32).required(),
+  PRESIGN_SECRET: Joi.string().required(),
   ADMIN_ADDRESS: Joi.string().required(),
   AUTO_RELEASE_SOURCE_ADDRESS: Joi.string()
     .pattern(/^G[A-Z2-7]{55}$/)
@@ -47,6 +48,7 @@ const validationSchema = Joi.object({
 const VALID_ENV = {
   DATABASE_URL: 'postgresql://test:test@localhost:5432/test',
   SEP10_JWT_SECRET: 'a-very-long-secret-key-for-testing-purposes-32chars',
+  PRESIGN_SECRET: 'test-presign-secret-64hexcharacters-for-hmac',
   ADMIN_ADDRESS: 'GXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX',
   NODE_ENV: 'test',
   STELLAR_NETWORK: 'TESTNET',
