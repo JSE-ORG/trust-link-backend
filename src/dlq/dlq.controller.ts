@@ -16,6 +16,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
+import { THROTTLE_WINDOW_MS } from '../common/security/throttle.config';
 import { JwtGuard } from '../auth/guards/jwt.guard';
 import { AdminGuard } from '../admin/guards/admin.guard';
 import { DlqService } from './dlq.service';
@@ -115,7 +116,7 @@ export class DlqController {
     required: false,
     example: '9d9e2e16-0c78-4a84-9c8c-0f3a5eb2d4e3',
   })
-  @Throttle({ auth: { limit: 20, ttl: 60000 } })
+  @Throttle({ auth: { limit: 20, ttl: THROTTLE_WINDOW_MS } })
   @Get()
   list(
     @Query('status') status?: FailedTransactionStatus,
@@ -145,7 +146,7 @@ export class DlqController {
     description: 'Failed transaction record not found.',
   })
   @ApiParam({ name: 'id', example: 'abc123-def4-5678-90ab-cdef12345678' })
-  @Throttle({ auth: { limit: 30, ttl: 60000 } })
+  @Throttle({ auth: { limit: 30, ttl: THROTTLE_WINDOW_MS } })
   @Get(':id')
   detail(@Param('id') id: string) {
     return this.dlq.get(id);
@@ -168,7 +169,7 @@ export class DlqController {
     description: 'Failed transaction record not found.',
   })
   @ApiParam({ name: 'id', example: 'abc123-def4-5678-90ab-cdef12345678' })
-  @Throttle({ auth: { limit: 5, ttl: 60000 } })
+  @Throttle({ auth: { limit: 5, ttl: THROTTLE_WINDOW_MS } })
   @Post(':id/replay')
   async replay(@Param('id') id: string) {
     const record = await this.dlq.get(id);
@@ -213,7 +214,7 @@ export class DlqController {
     description: 'Failed transaction record not found.',
   })
   @ApiParam({ name: 'id', example: 'abc123-def4-5678-90ab-cdef12345678' })
-  @Throttle({ auth: { limit: 5, ttl: 60000 } })
+  @Throttle({ auth: { limit: 5, ttl: THROTTLE_WINDOW_MS } })
   @Post(':id/abandon')
   abandon(@Param('id') id: string) {
     return this.dlq.abandon(id);

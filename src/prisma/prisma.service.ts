@@ -359,6 +359,20 @@ export class PrismaService extends PrismaClient {
     await this.$disconnect();
   }
 
+  /**
+   * Truncates every application table (all except `_prisma_migrations`),
+   * `CASCADE`, to give a test a clean database.
+   *
+   * **Test-only.** Throws immediately unless `NODE_ENV === 'test'`, so it can
+   * never wipe a real database if it is left in a code path by mistake.
+   *
+   * Runs as a single `TRUNCATE ... CASCADE` inside a transaction guarded by
+   * `pg_advisory_xact_lock(42)`: the one statement avoids the deadlocks of
+   * truncating tables one-by-one, and the advisory lock serialises `reset()`
+   * across parallel Jest workers sharing the same test database. It does not
+   * reset sequences beyond what `TRUNCATE` does, and it does not re-run
+   * migrations — the schema must already exist.
+   */
   async reset(): Promise<void> {
     if (process.env.NODE_ENV !== 'test') {
       throw new Error(
