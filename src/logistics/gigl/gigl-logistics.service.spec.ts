@@ -9,6 +9,7 @@
  * GiglClient is fully mocked so no HTTP calls are made.
  */
 
+import { Logger } from '@nestjs/common';
 import { GiglLogisticsService } from './gigl-logistics.service';
 import {
   GiglClient,
@@ -302,7 +303,10 @@ describe('GiglLogisticsService', () => {
     it('fails clearly and logs a warning when constructed without a client', async () => {
       const unconfiguredService = new GiglLogisticsService(null);
       const loggerSpy = jest
-        .spyOn((unconfiguredService as any).logger, 'warn')
+        .spyOn(
+          (unconfiguredService as unknown as { logger: Logger }).logger,
+          'warn',
+        )
         .mockImplementation();
 
       await unconfiguredService.onModuleInit();

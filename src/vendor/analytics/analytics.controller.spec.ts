@@ -1,18 +1,20 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { AnalyticsController } from './analytics.controller';
 import { AnalyticsService } from './analytics.service';
+import { AuthUser } from '../../auth/auth-user';
+import { AnalyticsStatsResponse } from './analytics-stats.dto';
 
 describe('AnalyticsController', () => {
   let controller: AnalyticsController;
   let service: jest.Mocked<AnalyticsService>;
 
-  const mockUser = { address: 'GVENDOR123' } as any;
+  const mockUser: AuthUser = { address: 'GVENDOR123' };
 
   beforeEach(async () => {
     service = {
       getTransactionStats: jest.fn(),
       getDailyVolumeChart: jest.fn(),
-    } as any;
+    } as unknown as jest.Mocked<AnalyticsService>;
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [AnalyticsController],
@@ -34,7 +36,9 @@ describe('AnalyticsController', () => {
         },
         lastUpdated: new Date().toISOString(),
       };
-      service.getTransactionStats.mockResolvedValue(statsResponse as any);
+      service.getTransactionStats.mockResolvedValue(
+        statsResponse as AnalyticsStatsResponse,
+      );
 
       const result = await controller.getTransactionStats(mockUser);
 

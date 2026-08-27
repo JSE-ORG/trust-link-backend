@@ -1,4 +1,5 @@
 import { Test } from '@nestjs/testing';
+import { Logger } from '@nestjs/common';
 import { EscrowRepository } from '../../src/escrow/escrow.repository';
 import { LogisticsService } from '../../src/logistics/logistics.service';
 import { TrackingPollWorker } from '../../src/workers/tracking-poll.worker';
@@ -178,7 +179,7 @@ describe('TrackingPollWorker (issue #11)', () => {
       new Error('database unavailable'),
     );
     const loggerSpy = jest
-      .spyOn((worker as any).logger, 'error')
+      .spyOn((worker as unknown as { logger: Logger }).logger, 'error')
       .mockImplementation();
 
     await expect(worker.run()).resolves.toBeUndefined();

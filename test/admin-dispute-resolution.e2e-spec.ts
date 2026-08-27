@@ -188,7 +188,11 @@ describe('Admin Dispute Resolution Flow E2E (issue #299)', () => {
         .query({ status: 'OPEN' })
         .expect(200);
 
-      expect(res.body.data.every((d: any) => d.status === 'OPEN')).toBe(true);
+      expect(
+        res.body.data.every(
+          (d: { status: string }) => d.status === 'OPEN',
+        ),
+      ).toBe(true);
     });
   });
 
