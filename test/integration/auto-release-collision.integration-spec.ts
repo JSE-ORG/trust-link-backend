@@ -22,6 +22,7 @@ describe('Auto-release collision detection (issue #277)', () => {
   let worker: AutoReleaseWorker;
 
   const pastDelivery = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000);
+  let nextContractEscrowId = 1n;
 
   beforeEach(async () => {
     const moduleRef: TestingModule = await Test.createTestingModule({
@@ -62,6 +63,7 @@ describe('Auto-release collision detection (issue #277)', () => {
       moduleRef.get<jest.Mocked<ContractService>>(ContractService);
     worker = moduleRef.get(AutoReleaseWorker);
 
+    nextContractEscrowId = 1n;
     await prisma.reset();
     // Escrow.vendorAddress (and the vendor settings/details tables) are
     // foreign keys onto VendorProfile.address, so the parent rows must exist
@@ -102,11 +104,15 @@ describe('Auto-release collision detection (issue #277)', () => {
     autoReleaseTxHash?: string;
   }) => {
     const { autoReleaseTxHash, ...rest } = data;
+    // The contract mints its own u64 and every on-chain call addresses the
+    // escrow by that, not by this row's UUID. Fixtures have to carry both or
+    // they cannot exercise the call path at all.
     const escrow = await prisma.escrow.create({
       data: {
         ...rest,
         currency: 'USDC',
         state: 'SHIPPED',
+        contractEscrowId: nextContractEscrowId++,
         shippedAt: new Date(pastDelivery.getTime() - 24 * 60 * 60 * 1000),
       },
     });
@@ -215,7 +221,7 @@ describe('Auto-release collision detection (issue #277)', () => {
       // Only one submission should have occurred
       expect(contractService.submitAutoRelease).toHaveBeenCalledTimes(1);
       expect(contractService.submitAutoRelease).toHaveBeenCalledWith(
-        escrow.id,
+        escrow.contractEscrowId,
         expect.any(String),
       );
 
@@ -286,15 +292,17 @@ describe('Auto-release collision detection (issue #277)', () => {
       // Keyed by escrow id rather than call order: the worker processes
       // whatever findAutoReleaseEligible returns, so a call-order mock attaches
       // the wrong hash to the wrong escrow whenever that order differs.
-      const hashes = new Map<string, string>([
-        [escrow1.id, 'tx-hash-a'],
-        [escrow2.id, 'tx-hash-b'],
+      const hashes = new Map<bigint, string>([
+        [escrow1.contractEscrowId!, 'tx-hash-a'],
+        [escrow2.contractEscrowId!, 'tx-hash-b'],
       ]);
       contractService.submitAutoRelease.mockImplementation(
-        (escrowId: string) =>
-          hashes.has(escrowId)
-            ? Promise.resolve(hashes.get(escrowId)!)
-            : Promise.reject(new Error(`unexpected escrow ${escrowId}`)),
+        (contractEscrowId: bigint) =>
+          hashes.has(contractEscrowId)
+            ? Promise.resolve(hashes.get(contractEscrowId)!)
+            : Promise.reject(
+                new Error(`unexpected escrow ${contractEscrowId}`),
+              ),
       );
 
       await worker.run();

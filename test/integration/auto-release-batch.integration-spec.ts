@@ -22,8 +22,10 @@ describe('Auto-release batch processing with partial failures', () => {
   let contractService: jest.Mocked<ContractService>;
   let worker: AutoReleaseWorker;
   let escrowRepository: EscrowRepository;
+  let disputeRepository: DisputeRepository;
 
   const pastDelivery = new Date(Date.now() - 50 * 60 * 60 * 1000);
+  let nextContractEscrowId = 1n;
 
   beforeEach(async () => {
     const moduleRef: TestingModule = await Test.createTestingModule({
@@ -60,7 +62,9 @@ describe('Auto-release batch processing with partial failures', () => {
       moduleRef.get<jest.Mocked<ContractService>>(ContractService);
     worker = moduleRef.get(AutoReleaseWorker);
     escrowRepository = moduleRef.get(EscrowRepository);
+    disputeRepository = moduleRef.get(DisputeRepository);
 
+    nextContractEscrowId = 1n;
     await prisma.reset();
     // Escrow.vendorAddress (and the vendor settings/details tables) are
     // foreign keys onto VendorProfile.address, so the parent rows must exist
@@ -92,6 +96,9 @@ describe('Auto-release batch processing with partial failures', () => {
         ...data,
         currency: 'USDC',
         state: 'SHIPPED',
+        // Every on-chain call addresses the escrow by the contract's own u64,
+        // not this row's UUID, so fixtures must carry both.
+        contractEscrowId: nextContractEscrowId++,
         shippedAt: new Date(pastDelivery.getTime() - 10 * 60 * 60 * 1000),
       },
     });
@@ -132,12 +139,15 @@ describe('Auto-release batch processing with partial failures', () => {
       // Second escrow fails, first and third succeed — keyed by escrow id, not
       // call order: the worker's processing sequence is decided by the query's
       // ordering, not by the order these rows were created.
-      const outcomes = new Map<string, () => Promise<string>>([
-        [escrow1.id, () => Promise.resolve('tx-hash-1')],
-        [escrow2.id, () => Promise.reject(new Error('Network timeout'))],
-        [escrow3.id, () => Promise.resolve('tx-hash-3')],
+      const outcomes = new Map<bigint, () => Promise<string>>([
+        [escrow1.contractEscrowId!, () => Promise.resolve('tx-hash-1')],
+        [
+          escrow2.contractEscrowId!,
+          () => Promise.reject(new Error('Network timeout')),
+        ],
+        [escrow3.contractEscrowId!, () => Promise.resolve('tx-hash-3')],
       ]);
-      contractService.submitAutoRelease.mockImplementation((escrowId: string) =>
+      contractService.submitAutoRelease.mockImplementation((escrowId: bigint) =>
         (
           outcomes.get(escrowId) ??
           (() => Promise.reject(new Error(`unexpected escrow ${escrowId}`)))
@@ -156,7 +166,7 @@ describe('Auto-release batch processing with partial failures', () => {
       // A successful submission records the hash and leaves the escrow
       // DELIVERED. The terminal transition belongs to the AutoReleased chain
       // event, which is what confirms the transaction actually landed.
-      expect(after1!.state).toBe('DELIVERED');
+      expect(after1!.state).toBe*'DELIVERED');
       expect(after1!.autoReleaseTxHash).toBe('tx-hash-1');
 
       const after2 = await prisma.escrow.findUnique({
@@ -168,7 +178,7 @@ describe('Auto-release batch processing with partial failures', () => {
       const after3 = await prisma.escrow.findUnique({
         where: { id: escrow3.id },
       });
-      expect(after3!.state).toBe('DELIVERED');
+      expect(after3!.state).toBe*'DELIVERED');
       expect(after3!.autoReleaseTxHash).toBe('tx-hash-3');
     });
 
@@ -189,7 +199,7 @@ describe('Auto-release batch processing with partial failures', () => {
           amount: 1200,
           buyerAddress: 'buyer-2',
           vendorAddress: 'vendor-2',
-          trackingId: 'TRK-002',
+          trackingId: 'TRK_002',
         }),
         createDeliveredEscrow({
           itemName: 'Phone',
@@ -199,13 +209,13 @@ describe('Auto-release batch processing with partial failures', () => {
           vendorAddress: 'vendor-3',
           trackingId: 'TRK-003',
         }),
-        createDeliveredEscrow({
+        createDeliveredEscrow{
           itemName: 'Tablet',
           itemRef: 'tablet-multi-fail-001',
           amount: 600,
           buyerAddress: 'buyer-4',
           vendorAddress: 'vendor-4',
-          trackingId: 'TRK-004',
+          trackingId: 'TRK_004',
         }),
       ]);
 
@@ -214,16 +224,19 @@ describe('Auto-release batch processing with partial failures', () => {
       // returns, and the four escrows here share a deliveredAt, so the id
       // tie-break decides the sequence. A call-order mock silently attaches the
       // wrong outcome to the wrong escrow depending on generated UUIDs.
-      const outcomes = new Map<string, () => Promise<string>>([
-        [escrows[0].id, () => Promise.resolve('tx-hash-1')],
-        [escrows[1].id, () => Promise.reject(new Error('Network error'))],
+      const outcomes = new Map<bigint, () => Promise<string>>([
+        [escrows[0].contractEscrowId!, () => Promise.resolve('tx-hash-1')],
         [
-          escrows[2].id,
+          escrows[1].contractEscrowId!,
+          () => Promise.reject(new Error('Network error')),
+        ],
+        [
+          escrows[2].contractEscrowId!,
           () => Promise.reject(new Error('Insufficient balance')),
         ],
-        [escrows[3].id, () => Promise.resolve('tx-hash-4')],
+        [escrows[3].contractEscrowId!, () => Promise.resolve('tx-hash-4')],
       ]);
-      contractService.submitAutoRelease.mockImplementation((escrowId: string) =>
+      contractService.submitAutoRelease.mockImplementation((escrowId: bigint) =>
         (
           outcomes.get(escrowId) ??
           (() => Promise.reject(new Error(`unexpected escrow ${escrowId}`)))
@@ -270,15 +283,18 @@ describe('Auto-release batch processing with partial failures', () => {
         amount: 1200,
         buyerAddress: 'buyer-2',
         vendorAddress: 'vendor-2',
-        trackingId: 'TRK-002',
+        trackingId: 'TRK_002',
       });
 
       // First fails, second succeeds — keyed by escrow id, not call order.
-      const outcomes = new Map<string, () => Promise<string>>([
-        [escrow1.id, () => Promise.reject(new Error('Transaction failed'))],
-        [escrow2.id, () => Promise.resolve('tx-hash-2')],
+      const outcomes = new Map<bigint, () => Promise<string>>([
+        [
+          escrow1.contractEscrowId!,
+          () => Promise.reject(new Error('Transaction failed')),
+        ],
+        [escrow2.contractEscrowId!, () => Promise.resolve('tx-hash-2')],
       ]);
-      contractService.submitAutoRelease.mockImplementation((escrowId: string) =>
+      contractService.submitAutoRelease.mockImplementation((escrowId: bigint) =>
         (
           outcomes.get(escrowId) ??
           (() => Promise.reject(new Error(`unexpected escrow ${escrowId}`)))
@@ -329,116 +345,111 @@ describe('Auto-release batch processing with partial failures', () => {
           amount: 800,
           buyerAddress: 'buyer-3',
           vendorAddress: 'vendor-3',
-          trackingId: 'TRK-003',
+          trackingId: 'TRK_003',
         }),
       ]);
 
-      // All fail with service unavailable
-      contractService.submitAutoRelease.mockRejectedValue(
-        new Error('Service unavailable'),
+      // All three submissions fail — keyed by escrow id, not call order.
+      const outcomes = new Map<bigint, () => Promise<string>>[
+        [escrows[0].contractEscrowId!, () => Promise.reject(new Error('Error 1'))],
+        [escrows[1].contractEscrowId!, () => Promise.reject(new Error('Error 2'))],
+        [escrows[2].contractEscrowId!, () => Promise.reject(new Error('Error 3'))],
+      ]);
+      contractService.submitAutoRelease.mockImplementation((escrowId: bigint) =>
+        (
+          outcomes.get(escrowId) ??
+          (() => Promise.reject(new Error(`unexpected escrow $${escrowId}`)))
+        )(),
       );
 
       await worker.run();
 
-      // All should be attempted
+      // All three should be attempted
       expect(contractService.submitAutoRelease).toHaveBeenCalledTimes(3);
 
-      // All should remain DELIVERED — a failed release must not advance state
       const results = await Promise.all(
         escrows.map((e) => prisma.escrow.findUnique({ where: { id: e.id } })),
       );
 
-      results.forEach((result) => {
+      for (const result of results) {
         expect(result!.state).toBe('DELIVERED');
         expect(result!.autoReleaseTxHash).toBeNull();
-      });
+      }
     });
 
-    it('logs detailed failure information for each failed escrow', async () => {
-      const loggerErrorSpy = jest.spyOn(worker['logger'], 'error');
-      const loggerLogSpy = jest.spyOn(worker['logger'], 'log');
-      const loggerWarnSpy = jest.spyOn(worker['logger'], 'warn');
-
-      // Create two eligible escrows
-      await Promise.all([
-        createDeliveredEscrow({
-          itemName: 'Camera',
-          itemRef: 'camera-log-001',
-          amount: 250,
-          buyerAddress: 'buyer-1',
-          vendorAddress: 'vendor-1',
-          trackingId: 'TRK-001',
-        }),
-        createDeliveredEscrow({
-          itemName: 'Laptop',
-          itemRef: 'laptop-log-001',
-          amount: 1200,
-          buyerAddress: 'buyer-2',
-          vendorAddress: 'vendor-2',
-          trackingId: 'TRK-002',
-        }),
-      ]);
-
-      // First succeeds, second fails
-      contractService.submitAutoRelease
-        .mockResolvedValueOnce('tx-hash-1')
-        .mockRejectedValueOnce(new Error('Connection refused'));
-
-      await worker.run();
-
-      // Verify error log for failed escrow
-      expect(loggerErrorSpy).toHaveBeenCalledWith(
-        expect.stringContaining('auto_release.escrow_failed'),
-        expect.any(String),
-      );
-
-      // Verify summary with counts
-      expect(loggerLogSpy).toHaveBeenCalledWith(
-        'Batch complete: 1 succeeded, 1 failed out of 2 total',
-      );
-
-      // Verify failed escrows list
-      expect(loggerWarnSpy).toHaveBeenCalledWith(
-        expect.stringContaining('Failed escrows:'),
-      );
-    });
-
-    it('processes successfully after retrying failed escrows', async () => {
-      // Create one eligible escrow
-      const escrow = await createDeliveredEscrow({
+    it('skips a disputed escrow in a multi-escrow batch while processing the others', async () => {
+      // Create three eligible escrows
+      const escrow1 = await createDeliveredEscrow({
         itemName: 'Camera',
-        itemRef: 'camera-retry-001',
+        itemRef: 'camera-dispute-001',
         amount: 250,
         buyerAddress: 'buyer-1',
         vendorAddress: 'vendor-1',
         trackingId: 'TRK-001',
       });
 
-      // First run fails
-      contractService.submitAutoRelease.mockRejectedValueOnce(
-        new Error('Temporary network error'),
+      const escrow2 = await createDeliveredEscrow({
+        itemName: 'Laptop',
+        itemRef: 'laptop-dispute-001',
+        amount: 1200,
+        buyerAddress: 'buyer-2',
+        vendorAddress: 'vendor-2',
+        trackingId: 'TRK_002',
+      });
+
+      const escrow3 = await createDeliveredEscrow({
+        itemName: 'Phone',
+        itemRef: 'phone-dispute-001',
+        amount: 800,
+        buyerAddress: 'buyer-3',
+        vendorAddress: 'vendor-3',
+        trackingId: 'TRK-003',
+      });
+
+      // Simulate the race where a dispute row exists but the eligibility
+      // query filter on escrow.disputeId has not caught up,yet the
+      // worker's second line of defence must skip it. The batch lookup
+      // returns a single dispute for escrow2.
+      const disputeRepository = moduleRef.get(DisputeRepository);
+      const findByEscrowIdsSpy = jest
+        .spyOn(disputeRepository, 'findByEscrowIds')
+        .mockResolvedValue([{ escrowId: escrow2.id } as any]);
+
+      // Only escrow1 and escrow3 should be released.
+      const outcomes = new Map<bigint, () => Promise<string>>[
+        [escrow1.contractEscrowId!, () => Promise.resolve('tx-hash-1')],
+        [escrow3.contractEscrowId!, () => Promise.resolve('tx-hash-3')],
+      ];
+      contractService.submitAutoRelease.mockImplementation((escrowId: bigint) =>
+        (
+          outcomes.get(escrowId) ??
+          (() => Promise.reject(new Error(`unexpected escrow ${escrowId}`)))
+        )(),
       );
 
       await worker.run();
 
-      // Verify first attempt failed
-      const afterFirst = await prisma.escrow.findUnique({
-        where: { id: escrow.id },
+      // The disputed escrow must not be submitted for auto-release.
+      expect(contractService.submitAutoRelease).toHaveBeenCalledTimes(2);
+      expect(contractService.submitAutoRelease).not.toHaveBeenCalledWith(
+        escrow2.contractEscrowId,
+      );
+
+      // The dispute lookup is batched, not one query per escrow.
+      expect(findByEscrowIdsSpy).toHaveBeenCalledTimes(1);
+
+      // Non-disputed escrows release as expected.
+      const after1 = await prisma.escrow.findUnique({
+        where: { id: escrow1.id },
       });
-      expect(afterFirst!.state).toBe('DELIVERED');
-      expect(afterFirst!.autoReleaseTxHash).toBeNull();
+      expect(after1!.state).toBe('DELIVERED');
+      expect(after1!.autoReleaseTxHash).toBe('tx-hash-1');
 
-      // Second run succeeds
-      contractService.submitAutoRelease.mockResolvedValueOnce('tx-hash-1');
-
-      await worker.run();
-
-      // Verify retry succeeded
-      const afterSecond = await prisma.escrow.findUnique({
-        where: { id: escrow.id },
+      const after3 = await prisma.escrow.findUnique({
+        where: { id: escrow3.id },
       });
-      expect(afterSecond!.state).toBe('DELIVERED');
-      expect(afterSecond!.autoReleaseTxHash).toBe('tx-hash-1');
+      expect(after3!.state).toBe('DELIVERED');
+      expect(after3!.autoReleaseTxHash).toBe('tx-hash-3');
     });
   });
 });

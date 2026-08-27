@@ -1,3 +1,4 @@
+import { Account } from '@stellar/stellar-sdk';
 import { ContractService } from './contract.service';
 import { ContractCallFailedException } from './contract-call-failed.exception';
 import { DEFAULT_AUTO_RELEASE_MAX_RETRIES } from './contract.constants';
@@ -14,7 +15,9 @@ function makeServer() {
 }
 
 const SOURCE = 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5';
-const ESCROW = 'escrow-abc';
+// The contract addresses escrows by its own u64, not the backend UUID.
+const ESCROW = 42n;
+const ADMIN = 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5';
 
 describe('ContractService', () => {
   describe('submitAutoRelease — happy path', () => {
@@ -165,7 +168,7 @@ describe('ContractService', () => {
       server.submitTransaction.mockResolvedValue({ hash: 'dispute-hash' });
 
       const svc = new ContractService(server);
-      const hash = await svc.resolveDispute(ESCROW, 'RELEASE');
+      const hash = await svc.resolveDispute(ESCROW, 'RELEASE', ADMIN);
 
       expect(hash).toBe('dispute-hash');
     });
@@ -175,9 +178,9 @@ describe('ContractService', () => {
       server.submitTransaction.mockResolvedValue({ status: 'ERROR' });
 
       const svc = new ContractService(server);
-      await expect(svc.resolveDispute(ESCROW, 'REFUND')).rejects.toBeInstanceOf(
-        ContractCallFailedException,
-      );
+      await expect(
+        svc.resolveDispute(ESCROW, 'REFUND', ADMIN),
+      ).rejects.toBeInstanceOf(ContractCallFailedException);
     });
 
     it('throws when hash is missing', async () => {
@@ -185,9 +188,9 @@ describe('ContractService', () => {
       server.submitTransaction.mockResolvedValue({});
 
       const svc = new ContractService(server);
-      await expect(svc.resolveDispute(ESCROW, 'RELEASE')).rejects.toThrow(
-        'Missing transaction hash',
-      );
+      await expect(
+        svc.resolveDispute(ESCROW, 'RELEASE', ADMIN),
+      ).rejects.toThrow('Missing transaction hash');
     });
   });
 
@@ -235,12 +238,12 @@ describe('ContractService', () => {
       server.submitTransaction.mockResolvedValue({ hash: 'cancel-hash' });
 
       const svc = new ContractService(server);
-      expect(await svc.cancelEscrowOnChain(ESCROW)).toBe('cancel-hash');
+      expect(await svc.cancelEscrowOnChain(ESCROW, ADMIN)).toBe('cancel-hash');
     });
 
     it('throws when server is not configured', async () => {
       const svc = new ContractService(undefined);
-      await expect(svc.cancelEscrowOnChain(ESCROW)).rejects.toThrow(
+      await expect(svc.cancelEscrowOnChain(ESCROW, ADMIN)).rejects.toThrow(
         'Stellar server is not configured',
       );
     });
@@ -250,9 +253,9 @@ describe('ContractService', () => {
       server.submitTransaction.mockResolvedValue({ resultXdr: 'TxFailed' });
 
       const svc = new ContractService(server);
-      await expect(svc.cancelEscrowOnChain(ESCROW)).rejects.toBeInstanceOf(
-        ContractCallFailedException,
-      );
+      await expect(
+        svc.cancelEscrowOnChain(ESCROW, ADMIN),
+      ).rejects.toBeInstanceOf(ContractCallFailedException);
     });
   });
 
@@ -262,12 +265,12 @@ describe('ContractService', () => {
       server.submitTransaction.mockResolvedValue({ hash: 'delivery-hash' });
 
       const svc = new ContractService(server);
-      expect(await svc.recordDelivery(ESCROW)).toBe('delivery-hash');
+      expect(await svc.recordDelivery(ESCROW, ADMIN)).toBe('delivery-hash');
     });
 
     it('throws when server is not configured', async () => {
       const svc = new ContractService(undefined);
-      await expect(svc.recordDelivery(ESCROW)).rejects.toThrow(
+      await expect(svc.recordDelivery(ESCROW, ADMIN)).rejects.toThrow(
         'Stellar server is not configured',
       );
     });
@@ -299,7 +302,7 @@ describe('ContractService', () => {
       const server = makeSorobanRpcServer();
       const svc = new ContractService(server);
 
-      const disputeHash = await svc.resolveDispute(ESCROW, 'RELEASE');
+      const disputeHash = await svc.resolveDispute(ESCROW, 'RELEASE', ADMIN);
       expect(disputeHash).toBe('soroban-hash-1');
       expect(server.getAccount).toHaveBeenCalledWith(SOURCE);
       expect(server.simulateTransaction).toHaveBeenCalled();
@@ -310,10 +313,10 @@ describe('ContractService', () => {
       const releaseHash = await svc.submitAutoRelease(ESCROW, SOURCE);
       expect(releaseHash).toBe('soroban-hash-1');
 
-      const cancelHash = await svc.cancelEscrowOnChain(ESCROW);
+      const cancelHash = await svc.cancelEscrowOnChain(ESCROW, ADMIN);
       expect(cancelHash).toBe('soroban-hash-1');
 
-      const deliveryHash = await svc.recordDelivery(ESCROW);
+      const deliveryHash = await svc.recordDelivery(ESCROW, ADMIN);
       expect(deliveryHash).toBe('soroban-hash-1');
     });
 
@@ -324,9 +327,9 @@ describe('ContractService', () => {
       });
 
       const svc = new ContractService(server);
-      await expect(svc.resolveDispute(ESCROW, 'RELEASE')).rejects.toThrow(
-        ContractCallFailedException,
-      );
+      await expect(
+        svc.resolveDispute(ESCROW, 'RELEASE', ADMIN),
+      ).rejects.toThrow(ContractCallFailedException);
     });
 
     it('handles transaction preparation failure', async () => {
@@ -336,9 +339,9 @@ describe('ContractService', () => {
       );
 
       const svc = new ContractService(server);
-      await expect(svc.resolveDispute(ESCROW, 'RELEASE')).rejects.toThrow(
-        ContractCallFailedException,
-      );
+      await expect(
+        svc.resolveDispute(ESCROW, 'RELEASE', ADMIN),
+      ).rejects.toThrow(ContractCallFailedException);
     });
 
     it('handles submission error status', async () => {
@@ -349,9 +352,9 @@ describe('ContractService', () => {
       });
 
       const svc = new ContractService(server);
-      await expect(svc.resolveDispute(ESCROW, 'RELEASE')).rejects.toThrow(
-        ContractCallFailedException,
-      );
+      await expect(
+        svc.resolveDispute(ESCROW, 'RELEASE', ADMIN),
+      ).rejects.toThrow(ContractCallFailedException);
     });
 
     it('handles polling failure and decodes contract error', async () => {
@@ -366,9 +369,9 @@ describe('ContractService', () => {
       });
 
       const svc = new ContractService(server);
-      await expect(svc.resolveDispute(ESCROW, 'RELEASE')).rejects.toThrow(
-        ContractCallFailedException,
-      );
+      await expect(
+        svc.resolveDispute(ESCROW, 'RELEASE', ADMIN),
+      ).rejects.toThrow(ContractCallFailedException);
     });
 
     it('retries on sequence error and re-fetches account on each attempt', async () => {
@@ -402,6 +405,42 @@ describe('ContractService', () => {
       });
       const resultFail = await svc.getEscrowState(ESCROW);
       expect(resultFail).toEqual({ state: 'UNKNOWN', exists: false });
+    });
+
+    it('fetchAccount returns the SDK Account instance directly when getAccount does', async () => {
+      const server = makeSorobanRpcServer();
+      const realAccount = new Account(SOURCE, '55');
+      server.getAccount.mockResolvedValue(realAccount);
+
+      const svc = new ContractService(server);
+      const hash = await svc.resolveDispute(ESCROW, 'RELEASE', ADMIN);
+
+      expect(hash).toBe('soroban-hash-1');
+    });
+
+    it('falls back to getTransaction when the server has no pollTransaction', async () => {
+      const server = makeSorobanRpcServer();
+      // @ts-expect-error — exercising the pollTransactionStatus fallback path
+      delete server.pollTransaction;
+      server.getTransaction.mockResolvedValue({ status: 'SUCCESS' });
+
+      const svc = new ContractService(server);
+      const hash = await svc.resolveDispute(ESCROW, 'RELEASE', ADMIN);
+
+      expect(hash).toBe('soroban-hash-1');
+      expect(server.getTransaction).toHaveBeenCalledWith('soroban-hash-1');
+    });
+  });
+
+  describe('submitAutoRelease — invalid maxRetries', () => {
+    it('throws immediately without any network call when maxRetries is negative', async () => {
+      const server = makeServer();
+      const svc = new ContractService(server);
+
+      await expect(
+        svc.submitAutoRelease(ESCROW, SOURCE, -1),
+      ).rejects.toThrow('Max retries exceeded');
+      expect(server.loadAccount).not.toHaveBeenCalled();
     });
   });
 });

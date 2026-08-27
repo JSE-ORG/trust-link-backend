@@ -3,50 +3,28 @@ import { Request, Response, NextFunction } from 'express';
 
 describe('SecurityMiddleware', () => {
   let middleware: SecurityMiddleware;
-  let mockRequest: Partial<Request>;
-  let mockResponse: Partial<Response>;
-  let nextFunction: NextFunction;
+  let req: Partial<Request>;
+  let res: Partial<Response>;
+  let next: NextFunction;
 
   beforeEach(() => {
     middleware = new SecurityMiddleware();
-    mockRequest = {
-      headers: {},
-    };
-    mockResponse = {
-      setHeader: jest.fn(),
-    };
-    nextFunction = jest.fn();
+    req = { headers: {} };
+    res = { setHeader: jest.fn() };
+    next = jest.fn();
   });
 
-  it('should be defined', () => {
-    expect(middleware).toBeDefined();
+  it('sets Cache-Control and Pragma to no-cache if authorization header is present', () => {
+    req.headers = { authorization: 'Bearer token' };
+    middleware.use(req as Request, res as Response, next);
+    expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
+    expect(res.setHeader).toHaveBeenCalledWith('Pragma', 'no-cache');
+    expect(next).toHaveBeenCalled();
   });
 
-  it('should set cache control headers if authorization header is present', () => {
-    mockRequest.headers = { authorization: 'Bearer token' };
-
-    middleware.use(
-      mockRequest as Request,
-      mockResponse as Response,
-      nextFunction,
-    );
-
-    expect(mockResponse.setHeader).toHaveBeenCalledWith(
-      'Cache-Control',
-      'no-store',
-    );
-    expect(mockResponse.setHeader).toHaveBeenCalledWith('Pragma', 'no-cache');
-    expect(nextFunction).toHaveBeenCalled();
-  });
-
-  it('should not set cache control headers if authorization header is not present', () => {
-    middleware.use(
-      mockRequest as Request,
-      mockResponse as Response,
-      nextFunction,
-    );
-
-    expect(mockResponse.setHeader).not.toHaveBeenCalled();
-    expect(nextFunction).toHaveBeenCalled();
+  it('does not set headers if authorization header is not present', () => {
+    middleware.use(req as Request, res as Response, next);
+    expect(res.setHeader).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalled();
   });
 });

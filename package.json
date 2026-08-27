@@ -110,6 +110,9 @@
             "ts"
         ],
         "rootDir": ".",
+        "setupFiles": [
+            "<rootDir>/test/setup-env.ts"
+        ],
         "testRegex": "(src|test)/.*\\.spec\\.ts$",
         "transform": {
             "^.+\\.(t|j)s$": [
@@ -147,7 +150,8 @@
         "seed": "ts-node prisma/seed.ts"
     },
     "overrides": {
-        "brace-expansion": "5.0.8",
+        "brace-expansion": "5.0.9",
+        "deepmerge-ts": "8.0.2",
         "js-yaml": "5.2.2",
         "find-my-way": "9.7.0",
         "valibot": "1.4.2",

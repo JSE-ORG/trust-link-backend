@@ -1,3 +1,4 @@
+import './common/bigint-json';
 import './tracing/tracing.bootstrap';
 import * as Sentry from '@sentry/nestjs';
 import { NestFactory } from '@nestjs/core';

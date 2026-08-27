@@ -28,6 +28,13 @@ export type DisputeState =
 
 export interface EscrowRecord {
   id: string;
+  /**
+   * The escrow's id in the Soroban contract (`u64`), or null while the
+   * on-chain escrow has not been matched to this row. Every contract call and
+   * every inbound chain event resolves through it; see the schema comment on
+   * `Escrow.contractEscrowId`.
+   */
+  contractEscrowId: bigint | null;
   itemName: string;
   itemRef: string;
   amount: number;
@@ -352,6 +359,20 @@ export class PrismaService extends PrismaClient {
     await this.$disconnect();
   }
 
+  /**
+   * Truncates every application table (all except `_prisma_migrations`),
+   * `CASCADE`, to give a test a clean database.
+   *
+   * **Test-only.** Throws immediately unless `NODE_ENV === 'test'`, so it can
+   * never wipe a real database if it is left in a code path by mistake.
+   *
+   * Runs as a single `TRUNCATE ... CASCADE` inside a transaction guarded by
+   * `pg_advisory_xact_lock(42)`: the one statement avoids the deadlocks of
+   * truncating tables one-by-one, and the advisory lock serialises `reset()`
+   * across parallel Jest workers sharing the same test database. It does not
+   * reset sequences beyond what `TRUNCATE` does, and it does not re-run
+   * migrations — the schema must already exist.
+   */
   async reset(): Promise<void> {
     if (process.env.NODE_ENV !== 'test') {
       throw new Error(
@@ -371,10 +392,13 @@ export class PrismaService extends PrismaClient {
       // Single TRUNCATE statement avoids the deadlocks caused by truncating
       // tables one-by-one, and the advisory lock serializes reset() across
       // parallel Jest workers sharing the same test database.
-      await this.$transaction(async (tx) => {
-        await tx.$executeRawUnsafe(`SELECT pg_advisory_xact_lock(42);`);
-        await tx.$executeRawUnsafe(`TRUNCATE TABLE ${tables} CASCADE;`);
-      });
+      await this.$transaction(
+        async (tx) => {
+          await tx.$executeRawUnsafe(`SELECT pg_advisory_xact_lock(42);`);
+          await tx.$executeRawUnsafe(`TRUNCATE TABLE ${tables} CASCADE;`);
+        },
+        { timeout: 30000 },
+      );
     }
   }
 }

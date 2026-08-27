@@ -1,17 +1,22 @@
 import { NotFoundException } from '@nestjs/common';
 import { DlqService } from '../../src/dlq/dlq.service';
+import { PrismaService } from '../../src/prisma/prisma.service';
+
+type PrismaFailedTransactionMock = {
+  create: jest.Mock;
+  findMany: jest.Mock;
+  findUnique: jest.Mock;
+  update: jest.Mock;
+  count: jest.Mock;
+};
+
+type PrismaMock = {
+  failedTransaction: PrismaFailedTransactionMock;
+};
 
 describe('DlqService (#74)', () => {
   let service: DlqService;
-  let prismaMock: {
-    failedTransaction: {
-      create: jest.Mock;
-      findMany: jest.Mock;
-      findUnique: jest.Mock;
-      update: jest.Mock;
-      count: jest.Mock;
-    };
-  };
+  let prismaMock: PrismaMock;
 
   const mockRecord = {
     id: 'test-id-1',
@@ -38,7 +43,7 @@ describe('DlqService (#74)', () => {
         count: jest.fn(),
       },
     };
-    service = new DlqService(prismaMock as any);
+    service = new DlqService(prismaMock as unknown as PrismaService);
   });
 
   afterEach(() => {

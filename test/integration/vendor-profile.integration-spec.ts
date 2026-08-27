@@ -1,20 +1,26 @@
 /**
- * Integration tests for vendor profile CRUD endpoints (issue #292).
+ * Integration tests for vendor profile CRUD endpoints (issue #292, issue #643).
  *
  * Covered endpoints:
  *   POST  /vendor/profile
  *   GET   /vendor/profile
  *   PUT   /vendor/profile  (upsert — idempotent)
  *   PATCH /vendor/profile
+ *   GET   /vendor/profile/notifications
+ *   PATCH /vendor/profile/notifications
  */
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
-import { AppModule } from '../../src/app.module';
 import { PrismaService } from '../../src/prisma/prisma.service';
+import { ConfigModule } from '../../src/config/config.module';
+import { JwtGuard } from '../../src/auth/guards/jwt.guard';
+import { VendorProfileController } from '../../src/vendor/vendor-profile.controller';
+import { VendorProfileService } from '../../src/vendor/vendor-profile.service';
+import { VendorProfileRepository } from '../../src/vendor/vendor-profile.repository';
 import { bearer } from '../auth-helper';
 
-describe('Vendor profile CRUD (issue #292)', () => {
+describe('Vendor profile CRUD (issue #292, issue #643)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
 
@@ -29,9 +35,16 @@ describe('Vendor profile CRUD (issue #292)', () => {
     description: 'Quality vintage goods',
   };
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
-      imports: [AppModule],
+      imports: [ConfigModule],
+      controllers: [VendorProfileController],
+      providers: [
+        VendorProfileService,
+        VendorProfileRepository,
+        PrismaService,
+        JwtGuard,
+      ],
     }).compile();
 
     app = moduleFixture.createNestApplication();
@@ -40,11 +53,15 @@ describe('Vendor profile CRUD (issue #292)', () => {
     );
     await app.init();
     prisma = app.get(PrismaService);
-    await prisma.reset();
   });
 
-  afterEach(async () => {
-    await app.close();
+  beforeEach(async () => {
+    await prisma.vendorTrackingSettings.deleteMany();
+    await prisma.vendorProfile.deleteMany();
+  });
+
+  afterAll(async () => {
+    await app?.close();
   });
 
   // ── POST /vendor/profile ─────────────────────────────────────────────────
@@ -213,6 +230,96 @@ describe('Vendor profile CRUD (issue #292)', () => {
         .set('Authorization', AUTH)
         .send({ businessName: 'Ghost' })
         .expect(404);
+    });
+  });
+
+  // ── GET /vendor/profile/notifications ───────────────────────────────────
+
+  describe('GET /vendor/profile/notifications', () => {
+    it('returns default notification preferences for an authenticated vendor', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/vendor/profile/notifications')
+        .set('Authorization', AUTH)
+        .expect(200);
+
+      expect(res.body).toEqual({
+        notifyOnDelivery: true,
+        notifyOnDelay: true,
+        notifyOnException: true,
+        notificationChannels: ['EMAIL'],
+        webhookUrl: null,
+        enableTracking: true,
+        delayThresholdHours: 24,
+        deliveryConfirmation: true,
+        trackingHistoryRetentionDays: 90,
+      });
+    });
+
+    it('returns 401 for unauthenticated requests', async () => {
+      await request(app.getHttpServer())
+        .get('/vendor/profile/notifications')
+        .expect(401);
+    });
+  });
+
+  // ── PATCH /vendor/profile/notifications ─────────────────────────────────
+
+  describe('PATCH /vendor/profile/notifications', () => {
+    it('updates notification preferences when vendor profile exists', async () => {
+      await request(app.getHttpServer())
+        .post('/vendor/profile')
+        .set('Authorization', AUTH)
+        .send(validProfile)
+        .expect(201);
+
+      const res = await request(app.getHttpServer())
+        .patch('/vendor/profile/notifications')
+        .set('Authorization', AUTH)
+        .send({
+          notifyOnDelivery: false,
+          notifyOnDelay: true,
+          webhookUrl: 'https://example.com/webhook',
+        })
+        .expect(200);
+
+      expect(res.body).toHaveProperty('trackingSettings');
+      expect(res.body.trackingSettings).toEqual(
+        expect.objectContaining({
+          vendorAddress: VENDOR,
+          notifyOnDelivery: false,
+          notifyOnDelay: true,
+          webhookUrl: 'https://example.com/webhook',
+        }),
+      );
+    });
+
+    it('returns 404 when updating notification preferences for non-existent profile', async () => {
+      await request(app.getHttpServer())
+        .patch('/vendor/profile/notifications')
+        .set('Authorization', AUTH)
+        .send({ notifyOnDelivery: false })
+        .expect(404);
+    });
+
+    it('returns 400 when empty update payload is provided', async () => {
+      await request(app.getHttpServer())
+        .post('/vendor/profile')
+        .set('Authorization', AUTH)
+        .send(validProfile)
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .patch('/vendor/profile/notifications')
+        .set('Authorization', AUTH)
+        .send({})
+        .expect(400);
+    });
+
+    it('returns 401 for unauthenticated requests', async () => {
+      await request(app.getHttpServer())
+        .patch('/vendor/profile/notifications')
+        .send({ notifyOnDelivery: false })
+        .expect(401);
     });
   });
 });

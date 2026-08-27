@@ -16,6 +16,7 @@ import { EscrowRecord } from '../../src/prisma/prisma.service';
 function buildEscrow(overrides: Partial<Record<string, unknown>> = {}) {
   return {
     id: 'escrow-1',
+    contractEscrowId: 7n,
     itemName: 'Camera',
     amount: 250,
     currency: 'USDC',
@@ -61,6 +62,11 @@ describe('TrackingPollWorker — interval scheduling & polling loop (issue #46)'
       get: jest.fn().mockImplementation((key: string) => {
         if (key === 'NODE_ENV') {
           return process.env.NODE_ENV ?? 'test';
+        }
+        // record_delivery require_auth()s the caller and the contract only
+        // accepts the admin, so the worker resolves this on use.
+        if (key === 'ADMIN_ADDRESS') {
+          return 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5';
         }
         return undefined;
       }),
@@ -218,7 +224,10 @@ describe('TrackingPollWorker — interval scheduling & polling loop (issue #46)'
         'escrow-1',
         expect.any(Date),
       );
-      expect(contractService.recordDelivery).toHaveBeenCalledWith('escrow-1');
+      expect(contractService.recordDelivery).toHaveBeenCalledWith(
+        7n,
+        'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
+      );
     });
 
     it('isolates a failed item so healthy shipments are still processed', async () => {
@@ -242,7 +251,10 @@ describe('TrackingPollWorker — interval scheduling & polling loop (issue #46)'
         'escrow-ok',
         expect.any(Date),
       );
-      expect(contractService.recordDelivery).toHaveBeenCalledWith('escrow-ok');
+      expect(contractService.recordDelivery).toHaveBeenCalledWith(
+        7n,
+        'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
+      );
       // The failed item is never marked delivered.
       expect(escrowRepository.markDelivered).not.toHaveBeenCalledWith(
         'escrow-fail',

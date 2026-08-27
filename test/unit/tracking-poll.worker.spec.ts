@@ -1,4 +1,5 @@
 import { Test } from '@nestjs/testing';
+import { Logger } from '@nestjs/common';
 import { EscrowRepository } from '../../src/escrow/escrow.repository';
 import { LogisticsService } from '../../src/logistics/logistics.service';
 import { TrackingPollWorker } from '../../src/workers/tracking-poll.worker';
@@ -30,6 +31,11 @@ describe('TrackingPollWorker (issue #11)', () => {
         if (key === 'NODE_ENV') {
           return process.env.NODE_ENV ?? 'test';
         }
+        // record_delivery require_auth()s the caller and the contract only
+        // accepts the admin, so the worker resolves this on use.
+        if (key === 'ADMIN_ADDRESS') {
+          return 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5';
+        }
         return undefined;
       }),
     } as unknown as jest.Mocked<ConfigService>;
@@ -50,6 +56,7 @@ describe('TrackingPollWorker (issue #11)', () => {
   it('marks delivered escrows and records the delivery contract call', async () => {
     const escrow = {
       id: 'escrow-1',
+      contractEscrowId: 7n,
       itemName: 'Camera',
       amount: 250,
       currency: 'USDC',
@@ -81,7 +88,10 @@ describe('TrackingPollWorker (issue #11)', () => {
     await worker.run();
 
     expect(escrowRepository.claimDelivery).toHaveBeenCalledWith('escrow-1');
-    expect(contractService.recordDelivery).toHaveBeenCalledWith('escrow-1');
+    expect(contractService.recordDelivery).toHaveBeenCalledWith(
+      7n,
+      'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
+    );
     expect(escrowRepository.markDelivered).toHaveBeenCalledWith(
       'escrow-1',
       expect.any(Date),
@@ -91,6 +101,7 @@ describe('TrackingPollWorker (issue #11)', () => {
   it('clears the delivery claim when contract call fails, leaving escrow retryable', async () => {
     const escrow = {
       id: 'escrow-1',
+      contractEscrowId: 7n,
       itemName: 'Camera',
       amount: 250,
       currency: 'USDC',
@@ -134,6 +145,7 @@ describe('TrackingPollWorker (issue #11)', () => {
   it('keeps polling resilient to carrier API failures', async () => {
     const escrow = {
       id: 'escrow-1',
+      contractEscrowId: 7n,
       itemName: 'Camera',
       amount: 250,
       currency: 'USDC',
@@ -167,7 +179,7 @@ describe('TrackingPollWorker (issue #11)', () => {
       new Error('database unavailable'),
     );
     const loggerSpy = jest
-      .spyOn((worker as any).logger, 'error')
+      .spyOn((worker as unknown as { logger: Logger }).logger, 'error')
       .mockImplementation();
 
     await expect(worker.run()).resolves.toBeUndefined();

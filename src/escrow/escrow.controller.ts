@@ -34,7 +34,10 @@ import { UpdateBuyerContactDto } from './dto/update-buyer-contact.dto';
 import { EscrowService } from './escrow.service';
 import { BuyerDisputeService } from './buyer-dispute.service';
 import { Throttle } from '@nestjs/throttler';
-import { EVIDENCE_UPLOAD_THROTTLE } from '../common/security/throttle.config';
+import {
+  EVIDENCE_UPLOAD_THROTTLE,
+  THROTTLE_WINDOW_MS,
+} from '../common/security/throttle.config';
 import { EscrowResponseDto } from './dto/escrow-response.dto';
 import { EscrowWithPaymentUrlResponseDto } from './dto/escrow-with-payment-url-response.dto';
 import { EvidenceUploadResponseDto } from './dto/evidence-upload.dto';
@@ -107,7 +110,7 @@ export class EscrowController {
   @Post()
   @HttpCode(HttpStatus.CREATED)
   @UseGuards(JwtGuard)
-  @Throttle({ public: { limit: 10, ttl: 60000 } })
+  @Throttle({ public: { limit: 10, ttl: THROTTLE_WINDOW_MS } })
   createEscrow(
     @Body() dto: CreateEscrowDto,
     @CurrentUser() user: AuthUser,
@@ -236,7 +239,7 @@ export class EscrowController {
     type: ErrorResponseDto,
   })
   @Get(':id/events')
-  @Throttle({ public: { limit: 100, ttl: 60000 } })
+  @Throttle({ public: { limit: 100, ttl: THROTTLE_WINDOW_MS } })
   getEvents(@Param('id', ParseUUIDPipe) id: string) {
     return this.escrowService.getEvents(id);
   }
@@ -327,7 +330,7 @@ export class EscrowController {
   })
   @Patch(':id/buyer-contact')
   @HttpCode(HttpStatus.OK)
-  @Throttle({ public: { limit: 10, ttl: 60000 } })
+  @Throttle({ public: { limit: 10, ttl: THROTTLE_WINDOW_MS } })
   updateBuyerContact(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateBuyerContactDto,
@@ -393,7 +396,7 @@ export class EscrowController {
   @Patch(':id/ship')
   @HttpCode(HttpStatus.OK)
   @UseGuards(JwtGuard)
-  @Throttle({ public: { limit: 20, ttl: 60000 } })
+  @Throttle({ public: { limit: 20, ttl: THROTTLE_WINDOW_MS } })
   shipEscrow(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateShipmentDto,
@@ -466,7 +469,7 @@ export class EscrowController {
   @Patch(':id/cancel')
   @HttpCode(HttpStatus.OK)
   @UseGuards(JwtGuard)
-  @Throttle({ public: { limit: 10, ttl: 60000 } })
+  @Throttle({ public: { limit: 10, ttl: THROTTLE_WINDOW_MS } })
   cancelEscrow(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: AuthUser,
@@ -539,7 +542,7 @@ export class EscrowController {
   @Delete(':id')
   @HttpCode(HttpStatus.OK)
   @UseGuards(JwtGuard)
-  @Throttle({ public: { limit: 10, ttl: 60000 } })
+  @Throttle({ public: { limit: 10, ttl: THROTTLE_WINDOW_MS } })
   cancelPendingEscrow(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: AuthUser,
@@ -609,7 +612,7 @@ export class EscrowController {
   @Post(':id/dispute')
   @HttpCode(HttpStatus.CREATED)
   @UseGuards(JwtGuard)
-  @Throttle({ public: { limit: 5, ttl: 60000 } })
+  @Throttle({ public: { limit: 5, ttl: THROTTLE_WINDOW_MS } })
   openDispute(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: OpenDisputeDto,
@@ -663,7 +666,7 @@ export class EscrowController {
   @ApiBearerAuth()
   @Get(':id/dispute')
   @UseGuards(JwtGuard)
-  @Throttle({ public: { limit: 30, ttl: 60000 } })
+  @Throttle({ public: { limit: 30, ttl: THROTTLE_WINDOW_MS } })
   getDispute(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: AuthUser,

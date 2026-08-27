@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { ThrottlerModule, ThrottlerGuard, Throttle } from '@nestjs/throttler';
+import { THROTTLE_WINDOW_MS } from '../../src/common/security/throttle.config';
 import { APP_GUARD } from '@nestjs/core';
 import { Controller, Get } from '@nestjs/common';
 
@@ -13,7 +14,7 @@ import { Controller, Get } from '@nestjs/common';
 @Controller('test-throttle')
 class TestThrottleController {
   @Get('public')
-  @Throttle({ public: { limit: 2, ttl: 60000 } })
+  @Throttle({ public: { limit: 2, ttl: THROTTLE_WINDOW_MS } })
   publicEndpoint() {
     return { ok: true };
   }
@@ -56,6 +57,12 @@ describe('Rate limiting (integration)', () => {
         .get('/test-throttle/public')
         .expect(200);
     });
+  });
+
+  it('uses the centralised throttle window (#667)', () => {
+    // The endpoint above is decorated with `ttl: THROTTLE_WINDOW_MS`; assert
+    // the shared constant is the one-minute window the routes expect.
+    expect(THROTTLE_WINDOW_MS).toBe(60_000);
   });
 
   describe('exceeding rate limit', () => {

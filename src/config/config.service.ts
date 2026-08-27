@@ -1,6 +1,24 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService as NestConfigService } from '@nestjs/config';
 
+/**
+ * Thrown by {@link ConfigService.requireAutoReleaseSourceAddress} when
+ * `AUTO_RELEASE_SOURCE_ADDRESS` is unset.
+ *
+ * A framework-neutral `Error` on purpose: the auto-release worker lets it
+ * propagate to its own catch-and-log handler, and `DlqController` catches it
+ * and rethrows `ServiceUnavailableException` to surface a 503. The two used
+ * to raise different exception types for the same misconfiguration (#672).
+ */
+export class AutoReleaseSourceNotConfiguredError extends Error {
+  constructor() {
+    super(
+      'AUTO_RELEASE_SOURCE_ADDRESS is not configured, so auto-release is unavailable.',
+    );
+    this.name = 'AutoReleaseSourceNotConfiguredError';
+  }
+}
+
 export interface Config {
   PORT: number;
   DATABASE_URL: string;
@@ -164,18 +182,58 @@ export class ConfigService {
     );
   }
 
-  /** Returns true when NODE_ENV is development. */
+  /**
+   * True when the app is running in the `development` environment.
+   *
+   * Reads the *validated* `NODE_ENV` (a `'development' | 'production' | 'test'`
+   * enum that defaults to `'development'` in the schema), not `process.env`
+   * directly — so this is the canonical environment check and cannot see an
+   * unrecognised value. Exactly one of `isDevelopment` / `isProduction` /
+   * `isTest` is true at a time.
+   */
   isDevelopment(): boolean {
     return this.get('NODE_ENV') === 'development';
   }
 
-  /** Returns true when NODE_ENV is production. */
+  /**
+   * True when the app is running in the `production` environment. See
+   * {@link isDevelopment} for how `NODE_ENV` is resolved. Prefer gating
+   * production-only strictness (required secrets, disabled dev shortcuts) on
+   * this rather than on `!isDevelopment()`, since `test` is neither.
+   */
   isProduction(): boolean {
     return this.get('NODE_ENV') === 'production';
   }
 
-  /** Returns true when NODE_ENV is test. */
+  /**
+   * True when the app is running under Jest (`NODE_ENV=test`). See
+   * {@link isDevelopment} for resolution. Used to gate test-only escape
+   * hatches such as `PrismaService.reset()` and the auto-release worker's
+   * `onModuleInit` no-op.
+   */
   isTest(): boolean {
     return this.get('NODE_ENV') === 'test';
+  }
+
+  /**
+   * Returns `AUTO_RELEASE_SOURCE_ADDRESS`, or throws
+   * {@link AutoReleaseSourceNotConfiguredError} when it is unset.
+   *
+   * Single source of truth for this check (#672) — it was duplicated in
+   * `DlqController` and `AutoReleaseWorker`, which disagreed about the
+   * failure (a 503 `ServiceUnavailableException` vs a plain `Error`).
+   * Resolved on use, never in a constructor: the variable is deliberately
+   * optional, so a boot-time throw would take the whole app down instead of
+   * just the affected path. Callers that need a 503 catch the error and
+   * translate it themselves.
+   */
+  requireAutoReleaseSourceAddress(): string {
+    const address = this.nestConfigService.get('AUTO_RELEASE_SOURCE_ADDRESS', {
+      infer: true,
+    });
+    if (!address) {
+      throw new AutoReleaseSourceNotConfiguredError();
+    }
+    return address;
   }
 }

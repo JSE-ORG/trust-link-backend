@@ -13,6 +13,7 @@ import {
   ApiResponse,
 } from '@nestjs/swagger';
 import { SkipThrottle, Throttle } from '@nestjs/throttler';
+import { THROTTLE_WINDOW_MS } from './common/security/throttle.config';
 import type { Response } from 'express';
 import { AppService } from './app.service';
 import { getAppVersion } from './common/version';
@@ -55,7 +56,7 @@ export class AppController {
 
   @ApiOperation({ summary: 'Root endpoint — welcome message' })
   @ApiResponse({ status: 200, description: 'Service welcome message.' })
-  @Throttle({ public: { limit: 100, ttl: 60000 } })
+  @Throttle({ public: { limit: 100, ttl: THROTTLE_WINDOW_MS } })
   @Get()
   getHello(): string {
     return this.appService.getHello();
@@ -238,7 +239,7 @@ export class AppController {
    */
   @ApiOperation({ summary: 'Get current application version and environment' })
   @ApiResponse({ status: 200, description: 'Version information returned.' })
-  @Throttle({ public: { limit: 100, ttl: 60000 } })
+  @Throttle({ public: { limit: 100, ttl: THROTTLE_WINDOW_MS } })
   @Get('version')
   @HttpCode(HttpStatus.OK)
   getVersion() {
@@ -258,9 +259,23 @@ export class AppController {
     return { db, horizon, redis };
   }
 
+  /**
+   * Liveness check for the database connection.
+   *
+   * The query must stay bounded. `findMany({})` with no `where`, `take` or
+   * `select` returns every escrow row, and this runs on `GET /health/ready`
+   * and the legacy `GET /health`, both polled by a load balancer on a short
+   * interval. That was survivable while `PrismaService` was an in-memory fake;
+   * against the real client it is an unbounded `SELECT *` on every poll
+   * (issue #563). One id is all the probe needs to prove the connection and
+   * the schema are reachable.
+   */
   private async checkDatabase(): Promise<ComponentHealth> {
     try {
-      await this.prismaService.escrow.findMany({});
+      await this.prismaService.escrow.findMany({
+        select: { id: true },
+        take: 1,
+      });
       return { status: 'ok' };
     } catch (err) {
       const message =

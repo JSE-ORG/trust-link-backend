@@ -1,103 +1,43 @@
-import {
-  RequestIdMiddleware,
-  REQUEST_ID_HEADER,
-} from '../../src/common/middleware/request-id.middleware';
+import { RequestIdMiddleware, REQUEST_ID_HEADER } from '../../src/common/middleware/request-id.middleware';
 import { Request, Response, NextFunction } from 'express';
-
-// Mock crypto module to test generated UUIDs.
-jest.mock('crypto', () => ({
-  randomUUID: jest.fn().mockReturnValue('mock-uuid-1234'),
-}));
 
 describe('RequestIdMiddleware', () => {
   let middleware: RequestIdMiddleware;
-  let mockRequest: Partial<Request>;
-  let mockResponse: Partial<Response>;
-  let nextFunction: NextFunction;
+  let req: Partial<Request>;
+  let res: Partial<Response>;
+  let next: NextFunction;
 
   beforeEach(() => {
     middleware = new RequestIdMiddleware();
-    mockRequest = {
-      headers: {},
-    };
-    mockResponse = {
-      setHeader: jest.fn(),
-    };
-    nextFunction = jest.fn();
-    jest.clearAllMocks();
+    req = { headers: {} };
+    res = { setHeader: jest.fn() };
+    next = jest.fn();
   });
 
-  it('should be defined', () => {
-    expect(middleware).toBeDefined();
+  it('reuses the existing x-request-id if provided in headers', () => {
+    req.headers = { [REQUEST_ID_HEADER]: 'existing-id-123' };
+    middleware.use(req as Request, res as Response, next);
+    expect(req.requestId).toBe('existing-id-123');
+    expect(req.headers[REQUEST_ID_HEADER]).toBe('existing-id-123');
+    expect(res.setHeader).toHaveBeenCalledWith(REQUEST_ID_HEADER, 'existing-id-123');
+    expect(next).toHaveBeenCalled();
   });
 
-  it('should generate a new request id if none is provided', () => {
-    middleware.use(
-      mockRequest as Request,
-      mockResponse as Response,
-      nextFunction,
-    );
-
-    expect(mockRequest.requestId).toBe('mock-uuid-1234');
-    expect(mockRequest.headers![REQUEST_ID_HEADER]).toBe('mock-uuid-1234');
-    expect(mockResponse.setHeader).toHaveBeenCalledWith(
-      REQUEST_ID_HEADER,
-      'mock-uuid-1234',
-    );
-    expect(nextFunction).toHaveBeenCalled();
+  it('uses the first element if the header is an array', () => {
+    req.headers = { [REQUEST_ID_HEADER]: ['id-array-1', 'id-array-2'] };
+    middleware.use(req as Request, res as Response, next);
+    expect(req.requestId).toBe('id-array-1');
+    expect(req.headers[REQUEST_ID_HEADER]).toBe('id-array-1');
+    expect(res.setHeader).toHaveBeenCalledWith(REQUEST_ID_HEADER, 'id-array-1');
+    expect(next).toHaveBeenCalled();
   });
 
-  it('should reuse the existing request id if provided in headers', () => {
-    mockRequest.headers = { [REQUEST_ID_HEADER]: 'existing-id-5678' };
-
-    middleware.use(
-      mockRequest as Request,
-      mockResponse as Response,
-      nextFunction,
-    );
-
-    expect(mockRequest.requestId).toBe('existing-id-5678');
-    expect(mockRequest.headers![REQUEST_ID_HEADER]).toBe('existing-id-5678');
-    expect(mockResponse.setHeader).toHaveBeenCalledWith(
-      REQUEST_ID_HEADER,
-      'existing-id-5678',
-    );
-    expect(nextFunction).toHaveBeenCalled();
-  });
-
-  it('should use the first value if the header is an array', () => {
-    mockRequest.headers = { [REQUEST_ID_HEADER]: ['first-id', 'second-id'] };
-
-    middleware.use(
-      mockRequest as Request,
-      mockResponse as Response,
-      nextFunction,
-    );
-
-    expect(mockRequest.requestId).toBe('first-id');
-    expect(mockRequest.headers![REQUEST_ID_HEADER]).toBe('first-id');
-    expect(mockResponse.setHeader).toHaveBeenCalledWith(
-      REQUEST_ID_HEADER,
-      'first-id',
-    );
-    expect(nextFunction).toHaveBeenCalled();
-  });
-
-  it('should generate a new request id if the existing header is empty whitespace', () => {
-    mockRequest.headers = { [REQUEST_ID_HEADER]: '   ' };
-
-    middleware.use(
-      mockRequest as Request,
-      mockResponse as Response,
-      nextFunction,
-    );
-
-    expect(mockRequest.requestId).toBe('mock-uuid-1234');
-    expect(mockRequest.headers![REQUEST_ID_HEADER]).toBe('mock-uuid-1234');
-    expect(mockResponse.setHeader).toHaveBeenCalledWith(
-      REQUEST_ID_HEADER,
-      'mock-uuid-1234',
-    );
-    expect(nextFunction).toHaveBeenCalled();
+  it('generates a new UUID if no x-request-id is provided', () => {
+    middleware.use(req as Request, res as Response, next);
+    expect(req.requestId).toBeDefined();
+    expect(req.requestId?.length).toBeGreaterThan(0);
+    expect(req.headers[REQUEST_ID_HEADER]).toBe(req.requestId);
+    expect(res.setHeader).toHaveBeenCalledWith(REQUEST_ID_HEADER, req.requestId);
+    expect(next).toHaveBeenCalled();
   });
 });

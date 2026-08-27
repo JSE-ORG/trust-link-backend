@@ -13,6 +13,7 @@ describe('Auto-Release Worker E2E (issue #59)', () => {
   let worker: AutoReleaseWorker;
   let contractService: ContractService;
   let escrowRepository: EscrowRepository;
+  let nextContractEscrowId = 1n;
 
   beforeEach(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -30,6 +31,7 @@ describe('Auto-Release Worker E2E (issue #59)', () => {
     contractService = app.get(ContractService);
     escrowRepository = app.get(EscrowRepository);
 
+    nextContractEscrowId = 1n;
     await prisma.reset();
     // Escrow.vendorAddress is a foreign key onto VendorProfile.address (#475).
     await ensureVendors(prisma, 'vendor-address', 'vendor-address-2');
@@ -69,6 +71,9 @@ describe('Auto-Release Worker E2E (issue #59)', () => {
         ...rest,
         currency: 'USDC',
         state: 'SHIPPED',
+        // The worker calls auto_release(escrow_id: u64), so a fixture with no
+        // contract mapping can never reach ContractService at all.
+        contractEscrowId: nextContractEscrowId++,
         shippedAt: new Date(deliveredAt.getTime() - 10 * 60 * 60 * 1000),
       },
     });
@@ -116,11 +121,11 @@ describe('Auto-Release Worker E2E (issue #59)', () => {
 
     expect(contractService.submitAutoRelease).toHaveBeenCalledTimes(2);
     expect(contractService.submitAutoRelease).toHaveBeenCalledWith(
-      escrow1.id,
+      escrow1.contractEscrowId,
       expect.any(String),
     );
     expect(contractService.submitAutoRelease).toHaveBeenCalledWith(
-      escrow2.id,
+      escrow2.contractEscrowId,
       expect.any(String),
     );
 

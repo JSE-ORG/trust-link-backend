@@ -16,6 +16,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
+import { THROTTLE_WINDOW_MS } from '../common/security/throttle.config';
 import { JwtGuard } from '../auth/guards/jwt.guard';
 import { AdminGuard } from '../admin/guards/admin.guard';
 import { DlqService } from './dlq.service';
@@ -24,7 +25,11 @@ import type {
   ListFailedTransactionsQuery,
 } from './dlq.types';
 import { ContractService } from '../stellar/contract.service';
-import { ConfigService } from '../config/config.service';
+import {
+  AutoReleaseSourceNotConfiguredError,
+  ConfigService,
+} from '../config/config.service';
+import { PrismaService } from '../prisma/prisma.service';
 
 /**
  * Admin endpoints for reviewing and re-executing failed Stellar contract
@@ -40,28 +45,28 @@ export class DlqController {
     private readonly dlq: DlqService,
     private readonly contract: ContractService,
     private readonly config: ConfigService,
+    private readonly prisma: PrismaService,
   ) {}
 
   /**
-   * Returns the auto-release signing address, or throws if it is not configured.
+   * Returns the auto-release signing address, translating the shared
+   * "not configured" error into a 503 for this HTTP path (#672).
    *
-   * Resolved on use rather than in the constructor. `AUTO_RELEASE_SOURCE_ADDRESS`
-   * is declared optional in `config.module.ts`, so throwing at construction made
-   * an optional variable mandatory for the whole application: Nest could not
-   * instantiate this controller, so `NestFactory.create` failed and nothing
-   * booted, including `npm run start` and the OpenAPI generation script.
-   *
-   * Failing here instead keeps the failure proportionate. Only the replay
-   * endpoint is unavailable, and it still fails loudly with a clear message.
+   * The check itself lives in `ConfigService.requireAutoReleaseSourceAddress`
+   * and is resolved on use, not at construction: `AUTO_RELEASE_SOURCE_ADDRESS`
+   * is optional in `config.module.ts`, so a constructor throw would stop Nest
+   * from instantiating this controller and take the whole app down. Here only
+   * the replay endpoint degrades, and it does so with a clear 503.
    */
   private requireAutoReleaseSource(): string {
-    const address = this.config.get<string>('AUTO_RELEASE_SOURCE_ADDRESS');
-    if (!address) {
-      throw new ServiceUnavailableException(
-        'AUTO_RELEASE_SOURCE_ADDRESS is not configured, so auto-release replay is unavailable.',
-      );
+    try {
+      return this.config.requireAutoReleaseSourceAddress();
+    } catch (err) {
+      if (err instanceof AutoReleaseSourceNotConfiguredError) {
+        throw new ServiceUnavailableException(err.message);
+      }
+      throw err;
     }
-    return address;
   }
 
   @ApiOperation({ summary: 'List failed transactions (admin DLQ)' })
@@ -113,7 +118,7 @@ export class DlqController {
     required: false,
     example: '9d9e2e16-0c78-4a84-9c8c-0f3a5eb2d4e3',
   })
-  @Throttle({ auth: { limit: 20, ttl: 60000 } })
+  @Throttle({ auth: { limit: 20, ttl: THROTTLE_WINDOW_MS } })
   @Get()
   list(
     @Query('status') status?: FailedTransactionStatus,
@@ -143,7 +148,7 @@ export class DlqController {
     description: 'Failed transaction record not found.',
   })
   @ApiParam({ name: 'id', example: 'abc123-def4-5678-90ab-cdef12345678' })
-  @Throttle({ auth: { limit: 30, ttl: 60000 } })
+  @Throttle({ auth: { limit: 30, ttl: THROTTLE_WINDOW_MS } })
   @Get(':id')
   detail(@Param('id') id: string) {
     return this.dlq.get(id);
@@ -166,14 +171,27 @@ export class DlqController {
     description: 'Failed transaction record not found.',
   })
   @ApiParam({ name: 'id', example: 'abc123-def4-5678-90ab-cdef12345678' })
-  @Throttle({ auth: { limit: 5, ttl: 60000 } })
+  @Throttle({ auth: { limit: 5, ttl: THROTTLE_WINDOW_MS } })
   @Post(':id/replay')
   async replay(@Param('id') id: string) {
     const record = await this.dlq.get(id);
     return this.dlq.replay(record.id, async (r) => {
       if (r.operation === 'submitAutoRelease' && r.escrowId) {
+        // `auto_release(env, escrow_id: u64)` takes the contract's own id.
+        // The DLQ record carries the backend UUID, so it has to be translated
+        // before replay; without a mapping there is no valid call to make.
+        const escrow = await this.prisma.escrow.findUnique({
+          where: { id: r.escrowId },
+          select: { contractEscrowId: true },
+        });
+        if (!escrow?.contractEscrowId) {
+          throw new Error(
+            `Escrow "${r.escrowId}" has no contractEscrowId, so auto-release ` +
+              `cannot be replayed on-chain.`,
+          );
+        }
         return this.contract.submitAutoRelease(
-          r.escrowId,
+          escrow.contractEscrowId,
           this.requireAutoReleaseSource(),
         );
       }
@@ -198,7 +216,7 @@ export class DlqController {
     description: 'Failed transaction record not found.',
   })
   @ApiParam({ name: 'id', example: 'abc123-def4-5678-90ab-cdef12345678' })
-  @Throttle({ auth: { limit: 5, ttl: 60000 } })
+  @Throttle({ auth: { limit: 5, ttl: THROTTLE_WINDOW_MS } })
   @Post(':id/abandon')
   abandon(@Param('id') id: string) {
     return this.dlq.abandon(id);
