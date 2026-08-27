@@ -41,7 +41,17 @@ export class NotificationsService {
     private readonly twilio: TwilioClient = noopTwilio,
   ) {}
 
-  /** Notifies the vendor that escrow funding has been recorded. */
+  /**
+   * Notifies the vendor (at `escrow.vendorAddress`) that the escrow has been
+   * funded.
+   *
+   * Sends over email **and** SMS to the same address, each with its own
+   * 3-attempt exponential-backoff retry, then writes one `Notification` row
+   * per channel regardless of send success — a failed provider call still
+   * produces an audit row with `attemptCount` / `lastResponseCode`. The
+   * returned promise resolves once both channels have been attempted and
+   * recorded; it does not reject on a provider failure.
+   */
   notifyFunded(escrow: EscrowRecord): Promise<void> {
     return this.dispatch('FUNDED', escrow, escrow.vendorAddress);
   }
@@ -63,12 +73,30 @@ export class NotificationsService {
     return this.dispatchToBuyer('DELIVERED', escrow);
   }
 
-  /** Notifies the vendor that a dispute has been opened. */
+  /**
+   * Notifies the vendor (at `escrow.vendorAddress`) that a dispute has been
+   * opened against this escrow.
+   *
+   * Same delivery model as {@link notifyFunded}: email + SMS to the vendor
+   * address, per-channel retry, one audit `Notification` row per channel,
+   * never rejects on a provider error. This is the vendor-facing half of a
+   * dispute notification; {@link notifyDisputedAdmin} is the operator-facing
+   * half and is a separate call.
+   */
   notifyDisputed(escrow: EscrowRecord): Promise<void> {
     return this.dispatch('DISPUTED', escrow, escrow.vendorAddress);
   }
 
-  /** Notifies the configured admin address that a dispute needs attention. */
+  /**
+   * Notifies an operator (`adminAddress`) that a dispute needs attention.
+   *
+   * Identical mechanics to {@link notifyDisputed} but addressed to the
+   * caller-supplied admin address rather than the vendor, and it still
+   * writes `type: 'DISPUTED'` rows — the channel/recipient on the row is
+   * what distinguishes an admin alert from the vendor alert. The caller is
+   * responsible for passing a real configured admin address; this method
+   * does not read `ADMIN_ADDRESS` itself.
+   */
   notifyDisputedAdmin(
     escrow: EscrowRecord,
     adminAddress: string,

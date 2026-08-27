@@ -170,14 +170,34 @@ export class LogisticsService implements OnModuleInit {
     this.apiKey = encryptedKey;
   }
 
-  /** Fetches normalized shipment status from the configured logistics provider. */
+  /**
+   * Fetches normalized shipment status for `trackingId` from the configured
+   * logistics provider.
+   *
+   * **Currently a stub**: the real provider call is not wired yet, so this
+   * always rejects with `Error("Logistics service is not configured ...")`
+   * regardless of `trackingId` or whether an API key is present. Callers
+   * must treat a rejection as "status unavailable", not "shipment not
+   * found". When the provider integration lands, the contract is a resolved
+   * {@link TrackingDetails} on success and a reject on a provider/transport
+   * error — retryable at the caller's discretion.
+   */
   getStatus(trackingId: string): Promise<TrackingDetails> {
     return Promise.reject(
       new Error(`Logistics service is not configured for ${trackingId}`),
     );
   }
 
-  /** Fetches detailed tracking information including events from the logistics provider. */
+  /**
+   * Fetches detailed tracking information (status + the `events` timeline)
+   * for `trackingId`.
+   *
+   * Today this is a thin delegate to {@link getStatus} — there is no
+   * separate "details" endpoint yet — so it shares that method's stub
+   * behaviour and **always rejects** on the current build. Kept as a
+   * distinct method so callers that want the event history bind to a stable
+   * name once the provider call is implemented.
+   */
   getTrackingDetails(trackingId: string): Promise<TrackingDetails> {
     return this.getStatus(trackingId);
   }
