@@ -177,7 +177,7 @@ describe('StellarWebhookService (issue #76)', () => {
     escrowRepository.updateState.mockResolvedValue({
       ...createdEscrow,
       state: 'FUNDED',
-    } as any);
+    } as Awaited<ReturnType<EscrowRepository['updateState']>>);
 
     const result = await service.handleEvent(raw, sig, dto);
 
