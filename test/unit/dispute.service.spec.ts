@@ -176,6 +176,128 @@ describe('DisputeService (issue #25)', () => {
       NotFoundException,
     );
   });
+
+  it('throws ConflictException when the escrow has no contractEscrowId', async () => {
+    repository.findById.mockResolvedValue({
+      ...shippedEscrow,
+      contractEscrowId: null,
+    });
+
+    await expect(service.resolve('escrow-1', 'RELEASE')).rejects.toThrow(
+      ConflictException,
+    );
+    expect(contractService.resolveDispute).not.toHaveBeenCalled();
+  });
+
+  it('completes the escrow without touching the dispute record when none is OPEN', async () => {
+    const completed = { ...shippedEscrow, state: 'COMPLETED' as const };
+    repository.findById.mockResolvedValue(shippedEscrow);
+    contractService.resolveDispute.mockResolvedValue('tx-hash');
+    repository.markCompleted.mockResolvedValue(completed);
+    // prisma.dispute.findFirst defaults to resolving null in beforeEach.
+
+    const result = await service.resolve('escrow-1', 'RELEASE');
+
+    expect(prisma.dispute.update).not.toHaveBeenCalled();
+    expect(result.state).toBe('COMPLETED');
+  });
+
+  it('requireAdminAddress throws ConflictException when ADMIN_ADDRESS is unset', async () => {
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        DisputeService,
+        { provide: EscrowRepository, useValue: repository },
+        { provide: ContractService, useValue: contractService },
+        { provide: PrismaService, useValue: prisma },
+        { provide: ConfigService, useValue: { get: jest.fn(() => undefined) } },
+      ],
+    }).compile();
+    const unconfigured = moduleRef.get(DisputeService);
+    repository.findById.mockResolvedValue(shippedEscrow);
+
+    await expect(unconfigured.resolve('escrow-1', 'RELEASE')).rejects.toThrow(
+      ConflictException,
+    );
+    expect(contractService.resolveDispute).not.toHaveBeenCalled();
+  });
+
+  describe('getDisputes', () => {
+    it('applies default page/limit and no status filter when the query is empty', async () => {
+      prisma.dispute.findMany = jest.fn().mockResolvedValue([]);
+      prisma.dispute.count = jest.fn().mockResolvedValue(0);
+
+      const result = await service.getDisputes({});
+
+      expect(prisma.dispute.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: undefined, skip: 0, take: 20 }),
+      );
+      expect(prisma.dispute.count).toHaveBeenCalledWith({ where: undefined });
+      expect(result).toEqual({ data: [], total: 0, page: 1, limit: 20 });
+    });
+
+    it('filters by status and computes skip from page/limit', async () => {
+      prisma.dispute.findMany = jest.fn().mockResolvedValue([]);
+      prisma.dispute.count = jest.fn().mockResolvedValue(0);
+
+      await service.getDisputes({ status: 'OPEN', page: 3, limit: 10 });
+
+      expect(prisma.dispute.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { status: 'OPEN' },
+          skip: 20,
+          take: 10,
+        }),
+      );
+    });
+
+    it('clamps page below 1 up to 1', async () => {
+      prisma.dispute.findMany = jest.fn().mockResolvedValue([]);
+      prisma.dispute.count = jest.fn().mockResolvedValue(0);
+
+      const result = await service.getDisputes({ page: 0 });
+
+      expect(result.page).toBe(1);
+      expect(prisma.dispute.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ skip: 0 }),
+      );
+    });
+
+    it('clamps limit above 100 down to 100, and below 1 up to 1', async () => {
+      prisma.dispute.findMany = jest.fn().mockResolvedValue([]);
+      prisma.dispute.count = jest.fn().mockResolvedValue(0);
+
+      const tooHigh = await service.getDisputes({ limit: 500 });
+      expect(tooHigh.limit).toBe(100);
+
+      const tooLow = await service.getDisputes({ limit: 0 });
+      expect(tooLow.limit).toBe(1);
+    });
+
+    it('maps records through toDisputeRecord and returns the total count', async () => {
+      const rawDispute = {
+        id: 'dispute-1',
+        escrowId: 'escrow-1',
+        status: 'OPEN',
+        reason: 'Item not delivered',
+        description: '',
+        evidenceUrls: [],
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+        resolvedAt: null,
+      };
+      prisma.dispute.findMany = jest.fn().mockResolvedValue([rawDispute]);
+      prisma.dispute.count = jest.fn().mockResolvedValue(1);
+
+      const result = await service.getDisputes({});
+
+      expect(result.total).toBe(1);
+      expect(result.data).toHaveLength(1);
+      expect(result.data[0]).toMatchObject({
+        id: 'dispute-1',
+        status: 'OPEN',
+      });
+    });
+  });
 });
 
 // ── endpoint-level tests (admin guard) ───────────────────────────────────

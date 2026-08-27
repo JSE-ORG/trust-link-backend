@@ -84,7 +84,11 @@ describe('DisputeRepository (issue #14)', () => {
       },
     });
 
-    await expect(disputeRepository.findAllOpen()).resolves.toHaveLength(2);
+    const open = await disputeRepository.findAllOpen();
+    expect(open).toHaveLength(2);
+    // The filter is now a `where` clause (#670) — assert it still returns
+    // exactly OPEN + UNDER_REVIEW and never a terminal status.
+    expect(open.map((d) => d.status).sort()).toEqual(['OPEN', 'UNDER_REVIEW']);
   });
 
   it('resolves the dispute and clears the escrow dispute link', async () => {

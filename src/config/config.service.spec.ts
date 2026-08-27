@@ -1,7 +1,10 @@
 import { Test } from '@nestjs/testing';
 import { ConfigModule as NestConfigModule } from '@nestjs/config';
 import * as Joi from 'joi';
-import { ConfigService } from './config.service';
+import {
+  AutoReleaseSourceNotConfiguredError,
+  ConfigService,
+} from './config.service';
 
 /**
  * ConfigService unit tests.
@@ -164,5 +167,24 @@ describe('ConfigService', () => {
     ).rejects.toThrow(
       'Config validation error: AUTO_RELEASE_SOURCE_ADDRESS must be a valid Stellar public key (starts with G)',
     );
+  });
+
+  describe('requireAutoReleaseSourceAddress (#672)', () => {
+    it('returns the address when AUTO_RELEASE_SOURCE_ADDRESS is set', async () => {
+      const service = await buildService({
+        ...VALID_ENV,
+        AUTO_RELEASE_SOURCE_ADDRESS: VALID_AUTO_RELEASE_SOURCE_ADDRESS,
+      });
+      expect(service.requireAutoReleaseSourceAddress()).toBe(
+        VALID_AUTO_RELEASE_SOURCE_ADDRESS,
+      );
+    });
+
+    it('throws AutoReleaseSourceNotConfiguredError when it is unset', async () => {
+      const service = await buildService(VALID_ENV);
+      expect(() => service.requireAutoReleaseSourceAddress()).toThrow(
+        AutoReleaseSourceNotConfiguredError,
+      );
+    });
   });
 });

@@ -535,6 +535,37 @@ describe('EscrowRepository', () => {
       ]);
     });
 
+    describe('findShippedWithTracking() — index-usable filter (#669)', () => {
+      it('excludes a SHIPPED escrow that has no trackingId', async () => {
+        const escrow = await repo.create(
+          { ...makeDto(), itemRef: 'no-tracking' },
+          'vendor-addr',
+        );
+        await prisma.escrow.update({
+          where: { id: escrow.id },
+          data: { state: 'SHIPPED', trackingId: null },
+        });
+
+        const rows = await repo.findShippedWithTracking();
+        expect(rows.map((r) => r.id)).not.toContain(escrow.id);
+      });
+
+      it('includes a SHIPPED escrow that has a trackingId', async () => {
+        const escrow = await repo.create(
+          { ...makeDto(), itemRef: 'has-tracking' },
+          'vendor-addr',
+        );
+        await repo.markShipped(escrow.id, 'TRACK-669');
+
+        const rows = await repo.findShippedWithTracking();
+        expect(rows).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ id: escrow.id, trackingId: 'TRACK-669' }),
+          ]),
+        );
+      });
+    });
+
     it('claims auto-release once and allows it to be cleared for a retry', async () => {
       const escrow = await repo.create(
         { ...makeDto(), itemRef: 'auto-claim' },

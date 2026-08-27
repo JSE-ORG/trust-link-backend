@@ -1,12 +1,19 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { UnauthorizedException } from '@nestjs/common';
 import { AnalyticsController } from './analytics.controller';
 import { AnalyticsService } from './analytics.service';
 import { AuthUser } from '../../auth/auth-user';
 import { AnalyticsStatsResponse } from './analytics-stats.dto';
+import type { AuthUser } from '../../auth/auth-user';
+import type { AnalyticsStatsResponse } from './analytics-stats.dto';
+
+type AnalyticsServiceMock = jest.Mocked<
+  Pick<AnalyticsService, 'getTransactionStats' | 'getDailyVolumeChart'>
+>;
 
 describe('AnalyticsController', () => {
   let controller: AnalyticsController;
-  let service: jest.Mocked<AnalyticsService>;
+  let service: AnalyticsServiceMock;
 
   const mockUser: AuthUser = { address: 'GVENDOR123' };
 
@@ -15,6 +22,7 @@ describe('AnalyticsController', () => {
       getTransactionStats: jest.fn(),
       getDailyVolumeChart: jest.fn(),
     } as unknown as jest.Mocked<AnalyticsService>;
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [AnalyticsController],
@@ -26,10 +34,37 @@ describe('AnalyticsController', () => {
 
   afterEach(() => jest.clearAllMocks());
 
+  describe('missing authenticated user (#671)', () => {
+    it('getTransactionStats throws UnauthorizedException, not a 500', async () => {
+      await expect(controller.getTransactionStats(undefined)).rejects.toThrow(
+        UnauthorizedException,
+      );
+      expect(service.getTransactionStats).not.toHaveBeenCalled();
+    });
+
+    it('getDailyVolumeChart throws UnauthorizedException, not a 500', async () => {
+      await expect(
+        controller.getDailyVolumeChart(undefined, undefined, undefined),
+      ).rejects.toThrow(UnauthorizedException);
+      expect(service.getDailyVolumeChart).not.toHaveBeenCalled();
+    });
+  });
+
   describe('GET /vendor/analytics', () => {
     it('delegates to service with user address', async () => {
-      const statsResponse = {
-        stats: { totalVolume: 0 },
+      const statsResponse: AnalyticsStatsResponse = {
+        stats: {
+          totalVolume: 0,
+          activeVolume: 0,
+          totalTransactions: 0,
+          activeTransactions: 0,
+          completedTransactions: 0,
+          completionRate: 0,
+          disputedTransactions: 0,
+          disputeRate: 0,
+          averageTransactionValue: 0,
+          cancelledTransactions: 0,
+        },
         channels: {
           email: { notificationsEnabled: false },
           sms: { notificationsEnabled: false },
@@ -39,6 +74,7 @@ describe('AnalyticsController', () => {
       service.getTransactionStats.mockResolvedValue(
         statsResponse as AnalyticsStatsResponse,
       );
+      service.getTransactionStats.mockResolvedValue(statsResponse);
 
       const result = await controller.getTransactionStats(mockUser);
 

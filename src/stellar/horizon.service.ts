@@ -35,6 +35,18 @@ export class HorizonService {
       configured || HORIZON_URLS[network] || DEFAULT_HORIZON_URL;
   }
 
+  /**
+   * Returns the effective Horizon base URL (no trailing slash) this service
+   * talks to.
+   *
+   * Resolved once in the constructor: `STELLAR_HORIZON_URL` if set, otherwise
+   * the default for `STELLAR_NETWORK` (testnet/mainnet), otherwise the
+   * testnet URL. Stable for the process lifetime — callers building their
+   * own Horizon requests should use this rather than re-deriving the URL, so
+   * a URL override is honoured everywhere. Also exposed as the public
+   * `horizonUrl` field; this getter exists for call sites that prefer a
+   * method.
+   */
   getHorizonUrl(): string {
     return this.horizonUrl;
   }
@@ -72,6 +84,17 @@ export class HorizonService {
     }
   }
 
+  /**
+   * Polls Horizon for `transactionHash` until it reports at least
+   * `targetConfirmations` (default 3) or `timeoutMs` (default 10s) elapses.
+   *
+   * Resolves only on success. **Throws `Error('Horizon confirmation timed
+   * out')` on timeout** — including the case where the transaction never
+   * appears (a 404 is swallowed and retried, not distinguished from "not yet
+   * confirmed"). Polls every ~100ms; transient request errors are ignored
+   * until the deadline. Safe to call again with the same hash after a
+   * timeout — it is a read-only poll and holds no state.
+   */
   async pollConfirmation(
     transactionHash: string,
     targetConfirmations = 3,

@@ -5,6 +5,7 @@ import {
   UseGuards,
   HttpCode,
   HttpStatus,
+  UnauthorizedException,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -55,7 +56,13 @@ export class AnalyticsController {
   async getTransactionStats(
     @CurrentUser() user?: AuthUser,
   ): Promise<AnalyticsStatsResponse> {
-    return this.analyticsService.getTransactionStats(user!.address);
+    // `CurrentUser` really can be undefined; assert-and-hope (`user!`) turned
+    // a missing user into a 500 if `JwtGuard` were ever removed or reordered.
+    // Fail as 401 instead (#671).
+    if (!user) {
+      throw new UnauthorizedException();
+    }
+    return this.analyticsService.getTransactionStats(user.address);
   }
 
   /**
@@ -100,6 +107,10 @@ export class AnalyticsController {
     @Query('timezone') timezoneParam?: string,
     @CurrentUser() user?: AuthUser,
   ): Promise<ChartDataResponse> {
+    if (!user) {
+      throw new UnauthorizedException();
+    }
+
     let days = 30;
     let timezone = 'UTC';
 
@@ -115,7 +126,7 @@ export class AnalyticsController {
     }
 
     return this.analyticsService.getDailyVolumeChart(
-      user!.address,
+      user.address,
       days,
       timezone,
     );

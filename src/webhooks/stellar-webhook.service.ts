@@ -117,7 +117,19 @@ export class StellarWebhookService {
    * Programmatic processing for replayed operations (no signature verification).
    * Returns true when processed, false when skipped (duplicate).
    */
-  /** Processes replayed operations without signature checks while guarding duplicates. */
+  /**
+   * Processes one already-trusted Stellar operation (a replay / admin
+   * backfill path) with **no HMAC signature check** — unlike
+   * {@link handleEvent}, which is the signed inbound-webhook entry point.
+   * Only call this with a `dto` whose provenance is already trusted.
+   *
+   * Idempotent by `dto.id`: a repeat of an id already seen this process
+   * returns `{ processed: false, skipped: true }` and does nothing. The id
+   * is marked seen *before* processing and **rolled back on failure**, so a
+   * `processEvent` error both rejects and leaves the id replayable — a retry
+   * will re-attempt it rather than skip it. The seen-set is in-memory and
+   * per-process, so it does not dedupe across restarts or replicas.
+   */
   async processOperationDto(
     dto: StellarWebhookDto,
   ): Promise<{ processed: boolean; skipped?: boolean }> {

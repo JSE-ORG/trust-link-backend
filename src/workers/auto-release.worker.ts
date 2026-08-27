@@ -35,26 +35,22 @@ export class AutoReleaseWorker implements OnModuleInit, OnApplicationShutdown {
   ) {}
 
   /**
-   * Returns the configured auto-release signing address, or throws.
+   * Returns the configured auto-release signing address.
    *
-   * Resolved on use through `ConfigService`, matching `dlq.controller.ts`.
-   * `AUTO_RELEASE_SOURCE_ADDRESS` is deliberately optional (issue #500's
-   * technical notes), so this cannot be a constructor dependency: throwing at
-   * construction would make Nest refuse to instantiate this worker whenever
-   * the variable is unset, taking down the whole application boot instead of
-   * just the auto-release path.
+   * Delegates to `ConfigService.requireAutoReleaseSourceAddress` (#672) — the
+   * single copy of this check, shared with `dlq.controller.ts`. On the unset
+   * path it throws `AutoReleaseSourceNotConfiguredError` (an `Error`
+   * subclass), which this worker's own cycle handler catches and logs, then
+   * clears the auto-release claim — same observable behaviour as before,
+   * just a named error and a slightly different message.
+   *
+   * Resolved on use, not as a constructor dependency:
+   * `AUTO_RELEASE_SOURCE_ADDRESS` is deliberately optional (#500), so a
+   * constructor throw would block the whole application boot when it is
+   * unset, not just the auto-release path.
    */
   private requireAutoReleaseSource(): string {
-    const address = this.configService.get<string>(
-      'AUTO_RELEASE_SOURCE_ADDRESS',
-    );
-    if (!address) {
-      throw new Error(
-        'AUTO_RELEASE_SOURCE_ADDRESS is not configured; refusing to submit ' +
-          'auto-release transactions.',
-      );
-    }
-    return address;
+    return this.configService.requireAutoReleaseSourceAddress();
   }
 
   onModuleInit(): void {

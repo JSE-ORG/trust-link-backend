@@ -72,7 +72,18 @@ export class ContractService {
     private readonly config?: ConfigService,
   ) {}
 
-  /** Submits the on-chain dispute resolution transaction (`resolve_dispute`) and returns its hash. */
+  /**
+   * Submits the on-chain `resolve_dispute(caller, escrow_id: u64, resolution)`
+   * transaction and returns the submitted transaction hash.
+   *
+   * The contract calls `caller.require_auth()` and only accepts the admin as
+   * `caller`, so `callerAddress` must be the configured `ADMIN_ADDRESS` and
+   * the transaction is signed with that key. `resolution` picks who the
+   * escrowed funds go to — `RELEASE` to the vendor, `REFUND` to the buyer.
+   * Not idempotent at this layer: a second call after the dispute is already
+   * resolved fails on-chain. Rejects (and the failure is recorded to the
+   * DLQ) if the submission is not accepted.
+   */
   async resolveDispute(
     contractEscrowId: bigint,
     resolution: 'RELEASE' | 'REFUND',
@@ -142,7 +153,16 @@ export class ContractService {
     throw new ContractCallFailedException('Max retries exceeded');
   }
 
-  /** Returns the current on-chain state of an escrow. */
+  /**
+   * Reads the current on-chain state of an escrow by its `u64` contract id.
+   *
+   * Read-only — no transaction, no signature. Returns
+   * `{ state: 'UNKNOWN', exists: false }` (rather than throwing) whenever the
+   * RPC server is not configured or the escrow cannot be read, so a caller
+   * must check `exists` before trusting `state`. `state` is the raw
+   * contract-side string, which is not guaranteed to match the backend's own
+   * escrow-state enum.
+   */
   async getEscrowState(
     contractEscrowId: bigint,
   ): Promise<{ state: string; exists: boolean }> {
