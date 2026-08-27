@@ -1,18 +1,24 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { AnalyticsController } from './analytics.controller';
 import { AnalyticsService } from './analytics.service';
+import type { AuthUser } from '../../auth/auth-user';
+import type { AnalyticsStatsResponse } from './analytics-stats.dto';
+
+type AnalyticsServiceMock = jest.Mocked<
+  Pick<AnalyticsService, 'getTransactionStats' | 'getDailyVolumeChart'>
+>;
 
 describe('AnalyticsController', () => {
   let controller: AnalyticsController;
-  let service: jest.Mocked<AnalyticsService>;
+  let service: AnalyticsServiceMock;
 
-  const mockUser = { address: 'GVENDOR123' } as any;
+  const mockUser: AuthUser = { address: 'GVENDOR123' };
 
   beforeEach(async () => {
     service = {
       getTransactionStats: jest.fn(),
       getDailyVolumeChart: jest.fn(),
-    } as any;
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [AnalyticsController],
@@ -26,15 +32,26 @@ describe('AnalyticsController', () => {
 
   describe('GET /vendor/analytics', () => {
     it('delegates to service with user address', async () => {
-      const statsResponse = {
-        stats: { totalVolume: 0 },
+      const statsResponse: AnalyticsStatsResponse = {
+        stats: {
+          totalVolume: 0,
+          activeVolume: 0,
+          totalTransactions: 0,
+          activeTransactions: 0,
+          completedTransactions: 0,
+          completionRate: 0,
+          disputedTransactions: 0,
+          disputeRate: 0,
+          averageTransactionValue: 0,
+          cancelledTransactions: 0,
+        },
         channels: {
           email: { notificationsEnabled: false },
           sms: { notificationsEnabled: false },
         },
         lastUpdated: new Date().toISOString(),
       };
-      service.getTransactionStats.mockResolvedValue(statsResponse as any);
+      service.getTransactionStats.mockResolvedValue(statsResponse);
 
       const result = await controller.getTransactionStats(mockUser);
 
