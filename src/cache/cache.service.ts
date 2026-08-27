@@ -111,7 +111,18 @@ export class CacheService implements OnModuleDestroy {
     }
   }
 
-  /** Stores a JSON-serialized value in Redis or the in-memory fallback for the supplied TTL. */
+  /**
+   * Stores `value` (JSON-serialised) under `key` with a `ttlSeconds` expiry
+   * (default 60s), in Redis when configured or the in-memory fallback
+   * otherwise.
+   *
+   * Best-effort and never throws: a Redis failure is logged and swallowed,
+   * so a cache outage degrades to cache-miss behaviour rather than breaking
+   * the request. `value` must be JSON-serialisable — functions, `undefined`
+   * properties and `BigInt` will not round-trip through {@link get}. On the
+   * in-memory path a write may evict the oldest entries to stay under the
+   * capacity cap.
+   */
   async set(key: string, value: unknown, ttlSeconds = 60): Promise<void> {
     if (!this.client) {
       this.memory.set(key, {
@@ -149,7 +160,16 @@ export class CacheService implements OnModuleDestroy {
     }
   }
 
-  /** Deletes a cached key from Redis or the in-memory fallback. */
+  /**
+   * Removes `key` from Redis (or the in-memory fallback). Used to invalidate
+   * a cached read after a write to the underlying record.
+   *
+   * Idempotent — deleting a missing key is a no-op, not an error. Like
+   * {@link set} it is best-effort: a Redis failure is logged and swallowed,
+   * which means a failed invalidation can leave a stale entry served until
+   * its TTL lapses. Deletes a single exact key only; there is no prefix or
+   * pattern delete.
+   */
   async del(key: string): Promise<void> {
     if (!this.client) {
       this.memory.delete(key);

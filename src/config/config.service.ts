@@ -182,17 +182,35 @@ export class ConfigService {
     );
   }
 
-  /** Returns true when NODE_ENV is development. */
+  /**
+   * True when the app is running in the `development` environment.
+   *
+   * Reads the *validated* `NODE_ENV` (a `'development' | 'production' | 'test'`
+   * enum that defaults to `'development'` in the schema), not `process.env`
+   * directly — so this is the canonical environment check and cannot see an
+   * unrecognised value. Exactly one of `isDevelopment` / `isProduction` /
+   * `isTest` is true at a time.
+   */
   isDevelopment(): boolean {
     return this.get('NODE_ENV') === 'development';
   }
 
-  /** Returns true when NODE_ENV is production. */
+  /**
+   * True when the app is running in the `production` environment. See
+   * {@link isDevelopment} for how `NODE_ENV` is resolved. Prefer gating
+   * production-only strictness (required secrets, disabled dev shortcuts) on
+   * this rather than on `!isDevelopment()`, since `test` is neither.
+   */
   isProduction(): boolean {
     return this.get('NODE_ENV') === 'production';
   }
 
-  /** Returns true when NODE_ENV is test. */
+  /**
+   * True when the app is running under Jest (`NODE_ENV=test`). See
+   * {@link isDevelopment} for resolution. Used to gate test-only escape
+   * hatches such as `PrismaService.reset()` and the auto-release worker's
+   * `onModuleInit` no-op.
+   */
   isTest(): boolean {
     return this.get('NODE_ENV') === 'test';
   }
