@@ -27,6 +27,8 @@ export interface Config {
   DB_POOL_CONNECTION_LIMIT?: number;
   DB_POOL_TIMEOUT_MS?: number;
   SEP10_JWT_SECRET: string;
+  /** Secret used to sign simulated S3 pre-signed evidence URLs (required). */
+  PRESIGN_SECRET: string;
   ADMIN_ADDRESS: string;
   AUTO_RELEASE_SOURCE_ADDRESS?: string;
   NODE_ENV: 'development' | 'production' | 'test';
@@ -91,6 +93,7 @@ export class ConfigService {
         { infer: true },
       ),
       SEP10_JWT_SECRET: this.get('SEP10_JWT_SECRET'),
+      PRESIGN_SECRET: this.get('PRESIGN_SECRET'),
       ADMIN_ADDRESS: this.get('ADMIN_ADDRESS'),
       AUTO_RELEASE_SOURCE_ADDRESS: this.nestConfigService.get(
         'AUTO_RELEASE_SOURCE_ADDRESS',
