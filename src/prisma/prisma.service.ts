@@ -378,10 +378,13 @@ export class PrismaService extends PrismaClient {
       // Single TRUNCATE statement avoids the deadlocks caused by truncating
       // tables one-by-one, and the advisory lock serializes reset() across
       // parallel Jest workers sharing the same test database.
-      await this.$transaction(async (tx) => {
-        await tx.$executeRawUnsafe(`SELECT pg_advisory_xact_lock(42);`);
-        await tx.$executeRawUnsafe(`TRUNCATE TABLE ${tables} CASCADE;`);
-      });
+      await this.$transaction(
+        async (tx) => {
+          await tx.$executeRawUnsafe(`SELECT pg_advisory_xact_lock(42);`);
+          await tx.$executeRawUnsafe(`TRUNCATE TABLE ${tables} CASCADE;`);
+        },
+        { timeout: 30000 },
+      );
     }
   }
 }
