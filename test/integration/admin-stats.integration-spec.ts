@@ -41,6 +41,16 @@ describe('Admin Stats (issue #639)', () => {
   });
 
   async function seedEscrow(overrides?: { vendorAddress?: string; amount?: number }) {
+    const vendorAddress = overrides?.vendorAddress ?? 'GVENDORSTATS001';
+    await prisma.vendorProfile.upsert({
+      where: { address: vendorAddress },
+      update: {},
+      create: {
+        address: vendorAddress,
+        businessName: `Vendor ${vendorAddress}`,
+      },
+    });
+
     return prisma.escrow.create({
       data: {
         itemName: 'Test Item',
@@ -48,7 +58,7 @@ describe('Admin Stats (issue #639)', () => {
         amount: overrides?.amount ?? 250,
         currency: 'USDC',
         buyerAddress: 'GBUYER001',
-        vendorAddress: overrides?.vendorAddress ?? 'GVENDORSTATS001',
+        vendorAddress,
         state: 'FUNDED',
       },
     });

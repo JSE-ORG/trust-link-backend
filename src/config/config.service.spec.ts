@@ -72,38 +72,38 @@ const ALL_KNOWN_KEYS = [
   'SENTRY_DSN',
 ];
 
+let originalEnv: NodeJS.ProcessEnv;
+
+beforeEach(() => {
+  originalEnv = { ...process.env };
+});
+
+afterEach(() => {
+  process.env = { ...originalEnv };
+});
+
 async function buildService(
   env: Record<string, string>,
 ): Promise<ConfigService> {
-  // Save and wipe all known keys so tests are fully isolated
-  const saved: Record<string, string | undefined> = {};
+  // Wipe all known keys so tests are fully isolated
   ALL_KNOWN_KEYS.forEach((k) => {
-    saved[k] = process.env[k];
     delete process.env[k];
   });
 
   // Apply only the keys for this test
   Object.assign(process.env, env);
 
-  try {
-    const moduleRef = await Test.createTestingModule({
-      imports: [
-        NestConfigModule.forRoot({
-          ignoreEnvFile: true,
-          validationSchema,
-        }),
-      ],
-      providers: [ConfigService],
-    }).compile();
+  const moduleRef = await Test.createTestingModule({
+    imports: [
+      NestConfigModule.forRoot({
+        ignoreEnvFile: true,
+        validationSchema,
+      }),
+    ],
+    providers: [ConfigService],
+  }).compile();
 
-    return moduleRef.get(ConfigService);
-  } finally {
-    // Restore original env
-    ALL_KNOWN_KEYS.forEach((k) => {
-      delete process.env[k];
-      if (saved[k] !== undefined) process.env[k] = saved[k];
-    });
-  }
+  return moduleRef.get(ConfigService);
 }
 
 describe('ConfigService', () => {
