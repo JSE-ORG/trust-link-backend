@@ -23,3 +23,4 @@ upload_issues.sh
 WAVE_ISSUES.md
 .github/copilot-instructions.md
 /data
+.pg_data

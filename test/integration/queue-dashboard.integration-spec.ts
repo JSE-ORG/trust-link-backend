@@ -80,7 +80,7 @@ describe('Queue Dashboard (issue #638)', () => {
       }
     });
 
-    it('does not throw a 500 when Redis is unavailable (falls back to empty data)', async () => {
+    it('does not throw a 500 when Redis is unavailable (falls back to zeroed queue stats)', async () => {
       // .env.test sets no REDIS_URL, so this exercises the service's real
       // fallback path rather than a mock standing in for a live queue.
       const res = await request(app.getHttpServer())
@@ -88,7 +88,44 @@ describe('Queue Dashboard (issue #638)', () => {
         .set('Authorization', bearer(adminAddress, { role: 'admin' }))
         .expect(200);
 
-      expect(res.body.queues).toEqual([]);
+      expect(res.body.queues).toEqual([
+        {
+          name: 'auto-release',
+          counts: {
+            waiting: 0,
+            active: 0,
+            completed: 0,
+            failed: 0,
+            delayed: 0,
+            paused: 0,
+          },
+          isPaused: false,
+        },
+        {
+          name: 'tracking-poll',
+          counts: {
+            waiting: 0,
+            active: 0,
+            completed: 0,
+            failed: 0,
+            delayed: 0,
+            paused: 0,
+          },
+          isPaused: false,
+        },
+        {
+          name: 'notifications-retry',
+          counts: {
+            waiting: 0,
+            active: 0,
+            completed: 0,
+            failed: 0,
+            delayed: 0,
+            paused: 0,
+          },
+          isPaused: false,
+        },
+      ]);
     });
   });
 
