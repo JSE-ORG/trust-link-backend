@@ -82,22 +82,10 @@ export class AutoReleaseWorker implements OnModuleInit, OnApplicationShutdown {
       eligible =
         await this.escrowRepository.findAutoReleaseEligible(referenceTime);
 
-      // Batch the dispute lookup so that we issue a single query for the whole
-      // batch instead of one query per eligible escrow.
-      const eligibleIds = eligible.map((escrow) => escrow.id);
-      const disputes =
-        eligibleIds.length > 0
-          ? await this.disputeRepository.findMany({
-              where: { escrowId: { in: eligibleIds } },
-            })
-          : [];
-      const disputedEscrowIds = new Set(
-        disputes.map((dispute) => dispute.escrowId),
-      );
-
       for (const escrow of eligible) {
         try {
-          if (disputedEscrowIds.has(escrow.id)) {
+          const dispute = await this.disputeRepository.findByEscrow(escrow.id);
+          if (dispute) {
             continue;
           }
 

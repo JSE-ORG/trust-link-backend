@@ -36,7 +36,7 @@ describe('RequestIdMiddleware', () => {
     middleware.use(req as Request, res as Response, next);
     expect(req.requestId).toBeDefined();
     expect(req.requestId?.length).toBeGreaterThan(0);
-    expect(req.headers[REQUEST_ID_HEADER]).toBe(req.requestId);
+    expect(req.headers?.[REQUEST_ID_HEADER]).toBe(req.requestId);
     expect(res.setHeader).toHaveBeenCalledWith(REQUEST_ID_HEADER, req.requestId);
     expect(next).toHaveBeenCalled();
   });

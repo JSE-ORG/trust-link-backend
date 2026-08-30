@@ -785,7 +785,6 @@ describe('AnalyticsService', () => {
       const formatted = (
         service as unknown as { formatDateInTimezone: (d: Date, tz: string) => string }
       ).formatDateInTimezone(date, 'Asia/Tokyo');
-      const formatted = service['formatDateInTimezone'](date, 'Asia/Tokyo');
       expect(formatted).toBe('2024-01-15');
     });
   });

@@ -5,7 +5,10 @@ import { AutoReleaseWorker } from '../../src/workers/auto-release.worker';
 import { DisputeRepository } from '../../src/dispute/dispute.repository';
 import { ContractService } from '../../src/stellar/contract.service';
 import { CacheService } from '../../src/cache/cache.service';
-import { ConfigService } from '../../src/config/config.service';
+import {
+  ConfigService,
+  AutoReleaseSourceNotConfiguredError,
+} from '../../src/config/config.service';
 import { ensureVendors } from '../prisma-helpers';
 
 /**
@@ -52,6 +55,13 @@ describe('Auto-release collision detection (issue #277)', () => {
             // throws when it is unset. setup-env.ts loads .env.test, which
             // supplies it.
             get: jest.fn((key: string) => process.env[key]),
+            requireAutoReleaseSourceAddress: jest.fn(() => {
+              const address = process.env.AUTO_RELEASE_SOURCE_ADDRESS;
+              if (!address) {
+                throw new AutoReleaseSourceNotConfiguredError();
+              }
+              return address;
+            }),
           },
         },
       ],

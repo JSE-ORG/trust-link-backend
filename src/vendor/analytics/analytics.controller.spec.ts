@@ -2,8 +2,6 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { UnauthorizedException } from '@nestjs/common';
 import { AnalyticsController } from './analytics.controller';
 import { AnalyticsService } from './analytics.service';
-import { AuthUser } from '../../auth/auth-user';
-import { AnalyticsStatsResponse } from './analytics-stats.dto';
 import type { AuthUser } from '../../auth/auth-user';
 import type { AnalyticsStatsResponse } from './analytics-stats.dto';
 
@@ -21,7 +19,6 @@ describe('AnalyticsController', () => {
     service = {
       getTransactionStats: jest.fn(),
       getDailyVolumeChart: jest.fn(),
-    } as unknown as jest.Mocked<AnalyticsService>;
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -71,9 +68,6 @@ describe('AnalyticsController', () => {
         },
         lastUpdated: new Date().toISOString(),
       };
-      service.getTransactionStats.mockResolvedValue(
-        statsResponse as AnalyticsStatsResponse,
-      );
       service.getTransactionStats.mockResolvedValue(statsResponse);
 
       const result = await controller.getTransactionStats(mockUser);
