@@ -283,26 +283,21 @@ describe('BuyerDisputeService.openDispute (issue #41)', () => {
       ['buyer', BUYER],
       ['vendor', VENDOR],
       ['admin', ADMIN],
-    ])(
-      'returns the dispute to the escrow %s',
-      async (_role, callerAddress) => {
-        escrowRepository.findById.mockResolvedValue(shippedEscrow);
-        disputeRepository.findByEscrow.mockResolvedValue(createdDispute);
+    ])('returns the dispute to the escrow %s', async (_role, callerAddress) => {
+      escrowRepository.findById.mockResolvedValue(shippedEscrow);
+      disputeRepository.findByEscrow.mockResolvedValue(createdDispute);
 
-        const result = await service.getDispute('escrow-abc', callerAddress);
+      const result = await service.getDispute('escrow-abc', callerAddress);
 
-        expect(disputeRepository.findByEscrow).toHaveBeenCalledWith(
-          'escrow-abc',
-        );
-        expect(result).toMatchObject({
-          id: createdDispute.id,
-          escrowId: 'escrow-abc',
-          description: createdDispute.description,
-          evidenceUrls: createdDispute.evidenceUrls,
-          status: 'OPEN',
-        });
-      },
-    );
+      expect(disputeRepository.findByEscrow).toHaveBeenCalledWith('escrow-abc');
+      expect(result).toMatchObject({
+        id: createdDispute.id,
+        escrowId: 'escrow-abc',
+        description: createdDispute.description,
+        evidenceUrls: createdDispute.evidenceUrls,
+        status: 'OPEN',
+      });
+    });
 
     it('formats nullable dispute fields into a safe response', async () => {
       const disputeWithoutOptionalFields = {

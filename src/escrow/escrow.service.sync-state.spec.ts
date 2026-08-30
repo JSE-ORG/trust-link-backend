@@ -190,14 +190,19 @@ describe('EscrowService.syncStateFromChain', () => {
       expect(repo.markShipped).not.toHaveBeenCalled();
     });
 
-    it('falls back to the escrow\'s existing trackingId when the event omits one', async () => {
-      const shipped = makeEscrow({ state: 'SHIPPED', trackingId: 'TRK-EXISTING' });
+    it("falls back to the escrow's existing trackingId when the event omits one", async () => {
+      const shipped = makeEscrow({
+        state: 'SHIPPED',
+        trackingId: 'TRK-EXISTING',
+      });
       repo.findById.mockResolvedValue(
         makeEscrow({ state: 'FUNDED', trackingId: 'TRK-EXISTING' }),
       );
       repo.markShipped.mockResolvedValue(shipped);
 
-      const result = await service.syncStateFromChain(makeEvent('EscrowShipped'));
+      const result = await service.syncStateFromChain(
+        makeEvent('EscrowShipped'),
+      );
 
       expect(result).toEqual({ skipped: false });
       expect(repo.markShipped).toHaveBeenCalledWith('escrow-1', 'TRK-EXISTING');
@@ -453,7 +458,9 @@ describe('EscrowService.syncStateFromChain', () => {
       repo.findById.mockResolvedValue(makeEscrow({ state: 'SHIPPED' }));
       repo.markAutoReleased = jest.fn().mockResolvedValue(released);
 
-      const result = await service.syncStateFromChain(makeEvent('AutoReleased'));
+      const result = await service.syncStateFromChain(
+        makeEvent('AutoReleased'),
+      );
 
       expect(result).toEqual({ skipped: false });
       expect(repo.markAutoReleased).toHaveBeenCalledWith('escrow-1', '');

@@ -366,7 +366,7 @@ describe('EscrowService: tracking, idempotency, evidence upload, and vendor list
     disputeId: null,
     createdAt: new Date('2026-01-01T00:00:00.000Z'),
     updatedAt: new Date('2026-01-01T00:00:00.000Z'),
-  } as EscrowRecord;
+  };
 
   beforeEach(async () => {
     repository = {
@@ -375,8 +375,12 @@ describe('EscrowService: tracking, idempotency, evidence upload, and vendor list
       create: jest.fn(),
       findVendorEscrows: jest.fn(),
     } as unknown as jest.Mocked<EscrowRepository>;
-    s3Presign = { presign: jest.fn() } as unknown as jest.Mocked<S3PresignService>;
-    logistics = { getStatus: jest.fn() } as unknown as jest.Mocked<LogisticsService>;
+    s3Presign = {
+      presign: jest.fn(),
+    } as unknown as jest.Mocked<S3PresignService>;
+    logistics = {
+      getStatus: jest.fn(),
+    } as unknown as jest.Mocked<LogisticsService>;
     cache = {
       get: jest.fn(),
       set: jest.fn(),
@@ -497,7 +501,7 @@ describe('EscrowService: tracking, idempotency, evidence upload, and vendor list
 
       const result = await service.createIdempotent(
         'idem-key-1',
-        createDto as any,
+        createDto,
         'vendor-1',
       );
 
@@ -512,7 +516,7 @@ describe('EscrowService: tracking, idempotency, evidence upload, and vendor list
 
       const result = await service.createIdempotent(
         'idem-key-2',
-        createDto as any,
+        createDto,
         'vendor-1',
       );
 
@@ -529,10 +533,7 @@ describe('EscrowService: tracking, idempotency, evidence upload, and vendor list
     it('derives the object key extension from the filename', () => {
       s3Presign.presign.mockReturnValue('https://signed-url');
 
-      const result = service.generateEvidenceUploadUrl(
-        'buyer-1',
-        'photo.png',
-      );
+      const result = service.generateEvidenceUploadUrl('buyer-1', 'photo.png');
 
       expect(result.uploadUrl).toBe('https://signed-url');
       expect(result.storagePath).toBe('evidence/buyer-1/');
@@ -567,9 +568,7 @@ describe('EscrowService: tracking, idempotency, evidence upload, and vendor list
         20,
       );
       expect(result).toEqual({
-        data: [
-          expect.objectContaining({ id: shippedEscrow.id, amount: 250 }),
-        ],
+        data: [expect.objectContaining({ id: shippedEscrow.id, amount: 250 })],
         total: 1,
         page: 1,
         limit: 20,

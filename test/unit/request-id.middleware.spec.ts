@@ -1,4 +1,7 @@
-import { RequestIdMiddleware, REQUEST_ID_HEADER } from '../../src/common/middleware/request-id.middleware';
+import {
+  RequestIdMiddleware,
+  REQUEST_ID_HEADER,
+} from '../../src/common/middleware/request-id.middleware';
 import { Request, Response, NextFunction } from 'express';
 
 describe('RequestIdMiddleware', () => {
@@ -19,7 +22,10 @@ describe('RequestIdMiddleware', () => {
     middleware.use(req as Request, res as Response, next);
     expect(req.requestId).toBe('existing-id-123');
     expect(req.headers[REQUEST_ID_HEADER]).toBe('existing-id-123');
-    expect(res.setHeader).toHaveBeenCalledWith(REQUEST_ID_HEADER, 'existing-id-123');
+    expect(res.setHeader).toHaveBeenCalledWith(
+      REQUEST_ID_HEADER,
+      'existing-id-123',
+    );
     expect(next).toHaveBeenCalled();
   });
 
@@ -37,7 +43,10 @@ describe('RequestIdMiddleware', () => {
     expect(req.requestId).toBeDefined();
     expect(req.requestId?.length).toBeGreaterThan(0);
     expect(req.headers?.[REQUEST_ID_HEADER]).toBe(req.requestId);
-    expect(res.setHeader).toHaveBeenCalledWith(REQUEST_ID_HEADER, req.requestId);
+    expect(res.setHeader).toHaveBeenCalledWith(
+      REQUEST_ID_HEADER,
+      req.requestId,
+    );
     expect(next).toHaveBeenCalled();
   });
 });

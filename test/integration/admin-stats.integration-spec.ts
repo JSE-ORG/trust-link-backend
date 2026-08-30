@@ -40,7 +40,10 @@ describe('Admin Stats (issue #639)', () => {
     await app.close();
   });
 
-  async function seedEscrow(overrides?: { vendorAddress?: string; amount?: number }) {
+  async function seedEscrow(overrides?: {
+    vendorAddress?: string;
+    amount?: number;
+  }) {
     const vendorAddress = overrides?.vendorAddress ?? 'GVENDORSTATS001';
     await prisma.vendorProfile.upsert({
       where: { address: vendorAddress },
@@ -104,9 +107,7 @@ describe('Admin Stats (issue #639)', () => {
   // ── Authentication and authorisation ─────────────────────────────────────
 
   it('returns 401 for unauthenticated requests', async () => {
-    await request(app.getHttpServer())
-      .get('/admin/stats')
-      .expect(401);
+    await request(app.getHttpServer()).get('/admin/stats').expect(401);
   });
 
   it('returns 403 for non-admin users', async () => {

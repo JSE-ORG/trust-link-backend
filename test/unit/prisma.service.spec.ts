@@ -1,6 +1,14 @@
+import { Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { ensureVendors } from '../prisma-helpers';
-import { PrismaService } from '../../src/prisma/prisma.service';
+import {
+  PrismaService,
+  toDisputeRecord,
+  toEscrowRecord,
+  toFailedTransactionRecord,
+  toVendorAccountDetailsRecord,
+  toVendorTrackingSettingsRecord,
+} from '../../src/prisma/prisma.service';
 
 describe('PrismaService real database operations', () => {
   let prisma: PrismaService;
@@ -260,4 +268,339 @@ describe('PrismaService real database operations', () => {
     });
     expect(updated.errorMessage).toBe('new');
   });
+});
+
+// ── Configuration and safety guards (issue #702) ─────────────────────────────
+//
+// The suite above exercises PrismaService as a database client. What it never
+// touches is the logic wrapped *around* that client: the connection-string
+// rewriting in the constructor, the slow-query threshold, and the guard that
+// stops reset() wiping a non-test database.
+//
+// None of that needs a live database — constructing the service does not
+// connect — so these run against stubs. reset() in particular is stubbed
+// deliberately: a test that verified the guard by letting the truncate through
+// would be a test that truncates a database to prove it should not.
+
+describe('PrismaService configuration and guards (issue #702)', () => {
+  const savedEnv = { ...process.env };
+
+  afterEach(() => {
+    process.env = { ...savedEnv };
+    jest.restoreAllMocks();
+  });
+
+  describe('connection string', () => {
+    it('prefers the constructor argument over DATABASE_URL', () => {
+      process.env.DATABASE_URL = 'postgresql://env:env@envhost:5432/envdb';
+
+      const svc = new PrismaService('postgresql://arg:arg@arghost:5432/argdb');
+
+      expect(svc.effectiveDatabaseUrl).toContain('arghost');
+      expect(svc.effectiveDatabaseUrl).not.toContain('envhost');
+    });
+
+    it('falls back to DATABASE_URL when no argument is given', () => {
+      process.env.DATABASE_URL = 'postgresql://env:env@envhost:5432/envdb';
+
+      const svc = new PrismaService();
+
+      expect(svc.effectiveDatabaseUrl).toContain('envhost');
+    });
+
+    it('falls back to the local test database when neither is set', () => {
+      delete process.env.DATABASE_URL;
+
+      const svc = new PrismaService();
+
+      expect(svc.effectiveDatabaseUrl).toContain(
+        'localhost:5432/trustlink_test',
+      );
+    });
+
+    it('applies the default 30s statement timeout when QUERY_TIMEOUT_MS is unset', () => {
+      delete process.env.QUERY_TIMEOUT_MS;
+
+      const svc = new PrismaService('postgresql://u:p@h:5432/d');
+
+      const params = new URL(svc.effectiveDatabaseUrl!).searchParams;
+      expect(params.get('statement_timeout')).toBe('30000');
+      expect(params.get('connect_timeout')).toBe('10');
+    });
+
+    it('honours QUERY_TIMEOUT_MS when it is set', () => {
+      process.env.QUERY_TIMEOUT_MS = '5000';
+
+      const svc = new PrismaService('postgresql://u:p@h:5432/d');
+
+      expect(
+        new URL(svc.effectiveDatabaseUrl!).searchParams.get(
+          'statement_timeout',
+        ),
+      ).toBe('5000');
+    });
+
+    it('overrides a statement_timeout already present in the URL', () => {
+      process.env.QUERY_TIMEOUT_MS = '5000';
+
+      const svc = new PrismaService(
+        'postgresql://u:p@h:5432/d?statement_timeout=1',
+      );
+
+      const params = new URL(svc.effectiveDatabaseUrl!).searchParams;
+      expect(params.getAll('statement_timeout')).toEqual(['5000']);
+    });
+
+    it('uses an unparseable connection string as-is instead of throwing', () => {
+      // Some deployments pass a DSN-style string that is not a WHATWG URL.
+      // Rewriting is a best-effort optimisation; failing to parse must not
+      // take the whole application down at construction time.
+      const raw = 'host=localhost port=5432 dbname=trustlink';
+
+      const svc = new PrismaService(raw);
+
+      expect(svc.effectiveDatabaseUrl).toBe(raw);
+    });
+  });
+
+  describe('slow-query logging', () => {
+    async function initWithQueryHook(
+      svc: PrismaService,
+    ): Promise<(event: { duration: number; query: string }) => void> {
+      jest.spyOn(svc, '$connect').mockResolvedValue(undefined);
+      const handlers: Array<(event: unknown) => void> = [];
+      Object.defineProperty(svc, '$on', {
+        value: jest.fn((_event: string, cb: (event: unknown) => void) => {
+          handlers.push(cb);
+        }),
+        configurable: true,
+        writable: true,
+      });
+
+      await svc.onModuleInit();
+
+      return handlers[0];
+    }
+
+    it('warns for a query at or above the default 500ms threshold', async () => {
+      delete process.env.SLOW_QUERY_THRESHOLD_MS;
+      const svc = new PrismaService('postgresql://u:p@h:5432/d');
+      const warn = jest
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation(() => undefined);
+
+      const onQuery = await initWithQueryHook(svc);
+      // Exactly at the threshold: the comparison is >=, and a boundary that
+      // silently flipped to > would hide the queries sitting right on the limit.
+      onQuery({ duration: 500, query: 'SELECT 1' });
+
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('Slow query (500ms)'),
+      );
+    });
+
+    it('stays quiet for a query below the threshold', async () => {
+      delete process.env.SLOW_QUERY_THRESHOLD_MS;
+      const svc = new PrismaService('postgresql://u:p@h:5432/d');
+      const warn = jest
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation(() => undefined);
+
+      const onQuery = await initWithQueryHook(svc);
+      onQuery({ duration: 499, query: 'SELECT 1' });
+
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    it('honours SLOW_QUERY_THRESHOLD_MS when it is set', async () => {
+      process.env.SLOW_QUERY_THRESHOLD_MS = '10';
+      const svc = new PrismaService('postgresql://u:p@h:5432/d');
+      const warn = jest
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation(() => undefined);
+
+      const onQuery = await initWithQueryHook(svc);
+      onQuery({ duration: 20, query: 'SELECT 2' });
+      onQuery({ duration: 5, query: 'SELECT 3' });
+
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('Slow query (20ms)'),
+      );
+    });
+
+    it('connects before registering the query hook', async () => {
+      const svc = new PrismaService('postgresql://u:p@h:5432/d');
+      const connect = jest.spyOn(svc, '$connect').mockResolvedValue(undefined);
+      Object.defineProperty(svc, '$on', {
+        value: jest.fn(),
+        configurable: true,
+        writable: true,
+      });
+
+      await svc.onModuleInit();
+
+      expect(connect).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('reset() NODE_ENV guard', () => {
+    // Stubbed rather than live: the point of the guard is that reset() destroys
+    // data, so the test must never reach the truncate to prove it.
+    function stubReset(svc: PrismaService, tablenames: string[]) {
+      const executed: string[] = [];
+      Object.defineProperty(svc, '$queryRaw', {
+        value: jest
+          .fn()
+          .mockResolvedValue(tablenames.map((tablename) => ({ tablename }))),
+        configurable: true,
+        writable: true,
+      });
+      Object.defineProperty(svc, '$transaction', {
+        value: jest.fn(async (fn: (tx: unknown) => Promise<void>) => {
+          await fn({
+            $executeRawUnsafe: jest.fn((sql: string) => {
+              executed.push(sql);
+              return Promise.resolve(0);
+            }),
+          });
+        }),
+        configurable: true,
+        writable: true,
+      });
+      return executed;
+    }
+
+    it('refuses to run when NODE_ENV is not test', async () => {
+      process.env.NODE_ENV = 'production';
+      const svc = new PrismaService('postgresql://u:p@h:5432/d');
+      const executed = stubReset(svc, ['escrow']);
+
+      await expect(svc.reset()).rejects.toThrow(
+        /test-only helper.*NODE_ENV=test.*production/s,
+      );
+      expect(executed).toEqual([]);
+    });
+
+    it('names NODE_ENV as undefined rather than interpolating nothing', async () => {
+      delete process.env.NODE_ENV;
+      const svc = new PrismaService('postgresql://u:p@h:5432/d');
+      stubReset(svc, ['escrow']);
+
+      await expect(svc.reset()).rejects.toThrow('current: undefined');
+    });
+
+    it('runs when NODE_ENV is test, skipping _prisma_migrations', async () => {
+      process.env.NODE_ENV = 'test';
+      const svc = new PrismaService('postgresql://u:p@h:5432/d');
+      const executed = stubReset(svc, [
+        'escrow',
+        '_prisma_migrations',
+        'dispute',
+      ]);
+
+      await svc.reset();
+
+      const truncate = executed.find((sql) => sql.startsWith('TRUNCATE'));
+      expect(truncate).toBe('TRUNCATE TABLE "escrow", "dispute" CASCADE;');
+      // Dropping the migration history would make the next `prisma migrate`
+      // replay every migration against a populated schema.
+      expect(truncate).not.toContain('_prisma_migrations');
+      expect(executed[0]).toContain('pg_advisory_xact_lock(42)');
+    });
+
+    it('issues no transaction when there is nothing to truncate', async () => {
+      process.env.NODE_ENV = 'test';
+      const svc = new PrismaService('postgresql://u:p@h:5432/d');
+      const executed = stubReset(svc, ['_prisma_migrations']);
+
+      await svc.reset();
+
+      // An empty table list would build `TRUNCATE TABLE  CASCADE`, which is a
+      // syntax error, so the guard has to skip the transaction entirely.
+      expect(executed).toEqual([]);
+    });
+  });
+
+  describe('onModuleDestroy()', () => {
+    it('disconnects the client', async () => {
+      const svc = new PrismaService('postgresql://u:p@h:5432/d');
+      const disconnect = jest
+        .spyOn(svc, '$disconnect')
+        .mockResolvedValue(undefined);
+
+      await svc.onModuleDestroy();
+
+      expect(disconnect).toHaveBeenCalledTimes(1);
+    });
+  });
+});
+
+// ── Boundary mappers (issue #702) ────────────────────────────────────────────
+//
+// Each mapper carries a coalesce or a cast that only shows up on a row the
+// repository tests never produce: Prisma types a nullable Json column as
+// `JsonValue | null`, but the driver returns `undefined` for a column that was
+// not selected. Without the `?? null` those reach consumers as `undefined`,
+// which fails `=== null` checks everywhere downstream.
+
+describe('PrismaService boundary mappers (issue #702)', () => {
+  it('converts an escrow Decimal amount to a number', () => {
+    const row = { id: 'e1', amount: { toString: () => '12.5' } };
+
+    // A Decimal is not a number: arithmetic on it silently produces a string
+    // concatenation or NaN further down.
+    expect(toEscrowRecord(row as never).amount).toBe(12.5);
+  });
+
+  it('narrows a dispute status string to the DisputeState union', () => {
+    const row = { id: 'd1', status: 'RESOLVED' };
+
+    expect(toDisputeRecord(row as never).status).toBe('RESOLVED');
+  });
+
+  it.each([
+    ['a populated object', { code: 'tx_failed' }, { code: 'tx_failed' }],
+    ['an explicit null', null, null],
+    ['an unselected column', undefined, null],
+  ])(
+    'maps failedTransaction.ledgerFeedback from %s',
+    (_label, input, expected) => {
+      const row = { id: 'f1', status: 'PENDING_REVIEW', ledgerFeedback: input };
+
+      expect(toFailedTransactionRecord(row as never).ledgerFeedback).toEqual(
+        expected,
+      );
+    },
+  );
+
+  it.each([
+    ['a populated object', { tier: 'gold' }, { tier: 'gold' }],
+    ['an explicit null', null, null],
+    ['an unselected column', undefined, null],
+  ])(
+    'maps vendorAccountDetails.customFields from %s',
+    (_label, input, expected) => {
+      const row = { id: 'v1', customFields: input };
+
+      expect(toVendorAccountDetailsRecord(row as never).customFields).toEqual(
+        expected,
+      );
+    },
+  );
+
+  it.each([
+    ['a populated object', { carrier: 'dhl' }, { carrier: 'dhl' }],
+    ['an explicit null', null, null],
+    ['an unselected column', undefined, null],
+  ])(
+    'maps vendorTrackingSettings.customTrackingRules from %s',
+    (_label, input, expected) => {
+      const row = { id: 't1', customTrackingRules: input };
+
+      expect(
+        toVendorTrackingSettingsRecord(row as never).customTrackingRules,
+      ).toEqual(expected);
+    },
+  );
 });

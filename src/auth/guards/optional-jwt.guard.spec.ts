@@ -118,9 +118,8 @@ describe('OptionalJwtGuard', () => {
     });
 
     it('should return true and set user to undefined when Authorization header is not Bearer', () => {
-      const { context, mockRequest } = createMockExecutionContext(
-        'Basic dXNlcjpwYXNz',
-      );
+      const { context, mockRequest } =
+        createMockExecutionContext('Basic dXNlcjpwYXNz');
 
       const result = guard.canActivate(context);
 
