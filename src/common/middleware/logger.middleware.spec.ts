@@ -22,7 +22,9 @@ describe('LoggerMiddleware', () => {
 
   beforeEach(() => {
     middleware = new LoggerMiddleware();
-    stdoutSpy = jest.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    stdoutSpy = jest
+      .spyOn(process.stdout, 'write')
+      .mockImplementation(() => true);
   });
 
   afterEach(() => {
@@ -149,7 +151,9 @@ describe('LoggerMiddleware', () => {
   });
 
   it('should handle missing User-Agent by defaulting to empty string', () => {
-    const { req, res, next, triggerFinish } = createMockReqRes({ userAgent: undefined });
+    const { req, res, next, triggerFinish } = createMockReqRes({
+      userAgent: undefined,
+    });
 
     middleware.use(req, res, next);
     triggerFinish();

@@ -27,9 +27,7 @@ describe('CurrentUser Decorator', () => {
     factory = getParamDecoratorFactory(CurrentUser);
   });
 
-  const createMockExecutionContext = (
-    user?: AuthUser,
-  ): ExecutionContext => {
+  const createMockExecutionContext = (user?: AuthUser): ExecutionContext => {
     return {
       switchToHttp: () => ({
         getRequest: () => ({ user }),

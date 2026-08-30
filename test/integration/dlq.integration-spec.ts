@@ -7,6 +7,7 @@
  */
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import { createHmac } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import request from 'supertest';
 import { AppModule } from '../../src/app.module';
@@ -46,8 +47,6 @@ describe('DLQ endpoints (issue #640)', () => {
   });
 
   // ── Helpers ─────────────────────────────────────────────────────────────
-
-  const { createHmac } = require('crypto');
 
   function signedJwt(payload: Record<string, unknown>): string {
     const header = Buffer.from(
@@ -141,9 +140,7 @@ describe('DLQ endpoints (issue #640)', () => {
     });
 
     it('returns 401 for unauthenticated requests', async () => {
-      await request(app.getHttpServer())
-        .get('/admin/dlq')
-        .expect(401);
+      await request(app.getHttpServer()).get('/admin/dlq').expect(401);
     });
 
     it('returns 403 for non-admin users', async () => {

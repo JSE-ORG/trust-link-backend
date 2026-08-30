@@ -783,7 +783,9 @@ describe('AnalyticsService', () => {
       // 23:30 UTC on Jan 14 is 08:30 on Jan 15 in Tokyo (JST = UTC+9)
       const date = new Date('2024-01-14T23:30:00Z');
       const formatted = (
-        service as unknown as { formatDateInTimezone: (d: Date, tz: string) => string }
+        service as unknown as {
+          formatDateInTimezone: (d: Date, tz: string) => string;
+        }
       ).formatDateInTimezone(date, 'Asia/Tokyo');
       expect(formatted).toBe('2024-01-15');
     });

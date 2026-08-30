@@ -437,9 +437,9 @@ describe('ContractService', () => {
       const server = makeServer();
       const svc = new ContractService(server);
 
-      await expect(
-        svc.submitAutoRelease(ESCROW, SOURCE, -1),
-      ).rejects.toThrow('Max retries exceeded');
+      await expect(svc.submitAutoRelease(ESCROW, SOURCE, -1)).rejects.toThrow(
+        'Max retries exceeded',
+      );
       expect(server.loadAccount).not.toHaveBeenCalled();
     });
   });

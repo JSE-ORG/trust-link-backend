@@ -105,9 +105,7 @@ describe('Analytics controller endpoints (issue #641)', () => {
     });
 
     it('returns 401 for unauthenticated requests', async () => {
-      await request(app.getHttpServer())
-        .get('/vendor/analytics')
-        .expect(401);
+      await request(app.getHttpServer()).get('/vendor/analytics').expect(401);
     });
   });
 

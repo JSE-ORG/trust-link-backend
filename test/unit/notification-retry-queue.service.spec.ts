@@ -175,7 +175,10 @@ describe('NotificationRetryQueueService (in-process fallback) (#73)', () => {
     // Exactly attempts times when every attempt throws
     const dispatchFail = jest.fn().mockRejectedValue(new Error('fail'));
     const backoff = { attempts: 4, delay: 1, maxDelayMs: 10 };
-    const failSetup = setup({ dispatcher: { dispatch: dispatchFail }, backoff });
+    const failSetup = setup({
+      dispatcher: { dispatch: dispatchFail },
+      backoff,
+    });
     await failSetup.service.enqueue(makeJob());
     expect(dispatchFail).toHaveBeenCalledTimes(4);
   });
@@ -203,59 +206,54 @@ describe('NotificationRetryQueueService (in-process fallback) (#73)', () => {
   // notification row, so an operator sees no attempt count and no provider
   // error until the final FAILED write. Marked failing so it turns red again
   // once the write is added, which is the signal to flip it back to `it`.
-  it(
-    'records per-attempt failure state (retryCount, failedAt, lastError) on every failing attempt (#490)',
-    async () => {
-      const dispatch = jest
-        .fn()
-        .mockRejectedValueOnce(new Error('boom'))
-        .mockRejectedValueOnce(new Error('still down'))
-        .mockRejectedValueOnce(new Error('provider unavailable'));
-      const update = jest.fn().mockResolvedValue(undefined);
-      const { service, dlq } = setup({
-        dispatcher: { dispatch },
-        prisma: { notification: { update } },
-      });
+  it('records per-attempt failure state (retryCount, failedAt, lastError) on every failing attempt (#490)', async () => {
+    const dispatch = jest
+      .fn()
+      .mockRejectedValueOnce(new Error('boom'))
+      .mockRejectedValueOnce(new Error('still down'))
+      .mockRejectedValueOnce(new Error('provider unavailable'));
+    const update = jest.fn().mockResolvedValue(undefined);
+    const { service, dlq } = setup({
+      dispatcher: { dispatch },
+      prisma: { notification: { update } },
+    });
 
-      await service.enqueue(makeJob({ notificationId: 'notif-1' }));
+    await service.enqueue(makeJob({ notificationId: 'notif-1' }));
 
-      expect(dispatch).toHaveBeenCalledTimes(3);
+    expect(dispatch).toHaveBeenCalledTimes(3);
 
-      // One failure write per attempt, each carrying the attempt number and
-      // the provider error message for that attempt.
-      const failureWrites = update.mock.calls
-        .map(([arg]) => arg)
-        .filter((arg) => arg.data.lastError !== undefined);
-      expect(failureWrites).toHaveLength(3);
-      failureWrites.forEach((arg) => {
-        expect(arg.where).toEqual({ id: 'notif-1' });
-        expect(arg.data.failedAt).toBeInstanceOf(Date);
-      });
-      expect(failureWrites.map((arg) => arg.data.retryCount)).toEqual([
-        1, 2, 3,
-      ]);
-      expect(failureWrites.map((arg) => arg.data.lastError)).toEqual([
-        'boom',
-        'still down',
-        'provider unavailable',
-      ]);
+    // One failure write per attempt, each carrying the attempt number and
+    // the provider error message for that attempt.
+    const failureWrites = update.mock.calls
+      .map(([arg]) => arg)
+      .filter((arg) => arg.data.lastError !== undefined);
+    expect(failureWrites).toHaveLength(3);
+    failureWrites.forEach((arg) => {
+      expect(arg.where).toEqual({ id: 'notif-1' });
+      expect(arg.data.failedAt).toBeInstanceOf(Date);
+    });
+    expect(failureWrites.map((arg) => arg.data.retryCount)).toEqual([1, 2, 3]);
+    expect(failureWrites.map((arg) => arg.data.lastError)).toEqual([
+      'boom',
+      'still down',
+      'provider unavailable',
+    ]);
 
-      // The last recorded failure state reflects three attempts and the
-      // final provider error — the state operators inspect after exhaustion.
-      const lastFailure = failureWrites[failureWrites.length - 1];
-      expect(lastFailure.data.retryCount).toBe(3);
-      expect(lastFailure.data.lastError).toBe('provider unavailable');
+    // The last recorded failure state reflects three attempts and the
+    // final provider error — the state operators inspect after exhaustion.
+    const lastFailure = failureWrites[failureWrites.length - 1];
+    expect(lastFailure.data.retryCount).toBe(3);
+    expect(lastFailure.data.lastError).toBe('provider unavailable');
 
-      // The terminal status write still happens after attempts are exhausted.
-      const statusWrites = update.mock.calls
-        .map(([arg]) => arg)
-        .filter((arg) => arg.data.status === 'FAILED');
-      expect(statusWrites).toHaveLength(1);
+    // The terminal status write still happens after attempts are exhausted.
+    const statusWrites = update.mock.calls
+      .map(([arg]) => arg)
+      .filter((arg) => arg.data.status === 'FAILED');
+    expect(statusWrites).toHaveLength(1);
 
-      expect(dlq).toHaveLength(1);
-      expect(dlq[0].lastError).toBe('provider unavailable');
-    },
-  );
+    expect(dlq).toHaveLength(1);
+    expect(dlq[0].lastError).toBe('provider unavailable');
+  });
 
   it('a failing status write does not abort the retry loop (#490)', async () => {
     const dispatch = jest.fn().mockRejectedValue(new Error('always fails'));
@@ -473,7 +471,19 @@ describe('NotificationRetryQueueService (BullMQ integration) (#73)', () => {
     close: jest.fn().mockResolvedValue(undefined),
     on: jest.fn(),
   };
-  let failedHandler: ((job: Job | { data: NotificationRetryJobData; attemptsMade: number; opts: { attempts: number } } | null, error: Error) => void) | undefined;
+  let failedHandler:
+    | ((
+        job:
+          | Job
+          | {
+              data: NotificationRetryJobData;
+              attemptsMade: number;
+              opts: { attempts: number };
+            }
+          | null,
+        error: Error,
+      ) => void)
+    | undefined;
 
   beforeAll(() => {
     const mod = jest.requireMock('bullmq');
@@ -495,15 +505,15 @@ describe('NotificationRetryQueueService (BullMQ integration) (#73)', () => {
     let queueCallCount = 0;
     MockQueue.mockImplementation(() => {
       queueCallCount++;
-      return (queueCallCount === 1
-        ? mockQueueInstance
-        : mockDlqInstance) as unknown as Queue;
+      return queueCallCount === 1 ? mockQueueInstance : mockDlqInstance;
     });
 
-    mockWorkerInstance.on.mockImplementation((event: string, handler: (...args: unknown[]) => void) => {
-      if (event === 'failed') failedHandler = handler;
-    });
-    MockWorker.mockReturnValue(mockWorkerInstance as unknown as Worker);
+    mockWorkerInstance.on.mockImplementation(
+      (event: string, handler: (...args: unknown[]) => void) => {
+        if (event === 'failed') failedHandler = handler;
+      },
+    );
+    MockWorker.mockReturnValue(mockWorkerInstance);
   });
 
   afterEach(() => {
@@ -577,7 +587,8 @@ describe('NotificationRetryQueueService (BullMQ integration) (#73)', () => {
     const service = new NotificationRetryQueueService({
       backoff: { attempts: 3, delay: 1_000, maxDelayMs: 300_000 },
     });
-    service['bullQueue'] = mockQueueInstance as unknown as Queue<NotificationRetryJobData>;
+    service['bullQueue'] =
+      mockQueueInstance as unknown as Queue<NotificationRetryJobData>;
     await service.enqueue(makeJob({ requestId: 'req-1' }));
     expect(mockQueueInstance.add).toHaveBeenCalledWith(
       'EMAIL-FUNDED',
@@ -591,9 +602,12 @@ describe('NotificationRetryQueueService (BullMQ integration) (#73)', () => {
 
   it('onModuleDestroy closes worker, queue, and dlq', async () => {
     const service = new NotificationRetryQueueService();
-    service['bullWorker'] = mockWorkerInstance as unknown as Worker<NotificationRetryJobData>;
-    service['bullQueue'] = mockQueueInstance as unknown as Queue<NotificationRetryJobData>;
-    service['bullDlq'] = mockDlqInstance as unknown as Queue<NotificationDeadLetterRecord>;
+    service['bullWorker'] =
+      mockWorkerInstance as unknown as Worker<NotificationRetryJobData>;
+    service['bullQueue'] =
+      mockQueueInstance as unknown as Queue<NotificationRetryJobData>;
+    service['bullDlq'] =
+      mockDlqInstance as unknown as Queue<NotificationDeadLetterRecord>;
     await service.onModuleDestroy();
     expect(mockWorkerInstance.close).toHaveBeenCalledTimes(1);
     expect(mockQueueInstance.close).toHaveBeenCalledTimes(1);
@@ -612,7 +626,8 @@ describe('NotificationRetryQueueService (BullMQ integration) (#73)', () => {
     const service = new NotificationRetryQueueService({
       backoff: { attempts: 3, delay: 1, maxDelayMs: 10 },
     });
-    service['bullDlq'] = mockDlqInstance as unknown as Queue<NotificationDeadLetterRecord>;
+    service['bullDlq'] =
+      mockDlqInstance as unknown as Queue<NotificationDeadLetterRecord>;
     await service['recordDeadLetter'](
       makeJob({ requestId: 'dlq-test' }),
       3,

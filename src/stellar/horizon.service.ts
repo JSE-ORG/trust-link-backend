@@ -10,7 +10,7 @@ const HORIZON_URLS: Record<'TESTNET' | 'MAINNET', string> = {
 };
 
 /** Matches the timeout the readiness probe previously used inline in AppController. */
-const HEALTH_CHECK_TIMEOUT_MS = 150;
+export const HEALTH_CHECK_TIMEOUT_MS = 150;
 
 export interface HorizonHealth {
   status: 'ok' | 'down';

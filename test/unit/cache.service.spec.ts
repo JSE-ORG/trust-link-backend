@@ -100,7 +100,9 @@ describe('CacheService (issue #285) — Redis mode', () => {
     it('handles a Redis write failure without claiming the value was cached', async () => {
       redisMock.set.mockRejectedValue(new Error('write failed'));
 
-      await expect(service.set('unavailable-key', 'value')).resolves.toBeUndefined();
+      await expect(
+        service.set('unavailable-key', 'value'),
+      ).resolves.toBeUndefined();
       expect(redisMock.set).toHaveBeenCalledWith(
         'unavailable-key',
         JSON.stringify('value'),

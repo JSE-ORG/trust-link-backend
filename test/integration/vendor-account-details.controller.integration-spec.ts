@@ -112,7 +112,10 @@ describe('Vendor account-details controller (issue #642)', () => {
       const res = await request(app.getHttpServer())
         .patch('/vendor/account-details')
         .set('Authorization', AUTH_A)
-        .send({ bankAccountNumber: '1234567890123456', preferredCurrency: 'EUR' })
+        .send({
+          bankAccountNumber: '1234567890123456',
+          preferredCurrency: 'EUR',
+        })
         .expect(200);
 
       expect(res.body.vendorAddress).toBe(VENDOR_A);
