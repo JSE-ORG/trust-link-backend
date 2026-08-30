@@ -118,4 +118,39 @@ describe('DisputeRepository (issue #14)', () => {
       expect.objectContaining({ status: 'RESOLVED' }),
     );
   });
+
+  it('resolves the dispute with default escrowState (COMPLETED)', async () => {
+    const escrow = await prisma.escrow.create({
+      data: {
+        itemName: 'Laptop',
+        itemRef: 'ref-laptop',
+        amount: 500,
+        currency: 'USDC',
+        buyerAddress: 'buyer-1',
+        vendorAddress: 'vendor-1',
+        state: 'SHIPPED',
+        trackingId: 'TRK-10',
+      },
+    });
+    const dispute = await disputeRepository.create({
+      escrowId: escrow.id,
+      reason: 'Defective product',
+    });
+
+    // Call resolve without the escrowState parameter to test the default
+    await disputeRepository.resolve(dispute.id);
+
+    const updatedEscrow = await escrowRepository.findById(escrow.id);
+    expect(updatedEscrow?.state).toBe('COMPLETED');
+    expect(updatedEscrow?.disputeId).toBeNull();
+    await expect(disputeRepository.findById(dispute.id)).resolves.toEqual(
+      expect.objectContaining({ status: 'RESOLVED' }),
+    );
+  });
+
+  it('throws when resolving a non-existent dispute', async () => {
+    await expect(disputeRepository.resolve('non-existent-dispute-id')).rejects.toThrow(
+      'Dispute non-existent-dispute-id not found',
+    );
+  });
 });
