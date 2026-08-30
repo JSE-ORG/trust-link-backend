@@ -7,7 +7,9 @@ import { createOpenApiDocument } from '../src/openapi';
 const outputPath = resolve(process.cwd(), 'openapi.json');
 
 async function generateOpenApi(): Promise<void> {
-  const app = await NestFactory.create(AppModule, { logger: false });
+  const app = await NestFactory.create(AppModule, {
+    logger: ['error', 'warn'],
+  });
 
   try {
     const document = createOpenApiDocument(app);
