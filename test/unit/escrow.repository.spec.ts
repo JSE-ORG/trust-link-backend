@@ -49,36 +49,73 @@ describe('EscrowRepository (issue #13)', () => {
     expect(await repository.findByBuyer('buyer-2')).toHaveLength(1);
   });
 
-  it('finds only shipped escrows delivered more than 48 hours ago without disputes', async () => {
-    const eligible = await prisma.escrow.create({
+  /**
+   * Fixtures go through `markDelivered` (issue #395). Writing `deliveredAt`
+   * onto a SHIPPED row by hand produces a state the application cannot reach,
+   * and every assertion below would then pass for the wrong reason: nothing
+   * matches the query, so the dispute and recency filters are never exercised.
+   */
+  const deliver = async (
+    data: {
+      itemRef: string;
+      buyerAddress: string;
+      vendorAddress: string;
+      trackingId: string;
+    },
+    deliveredAt: Date,
+  ) => {
+    const escrow = await prisma.escrow.create({
       data: {
-        itemName: 'Camera',
-        itemRef: 'ref-camera-1',
+        itemName: data.itemRef,
+        itemRef: data.itemRef,
         amount: 250,
         currency: 'USDC',
+        buyerAddress: data.buyerAddress,
+        vendorAddress: data.vendorAddress,
+        trackingId: data.trackingId,
+        state: 'SHIPPED',
+      },
+    });
+    await repository.markDelivered(escrow.id, deliveredAt);
+    return escrow;
+  };
+
+  it('finds only escrows delivered more than 48 hours ago without disputes', async () => {
+    const disputed = await deliver(
+      {
+        itemRef: 'ref-camera-1',
         buyerAddress: 'buyer-1',
         vendorAddress: 'vendor-1',
-        state: 'SHIPPED',
         trackingId: 'TRK-1',
-        deliveredAt: new Date('2026-01-01T00:00:00.000Z'),
       },
-    });
-    await prisma.escrow.create({
-      data: {
-        itemName: 'Laptop',
+      new Date('2026-01-01T00:00:00.000Z'),
+    );
+
+    // Delivered an hour before the reference time — inside the 48-hour window.
+    await deliver(
+      {
         itemRef: 'ref-laptop',
-        amount: 300,
-        currency: 'USDC',
         buyerAddress: 'buyer-2',
         vendorAddress: 'vendor-2',
-        state: 'SHIPPED',
         trackingId: 'TRK-2',
-        deliveredAt: new Date('2026-05-25T23:00:00.000Z'),
       },
-    });
+      new Date('2026-05-25T23:00:00.000Z'),
+    );
+
+    // Past the window, undisputed: the one row that must come back.
+    const eligible = await deliver(
+      {
+        itemRef: 'ref-tripod',
+        buyerAddress: 'buyer-3',
+        vendorAddress: 'vendor-1',
+        trackingId: 'TRK-3',
+      },
+      new Date('2026-05-20T00:00:00.000Z'),
+    );
+
     const dispute = await prisma.dispute.create({
       data: {
-        escrowId: eligible.id,
+        escrowId: disputed.id,
         reason: 'Item missing',
       },
     });
@@ -87,7 +124,7 @@ describe('EscrowRepository (issue #13)', () => {
     // in-memory PrismaService applied that side effect inside dispute.create
     // itself, so the test got it for free; the real client does not (#475).
     await prisma.escrow.update({
-      where: { id: eligible.id },
+      where: { id: disputed.id },
       data: { disputeId: dispute.id, state: 'DISPUTED' },
     });
 
@@ -95,31 +132,32 @@ describe('EscrowRepository (issue #13)', () => {
       new Date('2026-05-26T00:00:00.000Z'),
     );
 
-    expect(results).toHaveLength(0);
+    expect(results).toHaveLength(1);
+    expect(results[0].id).toBe(eligible.id);
   });
 
-  it('marks auto release completion atomically', async () => {
-    const escrow = await prisma.escrow.create({
-      data: {
-        itemName: 'Camera',
+  it('records an auto-release submission without advancing state', async () => {
+    const escrow = await deliver(
+      {
         itemRef: 'ref-camera-2',
-        amount: 250,
-        currency: 'USDC',
         buyerAddress: 'buyer-1',
         vendorAddress: 'vendor-1',
-        state: 'SHIPPED',
         trackingId: 'TRK-1',
-        deliveredAt: new Date('2026-01-01T00:00:00.000Z'),
       },
-    });
+      new Date('2026-01-01T00:00:00.000Z'),
+    );
 
-    const updated = await repository.markAutoReleaseCompleted(
+    const updated = await repository.recordAutoReleaseSubmission(
       escrow.id,
       'tx-hash',
     );
 
-    expect(updated.state).toBe('COMPLETED');
+    // Recording a submission must not advance state. The AutoReleased chain
+    // event owns the terminal transition; a hash here only says the network
+    // accepted the transaction, not that it landed.
+    expect(updated.state).toBe('DELIVERED');
     expect(updated.autoReleaseTxHash).toBe('tx-hash');
+    expect(updated.autoReleaseSubmittedAt).toBeInstanceOf(Date);
   });
 
   it('orders event history oldest-first and breaks timestamp ties by id', async () => {

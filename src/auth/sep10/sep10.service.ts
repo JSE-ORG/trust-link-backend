@@ -70,7 +70,21 @@ export class Sep10Service {
     }
   }
 
-  /** Builds and stores a SEP-10 challenge transaction for a wallet account. */
+  /**
+   * Builds a SEP-10 challenge transaction for `accountId`, persists a nonce
+   * row keyed by the challenge transaction hash, and returns the challenge
+   * XDR for the wallet to sign.
+   *
+   * The stored nonce is what makes the challenge single-use:
+   * `verifyAndIssueToken` looks it up by the same hash, so a challenge that
+   * was never persisted here can never be redeemed. `timeout` (seconds)
+   * drives both the transaction's own time bounds and the nonce's
+   * `expiresAt`; the default is {@link CHALLENGE_TIMEOUT_SECONDS}.
+   *
+   * Not idempotent — each call writes a new nonce row. It does not verify
+   * that `accountId` is a real, funded Stellar account; that is the wallet's
+   * concern.
+   */
   async buildChallenge(
     accountId: string,
     timeout = CHALLENGE_TIMEOUT_SECONDS,
@@ -102,7 +116,22 @@ export class Sep10Service {
     return challengeTx;
   }
 
-  /** Verifies a signed SEP-10 challenge and issues access plus refresh tokens. */
+  /**
+   * Verifies a wallet-signed SEP-10 challenge and, on success, issues a new
+   * access + refresh token pair for the challenged account.
+   *
+   * Checks, in order: the challenge XDR parses and was signed by this
+   * server; a matching nonce row exists; it has not been used; it has not
+   * expired; the client's signature over the challenge is valid. Any failure
+   * throws `UnauthorizedException` with a message safe to return to the
+   * caller — no distinction is drawn between "not found" and "expired"
+   * beyond the message text.
+   *
+   * The nonce is marked `used` **before** tokens are generated, so the
+   * challenge is strictly one-time even under concurrent submission of the
+   * same signed XDR. Not safe to retry with the same `challengeTx` after a
+   * success — the second call fails as "already used".
+   */
   async verifyAndIssueToken(
     challengeTx: string,
   ): Promise<{ token: string; refreshToken: string }> {
@@ -166,7 +195,21 @@ export class Sep10Service {
     return this.generateAuthTokens(clientAccountID);
   }
 
-  /** Rotates a refresh token and revokes reused or expired token families. */
+  /**
+   * Exchanges a valid refresh token for a fresh access + refresh token pair,
+   * revoking the presented token as part of the same operation (rotation).
+   *
+   * Reuse detection: if the presented token is already revoked, this is
+   * treated as a stolen-token replay — {@link revokeTokenFamily} is called
+   * to revoke every session for that user and an `UnauthorizedException` is
+   * thrown. A token that is unknown or past `expiresAt` also throws
+   * `UnauthorizedException` but without the family-wide revocation.
+   *
+   * Not safe to retry with the same `oldToken`: the first success revokes
+   * it, so a retry trips the reuse path and nukes all of the user's
+   * sessions. The new refresh token from the success is the only one the
+   * caller should present next.
+   */
   async rotateRefreshToken(
     oldToken: string,
   ): Promise<{ token: string; refreshToken: string }> {
@@ -203,11 +246,20 @@ export class Sep10Service {
     return this.generateAuthTokens(storedToken.userId, storedToken.id);
   }
 
-  /** Revokes every refresh token associated with the selected token family owner. */
+  /**
+   * Revokes **every** refresh token belonging to the user who owns
+   * `tokenId` — not just the parent/child chain rooted at it.
+   *
+   * The method name says "family", but the implementation deliberately takes
+   * the broader "revoke all of this user's sessions" interpretation: on a
+   * suspected token theft the safe move is to force re-authentication
+   * everywhere, and walking a `parentTokenId` chain could miss a branch the
+   * attacker already rotated away from.
+   *
+   * Idempotent and safe to retry. A no-op if `tokenId` does not resolve to a
+   * stored token (nothing to derive a user from). Does not throw.
+   */
   async revokeTokenFamily(tokenId: string): Promise<void> {
-    // Revoke all tokens in this family by matching parentTokenId transitively
-    // For simplicity, we can revoke all tokens for this user, or just revoke by parent chain.
-    // The issue implies revoking the entire token family. Let's just revoke all tokens for the user to be safe and invalidate all active sessions.
     const token = await this.prisma.refreshToken.findUnique({
       where: { id: tokenId },
     });
@@ -269,12 +321,29 @@ export class Sep10Service {
     return createHmac('sha256', this.jwtSecret()).update(token).digest('hex');
   }
 
-  /** Returns the public key used to sign SEP-10 challenge transactions. */
+  /**
+   * Returns the `G...` public key this service signs SEP-10 challenges with.
+   *
+   * This is the value that must be published as `SIGNING_KEY` in the domain's
+   * `stellar.toml` — wallets compare the challenge signer against it. It is
+   * derived from `SEP10_SIGNING_SECRET` (preferred) or `SYSTEM_SIGNER_SECRET`
+   * at construction and is stable for the life of the process (see
+   * `loadServerKeypair`). Pure getter — no I/O, never throws.
+   */
   getServerPublicKey(): string {
     return this.serverKeypair.publicKey();
   }
 
-  /** Returns the active Stellar network passphrase for challenge verification. */
+  /**
+   * Returns the Stellar network passphrase challenges are built and verified
+   * against — `Networks.PUBLIC` when `STELLAR_NETWORK === 'MAINNET'`,
+   * `Networks.TESTNET` otherwise.
+   *
+   * Exposed so a caller building or checking a challenge outside this
+   * service uses the exact same network as `buildChallenge` /
+   * `verifyAndIssueToken`; a mismatch makes every verification fail. Pure
+   * getter — resolved once at construction.
+   */
   getNetworkPassphrase(): string {
     return this.networkPassphrase;
   }

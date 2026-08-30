@@ -1,5 +1,6 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import { ensureVendors } from '../prisma-helpers';
 import { Prisma } from '@prisma/client';
 import { createHmac } from 'crypto';
 import request from 'supertest';
@@ -174,6 +175,24 @@ describe('Admin DLQ Operations (issue #297)', () => {
 
   describe('POST /admin/dlq/:id/replay', () => {
     it('replays a submitAutoRelease operation', async () => {
+      // Replay translates the DLQ record's backend UUID to the contract's own
+      // u64 before calling auto_release, so the escrow row has to exist and
+      // carry the mapping.
+      await ensureVendors(prisma, 'vendor-replay');
+      await prisma.escrow.create({
+        data: {
+          id: 'escrow-replay-001',
+          contractEscrowId: 501n,
+          itemName: 'Replay Widget',
+          itemRef: 'replay-001',
+          amount: 100,
+          currency: 'USDC',
+          buyerAddress: 'buyer-replay',
+          vendorAddress: 'vendor-replay',
+          state: 'DELIVERED',
+        },
+      });
+
       const entry = await seedDlqEntry({
         operation: 'submitAutoRelease',
         escrowId: 'escrow-replay-001',
@@ -187,7 +206,7 @@ describe('Admin DLQ Operations (issue #297)', () => {
       expect(res.body.status).toBe('REPLAYED');
       expect(res.body.lastReplayTxHash).toBe('tx-hash-replayed-001');
       expect(contractService.submitAutoRelease).toHaveBeenCalledWith(
-        'escrow-replay-001',
+        501n,
         configService.get('AUTO_RELEASE_SOURCE_ADDRESS'),
       );
     });

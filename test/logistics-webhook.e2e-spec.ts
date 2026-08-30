@@ -8,6 +8,7 @@ import { ContractService } from '../src/stellar/contract.service';
 import { ensureVendors } from './prisma-helpers';
 
 describe('Logistics Webhook Delivery Update E2E (issue #61)', () => {
+  let nextContractEscrowId = 1n;
   let app: INestApplication;
   let prisma: PrismaService;
   let worker: TrackingPollWorker;
@@ -30,6 +31,7 @@ describe('Logistics Webhook Delivery Update E2E (issue #61)', () => {
     logisticsService = app.get(LogisticsService);
     contractService = app.get(ContractService);
 
+    nextContractEscrowId = 1n;
     await prisma.reset();
     // Escrow.vendorAddress is a foreign key onto VendorProfile.address (#475).
     await ensureVendors(prisma, 'vendor-address', 'vendor-address-2');
@@ -54,6 +56,7 @@ describe('Logistics Webhook Delivery Update E2E (issue #61)', () => {
         buyerAddress: 'buyer-address',
         vendorAddress: 'vendor-address',
         state: 'SHIPPED',
+        contractEscrowId: nextContractEscrowId++,
         trackingId: 'TRK-WEBHOOK-001',
         shippedAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000),
       },
@@ -67,7 +70,10 @@ describe('Logistics Webhook Delivery Update E2E (issue #61)', () => {
     await worker.run();
 
     expect(logisticsService.getStatus).toHaveBeenCalledWith('TRK-WEBHOOK-001');
-    expect(contractService.recordDelivery).toHaveBeenCalledWith(escrow.id);
+    expect(contractService.recordDelivery).toHaveBeenCalledWith(
+      escrow.contractEscrowId,
+      expect.any(String),
+    );
 
     const escrowAfter = await prisma.escrow.findUnique({
       where: { id: escrow.id },
@@ -87,6 +93,7 @@ describe('Logistics Webhook Delivery Update E2E (issue #61)', () => {
         buyerAddress: 'buyer-address',
         vendorAddress: 'vendor-address',
         state: 'SHIPPED',
+        contractEscrowId: nextContractEscrowId++,
         trackingId: 'TRK-DELIVERED-001',
         shippedAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000),
       },
@@ -101,6 +108,7 @@ describe('Logistics Webhook Delivery Update E2E (issue #61)', () => {
         buyerAddress: 'buyer-address-2',
         vendorAddress: 'vendor-address-2',
         state: 'SHIPPED',
+        contractEscrowId: nextContractEscrowId++,
         trackingId: 'TRK-IN-TRANSIT-001',
         shippedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
       },
@@ -140,6 +148,7 @@ describe('Logistics Webhook Delivery Update E2E (issue #61)', () => {
         buyerAddress: 'buyer-address',
         vendorAddress: 'vendor-address',
         state: 'SHIPPED',
+        contractEscrowId: nextContractEscrowId++,
         trackingId: 'TRK-ERROR-001',
         shippedAt: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000),
       },
@@ -164,6 +173,7 @@ describe('Logistics Webhook Delivery Update E2E (issue #61)', () => {
         buyerAddress: 'buyer-address',
         vendorAddress: 'vendor-address',
         state: 'SHIPPED',
+        contractEscrowId: nextContractEscrowId++,
         trackingId: null,
         shippedAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000),
       },
@@ -186,6 +196,7 @@ describe('Logistics Webhook Delivery Update E2E (issue #61)', () => {
         buyerAddress: 'buyer-address',
         vendorAddress: 'vendor-address',
         state: 'SHIPPED',
+        contractEscrowId: nextContractEscrowId++,
         trackingId: 'TRK-INSTANT-001',
         shippedAt: new Date(Date.now() - 6 * 24 * 60 * 60 * 1000),
       },

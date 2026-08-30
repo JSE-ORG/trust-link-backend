@@ -1,3 +1,4 @@
+import '../src/common/bigint-json';
 import * as dotenv from 'dotenv';
 import * as path from 'path';
 

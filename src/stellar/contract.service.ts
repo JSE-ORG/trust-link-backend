@@ -1,6 +1,7 @@
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import {
   Account,
+  Address,
   Contract,
   Keypair,
   nativeToScVal,
@@ -44,6 +45,23 @@ export interface StellarServer {
  * Note on @trustlink/contract-bindings: The @trustlink/contract-bindings package is
  * omitted from package.json, so direct @stellar/stellar-sdk invocation is used.
  */
+/**
+ * Encodes the contract's `ResolutionType` unit enum.
+ *
+ * `#[contracttype] pub enum ResolutionType { Release, Refund }` is a unit
+ * variant enum, which crosses the XDR boundary as a vec holding one symbol,
+ * not as a bare string. It is also PascalCase on-chain, while the backend's
+ * own vocabulary is SCREAMING_CASE, so the value has to be translated as well
+ * as re-shaped.
+ */
+function toResolutionType(resolution: 'RELEASE' | 'REFUND'): xdr.ScVal {
+  return xdr.ScVal.scvVec([
+    nativeToScVal(resolution === 'RELEASE' ? 'Release' : 'Refund', {
+      type: 'symbol',
+    }),
+  ]);
+}
+
 @Injectable()
 export class ContractService {
   constructor(
@@ -54,15 +72,35 @@ export class ContractService {
     private readonly config?: ConfigService,
   ) {}
 
-  /** Submits the on-chain dispute resolution transaction (`resolve_dispute`) and returns its hash. */
+  /**
+   * Submits the on-chain `resolve_dispute(caller, escrow_id: u64, resolution)`
+   * transaction and returns the submitted transaction hash.
+   *
+   * The contract calls `caller.require_auth()` and only accepts the admin as
+   * `caller`, so `callerAddress` must be the configured `ADMIN_ADDRESS` and
+   * the transaction is signed with that key. `resolution` picks who the
+   * escrowed funds go to — `RELEASE` to the vendor, `REFUND` to the buyer.
+   * Not idempotent at this layer: a second call after the dispute is already
+   * resolved fails on-chain. Rejects (and the failure is recorded to the
+   * DLQ) if the submission is not accepted.
+   */
   async resolveDispute(
-    escrowId: string,
+    contractEscrowId: bigint,
     resolution: 'RELEASE' | 'REFUND',
+    callerAddress: string,
   ): Promise<string> {
     return this.invokeContract(
       'resolve_dispute',
-      [nativeToScVal(escrowId), nativeToScVal(resolution)],
-      { escrowId, resolution },
+      [
+        new Address(callerAddress).toScVal(),
+        nativeToScVal(contractEscrowId, { type: 'u64' }),
+        toResolutionType(resolution),
+      ],
+      {
+        callerAddress,
+        contractEscrowId: contractEscrowId.toString(),
+        resolution,
+      },
     );
   }
 
@@ -73,7 +111,7 @@ export class ContractService {
    * with the current sequence number — preventing tx_bad_seq retry failures.
    */
   async submitAutoRelease(
-    escrowId: string,
+    contractEscrowId: bigint,
     sourceAddress: string,
     maxRetries = DEFAULT_AUTO_RELEASE_MAX_RETRIES,
   ): Promise<string> {
@@ -86,8 +124,11 @@ export class ContractService {
       try {
         return await this.invokeContract(
           'auto_release',
-          [nativeToScVal(escrowId)],
-          { sourceAddress, escrowId },
+          // `auto_release(env, escrow_id: u64)`. The type must be given
+          // explicitly: nativeToScVal on a bare value guesses, and the contract
+          // rejects anything that is not a u64.
+          [nativeToScVal(contractEscrowId, { type: 'u64' })],
+          { sourceAddress, contractEscrowId: contractEscrowId.toString() },
         );
       } catch (error) {
         if (error instanceof ContractCallFailedException) {
@@ -112,10 +153,20 @@ export class ContractService {
     throw new ContractCallFailedException('Max retries exceeded');
   }
 
-  /** Returns the current on-chain state of an escrow. */
+  /**
+   * Reads the current on-chain state of an escrow by its `u64` contract id.
+   *
+   * Read-only — no transaction, no signature. Returns
+   * `{ state: 'UNKNOWN', exists: false }` (rather than throwing) whenever the
+   * RPC server is not configured or the escrow cannot be read, so a caller
+   * must check `exists` before trusting `state`. `state` is the raw
+   * contract-side string, which is not guaranteed to match the backend's own
+   * escrow-state enum.
+   */
   async getEscrowState(
-    escrowId: string,
+    contractEscrowId: bigint,
   ): Promise<{ state: string; exists: boolean }> {
+    const escrowId = contractEscrowId.toString();
     if (!this.server) {
       return { state: 'UNKNOWN', exists: false };
     }
@@ -173,19 +224,53 @@ export class ContractService {
     }
   }
 
-  /** Submits an on-chain cancellation/refund transaction (`cancel_escrow`) and returns the transaction hash. */
-  async cancelEscrowOnChain(escrowId: string): Promise<string> {
-    return this.invokeContract('cancel_escrow', [nativeToScVal(escrowId)], {
-      escrowId,
-      refund: true,
-    });
+  /**
+   * Submits an on-chain cancellation/refund transaction (`cancel_escrow`) and
+   * returns the transaction hash.
+   *
+   * Contract signature is `cancel_escrow(env, caller: Address,
+   * escrow_id: u64)`, and it calls `caller.require_auth()`.
+   */
+  async cancelEscrowOnChain(
+    contractEscrowId: bigint,
+    callerAddress: string,
+  ): Promise<string> {
+    return this.invokeContract(
+      'cancel_escrow',
+      [
+        new Address(callerAddress).toScVal(),
+        nativeToScVal(contractEscrowId, { type: 'u64' }),
+      ],
+      {
+        callerAddress,
+        contractEscrowId: contractEscrowId.toString(),
+        refund: true,
+      },
+    );
   }
 
-  /** Records delivery on-chain (`record_delivery`) and returns the submitted transaction hash. */
-  async recordDelivery(escrowId: string): Promise<string> {
-    return this.invokeContract('record_delivery', [nativeToScVal(escrowId)], {
-      escrowId,
-    });
+  /**
+   * Records delivery on-chain (`record_delivery`) and returns the submitted
+   * transaction hash.
+   *
+   * The contract signature is `record_delivery(env, caller: Address,
+   * escrow_id: u64)`. It calls `caller.require_auth()` and then rejects the
+   * call outright unless `caller` equals the contract admin, so the address
+   * passed here must be the configured `ADMIN_ADDRESS` and the transaction
+   * must be signed by that key.
+   */
+  async recordDelivery(
+    contractEscrowId: bigint,
+    callerAddress: string,
+  ): Promise<string> {
+    return this.invokeContract(
+      'record_delivery',
+      [
+        new Address(callerAddress).toScVal(),
+        nativeToScVal(contractEscrowId, { type: 'u64' }),
+      ],
+      { callerAddress, contractEscrowId: contractEscrowId.toString() },
+    );
   }
 
   /**

@@ -194,8 +194,8 @@ describe('POST /escrow integration (issue #20)', () => {
     expect(response.body.data[0].amount).toBeGreaterThanOrEqual(
       response.body.data[1].amount,
     );
-    expect(response.body.data.every((item: any) => item.id !== undefined)).toBe(
-      true,
-    );
+    expect(
+      response.body.data.every((item: { id: string }) => item.id !== undefined),
+    ).toBe(true);
   });
 });

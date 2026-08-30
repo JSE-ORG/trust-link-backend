@@ -13,6 +13,7 @@ import { VendorProfileService } from '../../src/vendor/vendor-profile.service';
 import { VendorProfileRepository } from '../../src/vendor/vendor-profile.repository';
 import { CreateVendorProfileDto } from '../../src/vendor/dto/create-vendor-profile.dto';
 import { UpdateVendorProfileDto } from '../../src/vendor/dto/update-vendor-profile.dto';
+import { UpdateNotificationPreferencesDto } from '../../src/vendor/dto/update-notification-preferences.dto';
 
 // ── fixture factory ────────────────────────────────────────────────────────
 
@@ -50,6 +51,38 @@ const createDto: CreateVendorProfileDto = {
 
 const updateDto: UpdateVendorProfileDto = {
   businessName: 'Acme Electronics',
+};
+
+const notificationPreferences: UpdateNotificationPreferencesDto = {
+  notifyOnDelivery: false,
+  notifyOnDelay: true,
+  notificationChannels: ['EMAIL', 'SMS'],
+  webhookUrl: 'https://acme.example/webhooks/delivery',
+};
+
+const trackingSettings = {
+  id: 'tracking-1',
+  vendorAddress: VENDOR_ADDRESS,
+  enableTracking: true,
+  trackingProvider: null,
+  trackingApiKey: null,
+  autoUpdateTracking: true,
+  trackingUpdateInterval: 60,
+  notifyOnDelivery: false,
+  notifyOnDelay: true,
+  notifyOnException: true,
+  delayThresholdHours: 24,
+  deliveryConfirmation: true,
+  requireSignature: false,
+  insuranceRequired: false,
+  insuranceValue: null,
+  customTrackingRules: null,
+  webhookUrl: 'https://acme.example/webhooks/delivery',
+  webhookSecret: null,
+  notificationChannels: ['EMAIL', 'SMS'],
+  trackingHistoryRetentionDays: 90,
+  createdAt: new Date('2026-01-01T00:00:00.000Z'),
+  updatedAt: new Date('2026-01-01T00:00:00.000Z'),
 };
 
 // ── test suite ─────────────────────────────────────────────────────────────
@@ -213,6 +246,83 @@ describe('VendorProfileService (issue #287)', () => {
       });
 
       expect(result.businessName).toBe('Updated Name');
+    });
+  });
+
+  describe('updateNotificationPreferences()', () => {
+    it('updates and returns preferences for an existing vendor', async () => {
+      repository.findByAddress.mockResolvedValue(makeProfile());
+      repository.updateNotificationPreferences.mockResolvedValue({
+        trackingSettings,
+      });
+
+      const result = await service.updateNotificationPreferences(
+        VENDOR_ADDRESS,
+        notificationPreferences,
+      );
+
+      expect(repository.updateNotificationPreferences).toHaveBeenCalledWith(
+        VENDOR_ADDRESS,
+        notificationPreferences,
+      );
+      expect(result.trackingSettings.notificationChannels).toEqual([
+        'EMAIL',
+        'SMS',
+      ]);
+      expect(result.trackingSettings.notifyOnDelivery).toBe(false);
+    });
+
+    it('rejects empty or undefined-only preference updates without querying the repository', async () => {
+      const emptyUpdates: UpdateNotificationPreferencesDto[] = [
+        {},
+        { notifyOnDelivery: undefined, webhookUrl: undefined },
+      ];
+
+      for (const dto of emptyUpdates) {
+        await expect(
+          service.updateNotificationPreferences(VENDOR_ADDRESS, dto),
+        ).rejects.toThrow('No notification preference fields provided');
+      }
+
+      expect(repository.findByAddress).not.toHaveBeenCalled();
+      expect(repository.updateNotificationPreferences).not.toHaveBeenCalled();
+    });
+
+    it('rejects preference updates for a vendor without a profile', async () => {
+      repository.findByAddress.mockResolvedValue(null);
+
+      await expect(
+        service.updateNotificationPreferences(
+          VENDOR_ADDRESS,
+          notificationPreferences,
+        ),
+      ).rejects.toThrow(NotFoundException);
+
+      expect(repository.updateNotificationPreferences).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getNotificationPreferences()', () => {
+    it('returns the notification preferences supplied by the repository', async () => {
+      const preferences = {
+        notifyOnDelivery: false,
+        notifyOnDelay: true,
+        notifyOnException: true,
+        notificationChannels: ['EMAIL', 'SMS'],
+        webhookUrl: 'https://acme.example/webhooks/delivery',
+        enableTracking: true,
+        delayThresholdHours: 24,
+        deliveryConfirmation: true,
+        trackingHistoryRetentionDays: 90,
+      };
+      repository.findNotificationPreferences.mockResolvedValue(preferences);
+
+      await expect(
+        service.getNotificationPreferences(VENDOR_ADDRESS),
+      ).resolves.toEqual(preferences);
+      expect(repository.findNotificationPreferences).toHaveBeenCalledWith(
+        VENDOR_ADDRESS,
+      );
     });
   });
 });

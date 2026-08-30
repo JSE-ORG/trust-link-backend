@@ -16,6 +16,7 @@ import { configValidationSchema } from './config.schema';
 const BASE_ENV: Record<string, string> = {
   DATABASE_URL: 'postgresql://test:test@localhost:5432/test',
   SEP10_JWT_SECRET: 'test-jwt-secret-32-characters-long!!',
+  PRESIGN_SECRET: 'test-presign-secret-64hexcharacters-for-hmac',
   SYSTEM_SIGNER_SECRET:
     'SAIJDXETR5B7YFPH7SUOISWVBHHSI46JLYFDCWDMEV2L46XAHASPP35C',
   ADMIN_ADDRESS: 'GBEFNNUJ3IRKU2JEAMWBA7YI52HF2GYPHMDXF37T75GHK5KU2Y2QSUAJ',

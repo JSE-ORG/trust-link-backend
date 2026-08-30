@@ -19,6 +19,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '../config/config.service';
 import { EscrowRepository } from '../escrow/escrow.repository';
 import { NotificationsService } from '../notifications/notifications.service';
+import { EscrowRecord } from '../prisma/prisma.service';
 import { StellarWebhookDto } from './dto/stellar-webhook.dto';
 import { StellarWebhookService } from './stellar-webhook.service';
 
@@ -26,19 +27,11 @@ import { StellarWebhookService } from './stellar-webhook.service';
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Build a minimal EscrowRecord-like object for test fixtures. */
-function makeEscrow(
-  overrides: Partial<{
-    id: string;
-    state: string;
-    amount: number;
-    currency: string;
-    vendorAddress: string;
-    buyerAddress: string;
-  }> = {},
-) {
+/** Build an EscrowRecord for test fixtures. */
+function makeEscrow(overrides: Partial<EscrowRecord> = {}): EscrowRecord {
   return {
     id: 'escrow-1',
+    contractEscrowId: null,
     state: 'CREATED',
     // Plain number – Number(500) === 500 so the service's Number(escrow.amount) works correctly.
     amount: 500,
@@ -125,11 +118,11 @@ describe('StellarWebhookService – handlePayment (issue #396)', () => {
     // Silence logger output during tests but capture calls for assertions.
 
     loggerWarnSpy = jest
-      .spyOn((service as any).logger, 'warn')
+      .spyOn(service['logger'], 'warn')
       .mockImplementation(() => undefined);
 
     loggerLogSpy = jest
-      .spyOn((service as any).logger, 'log')
+      .spyOn(service['logger'], 'log')
       .mockImplementation(() => undefined);
   });
 
@@ -151,11 +144,11 @@ describe('StellarWebhookService – handlePayment (issue #396)', () => {
       amount: 500,
       currency: 'USDC',
     });
-    escrowRepository.findByVendor.mockResolvedValue([escrow] as any);
+    escrowRepository.findByVendor.mockResolvedValue([escrow]);
     escrowRepository.updateState.mockResolvedValue({
       ...escrow,
       state: 'FUNDED',
-    } as any);
+    });
 
     const dto = makePaymentDto({ amount: '500.0000000', asset_code: 'USDC' });
     await runPayment(dto);
@@ -190,7 +183,7 @@ describe('StellarWebhookService – handlePayment (issue #396)', () => {
       amount: 500,
       currency: 'USDC',
     });
-    escrowRepository.findByVendor.mockResolvedValue([escrow] as any);
+    escrowRepository.findByVendor.mockResolvedValue([escrow]);
 
     const dto = makePaymentDto({ amount: '499.9999999', asset_code: 'USDC' });
     await runPayment(dto);
@@ -210,7 +203,7 @@ describe('StellarWebhookService – handlePayment (issue #396)', () => {
       amount: 500,
       currency: 'USDC',
     });
-    escrowRepository.findByVendor.mockResolvedValue([escrow] as any);
+    escrowRepository.findByVendor.mockResolvedValue([escrow]);
 
     const dto = makePaymentDto({ amount: '500.0000001', asset_code: 'USDC' });
     await runPayment(dto);
@@ -230,7 +223,7 @@ describe('StellarWebhookService – handlePayment (issue #396)', () => {
       amount: 500,
       currency: 'USDC',
     });
-    escrowRepository.findByVendor.mockResolvedValue([escrow] as any);
+    escrowRepository.findByVendor.mockResolvedValue([escrow]);
 
     const dto = makePaymentDto({ amount: '500.0000000', asset_code: 'XLM' });
     await runPayment(dto);
@@ -247,11 +240,11 @@ describe('StellarWebhookService – handlePayment (issue #396)', () => {
       amount: 500,
       currency: 'USDC',
     });
-    escrowRepository.findByVendor.mockResolvedValue([escrow] as any);
+    escrowRepository.findByVendor.mockResolvedValue([escrow]);
     escrowRepository.updateState.mockResolvedValue({
       ...escrow,
       state: 'FUNDED',
-    } as any);
+    });
 
     const dto = makePaymentDto({ amount: '500.0000000', asset_code: 'usdc' });
     await runPayment(dto);
@@ -269,11 +262,11 @@ describe('StellarWebhookService – handlePayment (issue #396)', () => {
       amount: 100,
       currency: 'XLM',
     });
-    escrowRepository.findByVendor.mockResolvedValue([escrow] as any);
+    escrowRepository.findByVendor.mockResolvedValue([escrow]);
     escrowRepository.updateState.mockResolvedValue({
       ...escrow,
       state: 'FUNDED',
-    } as any);
+    });
 
     const dto = makePaymentDto({
       amount: '100.0000000',
@@ -297,7 +290,7 @@ describe('StellarWebhookService – handlePayment (issue #396)', () => {
       amount: 500,
       currency: 'USDC',
     });
-    escrowRepository.findByVendor.mockResolvedValue([escrow] as any);
+    escrowRepository.findByVendor.mockResolvedValue([escrow]);
 
     const dto = makePaymentDto({ amount: '500.0000000', asset_code: 'USDC' });
     await runPayment(dto);

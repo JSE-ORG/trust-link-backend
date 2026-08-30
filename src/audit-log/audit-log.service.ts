@@ -29,7 +29,15 @@ export class AuditLogService {
     return record;
   }
 
-  /** Returns all recorded admin actions in insertion order. */
+  /**
+   * Returns a snapshot copy of every recorded admin action, oldest first.
+   *
+   * The array is a shallow copy, so a caller cannot mutate the audit trail
+   * through the returned reference (the entry objects themselves are shared,
+   * not cloned). The store is in-memory and per-process: it is not persisted
+   * and does not survive a restart, and in a multi-replica deployment each
+   * replica sees only its own actions.
+   */
   findAll(): AuditLogEntry[] {
     return [...this.log];
   }

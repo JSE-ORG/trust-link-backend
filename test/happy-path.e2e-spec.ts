@@ -6,6 +6,7 @@ import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { ContractService } from '../src/stellar/contract.service';
 import { AutoReleaseWorker } from '../src/workers/auto-release.worker';
+import { EscrowRepository } from '../src/escrow/escrow.repository';
 import { EscrowService } from '../src/escrow/escrow.service';
 import { bearer } from './auth-helper';
 
@@ -18,6 +19,7 @@ const BUYER_ADDRESS =
 describe('Happy-Path E2E — full escrow lifecycle (issue #56)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
+  let escrowRepository: EscrowRepository;
   let contractService: ContractService;
   let autoReleaseWorker: AutoReleaseWorker;
   let escrowService: EscrowService;
@@ -58,6 +60,7 @@ describe('Happy-Path E2E — full escrow lifecycle (issue #56)', () => {
     await app.init();
 
     prisma = app.get(PrismaService);
+    escrowRepository = app.get(EscrowRepository);
     contractService = app.get(ContractService);
     autoReleaseWorker = app.get(AutoReleaseWorker);
     escrowService = app.get(EscrowService);
@@ -159,17 +162,10 @@ describe('Happy-Path E2E — full escrow lifecycle (issue #56)', () => {
     expect(shipped?.shippedAt).toBeTruthy();
 
     // ── 5. Delivery recorded (simulates TrackingPollWorker outcome) ────────
-    // The worker calls escrowRepository.markDelivered internally. We drive it
-    // directly via PrismaService to avoid depending on the logistics API.
-    const deliveredAt = new Date();
-    await prisma.escrow.update({
-      where: { id: escrowId },
-      data: {
-        state: 'DELIVERED',
-        deliveredAt,
-        deliveryRecordedAt: deliveredAt,
-      },
-    });
+    // Driven through the same repository method the worker calls, rather than
+    // a raw Prisma update, so the row this test hands to auto-release is the
+    // row production would produce (#395).
+    await escrowRepository.markDelivered(escrowId, new Date());
 
     const delivered = await prisma.escrow.findUnique({
       where: { id: escrowId },
@@ -177,32 +173,63 @@ describe('Happy-Path E2E — full escrow lifecycle (issue #56)', () => {
     expect(delivered?.state).toBe('DELIVERED');
     expect(delivered?.deliveredAt).toBeTruthy();
 
-    // ── 6. Auto-release worker transitions escrow to COMPLETED ─────────────
-    // Back-date deliveredAt past the 48-hour threshold so the worker picks it up.
+    // ── 6. Auto-release worker submits the transaction ─────────────────────
+    // Back-date deliveredAt past the 48-hour threshold so the worker picks it
+    // up. The state stays DELIVERED: this step used to roll it back to SHIPPED
+    // to make the worker fire, which was the eligibility bug (#395) being
+    // papered over in the one test that drives the whole lifecycle.
     const pastDelivery = new Date(Date.now() - 49 * 60 * 60 * 1000);
+    // The on-chain escrow is minted by the contract with its own u64, and
+    // every contract call addresses it by that rather than this row's UUID.
+    // In production the mapping is populated when the on-chain escrow is
+    // matched to this row; the API flow above never sets it, so the test
+    // supplies it here.
+    const CONTRACT_ESCROW_ID = 1n;
     await prisma.escrow.update({
       where: { id: escrowId },
-      data: { deliveredAt: pastDelivery, state: 'SHIPPED' },
+      data: { deliveredAt: pastDelivery, contractEscrowId: CONTRACT_ESCROW_ID },
     });
 
     await autoReleaseWorker.run();
 
     expect(contractService.submitAutoRelease).toHaveBeenCalledWith(
-      escrowId,
+      CONTRACT_ESCROW_ID,
       expect.any(String),
     );
 
-    const completed = await prisma.escrow.findUnique({
+    // Submission is not confirmation: the worker records the hash and stops.
+    const submitted = await prisma.escrow.findUnique({
       where: { id: escrowId },
     });
-    expect(completed?.state).toBe('COMPLETED');
-    expect(completed?.autoReleaseTxHash).toBe('tx-hash-auto-release-001');
+    expect(submitted?.state).toBe('DELIVERED');
+    expect(submitted?.autoReleaseTxHash).toBe('tx-hash-auto-release-001');
 
-    // ── 7. Notification rows written for all key transitions ───────────────
+    // ── 7. The AutoReleased chain event finalises the escrow ───────────────
+    // In production SorobanPollerService observes the contract event and calls
+    // this. It is what confirms the transaction landed, so it owns the
+    // terminal transition and the completion notification.
+    await escrowService.syncStateFromChain({
+      eventType: 'AutoReleased',
+      escrowId,
+      txHash: 'tx-hash-auto-release-001',
+    });
+
+    const released = await prisma.escrow.findUnique({
+      where: { id: escrowId },
+    });
+    expect(released?.state).toBe('RELEASED');
+    expect(released?.autoReleaseTxHash).toBe('tx-hash-auto-release-001');
+
+    // ── 8. Notification rows written for all key transitions ───────────────
+    // COMPLETED is asserted last because notifyCompleted is fired without
+    // await on the sync path, so the row lands just after syncStateFromChain
+    // resolves.
+    await new Promise((resolve) => setImmediate(resolve));
     const notifications = await prisma.notification.findMany();
     const types = notifications.map((n) => n.type);
     expect(types).toContain('FUNDED');
     expect(types).toContain('SHIPPED');
+    expect(types).toContain('COMPLETED');
   });
 
   // ── Buyer contact: email-only ──────────────────────────────────────────────

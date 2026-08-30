@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { AnalyticsService } from './analytics.service';
 import { EscrowState, PrismaService } from '../../prisma/prisma.service';
 import { ensureVendors } from '../../../test/prisma-helpers';
+import { DailyVolumeDataDto } from './analytics.dto';
 
 describe('AnalyticsService', () => {
   let service: AnalyticsService;
@@ -719,7 +720,7 @@ describe('AnalyticsService', () => {
 
   describe('fillDateGaps', () => {
     it('should fill missing dates with zero values', () => {
-      const dailyMap = new Map<string, any>();
+      const dailyMap = new Map<string, DailyVolumeDataDto>();
       dailyMap.set('2024-01-01', {
         date: '2024-01-01',
         totalVolume: 100,
@@ -742,7 +743,7 @@ describe('AnalyticsService', () => {
       const endDate = new Date('2024-01-05');
 
       // Access private method using bracket notation
-      const filledData = (service as any).fillDateGaps(
+      const filledData = service['fillDateGaps'](
         dailyMap,
         startDate,
         endDate,
@@ -764,14 +765,14 @@ describe('AnalyticsService', () => {
   describe('formatDateInTimezone', () => {
     it('should format date correctly in UTC', () => {
       const date = new Date('2024-01-15T12:30:00Z');
-      const formatted = (service as any).formatDateInTimezone(date, 'UTC');
+      const formatted = service['formatDateInTimezone'](date, 'UTC');
       expect(formatted).toBe('2024-01-15');
     });
 
     it('attributes 2024-01-15T00:30Z to 2024-01-14 in America/New_York (UTC-5)', () => {
       // 00:30 UTC on Jan 15 is 19:30 on Jan 14 in New York (EST = UTC-5)
       const date = new Date('2024-01-15T00:30:00Z');
-      const formatted = (service as any).formatDateInTimezone(
+      const formatted = service['formatDateInTimezone'](
         date,
         'America/New_York',
       );
@@ -781,10 +782,10 @@ describe('AnalyticsService', () => {
     it('attributes 2024-01-14T23:30Z to 2024-01-15 in Asia/Tokyo (UTC+9)', () => {
       // 23:30 UTC on Jan 14 is 08:30 on Jan 15 in Tokyo (JST = UTC+9)
       const date = new Date('2024-01-14T23:30:00Z');
-      const formatted = (service as any).formatDateInTimezone(
-        date,
-        'Asia/Tokyo',
-      );
+      const formatted = (
+        service as unknown as { formatDateInTimezone: (d: Date, tz: string) => string }
+      ).formatDateInTimezone(date, 'Asia/Tokyo');
+      const formatted = service['formatDateInTimezone'](date, 'Asia/Tokyo');
       expect(formatted).toBe('2024-01-15');
     });
   });

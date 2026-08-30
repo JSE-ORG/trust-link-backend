@@ -146,6 +146,20 @@ export const configValidationSchema = Joi.object({
       otherwise: Joi.optional(),
     }),
   SEP10_JWT_SECRET: Joi.string().min(32).required(),
+  // Secret used to sign simulated S3 pre-signed evidence URLs. Required so
+  // the signature is reproducible across restarts and replicas rather than
+  // regenerate-per-process; refused at startup rather than defaulting to a
+  // generated or literal value (same pattern as SEP10_SIGNING_SECRET). Use a
+  // cryptographically random string in production. Real S3 integration is
+  // separate work.
+  PRESIGN_SECRET: Joi.string()
+    .required()
+    .messages({
+      'any.required':
+        'Config validation error: PRESIGN_SECRET is required. Set it so ' +
+        'presigned evidence URLs are reproducible across restarts and ' +
+        'replicas.',
+    }),
   // Stellar system signer secret key — validated by Keypair.fromSecret for checksum
   SYSTEM_SIGNER_SECRET: stellarSecretKey.required(),
   // Secret key used to sign SEP-10 challenge transactions. Its public key

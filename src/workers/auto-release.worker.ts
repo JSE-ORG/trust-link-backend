@@ -11,6 +11,17 @@ import { ConfigService } from '../config/config.service';
 
 const EVERY_5_MINUTES = 5 * 60 * 1000;
 
+/**
+ * States an escrow can no longer move out of. Mirrors the set in
+ * `escrow.service.ts`, which gates the chain-event handlers.
+ */
+const TERMINAL_STATES = new Set<string>([
+  'COMPLETED',
+  'RELEASED',
+  'REFUNDED',
+  'CANCELLED',
+]);
+
 @Injectable()
 export class AutoReleaseWorker implements OnModuleInit, OnApplicationShutdown {
   private readonly logger = new Logger(AutoReleaseWorker.name);
@@ -24,26 +35,22 @@ export class AutoReleaseWorker implements OnModuleInit, OnApplicationShutdown {
   ) {}
 
   /**
-   * Returns the configured auto-release signing address, or throws.
+   * Returns the configured auto-release signing address.
    *
-   * Resolved on use through `ConfigService`, matching `dlq.controller.ts`.
-   * `AUTO_RELEASE_SOURCE_ADDRESS` is deliberately optional (issue #500's
-   * technical notes), so this cannot be a constructor dependency: throwing at
-   * construction would make Nest refuse to instantiate this worker whenever
-   * the variable is unset, taking down the whole application boot instead of
-   * just the auto-release path.
+   * Delegates to `ConfigService.requireAutoReleaseSourceAddress` (#672) — the
+   * single copy of this check, shared with `dlq.controller.ts`. On the unset
+   * path it throws `AutoReleaseSourceNotConfiguredError` (an `Error`
+   * subclass), which this worker's own cycle handler catches and logs, then
+   * clears the auto-release claim — same observable behaviour as before,
+   * just a named error and a slightly different message.
+   *
+   * Resolved on use, not as a constructor dependency:
+   * `AUTO_RELEASE_SOURCE_ADDRESS` is deliberately optional (#500), so a
+   * constructor throw would block the whole application boot when it is
+   * unset, not just the auto-release path.
    */
   private requireAutoReleaseSource(): string {
-    const address = this.configService.get<string>(
-      'AUTO_RELEASE_SOURCE_ADDRESS',
-    );
-    if (!address) {
-      throw new Error(
-        'AUTO_RELEASE_SOURCE_ADDRESS is not configured; refusing to submit ' +
-          'auto-release transactions.',
-      );
-    }
-    return address;
+    return this.configService.requireAutoReleaseSourceAddress();
   }
 
   onModuleInit(): void {
@@ -75,14 +82,43 @@ export class AutoReleaseWorker implements OnModuleInit, OnApplicationShutdown {
       eligible =
         await this.escrowRepository.findAutoReleaseEligible(referenceTime);
 
+      // Batch the dispute lookup so that we issue a single query for the whole
+      // batch instead of one query per eligible escrow.
+      const eligibleIds = eligible.map((escrow) => escrow.id);
+      const disputes =
+        eligibleIds.length > 0
+          ? await this.disputeRepository.findMany({
+              where: { escrowId: { in: eligibleIds } },
+            })
+          : [];
+      const disputedEscrowIds = new Set(
+        disputes.map((dispute) => dispute.escrowId),
+      );
+
       for (const escrow of eligible) {
         try {
-          const dispute = await this.disputeRepository.findByEscrow(escrow.id);
-          if (dispute) {
+          if (disputedEscrowIds.has(escrow.id)) {
             continue;
           }
 
-          if (escrow.state === 'COMPLETED' || escrow.autoReleaseTxHash) {
+          // Belt and braces against a stale snapshot: findAutoReleaseEligible
+          // already excludes both of these, but two concurrent runs share one
+          // snapshot, and the chain event may have finalised the escrow since.
+          if (TERMINAL_STATES.has(escrow.state) || escrow.autoReleaseTxHash) {
+            continue;
+          }
+
+          // `auto_release(env, escrow_id: u64)` addresses the escrow by the
+          // contract's own id, not this row's UUID. Without the mapping there
+          // is no call to make, and guessing would target another escrow.
+          if (escrow.contractEscrowId === null) {
+            this.logger.warn(
+              JSON.stringify({
+                msg: 'auto_release.unmapped_escrow',
+                escrowId: escrow.id,
+                eventType: 'auto_release',
+              }),
+            );
             continue;
           }
 
@@ -100,10 +136,13 @@ export class AutoReleaseWorker implements OnModuleInit, OnApplicationShutdown {
 
           try {
             const txHash = await this.contractService.submitAutoRelease(
-              escrow.id,
+              escrow.contractEscrowId,
               this.requireAutoReleaseSource(),
             );
-            await this.escrowRepository.markAutoReleaseCompleted(
+            // Record the submission only. The AutoReleased chain event
+            // owns the terminal transition and the completion notification;
+            // see EscrowRepository.recordAutoReleaseSubmission.
+            await this.escrowRepository.recordAutoReleaseSubmission(
               escrow.id,
               txHash,
             );

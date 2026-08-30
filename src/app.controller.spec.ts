@@ -137,6 +137,29 @@ describe('AppController', () => {
       expect(typeof body.durationMs).toBe('number');
     });
 
+    /**
+     * Regression guard for #563. The probe is polled by a load balancer on a
+     * short interval, so the query has to stay bounded. `findMany({})` returns
+     * every escrow row, which was cheap against the in-memory PrismaService
+     * fake and is an unbounded `SELECT *` against the real client.
+     */
+    it('queries the database with a bounded query, not every escrow row', async () => {
+      fetchSpy = jest
+        .spyOn(globalThis, 'fetch')
+        .mockResolvedValue({ ok: true } as never);
+
+      const res = createMockResponse();
+      await appController.getReadiness(res);
+
+      expect(escrowFindManyMock).toHaveBeenCalledTimes(1);
+      const args = escrowFindManyMock.mock.calls[0][0] as {
+        take?: number;
+        select?: Record<string, boolean>;
+      };
+      expect(args.take).toBe(1);
+      expect(args.select).toEqual({ id: true });
+    });
+
     it('returns 503 while the database is down', async () => {
       escrowFindManyMock.mockRejectedValue(new Error('connection refused'));
       fetchSpy = jest

@@ -66,6 +66,12 @@ describe('CacheService (issue #285) — Redis mode', () => {
       const result = await service.get('missing-key');
       expect(result).toBeNull();
     });
+
+    it('returns null when Redis cannot read the key', async () => {
+      redisMock.get.mockRejectedValue(new Error('connection lost'));
+
+      await expect(service.get('unavailable-key')).resolves.toBeNull();
+    });
   });
 
   describe('set()', () => {
@@ -90,6 +96,35 @@ describe('CacheService (issue #285) — Redis mode', () => {
         120,
       );
     });
+
+    it('handles a Redis write failure without claiming the value was cached', async () => {
+      redisMock.set.mockRejectedValue(new Error('write failed'));
+
+      await expect(service.set('unavailable-key', 'value')).resolves.toBeUndefined();
+      expect(redisMock.set).toHaveBeenCalledWith(
+        'unavailable-key',
+        JSON.stringify('value'),
+        'EX',
+        60,
+      );
+    });
+  });
+
+  describe('ping()', () => {
+    it.each([
+      ['PONG', 'ok'],
+      ['unexpected reply', 'down'],
+    ])('returns %s state for a Redis reply of %s', async (reply, expected) => {
+      redisMock.ping.mockResolvedValue(reply);
+
+      await expect(service.ping()).resolves.toBe(expected);
+    });
+
+    it('returns down when Redis ping fails', async () => {
+      redisMock.ping.mockRejectedValue(new Error('unreachable'));
+
+      await expect(service.ping()).resolves.toBe('down');
+    });
   });
 
   describe('del()', () => {
@@ -103,6 +138,12 @@ describe('CacheService (issue #285) — Redis mode', () => {
       redisMock.del.mockResolvedValue(0);
       await service.del('another-key');
       expect(redisMock.del).toHaveBeenCalledWith('another-key');
+    });
+
+    it('handles a Redis delete failure', async () => {
+      redisMock.del.mockRejectedValue(new Error('delete failed'));
+
+      await expect(service.del('unavailable-key')).resolves.toBeUndefined();
     });
   });
 

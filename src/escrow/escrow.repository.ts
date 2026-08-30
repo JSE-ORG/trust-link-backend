@@ -8,7 +8,10 @@ import {
   toEscrowRecord,
 } from '../prisma/prisma.service';
 import { CreateEscrowDto } from './dto/create-escrow.dto';
-import { ESCROW_CACHE_TTL_SECONDS } from './escrow.constants';
+import {
+  AUTO_RELEASE_WINDOW_HOURS,
+  ESCROW_CACHE_TTL_SECONDS,
+} from './escrow.constants';
 import {
   AutoReleaseEligibleResult,
   EventsResult,
@@ -191,6 +194,25 @@ export class EscrowRepository {
     return toEscrowRecord(result);
   }
 
+  /**
+   * Resolves a Soroban contract escrow id (`u64`) to the backend escrow's UUID.
+   *
+   * The contract mints its own identifier from an on-chain counter and the
+   * backend mints a UUID, so inbound chain events carry an id this side cannot
+   * use directly. `contractEscrowId` is the only join between them, and it is
+   * unique, so at most one row can match. Returns null when the on-chain escrow
+   * has not been mapped to a backend row yet.
+   */
+  async findIdByContractEscrowId(
+    contractEscrowId: bigint,
+  ): Promise<string | null> {
+    const row = await this.prisma.escrow.findUnique({
+      where: { contractEscrowId },
+      select: { id: true },
+    });
+    return row?.id ?? null;
+  }
+
   /** Transitions the escrow to COMPLETED and invalidates the cache. */
   async markCompleted(id: string): Promise<EscrowRecord> {
     const result = await this.prisma.escrow.update({
@@ -206,16 +228,6 @@ export class EscrowRepository {
     const result = await this.prisma.escrow.update({
       where: { id },
       data: { state: 'REFUNDED' },
-    });
-    await this.invalidate(id);
-    return toEscrowRecord(result);
-  }
-
-  /** Transitions the escrow to RELEASED and invalidates the cache. */
-  async markReleased(id: string): Promise<EscrowRecord> {
-    const result = await this.prisma.escrow.update({
-      where: { id },
-      data: { state: 'RELEASED' },
     });
     await this.invalidate(id);
     return toEscrowRecord(result);
@@ -242,10 +254,19 @@ export class EscrowRepository {
   }
 
   /**
-   * Transitions the escrow to COMPLETED and records the auto-release
-   * transaction hash and submission timestamp, then invalidates the cache.
+   * Records a submitted auto-release transaction without changing `state`.
+   *
+   * Submission is not confirmation. The worker knows only that the network
+   * accepted the transaction; whether it lands is decided on chain, and the
+   * `AutoReleased` event is what says so. Marking a terminal state here would
+   * make an escrow terminal on the strength of a transaction that may still
+   * fail, and would then cause `syncStateFromChain` to skip the real event as
+   * `terminal_state` — taking the completion notification with it.
+   *
+   * `autoReleaseTxHash` alone is enough to keep the escrow out of
+   * {@link findAutoReleaseEligible}, so no resubmission can follow.
    */
-  async markAutoReleaseCompleted(
+  async recordAutoReleaseSubmission(
     id: string,
     txHash: string,
     submittedAt = new Date(),
@@ -253,7 +274,6 @@ export class EscrowRepository {
     const result = await this.prisma.escrow.update({
       where: { id },
       data: {
-        state: 'COMPLETED',
         autoReleaseSubmittedAt: submittedAt,
         autoReleaseTxHash: txHash,
       },
@@ -283,30 +303,40 @@ export class EscrowRepository {
    * used by the tracking poll worker to check for delivery updates.
    */
   findShippedWithTracking(): Promise<EscrowRecord[]> {
+    // Both predicates are in the `where` so Postgres can use the whole
+    // `@@index([state, trackingId])` — previously the `trackingId` half ran
+    // as a JS `.filter` after every SHIPPED row had already been loaded and
+    // transferred (#669). `not: null` (never `not: undefined`) is what emits
+    // `IS NOT NULL`.
     return this.prisma.escrow
-      .findMany({ where: { state: 'SHIPPED' } })
-      .then((escrows) =>
-        escrows
-          .filter((escrow) => Boolean(escrow.trackingId))
-          .map(toEscrowRecord),
-      );
+      .findMany({ where: { state: 'SHIPPED', trackingId: { not: null } } })
+      .then((escrows) => escrows.map(toEscrowRecord));
   }
 
   /**
-   * Returns SHIPPED escrows whose deliveredAt is at or before the given
-   * referenceTime and have no open dispute or existing auto-release transaction.
-   * The caller (AutoReleaseService) is responsible for computing the cutoff.
+   * Returns DELIVERED escrows whose deliveredAt is at or before
+   * `referenceTime - AUTO_RELEASE_WINDOW_HOURS`, with no open dispute and no
+   * existing or in-flight auto-release transaction. Callers pass the reference
+   * time (normally now); this method derives the cutoff from it.
+   *
+   * The state predicate must stay in step with {@link markDelivered}, which is
+   * the only writer of `deliveredAt` and sets `state: 'DELIVERED'` in the same
+   * update. Querying any other state alongside a non-null `deliveredAt` asks
+   * for a combination the application cannot produce, so the query matches
+   * nothing and auto-release silently never fires (issue #395).
    *
    * @returns an {@link AutoReleaseEligibleResult} of eligible escrow records.
    */
   findAutoReleaseEligible(
     referenceTime = new Date(),
   ): Promise<AutoReleaseEligibleResult> {
-    const cutoff = new Date(referenceTime.getTime() - 48 * 60 * 60 * 1000);
+    const cutoff = new Date(
+      referenceTime.getTime() - AUTO_RELEASE_WINDOW_HOURS * 60 * 60 * 1000,
+    );
     return this.prisma.escrow
       .findMany({
         where: {
-          state: 'SHIPPED',
+          state: 'DELIVERED',
           deliveredAt: { lte: cutoff },
           disputeId: null,
           autoReleaseTxHash: null,

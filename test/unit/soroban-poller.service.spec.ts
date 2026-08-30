@@ -38,14 +38,15 @@ function rawEvent(id: string, pagingToken: string) {
   };
 }
 
-function parsedEventFor(escrowId: string) {
+function parsedEventFor(contractEscrowId: bigint | number | string) {
   return {
     contractId: 'CONTRACT',
     type: 'contract',
     ledger: 100,
     name: 'Funded',
     topics: ['Escrow', 'Funded'],
-    data: { escrowId },
+    // The contract emits `escrow_id: u64`, not `escrowId: string`.
+    data: { escrow_id: contractEscrowId },
   };
 }
 
@@ -84,6 +85,8 @@ describe('SorobanPollerService.poll (issue #554)', () => {
 
     escrowService = {
       syncStateFromChain: jest.fn().mockResolvedValue({ skipped: false }),
+      // The poller resolves the contract's u64 to the backend UUID first.
+      findIdByContractEscrowId: jest.fn().mockResolvedValue('escrow-1'),
     } as unknown as jest.Mocked<EscrowService>;
 
     dlqService = {
@@ -126,9 +129,9 @@ describe('SorobanPollerService.poll (issue #554)', () => {
     ];
     mockRpcResponse(events);
     blockchainListener.parseEvent
-      .mockReturnValueOnce(parsedEventFor('escrow-1'))
-      .mockReturnValueOnce(parsedEventFor('escrow-2'))
-      .mockReturnValueOnce(parsedEventFor('escrow-3'));
+      .mockReturnValueOnce(parsedEventFor(1n))
+      .mockReturnValueOnce(parsedEventFor(1n))
+      .mockReturnValueOnce(parsedEventFor(1n));
 
     await service.poll();
 
@@ -145,9 +148,9 @@ describe('SorobanPollerService.poll (issue #554)', () => {
     ];
     mockRpcResponse(events);
     blockchainListener.parseEvent
-      .mockReturnValueOnce(parsedEventFor('escrow-1'))
-      .mockReturnValueOnce(parsedEventFor('escrow-2'))
-      .mockReturnValueOnce(parsedEventFor('escrow-3'));
+      .mockReturnValueOnce(parsedEventFor(1n))
+      .mockReturnValueOnce(parsedEventFor(1n))
+      .mockReturnValueOnce(parsedEventFor(1n));
 
     escrowService.syncStateFromChain
       .mockResolvedValueOnce({ skipped: false }) // escrow-1 succeeds
@@ -166,8 +169,8 @@ describe('SorobanPollerService.poll (issue #554)', () => {
     const events = [rawEvent('evt-1', 'token-1'), rawEvent('evt-2', 'token-2')];
     mockRpcResponse(events);
     blockchainListener.parseEvent
-      .mockReturnValueOnce(parsedEventFor('escrow-1'))
-      .mockReturnValueOnce(parsedEventFor('escrow-2'));
+      .mockReturnValueOnce(parsedEventFor(1n))
+      .mockReturnValueOnce(parsedEventFor(1n));
 
     escrowService.syncStateFromChain.mockRejectedValueOnce(
       new Error('db unavailable'),
@@ -221,7 +224,7 @@ describe('SorobanPollerService.poll (issue #554)', () => {
     // Same event id/pagingToken every cycle — as if the cursor genuinely
     // never moved because every previous attempt threw.
     const events = [rawEvent('evt-1', 'token-1')];
-    blockchainListener.parseEvent.mockReturnValue(parsedEventFor('escrow-1'));
+    blockchainListener.parseEvent.mockReturnValue(parsedEventFor(1n));
     escrowService.syncStateFromChain.mockRejectedValue(
       new Error('permanently broken'),
     );

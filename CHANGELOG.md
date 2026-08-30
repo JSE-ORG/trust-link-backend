@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Additional escrow and dispute lifecycle states for creation, cancellation, review, resolution, and abandonment.
 - Production Docker Compose profile with service health checks, restart policies, resource limits, and log rotation.
 - Optional `SEP10_SIGNING_SECRET` configuration for a dedicated, stable SEP-10 web-auth signing key.
+- Required `PRESIGN_SECRET` configuration for a stable, configurable HMAC key used by `S3PresignService` so simulated pre-signed evidence URLs are reproducible across restarts and replicas.
 - Database commands for safely applying migrations, resetting a local database, and idempotently seeding development data.
 - Persistent notification delivery status and retry information.
 

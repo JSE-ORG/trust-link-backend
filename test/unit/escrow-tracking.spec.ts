@@ -18,6 +18,7 @@ describe('EscrowService.getTracking (issue #58)', () => {
 
   const mockEscrow: EscrowRecord = {
     id: 'escrow-1',
+    contractEscrowId: null,
     itemName: 'Camera',
     itemRef: 'camera-001',
     amount: 250,

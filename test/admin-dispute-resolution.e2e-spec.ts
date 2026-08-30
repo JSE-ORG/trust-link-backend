@@ -64,6 +64,8 @@ describe('Admin Dispute Resolution Flow E2E (issue #299)', () => {
     await app.close();
   });
 
+  let nextContractEscrowId = 1n;
+
   async function createEscrowAndDispute() {
     const createRes = await request(app.getHttpServer())
       .post('/escrow')
@@ -80,6 +82,15 @@ describe('Admin Dispute Resolution Flow E2E (issue #299)', () => {
 
     const escrowId = createRes.body.id;
 
+    // resolve_dispute(env, caller, escrow_id: u64) addresses the escrow by the
+    // contract's own id. The HTTP creation flow never sets it, so the mapping
+    // is supplied here or the resolve path has no valid on-chain call to make.
+    const contractEscrowId = nextContractEscrowId++;
+    await prisma.escrow.update({
+      where: { id: escrowId },
+      data: { contractEscrowId },
+    });
+
     const disputeRes = await request(app.getHttpServer())
       .post(`/escrow/${escrowId}/dispute`)
       .set('Authorization', bearer(BUYER_ADDRESS))
@@ -89,7 +100,7 @@ describe('Admin Dispute Resolution Flow E2E (issue #299)', () => {
       })
       .expect(201);
 
-    return { escrowId, disputeId: disputeRes.body.id };
+    return { escrowId, contractEscrowId, disputeId: disputeRes.body.id };
   }
 
   describe('Dispute creation by buyer', () => {
@@ -177,13 +188,17 @@ describe('Admin Dispute Resolution Flow E2E (issue #299)', () => {
         .query({ status: 'OPEN' })
         .expect(200);
 
-      expect(res.body.data.every((d: any) => d.status === 'OPEN')).toBe(true);
+      expect(
+        res.body.data.every(
+          (d: { status: string }) => d.status === 'OPEN',
+        ),
+      ).toBe(true);
     });
   });
 
   describe('Admin resolve dispute — RELEASE funds to vendor', () => {
     it('admin resolves dispute by releasing funds', async () => {
-      const { escrowId } = await createEscrowAndDispute();
+      const { escrowId, contractEscrowId } = await createEscrowAndDispute();
 
       const res = await request(app.getHttpServer())
         .patch(`/admin/dispute/${escrowId}/resolve`)
@@ -193,8 +208,9 @@ describe('Admin Dispute Resolution Flow E2E (issue #299)', () => {
 
       expect(res.body.state).toBe('COMPLETED');
       expect(contractService.resolveDispute).toHaveBeenCalledWith(
-        escrowId,
+        contractEscrowId,
         'RELEASE',
+        expect.any(String),
       );
 
       const fromDb = await prisma.escrow.findUnique({
@@ -206,7 +222,7 @@ describe('Admin Dispute Resolution Flow E2E (issue #299)', () => {
 
   describe('Admin resolve dispute — REFUND to buyer', () => {
     it('admin resolves dispute by refunding to buyer', async () => {
-      const { escrowId } = await createEscrowAndDispute();
+      const { escrowId, contractEscrowId } = await createEscrowAndDispute();
 
       const res = await request(app.getHttpServer())
         .patch(`/admin/dispute/${escrowId}/resolve`)
@@ -216,8 +232,9 @@ describe('Admin Dispute Resolution Flow E2E (issue #299)', () => {
 
       expect(res.body.state).toBe('REFUNDED');
       expect(contractService.resolveDispute).toHaveBeenCalledWith(
-        escrowId,
+        contractEscrowId,
         'REFUND',
+        expect.any(String),
       );
 
       const fromDb = await prisma.escrow.findUnique({

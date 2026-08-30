@@ -40,6 +40,7 @@ describe('StellarWebhookService (issue #76)', () => {
   /** Minimal CREATED escrow fixture matching makeDto defaults. */
   const makeCreatedEscrow = (overrides: Record<string, unknown> = {}) => ({
     id: 'escrow-1',
+    contractEscrowId: null,
     state: 'CREATED' as const,
     buyerAddress: 'GBUYER001',
     vendorAddress: 'GVENDOR001',
@@ -176,7 +177,7 @@ describe('StellarWebhookService (issue #76)', () => {
     escrowRepository.updateState.mockResolvedValue({
       ...createdEscrow,
       state: 'FUNDED',
-    } as any);
+    } as Awaited<ReturnType<EscrowRepository['updateState']>>);
 
     const result = await service.handleEvent(raw, sig, dto);
 
