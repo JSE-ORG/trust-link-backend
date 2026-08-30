@@ -20,7 +20,6 @@ describe('Analytics controller endpoints (issue #641)', () => {
   const VENDOR_A = 'GANALYTICSCTRL001';
   const VENDOR_B = 'GANALYTICSCTRL002';
   const AUTH_A = bearer(VENDOR_A);
-  const AUTH_B = bearer(VENDOR_B);
   const BUYER = 'GBUYERCTRL001';
 
   let seedCounter = 0;

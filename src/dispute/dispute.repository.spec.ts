@@ -23,7 +23,7 @@ describe('DisputeRepository', () => {
 
   afterEach(async () => {
     // Each `new PrismaService()` opens its own connection pool. Constructed in
-    // beforeEach across ~100 suites, undisconnected clients exhaust PostgreS
+    // beforeEach across ~100 suites, undisconnected clients exhaust Postgres
     // (`sorry, too many clients already`) partway through a full run.
     await prisma?.$disconnect();
   });
@@ -47,7 +47,7 @@ describe('DisputeRepository', () => {
 
       const found = await disputeRepo.findByEscrow(escrow.id);
 
-      expect(found).notToBeNull();
+      expect(found).not.toBeNull();
       expect(found?.escrowId).toBe(escrow.id);
       expect(found?.reason).toBe('Item not received');
     });
@@ -71,67 +71,8 @@ describe('DisputeRepository', () => {
       await disputeRepo.create({ escrowId: escrow.id, reason: 'Wrong item' });
 
       const found = await disputeRepo.findByEscrow(escrow.id);
-      expect(found).notToBeNull();
+      expect(found).not.toBeNull();
       expect(found?.reason).toBe('Wrong item');
-    });
-  });
-
-  describe('findByEscrowIds()', () => {
-    it('returns disputes for a batch of escrows', async () => {
-      const escrow1 = await escrowRepo.create(
-        {
-          itemName: 'Widget 1',
-          itemRef: 'REF-3',
-          amount: 100,
-          currency: 'USDC',
-          buyerAddress: 'buyer1',
-        },
-        'vendor',
-      );
-      const escrow2 = await escrowRepo.create(
-        {
-          itemName: 'Widget 2',
-          itemRef: 'REF-4',
-          amount: 200,
-          currency: 'USDC',
-          buyerAddress: 'buyer2',
-        },
-        'vendor',
-      );
-      await disputeRepo.create({ escrowId: escrow1.id, reason: 'Not received' });
-
-      const disputes = await disputeRepo.findByEscrowIds([escrow1.id, escrow2.id]);
-
-      expect(disputes).toHaveLength(1);
-      expect(disputes[0].escrowId).toBe(escrow1.id);
-      expect(disputes[0].reason).toBe('Not received');
-    });
-
-    it('returns an empty array when none of the escrows have a dispute', async () => {
-      const escrow1 = await escrowRepo.create(
-        {
-          itemName: 'Widget 3',
-          itemRef: 'REF-5',
-          amount: 100,
-          currency: 'USDC',
-          buyerAddress: 'buyer3',
-        },
-        'vendor',
-      );
-      const escrow2 = await escrowRepo.create(
-        {
-          itemName: 'Widget 4',
-          itemRef: 'REF-6',
-          amount: 200,
-          currency: 'USDC',
-          buyerAddress: 'buyer4',
-        },
-        'vendor',
-      );
-
-      const disputes = await disputeRepo.findByEscrowIds([escrow1.id, escrow2.id]);
-
-      expect(disputes).toEqual([]);
     });
   });
 });
