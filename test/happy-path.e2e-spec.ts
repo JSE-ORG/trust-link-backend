@@ -44,6 +44,21 @@ describe('Happy-Path E2E — full escrow lifecycle (issue #56)', () => {
     }
   }
 
+  async function waitForNotificationType(
+    type: string,
+    timeoutMs = 3000,
+  ): Promise<void> {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      const notifications = await prisma.notification.findMany();
+      if (notifications.some((notification) => notification.type === type)) {
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    throw new Error(`Timed out waiting for notification type ${type}`);
+  }
+
   beforeEach(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
@@ -224,7 +239,7 @@ describe('Happy-Path E2E — full escrow lifecycle (issue #56)', () => {
     // COMPLETED is asserted last because notifyCompleted is fired without
     // await on the sync path, so the row lands just after syncStateFromChain
     // resolves.
-    await new Promise((resolve) => setImmediate(resolve));
+    await waitForNotificationType('COMPLETED');
     const notifications = await prisma.notification.findMany();
     const types = notifications.map((n) => n.type);
     expect(types).toContain('FUNDED');
