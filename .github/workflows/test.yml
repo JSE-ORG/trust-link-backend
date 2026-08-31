@@ -60,6 +60,9 @@ jobs:
       - name: Check coverage threshold
         run: node scripts/check_coverage.js
 
+      - name: Run test match check
+        run: node scripts/check_test_match.js
+
       - name: Generate OpenAPI document
         run: npm run openapi:generate
 
