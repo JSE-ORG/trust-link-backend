@@ -34,7 +34,24 @@ export class BuyerDisputeService {
     private readonly configService: ConfigService,
   ) {}
 
-  /** Opens a dispute for an escrow participant and notifies vendor and admin channels. */
+  /**
+   * Opens a dispute against an escrow on behalf of one of its participants.
+   *
+   * The caller must be the buyer, the vendor, or the configured admin address;
+   * anyone else is rejected. A second dispute cannot be opened while the escrow
+   * is already `DISPUTED`.
+   *
+   * On success the dispute row is created first, then the linked escrow is
+   * transitioned to `DISPUTED` (which evicts the escrow cache so a subsequent
+   * `findById` sees the new state), and finally the buyer/vendor and admin
+   * notifications are dispatched together. Those notifications are awaited, so
+   * a notification failure rejects the call even though the dispute and the
+   * state change have already been persisted.
+   *
+   * @throws NotFoundException if the escrow does not exist.
+   * @throws ForbiddenException if the caller is not a participant or the admin.
+   * @throws ConflictException if a dispute is already open for the escrow.
+   */
   async openDispute(
     escrowId: string,
     callerAddress: string,
@@ -76,7 +93,18 @@ export class BuyerDisputeService {
     return this.toResponse(dispute);
   }
 
-  /** Returns the dispute for an escrow after verifying caller participation. */
+  /**
+   * Returns the dispute attached to an escrow after authorising the caller.
+   *
+   * Access is limited to the escrow's buyer, vendor, or the configured admin
+   * address, and participation is checked before the dispute lookup so a
+   * stranger cannot probe whether a dispute exists. Evidence URLs on the
+   * returned DTO are re-signed for direct client access.
+   *
+   * @throws NotFoundException if the escrow does not exist, or if it exists but
+   *   has no dispute recorded.
+   * @throws ForbiddenException if the caller is not a participant or the admin.
+   */
   async getDispute(
     escrowId: string,
     callerAddress: string,

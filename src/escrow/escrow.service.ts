@@ -71,7 +71,21 @@ export class EscrowService {
     private readonly prisma?: PrismaService,
   ) {}
 
-  /** Returns cached or live shipment tracking status for an escrow. */
+  /**
+   * Returns shipment tracking details for an escrow, served from cache when
+   * available.
+   *
+   * The escrow must exist and must carry a `trackingId`, and the optional
+   * logistics service must be wired in; each missing precondition surfaces as a
+   * not-found error rather than a distinct type. Results are cached under
+   * `tracking:<trackingId>` for 60 seconds, so back-to-back calls do not hit
+   * the carrier. Any error raised by the logistics provider is deliberately
+   * translated into a `NotFoundException` carrying the underlying message
+   * rather than propagated as-is.
+   *
+   * @throws NotFoundException if the escrow has no tracking id, the logistics
+   *   service is unavailable, or the carrier lookup fails.
+   */
   async getTracking(id: string): Promise<{
     status: string;
     estimatedDelivery?: Date;
@@ -130,7 +144,22 @@ export class EscrowService {
     }
   }
 
-  /** Creates a funded escrow after validating amount and duplicate item reference. */
+  /**
+   * Creates a new escrow in the `CREATED` state for the given vendor and
+   * returns it with a generated payment URL.
+   *
+   * The amount must be strictly positive, and the (vendor, itemRef) pair must
+   * be unique — a matching existing escrow is treated as a duplicate
+   * submission and rejected. Before the row is written, a minimal
+   * `VendorProfile` is upserted for the vendor so the escrow's foreign key
+   * resolves for first-time vendors (see `ensureVendorProfile`). This does not
+   * fund the escrow; funding happens later on-chain, so the returned record is
+   * `CREATED`, not `FUNDED`.
+   *
+   * @throws BadRequestException if the amount is not positive.
+   * @throws ConflictException if an escrow already exists for the same vendor
+   *   and item reference.
+   */
   async createEscrow(
     dto: CreateEscrowDto,
     vendorAddress: string,
@@ -181,7 +210,18 @@ export class EscrowService {
     });
   }
 
-  /** Wrapper for createEscrow that ensures idempotency via Redis caching. */
+  /**
+   * Idempotent wrapper around {@link createEscrow}, keyed by the
+   * caller-supplied idempotency key.
+   *
+   * A successful result is cached under `idempotency:<vendorAddress>:<key>` for
+   * 24 hours, so a repeated request with the same key and vendor returns the
+   * original escrow (payment URL included) instead of creating a second one.
+   * Idempotency depends on the optional cache service: when no cache is
+   * configured every call falls through to a fresh `createEscrow`, leaving that
+   * method's duplicate-item check as the only guard against double-creation.
+   * The same validation and conflict errors as `createEscrow` apply.
+   */
   async createIdempotent(
     idempotencyKey: string,
     dto: CreateEscrowDto,
@@ -206,7 +246,20 @@ export class EscrowService {
     return result;
   }
 
-  /** Loads an escrow by ID or raises a typed not-found error. */
+  /**
+   * Loads an escrow by its backend UUID, normalising failures into typed HTTP
+   * exceptions.
+   *
+   * A missing escrow is logged and raised as `NotFoundException`. Any other
+   * error from the repository (e.g. a database fault) is logged and rewritten
+   * as a generic `BadRequestException` so internal details never leak to the
+   * caller; an already-typed `NotFoundException` is re-thrown untouched rather
+   * than being masked by that catch-all. Reads may be served from the
+   * repository's cache.
+   *
+   * @throws NotFoundException if no escrow has the given id.
+   * @throws BadRequestException if the lookup fails for any other reason.
+   */
   async findById(id: string): Promise<EscrowRecord> {
     try {
       const escrow = await this.escrowRepository.findById(id);
@@ -226,12 +279,28 @@ export class EscrowService {
     }
   }
 
-  /** Returns chronological event history for an escrow; empty array if not found. */
+  /**
+   * Returns the escrow's state-transition history, oldest event first.
+   *
+   * This is a thin pass-through to the repository's audit-table query. It does
+   * not verify that the escrow exists: an unknown id simply yields an empty
+   * array, which is indistinguishable from a known escrow that has no recorded
+   * events.
+   */
   async getEvents(id: string): Promise<EventsResult> {
     return this.escrowRepository.findEvents(id);
   }
 
-  /** Returns the public escrow projection safe for client responses. */
+  /**
+   * Returns the client-safe projection of an escrow.
+   *
+   * Loads the escrow via {@link findById} (so the same not-found / bad-request
+   * behaviour applies) and maps it through an explicit field allowlist. Buyer
+   * contact fields and internal addresses are omitted by construction, so
+   * encrypted contact information never reaches the client.
+   *
+   * @throws NotFoundException if the escrow does not exist.
+   */
   async getPublicEscrow(id: string): Promise<EscrowResponseDto> {
     const escrow = await this.findById(id);
     return this.toPublicEscrow(escrow);
@@ -260,7 +329,17 @@ export class EscrowService {
     };
   }
 
-  /** Returns a paginated vendor escrow summary list using query defaults. */
+  /**
+   * Returns a paginated, sorted page of a vendor's escrows as summary DTOs.
+   *
+   * Unset query fields fall back to defaults (`sort: 'date'`, `order: 'desc'`,
+   * `page: 1`, `limit: 20`) before the query runs, so callers may pass a
+   * partial query. Results are mapped to the summary projection and returned
+   * alongside the unpaginated `total` count and the effective `page`/`limit`,
+   * which lets callers derive the number of pages. No authorisation is
+   * performed here — the caller must scope `vendorAddress` to the authenticated
+   * user.
+   */
   async findVendorEscrows(
     vendorAddress: string,
     query: {
@@ -333,7 +412,17 @@ export class EscrowService {
     return `https://trust-link.local/pay/${id}`;
   }
 
-  /** Generates a pre-signed upload URL for evidence files scoped to the caller. */
+  /**
+   * Builds a pre-signed upload URL for a piece of evidence, scoped to the
+   * caller's address.
+   *
+   * The object key is `evidence/<callerAddress>/<uuid>.<ext>`, where the
+   * extension is taken from the supplied file name (falling back to `bin` when
+   * the name has no extension) and the random UUID guarantees a unique key even
+   * for repeated file names. This only mints the URL — it neither uploads nor
+   * validates the file — and the returned link expires one hour after issuance
+   * (`expiresInSeconds` is 3600).
+   */
   generateEvidenceUploadUrl(
     callerAddress: string,
     fileName: string,
@@ -356,7 +445,18 @@ export class EscrowService {
     };
   }
 
-  /** Cancels a funded escrow when requested by the buyer, vendor, or admin. */
+  /**
+   * Cancels a `FUNDED` escrow at the request of the buyer, vendor, or an admin.
+   *
+   * Only those parties may cancel; passing `isAdmin` bypasses the participant
+   * check. The escrow must currently be `FUNDED` — this path deliberately
+   * handles only already-funded escrows and never touches the chain. Use
+   * {@link cancelPendingEscrow} for escrows still in `CREATED`.
+   *
+   * @throws NotFoundException if the escrow does not exist.
+   * @throws ForbiddenException if the caller is not a participant or admin.
+   * @throws ConflictException if the escrow is not in `FUNDED` state.
+   */
   async cancelEscrow(
     escrowId: string,
     callerAddress: string,
@@ -383,7 +483,24 @@ export class EscrowService {
     return this.escrowRepository.markCancelled(escrowId);
   }
 
-  /** Cancels a pending (CREATED) escrow with on-chain state verification and fund refund. */
+  /**
+   * Cancels a pending (`CREATED`) escrow, reconciling with on-chain state
+   * first.
+   *
+   * Only the buyer, vendor, or an admin may cancel, and the escrow must be
+   * `CREATED` locally — the funded counterpart is {@link cancelEscrow}. Chain
+   * handling turns on `contractEscrowId`: when it is null there is no on-chain
+   * counterpart, so the chain step is skipped and the escrow is simply marked
+   * cancelled. When the on-chain escrow is `FUNDED`, an on-chain refund is
+   * submitted before local cancellation; when it exists in any state other than
+   * `CREATED` or `FUNDED`, cancellation is refused. The escrow is only marked
+   * `CANCELLED` locally after any required chain call succeeds.
+   *
+   * @throws NotFoundException if the escrow does not exist.
+   * @throws ForbiddenException if the caller is not a participant or admin.
+   * @throws ConflictException if the escrow is not `CREATED` locally, or the
+   *   on-chain escrow is in a non-cancellable state.
+   */
   async cancelPendingEscrow(
     escrowId: string,
     callerAddress: string,
@@ -442,7 +559,26 @@ export class EscrowService {
     return this.escrowRepository.markCancelled(escrowId);
   }
 
-  /** Validates vendor shipment updates and moves a funded escrow to shipped. */
+  /**
+   * Records a vendor shipment against a `FUNDED` escrow and transitions it to
+   * `SHIPPED`.
+   *
+   * The tracking id is trimmed and must be at least three characters. Only the
+   * escrow's vendor (or an admin) may ship, the escrow must be `FUNDED`, and it
+   * must not already carry a tracking id — reshipping is refused. After the
+   * state is persisted, the stale `tracking:<trackingId>` cache entry is
+   * evicted and the "shipped" notification is dispatched fire-and-forget, so a
+   * notification failure is logged but neither fails the call nor rolls back
+   * the shipment. Any error is logged and re-thrown with its original type
+   * preserved.
+   *
+   * @throws BadRequestException if the tracking id is empty or shorter than
+   *   three characters.
+   * @throws ForbiddenException if the caller is neither the vendor nor an
+   *   admin.
+   * @throws ConflictException if the escrow is not `FUNDED` or has already
+   *   shipped.
+   */
   async handleShipment(
     escrowId: string,
     vendorAddress: string,
@@ -571,6 +707,27 @@ export class EscrowService {
 
   // ── Issue #40: on-chain event handler ─────────────────────────────────────
 
+  /**
+   * Applies a parsed on-chain Soroban event to the backend escrow, driving its
+   * state machine forward. Called by the Soroban poller for each contract
+   * event.
+   *
+   * Every branch is idempotent and guarded so redelivered or out-of-order
+   * events are safe: if the escrow is missing, already in the event's target
+   * state, or in a terminal state, the event is skipped and the reason is
+   * returned in the {@link SyncResult} rather than throwing. The event's
+   * `escrowId` is the backend UUID (the caller resolves it from the contract id
+   * beforehand). Handled types are `EscrowFunded`, `EscrowShipped`,
+   * `EscrowCompleted`, `DisputeRaised`, `DisputeResolved` and `AutoReleased`;
+   * any other type is skipped as `unknown_event_type`. The two dispute events
+   * also touch the dispute table, but only when Prisma is wired in. All
+   * notifications are dispatched fire-and-forget, so a notification failure
+   * neither fails the sync nor blocks the poller's cursor.
+   *
+   * @returns a {@link SyncResult} whose `skipped` flag (and `reason` when
+   *   skipped) reports whether the event changed state or was intentionally
+   *   ignored.
+   */
   async syncStateFromChain(event: SorobanChainEvent): Promise<SyncResult> {
     const { eventType, escrowId } = event;
 
