@@ -89,8 +89,8 @@
         "eslint": "^9.18.0",
         "eslint-config-prettier": "^10.0.1",
         "eslint-plugin-prettier": "^5.2.2",
-        "globals": "^17.0.0",
-        "jest": "^30.0.0",
+        "globals": "^17.11.0",
+        "jest": "^30.5.0",
         "prettier": "^3.4.2",
         "prisma": "^7.8.0",
         "source-map-support": "^0.5.21",
@@ -100,7 +100,7 @@
         "ts-node": "^10.9.2",
         "tsconfig-paths": "^4.2.0",
         "typescript": "^5.7.3",
-        "typescript-eslint": "^8.20.0"
+        "typescript-eslint": "^8.68.0"
     },
     "jest": {
         "maxWorkers": 1,
