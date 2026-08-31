@@ -11,7 +11,7 @@ import { GlobalExceptionFilter } from '../../src/common/filters/global-exception
 import { ConfigService } from '../../src/config/config.service';
 import { StandardErrorResponse } from '../../src/common/dto/error-response.dto';
 
-// ── helpers ────────────────────────────────────────────────────────────────
+// ─ helpers ───────────────────────│
 
 interface MockResponse {
   statusCode: number | null;
@@ -55,10 +55,10 @@ function buildHost(
     headers: { 'user-agent': 'jest-test' },
   };
   return {
-    switchToHttp: () => ({
+    switchToHttp: () => {
       getResponse: () => res,
       getRequest: () => req,
-    }),
+    },
   } as unknown as ArgumentsHost;
 }
 
@@ -73,7 +73,7 @@ function buildConfigService(
   } as unknown as jest.Mocked<ConfigService>;
 }
 
-// ── tests ──────────────────────────────────────────────────────────────────
+// ─ tests ───────────────────────│
 
 describe('GlobalExceptionFilter (issue #286)', () => {
   let filter: GlobalExceptionFilter;
@@ -201,6 +201,56 @@ describe('GlobalExceptionFilter (issue #286)', () => {
       prodFilter.catch(new Error('secret detail'), prodHost);
       const body = prodRes.body as StandardErrorResponse;
       expect(body.message).toBe('Internal server error');
+      expect(body).not.toHaveProperty('details');
+    });
+  });
+
+  describe('dev-only details disclosure', () => {
+    it('includes details for validation errors in development', () => {
+      filter = new GlobalExceptionFilter(buildConfigService('development'));
+      filter.catch(new BadRequestException('Validation failed'), host);
+      const body = res.body as StandardErrorResponse;
+      expect(body.details).toBeDefined();
+    });
+
+    it('omits details for validation errors outside development', () => {
+      filter = new GlobalExceptionFilter(buildConfigService('production'));
+      filter.catch(new BadRequestException('Validation failed'), host);
+      const body = res.body as StandardErrorResponse;
+      expect(body).not.toHaveProperty('details');
+    });
+
+    it('includes details for unknown errors in development', () => {
+      filter = new GlobalExceptionFilter(buildConfigService('development'));
+      filter.catch(new Error('secret'), host);
+      const body = res.body as StandardErrorResponse;
+      expect(body.details).toBeDefined();
+    });
+  });
+
+  describe('error type guards', () => {
+    it('isPrismaError matches Prisma errors', () => {
+      const prismaError = Object.assign(new Error('unique'), { code: 'P2002' });
+      filter.catch(prismaError, host);
+      expect(res.status).toHaveBeenCalledWith(HttpStatus.CONFLICT);
+    });
+
+    it('isPrismaError does not match non-Prisma errors', () => {
+      const nonPrismaError = Object.assign(new Error('custom'), { code: 'E123' });
+      filter.catch(nonPrismaError, host);
+      const body = res.body as StandardErrorResponse;
+      expect(res.status).toHaveBeenCalledWith(HttpStatus.INTERNAL_SERVER_ERROR);
+      expect(body.error).toBe('InternalServerError');
+    });
+
+    it('isValidationError matches BadRequestException', () => {
+      filter.catch(new BadRequestException('bad input'), host);
+      expect(res.status).toHaveBeenCalledWith(HttpStatus.BAD_REQUEST);
+    });
+
+    it('isValidationError does not match other HttpExceptions', () => {
+      filter.catch(new HttpException('not found', HttpStatus.NOT_FOUND), host);
+      expect(res.status).toHaveBeenCalledWith(HttpStatus.NOT_FOUND);
     });
   });
 
