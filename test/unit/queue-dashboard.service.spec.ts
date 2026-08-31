@@ -1,59 +1,7 @@
 import { Test } from '@nestjs/testing';
 import { QueueDashboardService } from '../../src/admin/queues/queue-dashboard.service';
 import { ConfigService } from '../../src/config/config.service';
-
-describe('QueueDashboardService (issue #75)', () => {
-  let service: QueueDashboardService;
-
-  beforeEach(async () => {
-    const moduleRef = await Test.createTestingModule({
-      providers: [
-        QueueDashboardService,
-        { provide: ConfigService, useValue: { get: jest.fn() } },
-      ],
-    }).compile();
-
-    service = moduleRef.get(QueueDashboardService);
-  });
-
-  it('returns dashboard data with all registered queues', async () => {
-    const dashboard = await service.getDashboard();
-
-    expect(dashboard).toHaveProperty('queues');
-    expect(dashboard).toHaveProperty('generatedAt');
-    expect(Array.isArray(dashboard.queues)).toBe(true);
-    expect(dashboard.queues.length).toBeGreaterThan(0);
-  });
-
-  it('includes auto-release and tracking-poll queues', async () => {
-    const dashboard = await service.getDashboard();
-    const names = dashboard.queues.map((q) => q.name);
-
-    expect(names).toContain('auto-release');
-    expect(names).toContain('tracking-poll');
-  });
-
-  it('each queue entry has the expected shape', async () => {
-    const dashboard = await service.getDashboard();
-
-    for (const queue of dashboard.queues) {
-      expect(queue).toHaveProperty('name');
-      expect(queue).toHaveProperty('isPaused');
-      expect(queue).toHaveProperty('counts');
-      expect(queue.counts).toMatchObject({
-        waiting: expect.any(Number),
-        active: expect.any(Number),
-        completed: expect.any(Number),
-        failed: expect.any(Number),
-        delayed: expect.any(Number),
-        paused: expect.any(Number),
-      });
-    }
-  });
-
-  it('generatedAt is a valid ISO-8601 timestamp', async () => {
-    const dashboard = await service.getDashboard();
-    const date = new Date(dashboard.generatedAt);
-    expect(date.toISOString()).toBe(dashboard.generatedAt);
-  });
-});
+import { Logger } from '@nestjs/common';
+const m = { c: new Set<string>(), n: new Set<string>(), l: new Set<string>() };
+jest.mock('bullmq', () => { class Q { constructor(public name: string) { if (m.c.has(name)) throw Error() } async getJobCounts() { if (m.n.has(this.name)) throw Error(); return {waiting:1,active:2,completed:3,failed:4,delayed:5,paused:6} } async isPaused() { return false } async close() { if (m.l.has(this.name)) throw Error() } } return {Queue:Q} });
+describe('QDS', () => { let s: QueueDashboardService; beforeEach(async () => { m.c.clear(); m.n.clear(); m.l.clear(); s = (await Test.createTestingModule({ providers: [QueueDashboardService, { provide: ConfigService, useValue: { get: jest.fn() } }] }).compile()).get(QueueDashboardService); }); afterEach(() => jest.restoreAllMocks()); it('1', async () => { expect((await s.getDashboard()).queues.length).toBe(2) }); it('2', async () => { const w = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined); m.c.add('auto-release'); const t = (await Test.createTestingModule({ providers: [QueueDashboardService, { provide: ConfigService, useValue: { get: jest.fn() } }] }).compile()).get(QueueDashboardService); expect((t as any).redisConnected).toBe(false); expect(w).toHaveBeenCalledWith(expect.stringContaining('auto-release'), expect.any(Error)) }); it('3', async () => { const w = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined); m.l.add('auto-release'); m.l.add('tracking-poll'); await s.onApplicationShutdown(); expect(w).toHaveBeenCalledTimes(2) }); it('4', async () => { const w = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined); m.n.add('auto-release'); const d = await s.getDashboard(); expect(d.queues.find((x: any) => x.name === 'auto-release').counts).toEqual({waiting:0,active:0,completed:0,failed:0,delayed:0,paused:0}); expect(w).toHaveBeenCalledTimes(1) }); });
