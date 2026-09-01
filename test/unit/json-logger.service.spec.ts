@@ -78,4 +78,59 @@ describe('JsonLoggerService (issue #81)', () => {
     expect(typeof entry.pid).toBe('number');
     expect(typeof entry.env).toBe('string');
   });
+  describe('context fallbacks and missing coverage', () => {
+    beforeEach(() => {
+      logger.setContext('InstanceCtx');
+    });
+
+    it('falls back to instance context for log()', () => {
+      logger.log('msg');
+      expect(lastEntry().context).toBe('InstanceCtx');
+    });
+
+    it('falls back to instance context for warn()', () => {
+      logger.warn('msg');
+      expect(lastEntry().context).toBe('InstanceCtx');
+    });
+
+    it('falls back to instance context for error()', () => {
+      logger.error('msg');
+      expect(lastEntry().context).toBe('InstanceCtx');
+    });
+
+    it('falls back to instance context for debug()', () => {
+      process.env.LOG_LEVEL = 'debug';
+      logger.debug('msg');
+      expect(lastEntry().context).toBe('InstanceCtx');
+    });
+
+    it('falls back to instance context for verbose()', () => {
+      process.env.LOG_LEVEL = 'trace';
+      logger.verbose('msg');
+      expect(lastEntry().context).toBe('InstanceCtx');
+    });
+
+    it('falls back to instance context for structured()', () => {
+      logger.structured('info', 'msg', {});
+      expect(lastEntry().context).toBe('InstanceCtx');
+    });
+
+    it('uses "App" if neither explicit nor instance context is set', () => {
+      const statelessLogger = new JsonLoggerService();
+      statelessLogger.log('msg');
+      expect(lastEntry().context).toBe('App');
+    });
+
+    it('uses "App" for structured() if neither explicit nor instance context is set', () => {
+      const statelessLogger = new JsonLoggerService();
+      statelessLogger.structured('info', 'msg', {});
+      expect(lastEntry().context).toBe('App');
+    });
+
+    it('suppresses structured() messages when below LOG_LEVEL', () => {
+      process.env.LOG_LEVEL = 'error';
+      logger.structured('info', 'msg', {});
+      expect(writeSpy).not.toHaveBeenCalled();
+    });
+  });
 });
