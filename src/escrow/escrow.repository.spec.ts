@@ -19,6 +19,7 @@ function makeDto() {
 describe('EscrowRepository', () => {
   let repo: EscrowRepository;
   let prisma: PrismaService;
+  let mockCache: { get: jest.Mock; set: jest.Mock; del: jest.Mock };
 
   beforeEach(async () => {
     prisma = new PrismaService();
@@ -41,7 +42,12 @@ describe('EscrowRepository', () => {
       'v-enc4',
       'v-enc5',
     );
-    repo = new EscrowRepository(prisma);
+    mockCache = {
+      get: jest.fn(),
+      set: jest.fn(),
+      del: jest.fn(),
+    };
+    repo = new EscrowRepository(prisma, mockCache);
   });
 
   afterEach(async () => {
@@ -443,6 +449,188 @@ describe('EscrowRepository', () => {
     });
   });
 
+  describe('findById()', () => {
+    it('returns cached record if present', async () => {
+      const mockRecord = { id: 'test-id' };
+      mockCache.get.mockResolvedValue(mockRecord);
+      const result = await repo.findById('test-id');
+      expect(result).toEqual(mockRecord);
+      expect(mockCache.get).toHaveBeenCalledWith('escrow:test-id');
+    });
+
+    it('returns null if not found in db', async () => {
+      mockCache.get.mockResolvedValue(null);
+      const result = await repo.findById('missing-id');
+      expect(result).toBeNull();
+    });
+
+    it('returns and caches record from db if not in cache', async () => {
+      mockCache.get.mockResolvedValue(null);
+      const escrow = await repo.create(makeDto(), 'v1');
+      const result = await repo.findById(escrow.id);
+      expect(result).not.toBeNull();
+      expect(result?.id).toBe(escrow.id);
+      expect(mockCache.set).toHaveBeenCalledWith(
+        `escrow:${escrow.id}`,
+        expect.objectContaining({ id: escrow.id }),
+        60,
+      );
+    });
+  });
+
+  describe('State Transitions & Writes', () => {
+    let escrowId: string;
+    beforeEach(async () => {
+      const escrow = await repo.create(makeDto(), 'v1');
+      escrowId = escrow.id;
+      mockCache.del.mockClear();
+    });
+
+    it('updateState sets new state and invalidates cache', async () => {
+      const result = await repo.updateState(escrowId, 'FUNDED');
+      expect(result.state).toBe('FUNDED');
+      expect(mockCache.del).toHaveBeenCalledWith(`escrow:${escrowId}`);
+    });
+
+    it('updateTracking sets trackingId and invalidates cache', async () => {
+      const result = await repo.updateTracking(escrowId, 'TRK123');
+      expect(result.trackingId).toBe('TRK123');
+      expect(mockCache.del).toHaveBeenCalledWith(`escrow:${escrowId}`);
+    });
+
+    it('markShipped sets SHIPPED state, trackingId, shippedAt and invalidates cache', async () => {
+      const result = await repo.markShipped(escrowId, 'TRK-SHIP');
+      expect(result.state).toBe('SHIPPED');
+      expect(result.trackingId).toBe('TRK-SHIP');
+      expect(result.shippedAt).toBeInstanceOf(Date);
+      expect(mockCache.del).toHaveBeenCalledWith(`escrow:${escrowId}`);
+    });
+
+    it('markCompleted sets COMPLETED state and invalidates cache', async () => {
+      const result = await repo.markCompleted(escrowId);
+      expect(result.state).toBe('COMPLETED');
+      expect(mockCache.del).toHaveBeenCalledWith(`escrow:${escrowId}`);
+    });
+
+    it('markRefunded sets REFUNDED state and invalidates cache', async () => {
+      const result = await repo.markRefunded(escrowId);
+      expect(result.state).toBe('REFUNDED');
+      expect(mockCache.del).toHaveBeenCalledWith(`escrow:${escrowId}`);
+    });
+
+    it('markReleased sets RELEASED state and invalidates cache', async () => {
+      const result = await repo.markReleased(escrowId);
+      expect(result.state).toBe('RELEASED');
+      expect(mockCache.del).toHaveBeenCalledWith(`escrow:${escrowId}`);
+    });
+
+    it('markDelivered sets DELIVERED state, deliveredAt, deliveryRecordedAt and invalidates cache', async () => {
+      const deliveredAt = new Date('2023-01-01T00:00:00Z');
+      const result = await repo.markDelivered(escrowId, deliveredAt);
+      expect(result.state).toBe('DELIVERED');
+      expect(result.deliveredAt).toEqual(deliveredAt);
+      expect(result.deliveryRecordedAt).toEqual(deliveredAt);
+      expect(mockCache.del).toHaveBeenCalledWith(`escrow:${escrowId}`);
+    });
+
+    it('markAutoReleaseCompleted sets COMPLETED, txHash, submittedAt and invalidates cache', async () => {
+      const submittedAt = new Date('2023-01-01T00:00:00Z');
+      const result = await repo.markAutoReleaseCompleted(
+        escrowId,
+        '0xABC',
+        submittedAt,
+      );
+      expect(result.state).toBe('COMPLETED');
+      expect(result.autoReleaseTxHash).toBe('0xABC');
+      expect(result.autoReleaseSubmittedAt).toEqual(submittedAt);
+      expect(mockCache.del).toHaveBeenCalledWith(`escrow:${escrowId}`);
+    });
+
+    it('markCancelled sets CANCELLED state, cancelledAt and invalidates cache', async () => {
+      const result = await repo.markCancelled(escrowId);
+      expect(result.state).toBe('CANCELLED');
+      expect(result.cancelledAt).toBeInstanceOf(Date);
+      expect(mockCache.del).toHaveBeenCalledWith(`escrow:${escrowId}`);
+    });
+
+    it('invalidateCache explicitly deletes from cache', async () => {
+      await repo.invalidateCache(escrowId);
+      expect(mockCache.del).toHaveBeenCalledWith(`escrow:${escrowId}`);
+    });
+
+    it('saveBuyerContact invalidates cache', async () => {
+      await repo.saveBuyerContact(escrowId, 'enc-email', 'enc-phone');
+      expect(mockCache.del).toHaveBeenCalledWith(`escrow:${escrowId}`);
+    });
+  });
+
+  describe('Polling & Claim methods', () => {
+    let escrowId: string;
+    beforeEach(async () => {
+      const escrow = await repo.create(makeDto(), 'v1');
+      escrowId = escrow.id;
+      mockCache.del.mockClear();
+    });
+
+    it('findShippedWithTracking returns shipped escrows that have trackingId', async () => {
+      await repo.markShipped(escrowId, 'TRACK123');
+      const result = await repo.findShippedWithTracking();
+      expect(result.map((r: { id: string }) => r.id)).toContain(escrowId);
+    });
+
+    it('findAutoReleaseEligible returns eligible SHIPPED escrows past cutoff', async () => {
+      const deliveredAt = new Date(Date.now() - 49 * 60 * 60 * 1000);
+      await repo.updateState(escrowId, 'SHIPPED');
+      await repo.markDelivered(escrowId, deliveredAt);
+
+      const eligible = await repo.findAutoReleaseEligible(new Date());
+      expect(eligible.map((e: { id: string }) => e.id)).toContain(escrowId);
+    });
+
+    it('markAutoReleaseSubmitting claims escrow and returns it, and null if already claimed', async () => {
+      const claimed = await repo.markAutoReleaseSubmitting(escrowId);
+      expect(claimed).not.toBeNull();
+      expect(claimed?.autoReleaseSubmittedAt).toBeInstanceOf(Date);
+      expect(mockCache.del).toHaveBeenCalledWith(`escrow:${escrowId}`);
+
+      const claimedAgain = await repo.markAutoReleaseSubmitting(escrowId);
+      expect(claimedAgain).toBeNull();
+    });
+
+    it('clearAutoReleaseSubmitting clears the claim and invalidates cache', async () => {
+      await repo.markAutoReleaseSubmitting(escrowId);
+      const cleared = await repo.clearAutoReleaseSubmitting(escrowId);
+      expect(cleared.autoReleaseSubmittedAt).toBeNull();
+      expect(mockCache.del).toHaveBeenCalledWith(`escrow:${escrowId}`);
+    });
+
+    it('markAutoReleased sets RELEASED state and txHash, invalidates cache', async () => {
+      const result = await repo.markAutoReleased(escrowId, '0xREL');
+      expect(result.state).toBe('RELEASED');
+      expect(result.autoReleaseTxHash).toBe('0xREL');
+      expect(mockCache.del).toHaveBeenCalledWith(`escrow:${escrowId}`);
+    });
+
+    it('claimDelivery claims SHIPPED escrow and returns it, null otherwise', async () => {
+      let claimed = await repo.claimDelivery(escrowId);
+      expect(claimed).toBeNull();
+
+      await repo.markShipped(escrowId, 'TRK');
+      claimed = await repo.claimDelivery(escrowId);
+      expect(claimed).not.toBeNull();
+      expect(claimed?.deliveryRecordedAt).toBeInstanceOf(Date);
+      expect(mockCache.del).toHaveBeenCalledWith(`escrow:${escrowId}`);
+
+      const claimedAgain = await repo.claimDelivery(escrowId);
+      expect(claimedAgain).toBeNull();
+    });
+
+    it('clearDeliveryClaim clears the claim and invalidates cache', async () => {
+      await repo.markShipped(escrowId, 'TRK');
+      await repo.claimDelivery(escrowId);
+      const cleared = await repo.clearDeliveryClaim(escrowId);
+      expect(cleared.deliveryRecordedAt).toBeNull();
+      expect(mockCache.del).toHaveBeenCalledWith(`escrow:${escrowId}`);
   describe('lifecycle writes and lookup helpers', () => {
     it.each([
       ['updateState', (id: string) => repo.updateState(id, 'FUNDED'), 'FUNDED'],
