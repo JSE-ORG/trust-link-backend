@@ -1,5 +1,6 @@
 name: Docker Build
 
+name: Docker Build
 on:
   pull_request:
     paths:
@@ -7,14 +8,45 @@ on:
       - package.json
       - package-lock.json
       - src/**
-
 jobs:
   docker-build:
     name: Build Docker image
     runs-on: ubuntu-latest
 
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTRES_USER: trustlink
+          POSTRES_PASSWORD: trustlink
+          POSTRES_DB: trustlink_test
+        ports:
+          - 5432:5432
+        options: >
+          ---health-cmd pgisready
+          ---health-interval 10s
+          ---health-timeout 5s
+          ---health-retries 5
+
     steps:
       - uses: actions/checkout@v4
+
+      - name: Wait for PostgreSGL
+        run: |
+          for i in {1..30}; do
+            CONTAINER_ID=$(docker ps -q --filter ancestor=postgres:15-alpine)
+            if [ -n "$CONTAINER_ID" ]; then
+              STATUS=$(docker inspect --format='{{.State.Health.Status}}' "$CONTAINER_ID" 2>/dev/null || echo "unknown")
+              if [ "$STATUS" = "healthy" ]; then
+                echo "PostgreSQL is ready"
+                exit 0
+              fi
+            fi
+            echo "Waiting for PostgreSQL ($i/30)..."
+            sleep 1
+          done
+          echo "PostgreSQL did not become ready in time" >&2
+          exit 1
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -24,11 +56,9 @@ jobs:
         with:
           context: .
           push: false
-          # Without `load`, buildx leaves the image in its own cache and never
-          # hands it to the Docker daemon, so the verify step below fails with
-          # "Unable to find image 'trust-link-backend:ci' locally".
           load: true
           tags: trust-link-backend:ci
+          network: host
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -36,16 +66,16 @@ jobs:
         run: |
           docker run -d \
             --name trustlink-ci \
-            -p 3000:3000 \
+            --network host \
             -e NODE_ENV=test \
             -e DATABASE_URL=postgresql://trustlink:trustlink@localhost:5432/trustlink_test \
             -e SEP10_JWT_SECRET=test-jwt-secret-must-be-at-least-32-chars \
-            -e SYSTEM_SIGNER_SECRET=SAIJDXETR5B7YFPH7SUOISWVBHHSI46JLYFDCWDMEV2L46XAHASPP35C \
-            -e CONTRACT_ID=CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4 \
-            -e ADMIN_ADDRESS=GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5 \
+            -e SYSTEM_SIGNER_SECRET=SAIJDXETR5B7YFPH7SUOISWBAHSI46JLYFDCWDMEV2L46XAHASPP35C \
+            -e CONTRACT_ID=CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAASC4 \
+            -e ADMIN_ADDRESS=GBBD47IF6LWK7P7MDEVSCWR7DUPWV3YMD3DQ/FLV4NAT8AQ3ZLLFLA5 \
             -e STELLAR_NETWORK=TESTNET \
             trust-link-backend:ci
           echo "Waiting for container to start..."
           sleep 10
-          docker inspect --format='{{.State.Status}}' trustlink-ci
-          docker rm -f trustlink-ci
+          docker inspect --format='{{.State.Status}}' trustlink_ui
+          docker rm -f trustlink_ui
