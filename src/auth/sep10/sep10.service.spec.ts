@@ -106,6 +106,7 @@ describe('Sep10Service', () => {
                 SEP10_JWT_SECRET: 'test-secret-key',
                 REFRESH_TOKEN_TTL: REFRESH_TOKEN_TTL,
                 ADMIN_ADDRESS: null,
+                SEP10_HOME_DOMAIN: 'trust-link.local',
               };
               return configMap[key];
             }),
@@ -156,6 +157,7 @@ describe('Sep10Service', () => {
                     SYSTEM_SIGNER_SECRET:
                       'SAIJDXETR5B7YFPH7SUOISWVBHHSI46JLYFDCWDMEV2L46XAHASPP35C',
                     SEP10_JWT_SECRET: 'test-secret-key',
+                    SEP10_HOME_DOMAIN: 'trust-link.local',
                   })[key],
               ),
             },
@@ -177,7 +179,7 @@ describe('Sep10Service', () => {
               provide: ConfigService,
               useValue: {
                 get: jest.fn((key: string) =>
-                  key === 'STELLAR_NETWORK' ? 'TESTNET' : undefined,
+                  key === 'STELLAR_NETWORK' ? 'TESTNET' : key === 'SEP10_HOME_DOMAIN' ? 'trust-link.local' : undefined,
                 ),
               },
             },
