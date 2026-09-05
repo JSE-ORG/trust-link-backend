@@ -166,7 +166,7 @@ describe('Auto-release batch processing with partial failures', () => {
       // A successful submission records the hash and leaves the escrow
       // DELIVERED. The terminal transition belongs to the AutoReleased chain
       // event, which is what confirms the transaction actually landed.
-      expect(after1!.state).toBe*'DELIVERED');
+      expect(after1!.state).toBe('DELIVERED');
       expect(after1!.autoReleaseTxHash).toBe('tx-hash-1');
 
       const after2 = await prisma.escrow.findUnique({
@@ -178,7 +178,7 @@ describe('Auto-release batch processing with partial failures', () => {
       const after3 = await prisma.escrow.findUnique({
         where: { id: escrow3.id },
       });
-      expect(after3!.state).toBe*'DELIVERED');
+      expect(after3!.state).toBe('DELIVERED');
       expect(after3!.autoReleaseTxHash).toBe('tx-hash-3');
     });
 
@@ -209,7 +209,7 @@ describe('Auto-release batch processing with partial failures', () => {
           vendorAddress: 'vendor-3',
           trackingId: 'TRK-003',
         }),
-        createDeliveredEscrow{
+        createDeliveredEscrow({
           itemName: 'Tablet',
           itemRef: 'tablet-multi-fail-001',
           amount: 600,
@@ -350,7 +350,7 @@ describe('Auto-release batch processing with partial failures', () => {
       ]);
 
       // All three submissions fail — keyed by escrow id, not call order.
-      const outcomes = new Map<bigint, () => Promise<string>>[
+      const outcomes = new Map<bigint, () => Promise<string>>([
         [escrows[0].contractEscrowId!, () => Promise.reject(new Error('Error 1'))],
         [escrows[1].contractEscrowId!, () => Promise.reject(new Error('Error 2'))],
         [escrows[2].contractEscrowId!, () => Promise.reject(new Error('Error 3'))],
@@ -410,16 +410,15 @@ describe('Auto-release batch processing with partial failures', () => {
       // query filter on escrow.disputeId has not caught up,yet the
       // worker's second line of defence must skip it. The batch lookup
       // returns a single dispute for escrow2.
-      const disputeRepository = moduleRef.get(DisputeRepository);
       const findByEscrowIdsSpy = jest
         .spyOn(disputeRepository, 'findByEscrowIds')
         .mockResolvedValue([{ escrowId: escrow2.id } as any]);
 
       // Only escrow1 and escrow3 should be released.
-      const outcomes = new Map<bigint, () => Promise<string>>[
+      const outcomes = new Map<bigint, () => Promise<string>>([
         [escrow1.contractEscrowId!, () => Promise.resolve('tx-hash-1')],
         [escrow3.contractEscrowId!, () => Promise.resolve('tx-hash-3')],
-      ];
+      ]);
       contractService.submitAutoRelease.mockImplementation((escrowId: bigint) =>
         (
           outcomes.get(escrowId) ??
