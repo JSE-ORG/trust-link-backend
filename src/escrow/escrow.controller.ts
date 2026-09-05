@@ -275,7 +275,7 @@ export class EscrowController {
     type: ErrorResponseDto,
   })
   @Get(':id/tracking')
-  async getTracking(@Param('id', ParseUUIDPipe) id: string) {
+  getTracking(@Param('id', ParseUUIDPipe) id: string) {
     return this.escrowService.getTracking(id);
   }
 
