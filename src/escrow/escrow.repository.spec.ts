@@ -631,6 +631,9 @@ describe('EscrowRepository', () => {
       const cleared = await repo.clearDeliveryClaim(escrowId);
       expect(cleared.deliveryRecordedAt).toBeNull();
       expect(mockCache.del).toHaveBeenCalledWith(`escrow:${escrowId}`);
+    });
+  });
+
   describe('lifecycle writes and lookup helpers', () => {
     it.each([
       ['updateState', (id: string) => repo.updateState(id, 'FUNDED'), 'FUNDED'],
