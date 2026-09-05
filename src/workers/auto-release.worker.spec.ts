@@ -116,7 +116,7 @@ describe('AutoReleaseWorker', () => {
 
       await worker.run();
 
-      expect(contractService.submitAutoRelease).notToHaveBeenCalled();
+      expect(contractService.submitAutoRelease).not.toHaveBeenCalled();
     });
 
     it('skips an escrow that has an open dispute', async () => {
@@ -126,10 +126,10 @@ describe('AutoReleaseWorker', () => {
 
       await worker.run();
 
-      expect(contractService.submitAutoRelease).notToHaveBeenCalled();
+      expect(contractService.submitAutoRelease).not.toHaveBeenCalled();
       expect(
         escrowRepository.recordAutoReleaseSubmission,
-      ).notToHaveBeenCalled();
+      ).not.toHaveBeenCalled();
     });
 
     it('skips an escrow whose state is COMPLETED', async () => {
@@ -139,23 +139,23 @@ describe('AutoReleaseWorker', () => {
 
       await worker.run();
 
-      expect(contractService.submitAutoRelease).notToHaveBeenCalled();
+      expect(contractService.submitAutoRelease).not.toHaveBeenCalled();
       expect(
         escrowRepository.recordAutoReleaseSubmission,
-      ).notToHaveBeenCalled();
+      ).not.toHaveBeenCalled();
     });
 
     it('skips an escrow that already has an autoReleaseTxHash', async () => {
       const escrow = makeEscrow({ autoReleaseTxHash: 'existing-tx-hash' });
       escrowRepository.findAutoReleaseEligible.mockResolvedValue([escrow]);
-      disputeRepository.findByEscrowIds.mockResolvedValue([[]);
+      disputeRepository.findByEscrowIds.mockResolvedValue([]);
 
       await worker.run();
 
-      expect(contractService.submitAutoRelease).notToHaveBeenCalled();
+      expect(contractService.submitAutoRelease).not.toHaveBeenCalled();
       expect(
         escrowRepository.recordAutoReleaseSubmission,
-      ).notToHaveBeenCalled();
+      ).not.toHaveBeenCalled();
     });
 
     it('calls recordAutoReleaseSubmission with the txHash on success', async () => {
@@ -190,10 +190,10 @@ describe('AutoReleaseWorker', () => {
 
       await worker.run();
 
-      expect(contractService.submitAutoRelease).notToHaveBeenCalled();
+      expect(contractService.submitAutoRelease).not.toHaveBeenCalled();
       expect(
         escrowRepository.recordAutoReleaseSubmission,
-      ).notToHaveBeenCalled();
+      ).not.toHaveBeenCalled();
     });
 
     it('increments failureCount and records the error when submitAutoRelease throws, and still processes remaining escrows', async () => {
@@ -279,7 +279,7 @@ describe('AutoReleaseWorker', () => {
       ).toHaveBeenCalledWith('escrow-3');
       expect(
         escrowRepository.markAutoReleaseSubmitting,
-      ).notToHaveBeenCalledWith('escrow-2');
+      ).not.toHaveBeenCalledWith('escrow-2');
     });
   });
 
@@ -292,10 +292,10 @@ describe('AutoReleaseWorker', () => {
 
       await worker.run();
 
-      expect(contractService.submitAutoRelease).notToHaveBeenCalled();
+      expect(contractService.submitAutoRelease).not.toHaveBeenCalled();
       expect(
         escrowRepository.recordAutoReleaseSubmission,
-      ).notToHaveBeenCalled();
+      ).not.toHaveBeenCalled();
       expect(escrowRepository.clearAutoReleaseSubmitting).toHaveBeenCalledWith(
         'escrow-1',
       );
@@ -304,7 +304,7 @@ describe('AutoReleaseWorker', () => {
     it('submits using the address resolved from ConfigService when configured', async () => {
       const escrow = makeEscrow();
       escrowRepository.findAutoReleaseEligible.mockResolvedValue([escrow]);
-      disputeRepository.findByEscrowIds.mockResolvedValue([[]);
+      disputeRepository.findByEscrowIds.mockResolvedValue([]);
       contractService.submitAutoRelease.mockResolvedValue('tx-hash-abc');
 
       await worker.run();
@@ -324,7 +324,7 @@ describe('AutoReleaseWorker', () => {
       const setIntervalSpy = jest.spyOn(global, 'setInterval');
       worker.onModuleInit();
 
-      expect(setIntervalSpy).notToHaveBeenCalled();
+      expect(setIntervalSpy).not.toHaveBeenCalled();
 
       setIntervalSpy.mockRestore();
       process.env.NODE_ENV = originalEnv;
@@ -337,7 +337,7 @@ describe('AutoReleaseWorker', () => {
 
       worker.onModuleInit();
 
-      expect(worker['timer']).notToBeNull();
+      expect(worker['timer']).not.toBeNull();
 
       worker.onApplicationShutdown();
       process.env.NODE_ENV = originalEnv;
