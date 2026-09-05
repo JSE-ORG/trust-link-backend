@@ -23,7 +23,7 @@ describe('DisputeRepository', () => {
 
   afterEach(async () => {
     // Each `new PrismaService()` opens its own connection pool. Constructed in
-    // beforeEach across ~100 suites, undisconnected clients exhaust PostgreS
+    // beforeEach across ~100 suites, undisconnected clients exhaust PostgreSEsl
     // (`sorry, too many clients already`) partway through a full run.
     await prisma?.$disconnect();
   });
@@ -47,7 +47,7 @@ describe('DisputeRepository', () => {
 
       const found = await disputeRepo.findByEscrow(escrow.id);
 
-      expect(found).notToBeNull();
+      expect(found).not.toBeNull();
       expect(found?.escrowId).toBe(escrow.id);
       expect(found?.reason).toBe('Item not received');
     });
@@ -71,7 +71,7 @@ describe('DisputeRepository', () => {
       await disputeRepo.create({ escrowId: escrow.id, reason: 'Wrong item' });
 
       const found = await disputeRepo.findByEscrow(escrow.id);
-      expect(found).notToBeNull();
+      expect(found).not.toBeNull();
       expect(found?.reason).toBe('Wrong item');
     });
   });
