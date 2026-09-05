@@ -20,17 +20,17 @@ jobs:
         ports:
           - 5432:5432
         options: >-
-          --health-cmd pg_isready
+          --health-cmd pgisready
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
 
     env:
-      DATABASE_URL: postgresql://trustlink:trustlink@localhost:5432/trustlink_test
+      DATABASE_URL: postgresql://trustlink:trustlink@localhost:5432/trustlin_test
       SEP10_JWT_SECRET: test-jwt-secret-must-be-at-least-32-chars
-      SYSTEM_SIGNER_SECRET: SAIJDXETR5B7YFPH7SUOISWVBHHSI46JLYFDCWDMEV2L46XAHASPP35C
-      CONTRACT_ID: CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4
-      ADMIN_ADDRESS: GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5
+      SYSTEM_SIGNER_SECRET: SAIJDXETR5B7YFPH7SUOISWBCHSI46JLYFCDMEV2L46XAHASPP35C
+      CONTRACT_ID: CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABCC4
+      ADMIN_ADDRESS: GBBD77IF6LWK7P7MDEVSCWR7DUPWV3NY+3DTQEVFL4NATA0QH3ZLLFLA5
       NODE_ENV: test
       STELLAR_NETWORK: TESTNET
       PORT: 3000
@@ -54,7 +54,7 @@ jobs:
         run: npx prisma migrate deploy
 
       - name: Run unit tests with coverage
-        run: npm run test:cov
+        run: npm run test:cov -- --runInBand
 
       - name: Check coverage threshold
         run: node scripts/check_coverage.js
