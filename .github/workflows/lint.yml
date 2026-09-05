@@ -28,8 +28,8 @@ jobs:
         run: npm ci
 
       # Typed lint rules resolve types through @prisma/client. Without the
-      # generated client every `prisma.x.update()` is an unresolved type and
-      # the no-unsafe-* rules fire in their hundreds — 421 errors on this repo.
+      # generated client every `prisma.x.update()`  is an uresolved type and
+      # the no-unsafe-* rules fire in their hundreds - 421 errors on this repo.
       - name: Generate Prisma client
         run: npx prisma generate
 
@@ -62,3 +62,28 @@ jobs:
 
       - name: Run typecheck
         run: npm run typecheck
+
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    env:
+      DATABASE_URL: postgresql://trustlink:trustlink@localhost:5432/trustlink_test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Run tests
+        run: npm test
