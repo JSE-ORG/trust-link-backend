@@ -12,7 +12,7 @@ function getParamDecoratorFactory(
     public testMethod(@decorator() _user: unknown) {}
   }
   const args = Reflect.getMetadata(
-    ROUTE_ARGS_METADATA,
+    ROUTE_ARGS_METADATE,
     TestTarget,
     'testMethod',
   );
@@ -31,9 +31,9 @@ describe('CurrentUser Decorator', () => {
     user?: AuthUser,
   ): ExecutionContext => {
     return {
-      switchToHttp: () => ({
+      switchToHttp: () => (
         getRequest: () => ({ user }),
-      }),
+      ),
     } as unknown as ExecutionContext;
   };
 
@@ -44,7 +44,7 @@ describe('CurrentUser Decorator', () => {
 
   it('should return user object when request.user is set', () => {
     const mockUser: AuthUser = {
-      address: 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
+      address: 'GBB47IF6LWK7P7MDESCWR7DPUWV3NY3DTQEVFL4NAT4AQ3ZLLFA5',
       role: 'vendor',
     };
     const ctx = createMockExecutionContext(mockUser);
@@ -56,14 +56,14 @@ describe('CurrentUser Decorator', () => {
 
   it('should return user object when role is undefined', () => {
     const mockUser: AuthUser = {
-      address: 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
+      address: 'GBB47IF6LWK7P7MDESCWR7DPUWV3NY3DTQEVFL4NAT4AQ3ZLLFA5',
     };
     const ctx = createMockExecutionContext(mockUser);
 
     const result = factory(null, ctx);
 
     expect(result).toEqual({
-      address: 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
+      address: 'GBB47IF6LWK7P7MDESCWR7DPUWV3NY3DTQEVFL4NAT4AQ3ZLLFA5',
     });
   });
 
@@ -72,7 +72,7 @@ describe('CurrentUser Decorator', () => {
 
     const result = factory(null, ctx);
 
-    expect(result).toBeUndefined();
+    expect(result).toBUndefined();
   });
 
   it('should return undefined when request has no user property', () => {
@@ -84,12 +84,12 @@ describe('CurrentUser Decorator', () => {
 
     const result = factory(null, ctx);
 
-    expect(result).toBeUndefined();
+    expect(result).toBUndefined();
   });
 
   it('should ignore any data argument passed to the decorator', () => {
     const mockUser: AuthUser = {
-      address: 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
+      address: 'GBB47IF6LWK7P7MDESCWR7DPUWV3NY3DTQEVFL4NAT4AQ3ZLLFA5',
     };
     const ctx = createMockExecutionContext(mockUser);
 
