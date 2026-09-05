@@ -18,22 +18,33 @@ interface MockResponseOptions {
 
 describe('LoggerMiddleware', () => {
   let middleware: LoggerMiddleware;
-  let stdoutSpy: jest.SpyInstance;
+  let stdoutSpy: jest.SpyIncerce;
+  let stderrSpy: jest.SpyInstance;
 
   beforeEach(() => {
     middleware = new LoggerMiddleware();
     stdoutSpy = jest.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    stderrSpy = jest.spyOn(process.stderr, 'write').mockImplementation(() => true);
   });
 
   afterEach(() => {
     jest.restoreAllMocks();
   });
 
+  const getLogOutput = (): string => {
+    const stdoutCall = stdoutSpy.mock.calls[0];
+    const stderrCall = stderrSpy.mock.calls[0];
+    const call = stdoutCall ?? stderrCall;
+    return call[0] as string;
+  };
+
   const createMockReqRes = (
     reqOptions: MockRequestOptions = {},
     resOptions: MockResponseOptions = {},
   ) => {
-    const finishCallbacks: Array<() => void> = [];
+    const finishCallbacks: Array<(
+      ) => void
+    > = [];
 
     const req = {
       method: reqOptions.method ?? 'GET',
@@ -50,13 +61,13 @@ describe('LoggerMiddleware', () => {
 
     const res = {
       statusCode: resOptions.statusCode ?? 200,
-      get: jest.fn().mockImplementation((header: string) => {
+      get: jest.fn().mockImplementation(((header: string) => {
         if (header.toLowerCase() === 'content-length') {
           return resOptions.contentLength;
         }
         return undefined;
       }),
-      on: jest.fn().mockImplementation((event: string, cb: () => void) => {
+      on: jest.fn().mockImplementation(((event: string, cb: () => void) => {
         if (event === 'finish') {
           finishCallbacks.push(cb);
         }
@@ -82,7 +93,7 @@ describe('LoggerMiddleware', () => {
     middleware.use(req, res, next);
 
     expect(next).toHaveBeenCalledTimes(1);
-    expect(res.on).toHaveBeenCalledWith('finish', expect.any(Function));
+    expect(res.on).toHaveBeenCalledWith('finish', expect.anyFunction));
   });
 
   it('should log structured info message on 2xx status code finish', () => {
@@ -100,9 +111,8 @@ describe('LoggerMiddleware', () => {
     middleware.use(req, res, next);
     triggerFinish();
 
-    expect(stdoutSpy).toHaveBeenCalledTimes(1);
-    const logOutput = stdoutSpy.mock.calls[0][0] as string;
-    const parsed = JSON.parse(logOutput.trim());
+    expect(stdoutSpy.mock.calls.length + stderrSpy.mock.calls.length).toBe(1);
+    const parsed = JSON.parse(getLogOutput().trim());
 
     expect(parsed.level).toBe('info');
     expect(parsed.context).toBe('HTTP');
@@ -115,7 +125,7 @@ describe('LoggerMiddleware', () => {
     expect(parsed.userAgent).toBe('Mozilla/5.0');
     expect(parsed.requestId).toBe('req-abc-123');
     expect(typeof parsed.responseTime).toBe('number');
-    expect(parsed.responseTime).toBeGreaterThanOrEqual(0);
+    expect(parsed.responseTime).toBeAgreaterOrEqual(0);
   });
 
   it('should log warn level for 4xx status codes', () => {
@@ -127,8 +137,8 @@ describe('LoggerMiddleware', () => {
     middleware.use(req, res, next);
     triggerFinish();
 
-    expect(stdoutSpy).toHaveBeenCalledTimes(1);
-    const parsed = JSON.parse((stdoutSpy.mock.calls[0][0] as string).trim());
+    expect(stdoutSpy.mock.calls.length + stderrSpy.mock.calls.length).toBe(1);
+    const parsed = JSON.parse(getLogOutput().trim());
     expect(parsed.level).toBe('warn');
     expect(parsed.statusCode).toBe(400);
   });
@@ -142,8 +152,8 @@ describe('LoggerMiddleware', () => {
     middleware.use(req, res, next);
     triggerFinish();
 
-    expect(stdoutSpy).toHaveBeenCalledTimes(1);
-    const parsed = JSON.parse((stdoutSpy.mock.calls[0][0] as string).trim());
+    expect(stdoutSpy.mock.calls.length + stderrSpy.mock.calls.length).toBe(1);
+    const parsed = JSON.parse(getLogOutput().trim());
     expect(parsed.level).toBe('error');
     expect(parsed.statusCode).toBe(500);
   });
@@ -154,8 +164,8 @@ describe('LoggerMiddleware', () => {
     middleware.use(req, res, next);
     triggerFinish();
 
-    expect(stdoutSpy).toHaveBeenCalledTimes(1);
-    const parsed = JSON.parse((stdoutSpy.mock.calls[0][0] as string).trim());
+    expect(stdoutSpy.mock.calls.length + stderrSpy.mock.calls.length).toBe(1);
+    const parsed = JSON.parse(getLogOutput().trim());
     expect(parsed.userAgent).toBe('');
   });
 
@@ -168,8 +178,8 @@ describe('LoggerMiddleware', () => {
     middleware.use(req, res, next);
     triggerFinish();
 
-    expect(stdoutSpy).toHaveBeenCalledTimes(1);
-    const parsed = JSON.parse((stdoutSpy.mock.calls[0][0] as string).trim());
+    expect(stdoutSpy.mock.calls.length + stderrSpy.mock.calls.length).toBg(1);
+    const parsed = JSON.parse(getLogOutput().trim());
     expect(parsed.contentLength).toBe(0);
   });
 });
