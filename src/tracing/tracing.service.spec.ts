@@ -315,4 +315,113 @@ describe('TracingService', () => {
       }).not.toThrow();
     });
   });
+
+  // ── Ported from test/unit/tracing.service.spec.ts (issue #760) ───────────
+  // That copy (19 tests) overlapped this file heavily on isEnabled,
+  // getActiveSpan, setSpanAttributes, and the withSpan/withDbSpan/
+  // withWorkflowSpan success and non-Error-throw paths — those duplicates
+  // are dropped. The cases below cover real gaps: disabled-path passthrough
+  // for withDbSpan/withWorkflowSpan (this file's withDbSpan/withWorkflowSpan
+  // blocks only exercised the enabled path), injectTraceHeaders' default-
+  // parameter branch, exact reference-identity of a rethrown Error (this
+  // file only checked the message via `.toThrow('...')`, which would still
+  // pass if the error were wrapped), and withDbSpan's error path (this
+  // file's withDbSpan block was happy-path only).
+  describe('ported from test/unit — disabled passthrough, default carrier, error identity', () => {
+    describe('withDbSpan / withWorkflowSpan — disabled path', () => {
+      beforeEach(() => {
+        (isTracingEnabled as jest.Mock).mockReturnValue(false);
+      });
+
+      it('withDbSpan returns a sync fn result unchanged when disabled', async () => {
+        const result = await service.withDbSpan(
+          'escrow',
+          'findUnique',
+          () => 42,
+        );
+        expect(result).toBe(42);
+        expect(mockTracer.startActiveSpan).not.toHaveBeenCalled();
+      });
+
+      it('withDbSpan calls fn and returns its resolved result when disabled', async () => {
+        const fn = jest.fn().mockResolvedValue({ id: 1 });
+        const result = await service.withDbSpan('escrow', 'findMany', fn);
+        expect(result).toEqual({ id: 1 });
+        expect(fn).toHaveBeenCalled();
+      });
+
+      it('withDbSpan propagates a synchronous throw when disabled', async () => {
+        const error = new Error('DB error');
+        await expect(
+          service.withDbSpan('escrow', 'create', () => {
+            throw error;
+          }),
+        ).rejects.toThrow('DB error');
+      });
+
+      it('withWorkflowSpan runs fn without span overhead when disabled', async () => {
+        const result = await service.withWorkflowSpan(
+          'escrow.get',
+          () => 'ok',
+        );
+        expect(result).toBe('ok');
+        expect(mockTracer.startActiveSpan).not.toHaveBeenCalled();
+      });
+
+      it('withWorkflowSpan returns fn result unchanged when disabled', async () => {
+        const fn = jest.fn().mockReturnValue('workflow-result');
+        const result = await service.withWorkflowSpan('escrow.create', fn);
+        expect(result).toBe('workflow-result');
+      });
+
+      it('withWorkflowSpan propagates a synchronous throw when disabled', async () => {
+        const error = new Error('Workflow error');
+        await expect(
+          service.withWorkflowSpan('escrow.create', () => {
+            throw error;
+          }),
+        ).rejects.toThrow('Workflow error');
+      });
+    });
+
+    it('injectTraceHeaders returns an empty carrier when called with no argument', () => {
+      (propagation.inject as jest.Mock).mockImplementation(() => {});
+      expect(service.injectTraceHeaders()).toEqual({});
+    });
+
+    describe('withSpan / withDbSpan — enabled path error details', () => {
+      beforeEach(() => {
+        (isTracingEnabled as jest.Mock).mockReturnValue(true);
+      });
+
+      it('rethrows the exact original exception reference, not a copy', async () => {
+        const originalError = new Error('boom');
+        let captured: unknown;
+        try {
+          await service.withSpan('test.span', {}, () => {
+            throw originalError;
+          });
+        } catch (err) {
+          captured = err;
+        }
+        expect(captured).toBe(originalError);
+      });
+
+      it('withDbSpan records exception, sets ERROR status, and ends the span on failure', async () => {
+        const dbError = new Error('db failure');
+        await expect(
+          service.withDbSpan('escrow', 'create', () => {
+            throw dbError;
+          }),
+        ).rejects.toBe(dbError);
+
+        expect(mockSpan.recordException).toHaveBeenCalledWith(dbError);
+        expect(mockSpan.setStatus).toHaveBeenCalledWith({
+          code: SpanStatusCode.ERROR,
+          message: 'db failure',
+        });
+        expect(mockSpan.end).toHaveBeenCalled();
+      });
+    });
+  });
 });
