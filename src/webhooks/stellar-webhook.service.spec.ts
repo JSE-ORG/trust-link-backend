@@ -341,3 +341,156 @@ describe('StellarWebhookService – handlePayment (issue #396)', () => {
     expect(escrowRepository.updateState).not.toHaveBeenCalled();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Issue #734 — no-Prisma path and duplicate-delivery (replay) guard
+// ---------------------------------------------------------------------------
+
+import * as crypto from 'crypto';
+
+const WEBHOOK_SECRET = 'test-webhook-secret';
+
+/** Compute a valid HMAC-SHA256 hex signature for rawBody using WEBHOOK_SECRET. */
+function sign(rawBody: Buffer): string {
+  return crypto
+    .createHmac('sha256', WEBHOOK_SECRET)
+    .update(rawBody)
+    .digest('hex');
+}
+
+describe('StellarWebhookService — no-Prisma path and replay guard (issue #734)', () => {
+  let escrowRepository: jest.Mocked<
+    Pick<EscrowRepository, 'findByVendor' | 'updateState'>
+  >;
+  let notificationsService: jest.Mocked<Pick<NotificationsService, 'notifyFunded'>>;
+
+  /** Build a service instance with no PrismaService injected (the @Optional() path). */
+  function makeService(): StellarWebhookService {
+    return new StellarWebhookService(
+      {
+        get: jest.fn().mockImplementation((key: string) => {
+          if (key === 'STELLAR_WEBHOOK_SECRET') return WEBHOOK_SECRET;
+          return undefined;
+        }),
+      } as unknown as ConfigService,
+      escrowRepository as unknown as EscrowRepository,
+      notificationsService as unknown as NotificationsService,
+      // no PrismaService argument → this.prisma is undefined
+    );
+  }
+
+  beforeEach(() => {
+    escrowRepository = {
+      findByVendor: jest.fn().mockResolvedValue([]),
+      updateState: jest.fn(),
+    };
+    notificationsService = {
+      notifyFunded: jest.fn().mockResolvedValue(undefined),
+    };
+  });
+
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
+  // ── Helper ────────────────────────────────────────────────────────────────
+
+  async function callHandleEvent(
+    service: StellarWebhookService,
+    dto: StellarWebhookDto,
+  ) {
+    const rawBody = Buffer.from(JSON.stringify(dto));
+    const signature = sign(rawBody);
+    return service.handleEvent(rawBody, signature, dto);
+  }
+
+  // ── Branch: this.prisma absent — first delivery uses processedIds.add ────
+
+  describe('no-Prisma path (this.prisma guards)', () => {
+    it('processes the first delivery using the in-memory processedIds set', async () => {
+      const service = makeService();
+      const dto = makePaymentDto({ id: 'op-no-prisma-1' });
+
+      const result = await callHandleEvent(service, dto);
+
+      expect(result).toEqual({ received: true });
+      // No Prisma means no DB call — repository is still called for the event itself
+      expect(escrowRepository.findByVendor).toHaveBeenCalledWith(dto.to);
+    });
+
+    it('uses processedIds.has for duplicate check when Prisma is absent', async () => {
+      const service = makeService();
+      const dto = makePaymentDto({ id: 'op-no-prisma-2' });
+
+      // First delivery — processes normally
+      await callHandleEvent(service, dto);
+      // Second delivery with the same id — must be a no-op
+      const second = await callHandleEvent(service, dto);
+
+      expect(second).toEqual({ received: true, skipped: true, reason: 'duplicate' });
+      // findByVendor called exactly once (from the first delivery only)
+      expect(escrowRepository.findByVendor).toHaveBeenCalledTimes(1);
+    });
+
+    it('rolls back processedIds on processEvent failure (no Prisma)', async () => {
+      const service = makeService();
+      const dto = makePaymentDto({ id: 'op-no-prisma-rollback' });
+      escrowRepository.findByVendor.mockRejectedValueOnce(
+        new Error('DB unavailable'),
+      );
+
+      // First call fails — the id should be removed from processedIds
+      await callHandleEvent(service, dto).catch(() => undefined);
+
+      // Second call with the same id must not be treated as a duplicate
+      escrowRepository.findByVendor.mockResolvedValueOnce([]);
+      const retry = await callHandleEvent(service, dto);
+
+      expect(retry.skipped).toBeUndefined();
+      expect(retry).toEqual({ received: true });
+    });
+  });
+
+  // ── Branch: this.processedIds.has(dto.id) duplicate guard ────────────────
+
+  describe('duplicate-delivery (replay) guard', () => {
+    it('returns skipped:true on the second delivery of the same operation id', async () => {
+      const service = makeService();
+      const dto = makePaymentDto({ id: 'op-replay-001' });
+
+      const first = await callHandleEvent(service, dto);
+      const second = await callHandleEvent(service, dto);
+
+      expect(first).toEqual({ received: true });
+      expect(second).toEqual({ received: true, skipped: true, reason: 'duplicate' });
+    });
+
+    it('processes the event only once when delivered twice', async () => {
+      const service = makeService();
+      const escrow = makeEscrow({ state: 'CREATED', amount: 500, currency: 'USDC' });
+      escrowRepository.findByVendor.mockResolvedValue([escrow]);
+      escrowRepository.updateState.mockResolvedValue({ ...escrow, state: 'FUNDED' });
+      notificationsService.notifyFunded.mockResolvedValue(undefined);
+
+      const dto = makePaymentDto({ id: 'op-replay-002' });
+
+      await callHandleEvent(service, dto);
+      await callHandleEvent(service, dto);
+
+      // updateState must have been called exactly once despite two deliveries
+      expect(escrowRepository.updateState).toHaveBeenCalledTimes(1);
+    });
+
+    it('a third distinct id is not treated as a duplicate', async () => {
+      const service = makeService();
+
+      await callHandleEvent(service, makePaymentDto({ id: 'op-A' }));
+      await callHandleEvent(service, makePaymentDto({ id: 'op-A' })); // duplicate
+      const result = await callHandleEvent(service, makePaymentDto({ id: 'op-B' }));
+
+      expect(result).toEqual({ received: true });
+      // findByVendor called for op-A (first) and op-B — not for the duplicate
+      expect(escrowRepository.findByVendor).toHaveBeenCalledTimes(2);
+    });
+  });
+});
