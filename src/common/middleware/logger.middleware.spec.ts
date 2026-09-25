@@ -87,6 +87,24 @@ describe('LoggerMiddleware', () => {
     expect(res.on).toHaveBeenCalledWith('finish', expect.any(Function));
   });
 
+  it('falls back to "development" for env when NODE_ENV is unset', () => {
+    const originalEnv = process.env.NODE_ENV;
+    delete process.env.NODE_ENV;
+    try {
+      const { req, res, next, triggerFinish } = createMockReqRes();
+
+      middleware.use(req, res, next);
+      triggerFinish();
+
+      const parsed = JSON.parse(
+        (stdoutSpy.mock.calls[0][0] as string).trim(),
+      ) as { env: string };
+      expect(parsed.env).toBe('development');
+    } finally {
+      process.env.NODE_ENV = originalEnv;
+    }
+  });
+
   it('should log structured info message on 2xx status code finish', () => {
     const { req, res, next, triggerFinish } = createMockReqRes(
       {

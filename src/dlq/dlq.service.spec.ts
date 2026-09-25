@@ -72,6 +72,23 @@ describe('DlqService', () => {
       expect(result.status).toBe('PENDING_REVIEW');
       expect(prismaMock.failedTransaction.create).toHaveBeenCalled();
     });
+
+    it('stores escrowId as null when the failure is not tied to an escrow', async () => {
+      prismaMock.failedTransaction.create.mockResolvedValue({
+        ...mockRecord,
+        escrowId: null,
+      });
+
+      const result = await service.enqueue({
+        operation: 'submitTransaction',
+        errorMessage: 'Transaction failed',
+      });
+
+      expect(prismaMock.failedTransaction.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ escrowId: null }),
+      });
+      expect(result.escrowId).toBeNull();
+    });
   });
 
   describe('list', () => {

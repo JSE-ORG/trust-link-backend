@@ -109,6 +109,35 @@ describe('prisma-tracing.wrapper', () => {
     expect(findUniqueResult).toEqual({ id: '1' });
   });
 
+  it('copies non-function members of a traced delegate through without wrapping them', async () => {
+    const withSpan = jest.spyOn(tracing, 'withDbSpan');
+    const prisma = {
+      escrow: {
+        findMany: jest.fn().mockResolvedValue([]),
+        $name: 'escrow',
+        fields: { id: 'String' },
+      },
+    } as unknown as PrismaService;
+    const wrapped = wrapPrismaWithTracing(prisma, tracing);
+    const delegate = wrapped.escrow as unknown as {
+      $name: string;
+      fields: { id: string };
+      findMany: () => Promise<unknown[]>;
+    };
+
+    expect(delegate.$name).toBe('escrow');
+    expect(delegate.fields).toBe(
+      (prisma.escrow as unknown as { fields: unknown }).fields,
+    );
+    await delegate.findMany();
+    expect(withSpan).toHaveBeenCalledTimes(1);
+    expect(withSpan).toHaveBeenCalledWith(
+      'escrow',
+      'findMany',
+      expect.any(Function),
+    );
+  });
+
   it('wraps dispute model methods', async () => {
     const prisma = makeFakePrisma();
     const wrapped = wrapPrismaWithTracing(prisma, tracing);

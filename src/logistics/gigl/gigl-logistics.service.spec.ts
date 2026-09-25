@@ -19,6 +19,7 @@ import {
   GiglInvalidResponseError,
 } from './gigl.client';
 import { GiglTrackingResponse } from './gigl.types';
+import { PrismaService } from '../../prisma/prisma.service';
 
 // ── Fixture factory ──────────────────────────────────────────────────────────
 
@@ -392,6 +393,69 @@ describe('GiglLogisticsService', () => {
       expect(err.name).toBe('GiglProviderError');
       expect(err.statusCode).toBe(502);
       expect(err).toBeInstanceOf(Error);
+    });
+  });
+
+  describe('with a configured carrier client', () => {
+    it('warns about a missing API key once on module init and not again for the client', async () => {
+      const prisma = {
+        providerCredential: { findUnique: jest.fn().mockResolvedValue(null) },
+      } as unknown as PrismaService;
+      const configured = new GiglLogisticsService(
+        client as unknown as GiglClient,
+        prisma,
+      );
+      const warn = jest
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation(() => undefined);
+      try {
+        await expect(configured.onModuleInit()).resolves.toBeUndefined();
+        // The base class warns because no API key is persisted or configured;
+        // the GIGL guard sees a client and must not add a second warning.
+        expect(
+          (prisma.providerCredential as { findUnique: jest.Mock }).findUnique,
+        ).toHaveBeenCalledTimes(1);
+        expect(warn).toHaveBeenCalledTimes(1);
+        expect(warn).toHaveBeenCalledWith(
+          'Logistics provider is not configured. Real tracking lookups will fail.',
+        );
+      } finally {
+        warn.mockRestore();
+      }
+    });
+  });
+
+  describe('without a configured carrier client', () => {
+    let unconfigured: GiglLogisticsService;
+
+    beforeEach(() => {
+      unconfigured = new GiglLogisticsService(null);
+    });
+
+    it('warns on module init instead of failing startup', async () => {
+      const warn = jest
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation(() => undefined);
+      try {
+        await expect(unconfigured.onModuleInit()).resolves.toBeUndefined();
+        expect(warn).toHaveBeenCalledWith(
+          'Logistics provider is not configured. Real tracking lookups will fail.',
+        );
+      } finally {
+        warn.mockRestore();
+      }
+    });
+
+    it('rejects getStatus with a not-configured error naming the tracking id', async () => {
+      await expect(unconfigured.getStatus('TRK-404')).rejects.toThrow(
+        'Logistics service is not configured for TRK-404',
+      );
+    });
+
+    it('rejects getTrackingDetails with a not-configured error naming the tracking id', async () => {
+      await expect(unconfigured.getTrackingDetails('TRK-404')).rejects.toThrow(
+        'Logistics service is not configured for TRK-404',
+      );
     });
   });
 });
