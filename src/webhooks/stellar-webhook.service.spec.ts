@@ -14,7 +14,12 @@
  * for ConfigService, EscrowRepository, and (where needed) PrismaService.
  */
 
-import { BadRequestException } from '@nestjs/common';
+import {
+  BadRequestException,
+  InternalServerErrorException,
+  Logger,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '../config/config.service';
 import { EscrowRepository } from '../escrow/escrow.repository';
@@ -491,6 +496,83 @@ describe('StellarWebhookService — no-Prisma path and replay guard (issue #734)
       expect(result).toEqual({ received: true });
       // findByVendor called for op-A (first) and op-B — not for the duplicate
       expect(escrowRepository.findByVendor).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  // ── Ported from test/unit/stellar-webhook.service.spec.ts (issue #759) ───
+  // The rest of this file drives handleEvent with a secret always configured
+  // and a valid signature already computed by callHandleEvent/sign — none of
+  // it exercises verifySignature's own rejection paths.
+  describe('signature verification', () => {
+    /** Build a service instance with no STELLAR_WEBHOOK_SECRET configured. */
+    function makeServiceNoSecret(): StellarWebhookService {
+      return new StellarWebhookService(
+        { get: jest.fn().mockReturnValue(undefined) } as unknown as ConfigService,
+        escrowRepository as unknown as EscrowRepository,
+        notificationsService as unknown as NotificationsService,
+      );
+    }
+
+    it('rejects when STELLAR_WEBHOOK_SECRET is not configured', async () => {
+      const service = makeServiceNoSecret();
+      const dto = makePaymentDto();
+      const rawBody = Buffer.from(JSON.stringify(dto));
+
+      await expect(
+        service.handleEvent(rawBody, undefined, dto),
+      ).rejects.toThrow(InternalServerErrorException);
+    });
+
+    it('accepts a valid HMAC-SHA256 signature', async () => {
+      const service = makeService();
+      const dto = makePaymentDto({ id: 'op-sig-valid' });
+      const rawBody = Buffer.from(JSON.stringify(dto));
+      const signature = sign(rawBody);
+
+      await expect(
+        service.handleEvent(rawBody, signature, dto),
+      ).resolves.toEqual({ received: true });
+    });
+
+    it('rejects a tampered signature', async () => {
+      const service = makeService();
+      const dto = makePaymentDto({ id: 'op-sig-tampered' });
+      const rawBody = Buffer.from(JSON.stringify(dto));
+
+      await expect(
+        service.handleEvent(rawBody, 'deadbeef', dto),
+      ).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('rejects when signature header is missing and secret is configured', async () => {
+      const service = makeService();
+      const dto = makePaymentDto({ id: 'op-sig-missing' });
+      const rawBody = Buffer.from(JSON.stringify(dto));
+
+      await expect(
+        service.handleEvent(rawBody, undefined, dto),
+      ).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('logs webhook processing failures with event context before rethrowing', async () => {
+      const service = makeService();
+      const dto = makePaymentDto({ id: 'op-sig-log-fail', to: undefined });
+      const rawBody = Buffer.from(JSON.stringify(dto));
+      const signature = sign(rawBody);
+      const loggerErrorSpy = jest
+        .spyOn(Logger.prototype, 'error')
+        .mockImplementation();
+
+      await expect(
+        service.handleEvent(rawBody, signature, dto),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(loggerErrorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('stellar.webhook.processing_failed'),
+        expect.any(String),
+      );
+
+      loggerErrorSpy.mockRestore();
     });
   });
 });
