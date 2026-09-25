@@ -149,8 +149,8 @@ describe('DisputeRepository (issue #14)', () => {
   });
 
   it('throws when resolving a non-existent dispute', async () => {
-    await expect(disputeRepository.resolve('non-existent-dispute-id')).rejects.toThrow(
-      'Dispute non-existent-dispute-id not found',
-    );
+    await expect(
+      disputeRepository.resolve('non-existent-dispute-id'),
+    ).rejects.toThrow('Dispute non-existent-dispute-id not found');
   });
 });

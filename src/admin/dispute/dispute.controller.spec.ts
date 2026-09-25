@@ -6,24 +6,29 @@ import { DisputeService } from './dispute.service';
 
 describe('DisputeController', () => {
   let controller: DisputeController;
-  let disputeService: jest.Mocked<Pick<DisputeService, 'getDisputes' | 'resolve'>>;
+  let disputeService: jest.Mocked<
+    Pick<DisputeService, 'getDisputes' | 'resolve'>
+  >;
   let auditLogService: jest.Mocked<Pick<AuditLogService, 'findAll' | 'append'>>;
 
   beforeEach(async () => {
     disputeService = {
       getDisputes: jest.fn(),
       resolve: jest.fn(),
-    } as jest.Mocked<Pick<DisputeService, 'getDisputes' | 'resolve'>>;
+    };
 
     auditLogService = {
       findAll: jest.fn(),
       append: jest.fn(),
-    } as jest.Mocked<Pick<AuditLogService, 'findAll' | 'append'>>;
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [DisputeController],
       providers: [
-        { provide: ConfigService, useValue: { get: jest.fn(() => 'GADMIN123') } },
+        {
+          provide: ConfigService,
+          useValue: { get: jest.fn(() => 'GADMIN123') },
+        },
         { provide: DisputeService, useValue: disputeService },
         { provide: AuditLogService, useValue: auditLogService },
       ],
@@ -44,7 +49,7 @@ describe('DisputeController', () => {
         page: 1,
         limit: 20,
       };
-      disputeService.getDisputes.mockResolvedValue(expected as never);
+      disputeService.getDisputes.mockResolvedValue(expected);
 
       const result = await controller.getDisputes();
 
@@ -63,7 +68,7 @@ describe('DisputeController', () => {
         page: 2,
         limit: 25,
       };
-      disputeService.getDisputes.mockResolvedValue(expected as never);
+      disputeService.getDisputes.mockResolvedValue(expected);
 
       const result = await controller.getDisputes('OPEN', '2', '25');
 
@@ -82,7 +87,7 @@ describe('DisputeController', () => {
         page: 3,
         limit: 20,
       };
-      disputeService.getDisputes.mockResolvedValue(expected as never);
+      disputeService.getDisputes.mockResolvedValue(expected);
 
       const result = await controller.getDisputes('OPEN', '3', undefined);
 
@@ -101,7 +106,7 @@ describe('DisputeController', () => {
         page: 1,
         limit: 15,
       };
-      disputeService.getDisputes.mockResolvedValue(expected as never);
+      disputeService.getDisputes.mockResolvedValue(expected);
 
       const result = await controller.getDisputes('OPEN', undefined, '15');
 
@@ -120,7 +125,7 @@ describe('DisputeController', () => {
         page: 1,
         limit: 10,
       };
-      disputeService.getDisputes.mockResolvedValue(expected as never);
+      disputeService.getDisputes.mockResolvedValue(expected);
 
       await controller.getDisputes('OPEN', 'abc', '10');
 

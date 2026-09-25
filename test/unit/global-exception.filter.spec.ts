@@ -55,10 +55,10 @@ function buildHost(
     headers: { 'user-agent': 'jest-test' },
   };
   return {
-    switchToHttp: () => {
+    switchToHttp: () => ({
       getResponse: () => res,
       getRequest: () => req,
-    },
+    }),
   } as unknown as ArgumentsHost;
 }
 
@@ -236,7 +236,9 @@ describe('GlobalExceptionFilter (issue #286)', () => {
     });
 
     it('isPrismaError does not match non-Prisma errors', () => {
-      const nonPrismaError = Object.assign(new Error('custom'), { code: 'E123' });
+      const nonPrismaError = Object.assign(new Error('custom'), {
+        code: 'E123',
+      });
       filter.catch(nonPrismaError, host);
       const body = res.body as StandardErrorResponse;
       expect(res.status).toHaveBeenCalledWith(HttpStatus.INTERNAL_SERVER_ERROR);

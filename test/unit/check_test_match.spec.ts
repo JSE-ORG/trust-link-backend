@@ -1,11 +1,11 @@
-const { execFileSync } = require('child_process');
-const fs = require('fs');
-const os = require('os');
-const path = require('path');
+import { execFileSync } from 'child_process';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 
 const scriptPath = path.resolve(__dirname, '../../scripts/check_test_match.js');
 
-function createFixture(files) {
+function createFixture(files: string[]): string {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'check-test-'));
   for (const relPath of files) {
     const fullPath = path.join(tmpDir, relPath);
@@ -15,11 +15,20 @@ function createFixture(files) {
   return tmpDir;
 }
 
-function runGuard(rootDir) {
+interface GuardResult {
+  status: number | undefined;
+  stdout: string;
+  stderr: string;
+}
+
+function runGuard(rootDir: string): GuardResult {
   try {
-    const stdout = execFileSync('node', [scriptPath, rootDir], { encoding: 'utf8' });
-    return { status: 0, stdout };
-  } catch (error) {
+    const stdout = execFileSync('node', [scriptPath, rootDir], {
+      encoding: 'utf8',
+    });
+    return { status: 0, stdout, stderr: '' };
+  } catch (err) {
+    const error = err as { status?: number; stdout?: Buffer; stderr?: Buffer };
     return {
       status: error.status,
       stdout: (error.stdout && error.stdout.toString()) || '',

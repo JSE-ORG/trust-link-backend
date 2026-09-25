@@ -111,7 +111,7 @@ describe('JsonLoggerService (issue #81)', () => {
     });
 
     it('falls back to instance context for structured()', () => {
-      logger.structured('info', 'msg', {});
+      logger.structured('log', 'msg', {});
       expect(lastEntry().context).toBe('InstanceCtx');
     });
 
@@ -123,13 +123,13 @@ describe('JsonLoggerService (issue #81)', () => {
 
     it('uses "App" for structured() if neither explicit nor instance context is set', () => {
       const statelessLogger = new JsonLoggerService();
-      statelessLogger.structured('info', 'msg', {});
+      statelessLogger.structured('log', 'msg', {});
       expect(lastEntry().context).toBe('App');
     });
 
     it('suppresses structured() messages when below LOG_LEVEL', () => {
       process.env.LOG_LEVEL = 'error';
-      logger.structured('info', 'msg', {});
+      logger.structured('log', 'msg', {});
       expect(writeSpy).not.toHaveBeenCalled();
     });
   });
