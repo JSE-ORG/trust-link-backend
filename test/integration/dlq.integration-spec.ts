@@ -81,7 +81,7 @@ describe('DLQ endpoints (issue #640)', () => {
         escrowId: overrides?.escrowId ?? null,
         errorMessage: overrides?.errorMessage ?? 'Stellar network timeout',
         ledgerFeedback: Prisma.DbNull,
-        status: (overrides?.status as any) ?? 'PENDING_REVIEW',
+        status: overrides?.status ?? 'PENDING_REVIEW',
         attempts: 1,
       },
     });
