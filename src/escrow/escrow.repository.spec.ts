@@ -40,6 +40,8 @@ describe('EscrowRepository', () => {
       'v-enc3',
       'v-enc4',
       'v-enc5',
+      'vendor-1',
+      'vendor-2',
     );
     repo = new EscrowRepository(prisma);
   });
@@ -633,6 +635,205 @@ describe('EscrowRepository', () => {
       await expect(cachedRepo.findById('missing')).resolves.toBeNull();
       await cachedRepo.invalidateCache(escrow.id);
       expect(cache.del).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  // ── Ported from test/unit/escrow.repository.spec.ts (#754, issue #13) ────
+  // That copy (4 tests) owned findByVendor/findByBuyer basics,
+  // findAutoReleaseEligible, recordAutoReleaseSubmission and the findEvents
+  // ordering tie-break. The src copy never covered findAutoReleaseEligible or
+  // the ordering query shape, so all four cases move here. The
+  // recordAutoReleaseSubmission case overlaps the lifecycle metadata test
+  // above but asserts the no-state-advance invariant explicitly, so it is
+  // kept as a focused regression test.
+  describe('ported from test/unit — vendor/buyer lookup, auto-release, event ordering', () => {
+    it('finds escrows by vendor and buyer', async () => {
+      await prisma.escrow.create({
+        data: {
+          itemName: 'Jacket',
+          itemRef: 'ref-jacket-ported',
+          amount: 100,
+          currency: 'USDC',
+          buyerAddress: 'buyer-1',
+          vendorAddress: 'vendor-1',
+        },
+      });
+      await prisma.escrow.create({
+        data: {
+          itemName: 'Hat',
+          itemRef: 'ref-hat-ported',
+          amount: 40,
+          currency: 'USDC',
+          buyerAddress: 'buyer-2',
+          vendorAddress: 'vendor-1',
+        },
+      });
+
+      expect(await repo.findByVendor('vendor-1')).toHaveLength(2);
+      expect(await repo.findByBuyer('buyer-2')).toHaveLength(1);
+    });
+
+    /**
+     * Fixtures go through `markDelivered` (issue #395). Writing `deliveredAt`
+     * onto a SHIPPED row by hand produces a state the application cannot reach,
+     * and every assertion below would then pass for the wrong reason: nothing
+     * matches the query, so the dispute and recency filters are never exercised.
+     */
+    const deliverPorted = async (
+      data: {
+        itemRef: string;
+        buyerAddress: string;
+        vendorAddress: string;
+        trackingId: string;
+      },
+      deliveredAt: Date,
+    ) => {
+      const escrow = await prisma.escrow.create({
+        data: {
+          itemName: data.itemRef,
+          itemRef: data.itemRef,
+          amount: 250,
+          currency: 'USDC',
+          buyerAddress: data.buyerAddress,
+          vendorAddress: data.vendorAddress,
+          trackingId: data.trackingId,
+          state: 'SHIPPED',
+        },
+      });
+      await repo.markDelivered(escrow.id, deliveredAt);
+      return escrow;
+    };
+
+    it('finds only escrows delivered more than 48 hours ago without disputes', async () => {
+      const disputed = await deliverPorted(
+        {
+          itemRef: 'ref-camera-1-ported',
+          buyerAddress: 'buyer-1',
+          vendorAddress: 'vendor-1',
+          trackingId: 'TRK-1-ported',
+        },
+        new Date('2026-01-01T00:00:00.000Z'),
+      );
+
+      // Delivered an hour before the reference time — inside the 48-hour window.
+      await deliverPorted(
+        {
+          itemRef: 'ref-laptop-ported',
+          buyerAddress: 'buyer-2',
+          vendorAddress: 'vendor-2',
+          trackingId: 'TRK-2-ported',
+        },
+        new Date('2026-05-25T23:00:00.000Z'),
+      );
+
+      // Past the window, undisputed: the one row that must come back.
+      const eligible = await deliverPorted(
+        {
+          itemRef: 'ref-tripod-ported',
+          buyerAddress: 'buyer-3',
+          vendorAddress: 'vendor-1',
+          trackingId: 'TRK-3-ported',
+        },
+        new Date('2026-05-20T00:00:00.000Z'),
+      );
+
+      const dispute = await prisma.dispute.create({
+        data: {
+          escrowId: disputed.id,
+          reason: 'Item missing',
+        },
+      });
+      // Mirror what production does: BuyerDisputeService links the dispute and
+      // transitions the escrow (buyer-dispute.service.ts). The previous
+      // in-memory PrismaService applied that side effect inside dispute.create
+      // itself, so the test got it for free; the real client does not (#475).
+      await prisma.escrow.update({
+        where: { id: disputed.id },
+        data: { disputeId: dispute.id, state: 'DISPUTED' },
+      });
+
+      const results = await repo.findAutoReleaseEligible(
+        new Date('2026-05-26T00:00:00.000Z'),
+      );
+
+      expect(results).toHaveLength(1);
+      expect(results[0].id).toBe(eligible.id);
+    });
+
+    it('records an auto-release submission without advancing state', async () => {
+      const escrow = await deliverPorted(
+        {
+          itemRef: 'ref-camera-2-ported',
+          buyerAddress: 'buyer-1',
+          vendorAddress: 'vendor-1',
+          trackingId: 'TRK-1-ported',
+        },
+        new Date('2026-01-01T00:00:00.000Z'),
+      );
+
+      const updated = await repo.recordAutoReleaseSubmission(
+        escrow.id,
+        'tx-hash',
+      );
+
+      // Recording a submission must not advance state. The AutoReleased chain
+      // event owns the terminal transition; a hash here only says the network
+      // accepted the transaction, not that it landed.
+      expect(updated.state).toBe('DELIVERED');
+      expect(updated.autoReleaseTxHash).toBe('tx-hash');
+      expect(updated.autoReleaseSubmittedAt).toBeInstanceOf(Date);
+    });
+
+    it('orders event history oldest-first and breaks timestamp ties by id', async () => {
+      const findMany = jest.spyOn(prisma.escrowEvent, 'findMany');
+
+      // EscrowEvent.escrowId is a foreign key, so the parent escrow has to exist.
+      const escrow = await prisma.escrow.create({
+        data: {
+          itemName: 'Ordered',
+          itemRef: 'ref-ordered-ported',
+          amount: 10,
+          currency: 'USDC',
+          buyerAddress: 'buyer-1',
+          vendorAddress: 'vendor-1',
+        },
+      });
+
+      // createdAt is supplied explicitly rather than driven by fake timers: the
+      // first two share a timestamp so the id tie-break is what orders them, and
+      // fake timers would stall the real database I/O this now performs (#475).
+      const tie = new Date('2026-07-29T12:00:00.000Z');
+      await prisma.escrowEvent.create({
+        data: { escrowId: escrow.id, toState: 'FUNDED', createdAt: tie },
+      });
+      await prisma.escrowEvent.create({
+        data: {
+          escrowId: escrow.id,
+          fromState: 'FUNDED',
+          toState: 'SHIPPED',
+          createdAt: tie,
+        },
+      });
+      await prisma.escrowEvent.create({
+        data: {
+          escrowId: escrow.id,
+          fromState: 'SHIPPED',
+          toState: 'COMPLETED',
+          createdAt: new Date('2026-07-29T13:00:00.000Z'),
+        },
+      });
+
+      const events = await repo.findEvents(escrow.id);
+
+      expect(events.map((event) => event.toState)).toEqual([
+        'FUNDED',
+        'SHIPPED',
+        'COMPLETED',
+      ]);
+      expect(findMany).toHaveBeenCalledWith({
+        where: { escrowId: escrow.id },
+        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      });
     });
   });
 });

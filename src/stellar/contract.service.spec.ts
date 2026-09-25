@@ -443,4 +443,81 @@ describe('ContractService', () => {
       expect(server.loadAccount).not.toHaveBeenCalled();
     });
   });
+
+  // ── Ported from test/unit/contract.service.spec.ts (#751) ────────────────
+  // The test/unit copy (7 tests, issue #19 + #207) overlapped this file on the
+  // happy-path, sequence-retry and max-retries cases — those duplicates are
+  // dropped. The four cases below assert legacy payload shapes this file never
+  // checked, so they are preserved here.
+  describe('submitAutoRelease — legacy payload shapes (ported from test/unit)', () => {
+    it('throws ContractCallFailedException for TxFailed results', async () => {
+      const server = makeServer();
+      server.loadAccount.mockResolvedValue({ sequence: '100' });
+      server.submitTransaction.mockResolvedValue({ resultXdr: 'TxFailed' });
+
+      const svc = new ContractService(server);
+
+      await expect(svc.submitAutoRelease(ESCROW, SOURCE)).rejects.toThrow(
+        ContractCallFailedException,
+      );
+    });
+
+    it('includes sourceAddress and sequence in the submitted transaction', async () => {
+      const server = makeServer();
+      server.loadAccount.mockResolvedValue({ sequence: '42' });
+      server.submitTransaction.mockResolvedValue({ hash: 'tx-ok' });
+
+      const svc = new ContractService(server);
+      await svc.submitAutoRelease(ESCROW, SOURCE);
+
+      expect(server.submitTransaction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          operation: 'autoRelease',
+          contractEscrowId: '42',
+          sourceAddress: SOURCE,
+          sequence: '42',
+        }),
+      );
+    });
+
+    it('passes a fresh sequence on each retry attempt', async () => {
+      const server = makeServer();
+      server.loadAccount
+        .mockResolvedValueOnce({ sequence: '1' })
+        .mockResolvedValueOnce({ sequence: '2' });
+      server.submitTransaction
+        .mockRejectedValueOnce(new Error('sequence error'))
+        .mockResolvedValueOnce({ hash: 'fresh-hash' });
+
+      const svc = new ContractService(server);
+      const hash = await svc.submitAutoRelease(ESCROW, SOURCE, 1);
+
+      expect(hash).toBe('fresh-hash');
+      expect(server.loadAccount).toHaveBeenCalledTimes(2);
+      expect(server.submitTransaction).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({ sequence: '1' }),
+      );
+      expect(server.submitTransaction).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({ sequence: '2' }),
+      );
+    });
+
+    it('records delivery with a contract transaction', async () => {
+      const server = makeServer();
+      server.submitTransaction.mockResolvedValue({ hash: 'delivery-hash' });
+
+      const svc = new ContractService(server);
+      await expect(svc.recordDelivery(ESCROW, ADMIN)).resolves.toBe(
+        'delivery-hash',
+      );
+      expect(server.submitTransaction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          operation: 'recordDelivery',
+          contractEscrowId: '42',
+        }),
+      );
+    });
+  });
 });

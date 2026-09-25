@@ -214,4 +214,109 @@ describe('DlqService', () => {
       expect(result.reviewedAt).toBeDefined();
     });
   });
+
+  // ── Ported from test/unit/dlq.service.spec.ts (#753, issue #74) ──────────
+  // The test/unit copy (7 tests) overlapped this file on enqueue/list/get,
+  // replay success + failure and the REPLAYED guard — those duplicates are
+  // dropped. The cases below assert behaviours this file never checked, so
+  // they are preserved here.
+  describe('ported from test/unit — ledger feedback, escrowId filter, terminal guards', () => {
+    it('stores the captured ledger feedback verbatim with attempts=1', async () => {
+      const feedback = { resultCodes: ['op_underfunded'], hash: 'abc' };
+      prismaMock.failedTransaction.create.mockResolvedValue({
+        ...mockRecord,
+        operation: 'submitAutoRelease',
+        ledgerFeedback: feedback,
+      });
+
+      const record = await service.enqueue({
+        operation: 'submitAutoRelease',
+        escrowId: 'escrow-1',
+        errorMessage: 'tx_failed',
+        ledgerFeedback: feedback,
+      });
+
+      expect(record.status).toBe('PENDING_REVIEW');
+      expect(record.attempts).toBe(1);
+      expect(record.ledgerFeedback).toEqual(feedback);
+    });
+
+    it('filters list() by escrowId', async () => {
+      prismaMock.failedTransaction.findMany.mockResolvedValue([mockRecord]);
+      prismaMock.failedTransaction.count.mockResolvedValue(1);
+
+      const result = await service.list({ escrowId: 'escrow-123' });
+
+      expect(result.data).toHaveLength(1);
+      expect(prismaMock.failedTransaction.findMany).toHaveBeenCalledWith({
+        where: { escrowId: 'escrow-123' },
+        orderBy: { createdAt: 'desc' },
+        skip: 0,
+        take: 20,
+      });
+    });
+
+    it('stores replayedAt timestamp on successful replay', async () => {
+      prismaMock.failedTransaction.findUnique.mockResolvedValue(mockRecord);
+      const replayed = {
+        ...mockRecord,
+        status: 'REPLAYED',
+        lastReplayTxHash: 'new-tx-hash',
+        replayedAt: new Date(),
+      };
+      prismaMock.failedTransaction.update.mockResolvedValue(replayed);
+
+      const result = await service.replay('test-id-1', () =>
+        Promise.resolve('new-tx-hash'),
+      );
+
+      expect(result.status).toBe('REPLAYED');
+      expect(result.lastReplayTxHash).toBe('new-tx-hash');
+      expect(result.replayedAt).toBeInstanceOf(Date);
+    });
+
+    it('keeps the record PENDING_REVIEW when the replay fn throws synchronously', async () => {
+      prismaMock.failedTransaction.findUnique.mockResolvedValue(mockRecord);
+      prismaMock.failedTransaction.update.mockResolvedValue({});
+
+      await expect(
+        service.replay('test-id-1', () => {
+          throw new Error('still failing');
+        }),
+      ).rejects.toThrow('still failing');
+
+      expect(prismaMock.failedTransaction.update).toHaveBeenCalledWith({
+        where: { id: 'test-id-1' },
+        data: {
+          attempts: { increment: 1 },
+          errorMessage: 'still failing',
+        },
+      });
+    });
+
+    it('refuses to replay an abandoned record', async () => {
+      const abandonedRecord = { ...mockRecord, status: 'ABANDONED' };
+      prismaMock.failedTransaction.findUnique.mockResolvedValue(
+        abandonedRecord,
+      );
+
+      await expect(
+        service.replay('test-id-1', () => Promise.resolve('tx')),
+      ).rejects.toThrow(/not pending review/i);
+    });
+
+    it('marks the record ABANDONED with a reviewedAt timestamp', async () => {
+      prismaMock.failedTransaction.findUnique.mockResolvedValue(mockRecord);
+      const abandoned = {
+        ...mockRecord,
+        status: 'ABANDONED',
+        reviewedAt: new Date(),
+      };
+      prismaMock.failedTransaction.update.mockResolvedValue(abandoned);
+
+      const after = await service.abandon('test-id-1');
+      expect(after.status).toBe('ABANDONED');
+      expect(after.reviewedAt).toBeInstanceOf(Date);
+    });
+  });
 });
