@@ -32,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dispute creation invalidates the related escrow cache, and administrative dispute resolution records the dispute as resolved.
 - Configured SendGrid and Twilio notification clients are now used when their credentials are available.
 - Auto-release processing continues with other eligible escrows when an individual submission fails.
+- `PATCH /admin/credentials/logistics` rotates and stores the logistics API key instead of failing with a 500 because the credential encryption key could not be read.
 
 ### Removed
 
@@ -42,6 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Stress-test endpoints now require authenticated administrator access.
 - Escrow contact details are rejected unless encrypted before persistence, and logistics API credentials are encrypted at rest.
 - JWT validation fails closed when its signing secret is missing, malformed, expired, or has an invalid signature.
+- Upgraded `@stellar/stellar-sdk` to 17.1.0, removing the vulnerable `toml` dependency flagged by `npm audit`. The SDK now requires Node.js 22.12 or later.
 
 ---
 
