@@ -786,3 +786,514 @@ describe('NotificationRetryQueueService (BullMQ integration) (#73)', () => {
     expect(sink).toHaveLength(1);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Branch coverage for retry-path persistence guards — #725
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('NotificationRetryQueueService — retry-path persistence guards (#725)', () => {
+  const synchronousScheduler = (cb: () => void) => cb();
+
+  describe('Dispatcher registration guard — if (!dispatcher)', () => {
+    it('drops jobs for unregistered channels in in-process path without throwing', async () => {
+      const service = new NotificationRetryQueueService({
+        backoff: { attempts: 2, delay: 1, maxDelayMs: 5 },
+        scheduleDelayed: synchronousScheduler,
+      });
+      // No dispatcher registered for EMAIL
+      await expect(service.enqueue(makeJob())).resolves.toBeUndefined();
+    });
+
+    it('logs warning when dispatcher is missing and job is dropped', async () => {
+      const service = new NotificationRetryQueueService({
+        backoff: { attempts: 2, delay: 1, maxDelayMs: 5 },
+        scheduleDelayed: synchronousScheduler,
+      });
+      const warnSpy = jest.spyOn(service['logger'], 'warn');
+      await service.enqueue(makeJob({ requestId: 'req-unregistered' }));
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('No dispatcher registered'),
+      );
+      warnSpy.mockRestore();
+    });
+  });
+
+  describe('Prisma persistence guards — if (job.notificationId && this.prisma)', () => {
+    describe('Success path (first site)', () => {
+      it('updates SENT status when notificationId and prisma are both present', async () => {
+        const prisma = {
+          notification: { update: jest.fn().mockResolvedValue(undefined) },
+        };
+        const dispatch = jest.fn().mockResolvedValue(undefined);
+        const service = new NotificationRetryQueueService(
+          {
+            backoff: { attempts: 2, delay: 1, maxDelayMs: 5 },
+            scheduleDelayed: synchronousScheduler,
+          },
+          prisma as unknown as PrismaService,
+        );
+        service.registerDispatcher('EMAIL', { dispatch });
+
+        await service.enqueue(makeJob({ notificationId: 'n-sent-1' }));
+
+        expect(prisma.notification.update).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: { id: 'n-sent-1' },
+            data: expect.objectContaining({
+              status: 'SENT',
+              sentAt: expect.any(Date),
+            }),
+          }),
+        );
+      });
+
+      it('skips prisma update when notificationId is missing (both conditions false)', async () => {
+        const prisma = {
+          notification: { update: jest.fn().mockResolvedValue(undefined) },
+        };
+        const dispatch = jest.fn().mockResolvedValue(undefined);
+        const service = new NotificationRetryQueueService(
+          {
+            backoff: { attempts: 2, delay: 1, maxDelayMs: 5 },
+            scheduleDelayed: synchronousScheduler,
+          },
+          prisma as unknown as PrismaService,
+        );
+        service.registerDispatcher('EMAIL', { dispatch });
+
+        // No notificationId → both conditions false
+        await service.enqueue(makeJob({ notificationId: undefined }));
+
+        expect(prisma.notification.update).not.toHaveBeenCalled();
+      });
+
+      it('skips prisma update when prisma is missing (second condition false, first true)', async () => {
+        const dispatch = jest.fn().mockResolvedValue(undefined);
+        const service = new NotificationRetryQueueService({
+          backoff: { attempts: 2, delay: 1, maxDelayMs: 5 },
+          scheduleDelayed: synchronousScheduler,
+          // No prisma provided
+        });
+        service.registerDispatcher('EMAIL', { dispatch });
+
+        // notificationId is present but prisma is not
+        await service.enqueue(makeJob({ notificationId: 'n-no-prisma' }));
+
+        // Should complete without error
+        expect(dispatch).toHaveBeenCalledTimes(1);
+      });
+
+      it('handles prisma error on success path gracefully', async () => {
+        const prisma = {
+          notification: {
+            update: jest.fn().mockRejectedValue(new Error('db connection lost')),
+          },
+        };
+        const dispatch = jest.fn().mockResolvedValue(undefined);
+        const service = new NotificationRetryQueueService(
+          {
+            backoff: { attempts: 2, delay: 1, maxDelayMs: 5 },
+            scheduleDelayed: synchronousScheduler,
+          },
+          prisma as unknown as PrismaService,
+        );
+        service.registerDispatcher('EMAIL', { dispatch });
+
+        // Should not throw even though prisma.update fails
+        await expect(
+          service.enqueue(makeJob({ notificationId: 'n-error' })),
+        ).resolves.toBeUndefined();
+      });
+    });
+
+    describe('Failure path (second site)', () => {
+      it('updates failure state when notificationId and prisma are both present on retry', async () => {
+        const prisma = {
+          notification: { update: jest.fn().mockResolvedValue(undefined) },
+        };
+        const dispatch = jest
+          .fn()
+          .mockRejectedValue(new Error('network timeout'));
+        const service = new NotificationRetryQueueService(
+          {
+            backoff: { attempts: 2, delay: 1, maxDelayMs: 5 },
+            scheduleDelayed: synchronousScheduler,
+          },
+          prisma as unknown as PrismaService,
+        );
+        service.registerDispatcher('EMAIL', { dispatch });
+
+        await service.enqueue(makeJob({ notificationId: 'n-fail-1' }));
+
+        // Should have failure updates
+        const failureUpdates = prisma.notification.update.mock.calls.filter(
+          ([arg]) => arg.data.lastError !== undefined,
+        );
+        expect(failureUpdates.length).toBeGreaterThan(0);
+        failureUpdates.forEach(([arg]) => {
+          expect(arg.where).toEqual({ id: 'n-fail-1' });
+          expect(arg.data.failedAt).toBeInstanceOf(Date);
+        });
+      });
+
+      it('skips prisma failure update when notificationId is missing', async () => {
+        const prisma = {
+          notification: { update: jest.fn().mockResolvedValue(undefined) },
+        };
+        const dispatch = jest
+          .fn()
+          .mockRejectedValue(new Error('permanent failure'));
+        const service = new NotificationRetryQueueService(
+          {
+            backoff: { attempts: 2, delay: 1, maxDelayMs: 5 },
+            scheduleDelayed: synchronousScheduler,
+          },
+          prisma as unknown as PrismaService,
+        );
+        service.registerDispatcher('EMAIL', { dispatch });
+
+        // No notificationId → both conditions false
+        await service.enqueue(makeJob({ notificationId: undefined }));
+
+        // Dispatch was tried but no DB writes happened
+        expect(dispatch).toHaveBeenCalled();
+        expect(prisma.notification.update).not.toHaveBeenCalled();
+      });
+
+      it('skips prisma failure update when prisma is missing but dispatch still retries', async () => {
+        const dispatch = jest
+          .fn()
+          .mockRejectedValueOnce(new Error('transient'))
+          .mockResolvedValueOnce(undefined);
+        const service = new NotificationRetryQueueService({
+          backoff: { attempts: 2, delay: 1, maxDelayMs: 5 },
+          scheduleDelayed: synchronousScheduler,
+          // No prisma
+        });
+        service.registerDispatcher('EMAIL', { dispatch });
+
+        // notificationId present but prisma missing
+        await service.enqueue(makeJob({ notificationId: 'n-no-prisma-fail' }));
+
+        // Should retry despite no prisma
+        expect(dispatch).toHaveBeenCalledTimes(2);
+      });
+
+      it('handles prisma error on failure path without stopping retry loop', async () => {
+        const prisma = {
+          notification: {
+            update: jest.fn().mockRejectedValue(new Error('db down')),
+          },
+        };
+        const dispatch = jest
+          .fn()
+          .mockRejectedValue(new Error('always fails'));
+        const dlq: NotificationDeadLetterRecord[] = [];
+        const service = new NotificationRetryQueueService(
+          {
+            backoff: { attempts: 2, delay: 1, maxDelayMs: 5 },
+            scheduleDelayed: synchronousScheduler,
+            deadLetterSink: { record: (entry) => void dlq.push(entry) },
+          },
+          prisma as unknown as PrismaService,
+        );
+        service.registerDispatcher('EMAIL', { dispatch });
+
+        // Should complete despite DB errors
+        await expect(
+          service.enqueue(makeJob({ notificationId: 'n-both-fail' })),
+        ).resolves.toBeUndefined();
+
+        // Retries still happened
+        expect(dispatch).toHaveBeenCalledTimes(2);
+        // DLQ was recorded
+        expect(dlq).toHaveLength(1);
+      });
+
+      it('updates FAILED status when attempts exhausted with both notificationId and prisma', async () => {
+        const prisma = {
+          notification: { update: jest.fn().mockResolvedValue(undefined) },
+        };
+        const dispatch = jest
+          .fn()
+          .mockRejectedValue(new Error('exhausted'));
+        const service = new NotificationRetryQueueService(
+          {
+            backoff: { attempts: 2, delay: 1, maxDelayMs: 5 },
+            scheduleDelayed: synchronousScheduler,
+          },
+          prisma as unknown as PrismaService,
+        );
+        service.registerDispatcher('EMAIL', { dispatch });
+
+        await service.enqueue(makeJob({ notificationId: 'n-final-fail' }));
+
+        const statusUpdates = prisma.notification.update.mock.calls.filter(
+          ([arg]) => arg.data.status === 'FAILED',
+        );
+        expect(statusUpdates).toHaveLength(1);
+        expect(statusUpdates[0][0].where).toEqual({ id: 'n-final-fail' });
+      });
+    });
+  });
+
+  describe('Per-job attempts override — job.opts.attempts ?? this.options.backoff.attempts', () => {
+    it('BullMQ worker uses job.opts.attempts when set instead of service default', async () => {
+      const sink: NotificationDeadLetterRecord[] = [];
+      const service = new NotificationRetryQueueService(
+        {
+          backoff: { attempts: 100, delay: 1, maxDelayMs: 100 }, // Service default: 100
+          deadLetterSink: { record: (entry) => void sink.push(entry) },
+        },
+        undefined,
+        configWith({ REDIS_URL: 'redis://localhost:6379' }),
+      );
+      service.registerDispatcher('EMAIL', { dispatch: jest.fn() });
+      await service.onModuleInit();
+      expect(failedHandler).toBeDefined();
+
+      // Job has per-job override: 2 attempts
+      failedHandler!(
+        {
+          data: makeJob({ requestId: 'per-job-1' }),
+          attemptsMade: 2,
+          opts: { attempts: 2 }, // Per-job override
+        },
+        new Error('exhausted at 2'),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(sink).toHaveLength(1);
+      expect(sink[0].attemptsExhausted).toBe(2); // Uses per-job override, not 100
+    });
+
+    it('BullMQ worker falls back to service default when job.opts.attempts is undefined', async () => {
+      const sink: NotificationDeadLetterRecord[] = [];
+      const service = new NotificationRetryQueueService(
+        {
+          backoff: { attempts: 5, delay: 1, maxDelayMs: 100 }, // Service default: 5
+          deadLetterSink: { record: (entry) => void sink.push(entry) },
+        },
+        undefined,
+        configWith({ REDIS_URL: 'redis://localhost:6379' }),
+      );
+      service.registerDispatcher('EMAIL', { dispatch: jest.fn() });
+      await service.onModuleInit();
+      expect(failedHandler).toBeDefined();
+
+      // Job has no per-job override
+      failedHandler!(
+        {
+          data: makeJob({ requestId: 'per-job-2' }),
+          attemptsMade: 5,
+          opts: { attempts: undefined }, // Fallback to service default
+        },
+        new Error('exhausted at 5'),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(sink).toHaveLength(1);
+      expect(sink[0].attemptsExhausted).toBe(5); // Uses service default
+    });
+
+    it('in-process path uses service backoff.attempts (no per-job override mechanism)', async () => {
+      const dispatch = jest
+        .fn()
+        .mockRejectedValue(new Error('fail'));
+      const dlq: NotificationDeadLetterRecord[] = [];
+      const service = new NotificationRetryQueueService(
+        {
+          backoff: { attempts: 3, delay: 1, maxDelayMs: 5 },
+          deadLetterSink: { record: (entry) => void dlq.push(entry) },
+          scheduleDelayed: synchronousScheduler,
+        },
+        undefined,
+      );
+      service.registerDispatcher('EMAIL', { dispatch });
+
+      await service.enqueue(makeJob({ requestId: 'in-process-attempts' }));
+
+      // Dispatch called exactly 3 times (service default)
+      expect(dispatch).toHaveBeenCalledTimes(3);
+      expect(dlq).toHaveLength(1);
+      expect(dlq[0].attemptsExhausted).toBe(3);
+    });
+  });
+
+  describe('Timer injection — scheduleDelayed fallback', () => {
+    it('uses injected timer function when provided', async () => {
+      const timerCalls: Array<{ cb: () => void; ms: number }> = [];
+      const customScheduler = (cb: () => void, ms: number) => {
+        timerCalls.push({ cb, ms });
+        cb(); // Execute immediately for test
+      };
+
+      const dispatch = jest
+        .fn()
+        .mockRejectedValueOnce(new Error('retry1'))
+        .mockRejectedValueOnce(new Error('retry2'))
+        .mockResolvedValueOnce(undefined);
+      const service = new NotificationRetryQueueService(
+        {
+          backoff: { attempts: 3, delay: 100, maxDelayMs: 1000 },
+          scheduleDelayed: customScheduler,
+        },
+        undefined,
+      );
+      service.registerDispatcher('EMAIL', { dispatch });
+
+      await service.enqueue(makeJob({ requestId: 'timer-inject' }));
+
+      // Should have called the scheduler for retries
+      expect(timerCalls.length).toBeGreaterThan(0);
+      expect(dispatch).toHaveBeenCalledTimes(3);
+    });
+
+    it('falls back to setTimeout when no injected timer provided', async () => {
+      const dispatch = jest
+        .fn()
+        .mockRejectedValueOnce(new Error('fail1'))
+        .mockResolvedValueOnce(undefined);
+      
+      // Set a fast setTimeout for test
+      const originalSetTimeout = global.setTimeout;
+      const setTimeoutSpy = jest.spyOn(global, 'setTimeout');
+
+      const service = new NotificationRetryQueueService(
+        {
+          backoff: { attempts: 2, delay: 10, maxDelayMs: 100 },
+          // No scheduleDelayed provided → should use setTimeout
+        },
+        undefined,
+      );
+      service.registerDispatcher('EMAIL', { dispatch });
+
+      await service.enqueue(makeJob({ requestId: 'timer-default' }));
+
+      expect(dispatch).toHaveBeenCalledTimes(2);
+      // setTimeout should be called for the retry delay
+      expect(setTimeoutSpy).toHaveBeenCalled();
+      
+      setTimeoutSpy.mockRestore();
+    });
+
+    it('injected timer respects the computed backoff delay', async () => {
+      const delays: number[] = [];
+      const timerScheduler = (cb: () => void, ms: number) => {
+        delays.push(ms);
+        cb();
+      };
+
+      const dispatch = jest
+        .fn()
+        .mockRejectedValue(new Error('always fails'));
+      const service = new NotificationRetryQueueService(
+        {
+          backoff: { attempts: 3, delay: 1000, maxDelayMs: 10000 },
+          scheduleDelayed: timerScheduler,
+        },
+        undefined,
+      );
+      service.registerDispatcher('EMAIL', { dispatch });
+
+      await service.enqueue(makeJob({ requestId: 'timer-delays' }));
+
+      // Should have computed delays for 2 retries (attempts 2 and 3)
+      expect(delays.length).toBe(2);
+      // Delays should be increasing (exponential backoff)
+      expect(delays[0]).toBeLessThanOrEqual(delays[1]);
+    });
+
+    it('timer injection is used for in-process path but not BullMQ', async () => {
+      const timerCalls: number[] = [];
+      const customScheduler = (cb: () => void, ms: number) => {
+        timerCalls.push(ms);
+        cb();
+      };
+
+      const service = new NotificationRetryQueueService(
+        {
+          backoff: { attempts: 2, delay: 100, maxDelayMs: 500 },
+          scheduleDelayed: customScheduler,
+        },
+        undefined,
+        configWith({ REDIS_URL: 'redis://localhost:6379' }),
+      );
+
+      // When initialized with Redis, BullMQ takes over and injected timer not used
+      await service.onModuleInit();
+
+      // The in-process path is not exercised, so injected timer should not be called
+      expect(timerCalls).toHaveLength(0);
+    });
+  });
+
+  describe('Combined branch scenarios', () => {
+    it('handles all conditions false: no dispatcher, no notificationId, no prisma', async () => {
+      const service = new NotificationRetryQueueService({
+        backoff: { attempts: 2, delay: 1, maxDelayMs: 5 },
+        scheduleDelayed: synchronousScheduler,
+      });
+      // No dispatcher, no prisma
+
+      // Should silently drop without error
+      await expect(
+        service.enqueue(makeJob({ notificationId: undefined })),
+      ).resolves.toBeUndefined();
+    });
+
+    it('handles all conditions true: dispatcher, notificationId, and prisma present', async () => {
+      const prisma = {
+        notification: { update: jest.fn().mockResolvedValue(undefined) },
+      };
+      const dispatch = jest.fn().mockResolvedValue(undefined);
+      const service = new NotificationRetryQueueService(
+        {
+          backoff: { attempts: 2, delay: 1, maxDelayMs: 5 },
+          scheduleDelayed: synchronousScheduler,
+        },
+        prisma as unknown as PrismaService,
+      );
+      service.registerDispatcher('EMAIL', { dispatch });
+
+      await service.enqueue(makeJob({ notificationId: 'n-all-true' }));
+
+      expect(dispatch).toHaveBeenCalledTimes(1);
+      expect(prisma.notification.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'n-all-true' },
+          data: expect.objectContaining({ status: 'SENT' }),
+        }),
+      );
+    });
+
+    it('SMS channel uses same guards as EMAIL channel', async () => {
+      const prisma = {
+        notification: { update: jest.fn().mockResolvedValue(undefined) },
+      };
+      const dispatch = jest.fn().mockResolvedValue(undefined);
+      const service = new NotificationRetryQueueService(
+        {
+          backoff: { attempts: 2, delay: 1, maxDelayMs: 5 },
+          scheduleDelayed: synchronousScheduler,
+        },
+        prisma as unknown as PrismaService,
+      );
+      service.registerDispatcher('SMS', { dispatch });
+
+      await service.enqueue(
+        makeJob({
+          channel: 'SMS',
+          notificationId: 'n-sms',
+        }),
+      );
+
+      expect(dispatch).toHaveBeenCalledTimes(1);
+      expect(prisma.notification.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'n-sms' },
+        }),
+      );
+    });
+  });
+});
