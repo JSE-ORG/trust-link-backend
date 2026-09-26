@@ -20,6 +20,7 @@
         "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
         "test:e2e": "jest --config ./test/jest-e2e.json",
         "check-coverage": "node scripts/check_coverage.js",
+        "check-licences": "node scripts/check-licences.js",
         "openapi:generate": "ts-node scripts/generate-openapi.ts",
         "check-test-match": "node scripts/check_test_match.js",
         "db:generate": "prisma generate",
