@@ -22,6 +22,9 @@ import { AdminGuard } from '../guards/admin.guard';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { ResolveDisputeDto } from './dto/resolve-dispute.dto';
 import { DisputeService } from './dispute.service';
+import { AdminDisputesPaginatedResponseDto } from './dto/admin-disputes-paginated-response.dto';
+import { EscrowResponseDto } from '../../escrow/dto/escrow-response.dto';
+import { AuditLogEntryDto } from '../stats/dto/audit-log-entry.dto';
 
 @ApiTags('Admin')
 @ApiBearerAuth()
@@ -34,7 +37,11 @@ export class DisputeController {
   ) {}
 
   @ApiOperation({ summary: 'List all disputes (admin only)' })
-  @ApiResponse({ status: 200, description: 'Paginated dispute list returned.' })
+  @ApiResponse({
+    status: 200,
+    description: 'Paginated dispute list returned.',
+    type: AdminDisputesPaginatedResponseDto,
+  })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   @ApiResponse({ status: 403, description: 'Admin access required.' })
   @Throttle({ auth: { limit: 20, ttl: THROTTLE_WINDOW_MS } })
@@ -57,6 +64,7 @@ export class DisputeController {
   @ApiResponse({
     status: 200,
     description: 'Dispute resolved, escrow state updated.',
+    type: EscrowResponseDto,
   })
   @ApiResponse({ status: 400, description: 'Invalid resolution value.' })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
@@ -81,7 +89,11 @@ export class DisputeController {
   }
 
   @ApiOperation({ summary: 'Get admin audit log entries' })
-  @ApiResponse({ status: 200, description: 'Audit log returned.' })
+  @ApiResponse({
+    status: 200,
+    description: 'Audit log returned.',
+    type: [AuditLogEntryDto],
+  })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   @ApiResponse({ status: 403, description: 'Admin access required.' })
   @Throttle({ auth: { limit: 20, ttl: THROTTLE_WINDOW_MS } })

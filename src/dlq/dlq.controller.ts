@@ -20,9 +20,11 @@ import { THROTTLE_WINDOW_MS } from '../common/security/throttle.config';
 import { JwtGuard } from '../auth/guards/jwt.guard';
 import { AdminGuard } from '../admin/guards/admin.guard';
 import { DlqService } from './dlq.service';
-import type {
-  FailedTransactionStatus,
-  ListFailedTransactionsQuery,
+import {
+  FailedTransactionRecord,
+  PaginatedFailedTransactions,
+  type FailedTransactionStatus,
+  type ListFailedTransactionsQuery,
 } from './dlq.types';
 import { ContractService } from '../stellar/contract.service';
 import {
@@ -104,6 +106,7 @@ export class DlqController {
   @ApiResponse({
     status: 200,
     description: 'Failed transaction records returned.',
+    type: PaginatedFailedTransactions,
   })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   @ApiResponse({ status: 403, description: 'Admin access required.' })
@@ -140,6 +143,7 @@ export class DlqController {
   @ApiResponse({
     status: 200,
     description: 'Failed transaction record returned.',
+    type: FailedTransactionRecord,
   })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   @ApiResponse({ status: 403, description: 'Admin access required.' })
@@ -163,6 +167,7 @@ export class DlqController {
   @ApiResponse({
     status: 200,
     description: 'Replay request accepted and replay execution started.',
+    type: FailedTransactionRecord,
   })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   @ApiResponse({ status: 403, description: 'Admin access required.' })
@@ -208,6 +213,7 @@ export class DlqController {
   @ApiResponse({
     status: 200,
     description: 'Failed transaction record abandoned.',
+    type: FailedTransactionRecord,
   })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   @ApiResponse({ status: 403, description: 'Admin access required.' })

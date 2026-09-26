@@ -45,6 +45,7 @@ export class AnalyticsController {
   @ApiResponse({
     status: 200,
     description: 'Vendor transaction statistics returned.',
+    type: AnalyticsStatsResponse,
   })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   @ApiResponse({ status: 403, description: 'Forbidden.' })
@@ -94,6 +95,7 @@ export class AnalyticsController {
   @ApiResponse({
     status: 200,
     description: 'Daily volume chart data returned.',
+    type: ChartDataResponse,
   })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   @ApiResponse({ status: 403, description: 'Forbidden.' })
