@@ -8,6 +8,7 @@ import {
 import { GiglClient } from './gigl.client';
 import { GiglTrackingEvent, GiglTrackingResponse } from './gigl.types';
 import { PrismaService } from '../../prisma/prisma.service';
+import { ConfigService } from '../../config/config.service';
 
 /**
  * Maps the raw `current_status` string from GIGL to the internal
@@ -63,8 +64,11 @@ export class GiglLogisticsService extends LogisticsService {
   constructor(
     @Optional() @Inject(GiglClient) private readonly client?: GiglClient | null,
     @Optional() @Inject(PrismaService) prisma?: PrismaService,
+    @Optional() @Inject(ConfigService) configService?: ConfigService,
   ) {
-    super(prisma);
+    // Forward ConfigService so the base class can read
+    // CREDENTIAL_ENCRYPTION_KEY when rotating the API key (issue #776).
+    super(prisma, configService);
   }
 
   override async onModuleInit(): Promise<void> {

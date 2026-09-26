@@ -55,8 +55,10 @@ describe('Sep10Service', () => {
     'GAQAA5L65LSYH7CQ3LBOPEZBWSK4DPO4KZ4XXJNWUVOK5SDGA5LNLA36';
   const TEST_CHALLENGE_XDR =
     'AAAABWw2D0wENyMXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX';
+  // A real 32-byte hex hash: stellar-sdk 17 returns tx.hash() as a
+  // Uint8Array, so the mock must hand back bytes that hex-encode to this.
   const TEST_TX_HASH =
-    'abc123def456ghi789jkl012mno345pqr678stu901vwx234yz567abc890def';
+    'abc123def4560789abc012def345678abc901def234abc567abc890def012345';
   const REFRESH_TOKEN_TTL = 604800; // 7 days in seconds
 
   beforeEach(async () => {
@@ -71,7 +73,9 @@ describe('Sep10Service', () => {
 
     // Mock TransactionBuilder
     const mockTransactionBuilder = {
-      hash: jest.fn().mockReturnValue({ toString: () => TEST_TX_HASH }),
+      hash: jest
+        .fn()
+        .mockReturnValue(Uint8Array.from(Buffer.from(TEST_TX_HASH, 'hex'))),
     };
 
     (TransactionBuilder as unknown as jest.Mock).mockImplementation(

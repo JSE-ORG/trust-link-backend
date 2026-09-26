@@ -36,13 +36,18 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # npm audit has no allowlist. Advisories that provably do not apply are
+      # recorded, with a reason and a contact, in .github/audit-exceptions.json.
+      # check_audit.js fails on any other advisory at or above AUDIT_LEVEL and
+      # on any exception whose advisory has gone, so stale entries surface.
+      - name: Generate audit report
+        run: npm audit --json > audit-report.json || true
+
       - name: Run npm audit
         id: audit
-        run: npm audit --audit-level=moderate
-
-      - name: Generate audit report
-        if: always()
-        run: npm audit --json > audit-report.json || true
+        env:
+          AUDIT_LEVEL: moderate
+        run: node scripts/check_audit.js audit-report.json
 
       - name: Check licence compliance
         id: licences

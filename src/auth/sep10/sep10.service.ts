@@ -99,7 +99,7 @@ export class Sep10Service {
     );
 
     const tx = TransactionBuilder.fromXDR(challengeTx, this.networkPassphrase);
-    const txHash = tx.hash().toString('hex');
+    const txHash = Buffer.from(tx.hash()).toString('hex');
 
     const expiresAt = new Date(Date.now() + timeout * MILLISECONDS_PER_SECOND);
 
@@ -151,7 +151,7 @@ export class Sep10Service {
         challengeTx,
         this.networkPassphrase,
       );
-      txHash = tx.hash().toString('hex');
+      txHash = Buffer.from(tx.hash()).toString('hex');
     } catch (err: unknown) {
       throw new UnauthorizedException(
         err instanceof Error ? err.message : 'Invalid challenge',
