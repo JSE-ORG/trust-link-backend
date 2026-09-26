@@ -4,6 +4,7 @@ import type { VendorAccountDetailsRecord } from '../prisma/prisma.service';
 import { UpdateVendorAccountDetailsDto } from './dto/update-vendor-account-details.dto';
 import { VendorAccountDetailsController } from './vendor-account-details.controller';
 import { VendorAccountDetailsService } from './vendor-account-details.service';
+import { VendorAccountDetailsResponseDto } from './dto/vendor-account-details-response.dto';
 
 const VENDOR_A = 'GVENDORACCOUNTDETAILSA';
 
@@ -101,5 +102,38 @@ describe('VendorAccountDetailsController', () => {
     expect(service.upsertDetails).toHaveBeenCalledWith(VENDOR_A, dto);
     expect(response.taxId).toBe('*********6789');
     expect(response.bankAccountNumber).toBe('************3456');
+  });
+});
+
+describe('maskSensitiveField (via VendorAccountDetailsResponseDto.fromRecord)', () => {
+  function maskedTaxId(value: string | null): string | null {
+    return VendorAccountDetailsResponseDto.fromRecord(
+      accountDetails({ taxId: value }),
+    ).taxId;
+  }
+
+  it('returns null for a null value', () => {
+    expect(maskedTaxId(null)).toBeNull();
+  });
+
+  it('returns null for an empty string', () => {
+    expect(maskedTaxId('')).toBeNull();
+  });
+
+  it('returns **** for a 1-character value', () => {
+    expect(maskedTaxId('A')).toBe('****');
+  });
+
+  it('returns **** for a 3-character value', () => {
+    expect(maskedTaxId('ABC')).toBe('****');
+  });
+
+  it('returns **** for a value of exactly 4 characters with no digits visible', () => {
+    expect(maskedTaxId('1234')).toBe('****');
+  });
+
+  it('masks all but the last 4 characters for a value longer than 4 characters', () => {
+    expect(maskedTaxId('12345')).toBe('*2345');
+    expect(maskedTaxId('TAX-123456789')).toBe('*********6789');
   });
 });

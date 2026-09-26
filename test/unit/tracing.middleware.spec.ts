@@ -279,4 +279,36 @@ describe('TracingMiddleware.use (issue #79, issue #463)', () => {
       expect(next).toHaveBeenCalledTimes(1);
     });
   });
+
+  describe('when tracing is enabled but no span is active', () => {
+    beforeEach(() => {
+      mockedIsTracingEnabled.mockReturnValue(true);
+      jest
+        .spyOn(api.trace, 'getActiveSpan')
+        .mockReturnValue(undefined as unknown as api.Span);
+      jest
+        .spyOn(api.context, 'with')
+        .mockImplementation(((_ctx: api.Context, fn: () => unknown) =>
+          fn()) as typeof api.context.with);
+      jest.spyOn(api.propagation, 'extract').mockReturnValue({} as api.Context);
+    });
+
+    it('still calls next() when getActiveSpan returns undefined', () => {
+      const { req, res, next } = buildReqRes('/escrow', {
+        'x-request-id': 'req-1',
+      });
+      middleware.use(req, res, next);
+      expect(next).toHaveBeenCalledTimes(1);
+    });
+
+    it('still registers the finish listener and the listener does not throw when no span is active', () => {
+      const { req, res, next } = buildReqRes('/vendor/profile');
+      middleware.use(req, res, next);
+
+      expect(res.on).toHaveBeenCalledWith('finish', expect.any(Function));
+      const finishListener = getFinishListener(res);
+      res.statusCode = 404;
+      expect(() => finishListener()).not.toThrow();
+    });
+  });
 });

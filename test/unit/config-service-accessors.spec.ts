@@ -84,7 +84,9 @@ describe('ConfigService.isProduction / isDevelopment / isTest', () => {
 
 describe('ConfigService.getRedisUrl', () => {
   it('returns the configured REDIS_URL when set', () => {
-    const service = buildService({ REDIS_URL: 'redis://redis.example.com:6379' });
+    const service = buildService({
+      REDIS_URL: 'redis://redis.example.com:6379',
+    });
     expect(service.getRedisUrl()).toBe('redis://redis.example.com:6379');
   });
 

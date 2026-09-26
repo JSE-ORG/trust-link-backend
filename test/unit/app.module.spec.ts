@@ -3,21 +3,33 @@ import { ThrottlerModule } from '@nestjs/throttler';
 import { AppModule } from '../../src/app.module';
 import { ConfigService } from '../../src/config/config.service';
 
-function getThrottlerFactory(): (config: ConfigService) => { ttl: number; limit: number }[] {
-  const imports: unknown[] = (Reflect.getMetadata('imports', AppModule) as unknown[]) ?? [];
+function getThrottlerFactory(): (
+  config: ConfigService,
+) => { ttl: number; limit: number }[] {
+  const imports: unknown[] =
+    (Reflect.getMetadata('imports', AppModule) as unknown[]) ?? [];
   const throttlerDynamic = imports.find(
     (m): m is Record<string, unknown> =>
-      typeof m === 'object' && m !== null && (m as Record<string, unknown>).module === ThrottlerModule,
-  ) as Record<string, unknown> | undefined;
+      typeof m === 'object' &&
+      m !== null &&
+      (m as Record<string, unknown>).module === ThrottlerModule,
+  );
 
-  if (!throttlerDynamic) throw new Error('ThrottlerModule dynamic import not found in AppModule');
+  if (!throttlerDynamic)
+    throw new Error('ThrottlerModule dynamic import not found in AppModule');
 
-  const providers = (throttlerDynamic.providers as Array<Record<string, unknown>>) ?? [];
-  const optionsProvider = providers.find((p) => typeof p?.useFactory === 'function');
+  const providers =
+    (throttlerDynamic.providers as Array<Record<string, unknown>>) ?? [];
+  const optionsProvider = providers.find(
+    (p) => typeof p?.useFactory === 'function',
+  );
 
-  if (!optionsProvider) throw new Error('ThrottlerModule options provider not found');
+  if (!optionsProvider)
+    throw new Error('ThrottlerModule options provider not found');
 
-  return optionsProvider.useFactory as (config: ConfigService) => { ttl: number; limit: number }[];
+  return optionsProvider.useFactory as (
+    config: ConfigService,
+  ) => { ttl: number; limit: number }[];
 }
 
 describe('AppModule throttler useFactory', () => {

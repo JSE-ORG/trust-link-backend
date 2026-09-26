@@ -622,7 +622,9 @@ describe('EscrowRepository', () => {
       expect(result.deliveredAt!.getTime()).toBeGreaterThanOrEqual(
         before.getTime(),
       );
-      expect(result.deliveredAt!.getTime()).toBeLessThanOrEqual(after.getTime());
+      expect(result.deliveredAt!.getTime()).toBeLessThanOrEqual(
+        after.getTime(),
+      );
     });
 
     it('findAutoReleaseEligible uses the current time when referenceTime is omitted', async () => {

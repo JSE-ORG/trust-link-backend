@@ -413,7 +413,8 @@ describe('GiglLogisticsService', () => {
         // The base class warns because no API key is persisted or configured;
         // the GIGL guard sees a client and must not add a second warning.
         expect(
-          (prisma.providerCredential as { findUnique: jest.Mock }).findUnique,
+          (prisma.providerCredential as unknown as { findUnique: jest.Mock })
+            .findUnique,
         ).toHaveBeenCalledTimes(1);
         expect(warn).toHaveBeenCalledTimes(1);
         expect(warn).toHaveBeenCalledWith(

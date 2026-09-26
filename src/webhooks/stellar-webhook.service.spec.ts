@@ -367,7 +367,9 @@ describe('StellarWebhookService — no-Prisma path and replay guard (issue #734)
   let escrowRepository: jest.Mocked<
     Pick<EscrowRepository, 'findByVendor' | 'updateState'>
   >;
-  let notificationsService: jest.Mocked<Pick<NotificationsService, 'notifyFunded'>>;
+  let notificationsService: jest.Mocked<
+    Pick<NotificationsService, 'notifyFunded'>
+  >;
 
   /** Build a service instance with no PrismaService injected (the @Optional() path). */
   function makeService(): StellarWebhookService {
@@ -432,7 +434,11 @@ describe('StellarWebhookService — no-Prisma path and replay guard (issue #734)
       // Second delivery with the same id — must be a no-op
       const second = await callHandleEvent(service, dto);
 
-      expect(second).toEqual({ received: true, skipped: true, reason: 'duplicate' });
+      expect(second).toEqual({
+        received: true,
+        skipped: true,
+        reason: 'duplicate',
+      });
       // findByVendor called exactly once (from the first delivery only)
       expect(escrowRepository.findByVendor).toHaveBeenCalledTimes(1);
     });
@@ -467,14 +473,25 @@ describe('StellarWebhookService — no-Prisma path and replay guard (issue #734)
       const second = await callHandleEvent(service, dto);
 
       expect(first).toEqual({ received: true });
-      expect(second).toEqual({ received: true, skipped: true, reason: 'duplicate' });
+      expect(second).toEqual({
+        received: true,
+        skipped: true,
+        reason: 'duplicate',
+      });
     });
 
     it('processes the event only once when delivered twice', async () => {
       const service = makeService();
-      const escrow = makeEscrow({ state: 'CREATED', amount: 500, currency: 'USDC' });
+      const escrow = makeEscrow({
+        state: 'CREATED',
+        amount: 500,
+        currency: 'USDC',
+      });
       escrowRepository.findByVendor.mockResolvedValue([escrow]);
-      escrowRepository.updateState.mockResolvedValue({ ...escrow, state: 'FUNDED' });
+      escrowRepository.updateState.mockResolvedValue({
+        ...escrow,
+        state: 'FUNDED',
+      });
       notificationsService.notifyFunded.mockResolvedValue(undefined);
 
       const dto = makePaymentDto({ id: 'op-replay-002' });
@@ -491,7 +508,10 @@ describe('StellarWebhookService — no-Prisma path and replay guard (issue #734)
 
       await callHandleEvent(service, makePaymentDto({ id: 'op-A' }));
       await callHandleEvent(service, makePaymentDto({ id: 'op-A' })); // duplicate
-      const result = await callHandleEvent(service, makePaymentDto({ id: 'op-B' }));
+      const result = await callHandleEvent(
+        service,
+        makePaymentDto({ id: 'op-B' }),
+      );
 
       expect(result).toEqual({ received: true });
       // findByVendor called for op-A (first) and op-B — not for the duplicate
@@ -507,7 +527,9 @@ describe('StellarWebhookService — no-Prisma path and replay guard (issue #734)
     /** Build a service instance with no STELLAR_WEBHOOK_SECRET configured. */
     function makeServiceNoSecret(): StellarWebhookService {
       return new StellarWebhookService(
-        { get: jest.fn().mockReturnValue(undefined) } as unknown as ConfigService,
+        {
+          get: jest.fn().mockReturnValue(undefined),
+        } as unknown as ConfigService,
         escrowRepository as unknown as EscrowRepository,
         notificationsService as unknown as NotificationsService,
       );

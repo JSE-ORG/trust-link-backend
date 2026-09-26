@@ -54,7 +54,9 @@ describe('SEP-10 authentication (issue #23)', () => {
           return record;
         }),
         findUnique: jest.fn(async ({ where }: Prisma.NonceFindUniqueArgs) => {
-          return (where.nonce ? mockNonces.get(where.nonce) : undefined) ?? null;
+          return (
+            (where.nonce ? mockNonces.get(where.nonce) : undefined) ?? null
+          );
         }),
         update: jest.fn(async ({ where, data }: Prisma.NonceUpdateArgs) => {
           const record =
@@ -87,15 +89,17 @@ describe('SEP-10 authentication (issue #23)', () => {
             );
           },
         ),
-        update: jest.fn(async ({ where, data }: Prisma.RefreshTokenUpdateArgs) => {
-          const record =
-            (where.tokenHash
-              ? mockRefreshTokens.get(where.tokenHash)
-              : undefined) ?? null;
-          if (!record) return null;
-          Object.assign(record, data);
-          return record;
-        }),
+        update: jest.fn(
+          async ({ where, data }: Prisma.RefreshTokenUpdateArgs) => {
+            const record =
+              (where.tokenHash
+                ? mockRefreshTokens.get(where.tokenHash)
+                : undefined) ?? null;
+            if (!record) return null;
+            Object.assign(record, data);
+            return record;
+          },
+        ),
         updateMany: jest.fn(
           async ({ where, data }: Prisma.RefreshTokenUpdateManyArgs) => {
             for (const record of mockRefreshTokens.values()) {
@@ -200,10 +204,18 @@ describe('SEP-10 authentication (issue #23)', () => {
   it('expired challenge returns 401', async () => {
     const kp = Keypair.random();
 
-    // Build a challenge whose maxTime is already in the past (timeout = -700s).
-    // The SDK adds a 300-second grace window, so we need maxTime + 300 < now,
-    // i.e. (now - 700) + 300 = now - 400 < now  ✓
-    const expiredXdr = await sep10Service.buildChallenge(kp.publicKey(), -700);
+    // Build a challenge whose maxTime is already in the past. stellar-sdk 17
+    // rejects a negative timeout (min_time > max_time), so backdate the clock
+    // while the challenge is built instead: issued 1000s ago with the default
+    // 300s timeout, maxTime + the SDK's 300s grace window is still before now.
+    const realNow = Date.now();
+    const clock = jest.spyOn(Date, 'now').mockReturnValue(realNow - 1_000_000);
+    let expiredXdr: string;
+    try {
+      expiredXdr = await sep10Service.buildChallenge(kp.publicKey());
+    } finally {
+      clock.mockRestore();
+    }
 
     const tx = TransactionBuilder.fromXDR(expiredXdr, Networks.TESTNET);
     tx.sign(kp);

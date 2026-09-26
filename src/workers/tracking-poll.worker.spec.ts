@@ -69,7 +69,9 @@ describe('TrackingPollWorker', () => {
     };
 
     logisticsService = {
-      getStatus: jest.fn().mockResolvedValue({ status: 'DELIVERED', events: [] }),
+      getStatus: jest
+        .fn()
+        .mockResolvedValue({ status: 'DELIVERED', events: [] }),
     };
 
     contractService = {
@@ -148,7 +150,10 @@ describe('TrackingPollWorker', () => {
     });
 
     it('continues to process subsequent escrows after skipping an unmapped one', async () => {
-      const mappedEscrow = makeEscrow({ id: 'escrow-mapped', contractEscrowId: 99n });
+      const mappedEscrow = makeEscrow({
+        id: 'escrow-mapped',
+        contractEscrowId: 99n,
+      });
       escrowRepository.findShippedWithTracking.mockResolvedValue([
         makeEscrow({ contractEscrowId: null }),
         mappedEscrow,
@@ -203,7 +208,10 @@ describe('TrackingPollWorker', () => {
 
     it('continues processing remaining escrows after losing a claim', async () => {
       const raceEscrow = makeEscrow({ id: 'escrow-race' });
-      const ownedEscrow = makeEscrow({ id: 'escrow-owned', contractEscrowId: 7n });
+      const ownedEscrow = makeEscrow({
+        id: 'escrow-owned',
+        contractEscrowId: 7n,
+      });
 
       escrowRepository.findShippedWithTracking.mockResolvedValue([
         raceEscrow,
@@ -214,7 +222,7 @@ describe('TrackingPollWorker', () => {
         events: [],
       });
       escrowRepository.claimDelivery
-        .mockResolvedValueOnce(null)         // lost for raceEscrow
+        .mockResolvedValueOnce(null) // lost for raceEscrow
         .mockResolvedValueOnce(ownedEscrow); // won for ownedEscrow
 
       await worker.run();
@@ -252,7 +260,9 @@ describe('TrackingPollWorker', () => {
     });
 
     it('does not call recordDelivery when status is IN_TRANSIT', async () => {
-      escrowRepository.findShippedWithTracking.mockResolvedValue([makeEscrow()]);
+      escrowRepository.findShippedWithTracking.mockResolvedValue([
+        makeEscrow(),
+      ]);
       logisticsService.getStatus.mockResolvedValue({
         status: 'IN_TRANSIT',
         events: [],
