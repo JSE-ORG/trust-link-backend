@@ -8,6 +8,7 @@ import { ConfigService } from '../config/config.service';
 import { DisputeRecord } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { S3PresignService } from '../common/services/s3-presign.service';
+import { TracingService } from '../tracing/tracing.service';
 import { DisputeRepository } from '../dispute/dispute.repository';
 import { EscrowRepository } from './escrow.repository';
 import { OpenDisputeDto } from './dto/open-dispute.dto';
@@ -32,7 +33,23 @@ export class BuyerDisputeService {
     private readonly notificationsService: NotificationsService,
     private readonly s3PresignService: S3PresignService,
     private readonly configService: ConfigService,
+    private readonly tracing: TracingService,
   ) {}
+
+  /**
+   * Runs `fn` inside a span named for the escrow operation.
+   *
+   * Identifiers are recorded as attributes so an operation can be traced
+   * back to a specific escrow. Request bodies and contact details are never
+   * recorded, and failures are captured by `withSpan` as error spans.
+   */
+  private traced<T>(
+    operation: string,
+    attributes: Record<string, string | number | boolean>,
+    fn: () => T | Promise<T>,
+  ): Promise<T> {
+    return this.tracing.withSpan(`escrow.${operation}`, { attributes }, fn);
+  }
 
   /**
    * Opens a dispute against an escrow on behalf of one of its participants.
@@ -53,6 +70,21 @@ export class BuyerDisputeService {
    * @throws ConflictException if a dispute is already open for the escrow.
    */
   async openDispute(
+    escrowId: string,
+    callerAddress: string,
+    dto: OpenDisputeDto,
+  ): Promise<DisputeResponseDto> {
+    return this.traced(
+      'dispute.open',
+      {
+        'trustlink.escrow.id': escrowId,
+        'trustlink.actor.address': callerAddress,
+      },
+      () => this.openDisputeInternal(escrowId, callerAddress, dto),
+    );
+  }
+
+  private async openDisputeInternal(
     escrowId: string,
     callerAddress: string,
     dto: OpenDisputeDto,
@@ -106,6 +138,20 @@ export class BuyerDisputeService {
    * @throws ForbiddenException if the caller is not a participant or the admin.
    */
   async getDispute(
+    escrowId: string,
+    callerAddress: string,
+  ): Promise<DisputeResponseDto> {
+    return this.traced(
+      'dispute.get',
+      {
+        'trustlink.escrow.id': escrowId,
+        'trustlink.actor.address': callerAddress,
+      },
+      () => this.getDisputeInternal(escrowId, callerAddress),
+    );
+  }
+
+  private async getDisputeInternal(
     escrowId: string,
     callerAddress: string,
   ): Promise<DisputeResponseDto> {

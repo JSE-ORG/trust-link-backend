@@ -1,3 +1,4 @@
+import { createTracingMock } from '../../test/unit/tracing-mock';
 import { AutoReleaseWorker } from './auto-release.worker';
 import { EscrowRepository } from '../escrow/escrow.repository';
 import { DisputeRepository } from '../dispute/dispute.repository';
@@ -108,6 +109,7 @@ describe('AutoReleaseWorker', () => {
       disputeRepository,
       contractService,
       configService,
+      createTracingMock().service,
     );
   });
 

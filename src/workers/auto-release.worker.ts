@@ -4,6 +4,7 @@ import {
   OnApplicationShutdown,
   OnModuleInit,
 } from '@nestjs/common';
+import { TracingService } from '../tracing/tracing.service';
 import { DisputeRepository } from '../dispute/dispute.repository';
 import { EscrowRepository } from '../escrow/escrow.repository';
 import { ContractService } from '../stellar/contract.service';
@@ -32,7 +33,24 @@ export class AutoReleaseWorker implements OnModuleInit, OnApplicationShutdown {
     private readonly disputeRepository: DisputeRepository,
     private readonly contractService: ContractService,
     private readonly configService: ConfigService,
+    private readonly tracing: TracingService,
   ) {}
+
+  /**
+   * Runs `fn` inside a worker span.
+   *
+   * One span covers a whole worker run and a child span covers each escrow
+   * handled within it, so a cycle and its per-escrow work group together in a
+   * single trace. The cycle is summarised with counts on the root span rather
+   * than with a span per database row.
+   */
+  private traced<T>(
+    name: string,
+    attributes: Record<string, string | number | boolean>,
+    fn: () => T | Promise<T>,
+  ): Promise<T> {
+    return this.tracing.withSpan(name, { attributes }, fn);
+  }
 
   /**
    * Returns the configured auto-release signing address.
@@ -71,6 +89,12 @@ export class AutoReleaseWorker implements OnModuleInit, OnApplicationShutdown {
   }
 
   async run(referenceTime = new Date()): Promise<void> {
+    return this.traced('worker.auto_release.run', {}, () =>
+      this.runInternal(referenceTime),
+    );
+  }
+
+  private async runInternal(referenceTime: Date): Promise<void> {
     let eligible: Awaited<
       ReturnType<typeof this.escrowRepository.findAutoReleaseEligible>
     > = [];
@@ -84,61 +108,16 @@ export class AutoReleaseWorker implements OnModuleInit, OnApplicationShutdown {
 
       for (const escrow of eligible) {
         try {
-          const dispute = await this.disputeRepository.findByEscrow(escrow.id);
-          if (dispute) {
-            continue;
-          }
-
-          // Belt and braces against a stale snapshot: findAutoReleaseEligible
-          // already excludes both of these, but two concurrent runs share one
-          // snapshot, and the chain event may have finalised the escrow since.
-          if (TERMINAL_STATES.has(escrow.state) || escrow.autoReleaseTxHash) {
-            continue;
-          }
-
-          // `auto_release(env, escrow_id: u64)` addresses the escrow by the
-          // contract's own id, not this row's UUID. Without the mapping there
-          // is no call to make, and guessing would target another escrow.
-          if (escrow.contractEscrowId === null) {
-            this.logger.warn(
-              JSON.stringify({
-                msg: 'auto_release.unmapped_escrow',
-                escrowId: escrow.id,
-                eventType: 'auto_release',
-              }),
-            );
-            continue;
-          }
-
-          // Atomically claim the escrow before any network call. This is the
-          // guard against the race where two concurrent runs fetch the same
-          // stale eligible snapshot — a stale in-memory check alone cannot
-          // prevent both from submitting. Returns null if another run
-          // already holds the claim.
-          const claimed = await this.escrowRepository.markAutoReleaseSubmitting(
-            escrow.id,
+          const released = await this.traced(
+            'worker.auto_release.escrow',
+            {
+              'trustlink.escrow.id': escrow.id,
+              'trustlink.escrow.state': escrow.state,
+            },
+            () => this.processEscrow(escrow),
           );
-          if (!claimed) {
-            continue;
-          }
-
-          try {
-            const txHash = await this.contractService.submitAutoRelease(
-              escrow.contractEscrowId,
-              this.requireAutoReleaseSource(),
-            );
-            // Record the submission only. The AutoReleased chain event
-            // owns the terminal transition and the completion notification;
-            // see EscrowRepository.recordAutoReleaseSubmission.
-            await this.escrowRepository.recordAutoReleaseSubmission(
-              escrow.id,
-              txHash,
-            );
+          if (released) {
             successCount++;
-          } catch (error) {
-            // Release the claim so the next poll cycle can retry.
-            await this.escrowRepository.clearAutoReleaseSubmitting(escrow.id);
-            throw error;
           }
         } catch (error) {
           failureCount++;
@@ -177,6 +156,79 @@ export class AutoReleaseWorker implements OnModuleInit, OnApplicationShutdown {
       this.logger.warn(
         `Failed escrows: ${failures.map((f) => `${f.escrowId} (${f.error})`).join(', ')}`,
       );
+    }
+  }
+
+  /**
+   * Attempts the auto-release contract call for a single escrow.
+   *
+   * Runs as a child of the cycle's root span. Each `continue` from the
+   * original loop body is a `return` here, which skips this escrow and leaves
+   * the caller's loop to move on to the next one.
+   */
+  private async processEscrow(escrow: {
+    id: string;
+    state: string;
+    autoReleaseTxHash: string | null;
+    contractEscrowId: bigint | null;
+  }): Promise<boolean> {
+    {
+      const dispute = await this.disputeRepository.findByEscrow(escrow.id);
+      if (dispute) {
+        return false;
+      }
+
+      // Belt and braces against a stale snapshot: findAutoReleaseEligible
+      // already excludes both of these, but two concurrent runs share one
+      // snapshot, and the chain event may have finalised the escrow since.
+      if (TERMINAL_STATES.has(escrow.state) || escrow.autoReleaseTxHash) {
+        return false;
+      }
+
+      // `auto_release(env, escrow_id: u64)` addresses the escrow by the
+      // contract's own id, not this row's UUID. Without the mapping there
+      // is no call to make, and guessing would target another escrow.
+      if (escrow.contractEscrowId === null) {
+        this.logger.warn(
+          JSON.stringify({
+            msg: 'auto_release.unmapped_escrow',
+            escrowId: escrow.id,
+            eventType: 'auto_release',
+          }),
+        );
+        return false;
+      }
+
+      // Atomically claim the escrow before any network call. This is the
+      // guard against the race where two concurrent runs fetch the same
+      // stale eligible snapshot — a stale in-memory check alone cannot
+      // prevent both from submitting. Returns null if another run
+      // already holds the claim.
+      const claimed = await this.escrowRepository.markAutoReleaseSubmitting(
+        escrow.id,
+      );
+      if (!claimed) {
+        return false;
+      }
+
+      try {
+        const txHash = await this.contractService.submitAutoRelease(
+          escrow.contractEscrowId,
+          this.requireAutoReleaseSource(),
+        );
+        // Record the submission only. The AutoReleased chain event
+        // owns the terminal transition and the completion notification;
+        // see EscrowRepository.recordAutoReleaseSubmission.
+        await this.escrowRepository.recordAutoReleaseSubmission(
+          escrow.id,
+          txHash,
+        );
+        return true;
+      } catch (error) {
+        // Release the claim so the next poll cycle can retry.
+        await this.escrowRepository.clearAutoReleaseSubmitting(escrow.id);
+        throw error;
+      }
     }
   }
 }

@@ -2,10 +2,36 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { VendorAccountDetailsRecord } from '../prisma/prisma.service';
 import { UpdateVendorAccountDetailsDto } from './dto/update-vendor-account-details.dto';
 import { VendorAccountDetailsRepository } from './vendor-account-details.repository';
+import { TracingService } from '../tracing/tracing.service';
 
 @Injectable()
 export class VendorAccountDetailsService {
-  constructor(private readonly repository: VendorAccountDetailsRepository) {}
+  constructor(
+    private readonly repository: VendorAccountDetailsRepository,
+    private readonly tracing: TracingService,
+  ) {}
+
+  /**
+   * Runs `fn` inside a span named for the account-details operation.
+   *
+   * Only the vendor address is recorded. The details themselves (bank
+   * account numbers and payout identifiers) are deliberately excluded.
+   */
+  private traced<T>(
+    operation: string,
+    vendorAddress: string,
+    fn: () => T | Promise<T>,
+  ): Promise<T> {
+    return this.tracing.withSpan(
+      `vendor.account_details.${operation}`,
+      {
+        attributes: {
+          'trustlink.vendor.address': vendorAddress,
+        },
+      },
+      fn,
+    );
+  }
 
   /**
    * Returns the stored payout/account details for `vendorAddress`, or `null`
@@ -18,7 +44,9 @@ export class VendorAccountDetailsService {
   async getDetails(
     vendorAddress: string,
   ): Promise<VendorAccountDetailsRecord | null> {
-    return this.repository.findByVendorAddress(vendorAddress);
+    return this.traced('get', vendorAddress, () =>
+      this.repository.findByVendorAddress(vendorAddress),
+    );
   }
 
   /**
@@ -32,11 +60,13 @@ export class VendorAccountDetailsService {
   async getDetailsOrThrow(
     vendorAddress: string,
   ): Promise<VendorAccountDetailsRecord> {
-    const details = await this.repository.findByVendorAddress(vendorAddress);
-    if (!details) {
-      throw new NotFoundException('Vendor account details not found');
-    }
-    return details;
+    return this.traced('get_or_throw', vendorAddress, async () => {
+      const details = await this.repository.findByVendorAddress(vendorAddress);
+      if (!details) {
+        throw new NotFoundException('Vendor account details not found');
+      }
+      return details;
+    });
   }
 
   /**
@@ -52,6 +82,8 @@ export class VendorAccountDetailsService {
     vendorAddress: string,
     dto: UpdateVendorAccountDetailsDto,
   ): Promise<VendorAccountDetailsRecord> {
-    return this.repository.upsert(vendorAddress, dto);
+    return this.traced('upsert', vendorAddress, () =>
+      this.repository.upsert(vendorAddress, dto),
+    );
   }
 }

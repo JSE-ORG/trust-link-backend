@@ -13,6 +13,8 @@
 //   - the RPC URL fallback (SOROBAN_RPC_URL override vs STELLAR_NETWORK
 //     derived default)
 
+import { TracingService } from '../../src/tracing/tracing.service';
+import { createTracingMock } from './tracing-mock';
 import { Test } from '@nestjs/testing';
 import { SorobanPollerService } from '../../src/stellar/soroban-poller.service';
 import { ConfigService } from '../../src/config/config.service';
@@ -96,6 +98,7 @@ async function buildService(configOverrides: Record<string, string> = {}) {
       { provide: CursorService, useValue: cursorService },
       { provide: EscrowService, useValue: escrowService },
       { provide: DlqService, useValue: dlqService },
+      { provide: TracingService, useValue: createTracingMock().service },
     ],
   }).compile();
 
@@ -296,7 +299,7 @@ describe('SorobanPollerService — event-name derivation (issue #559)', () => {
       const { service, blockchainListener, escrowService } =
         await buildService();
       mockRpcResponse(fetchSpy, [rawEvent('evt-1', 'token-1')]);
-      blockchainListener.parseEvent.mockReturnValueOnce(
+      blockchainListener.parseEvent.mockResolvedValueOnce(
         parsedEventFor(1n, [topic0, topic1]),
       );
 
@@ -317,7 +320,7 @@ describe('SorobanPollerService — event-name derivation (issue #559)', () => {
       cursorService,
     } = await buildService();
     mockRpcResponse(fetchSpy, [rawEvent('evt-1', 'token-1')]);
-    blockchainListener.parseEvent.mockReturnValueOnce(
+    blockchainListener.parseEvent.mockResolvedValueOnce(
       parsedEventFor(1n, [42, null]),
     );
 

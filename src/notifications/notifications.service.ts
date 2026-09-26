@@ -1,3 +1,4 @@
+import { TracingService } from '../tracing/tracing.service';
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import * as crypto from 'crypto';
 import {
@@ -39,7 +40,28 @@ export class NotificationsService {
     @Optional()
     @Inject(TWILIO_CLIENT)
     private readonly twilio: TwilioClient = noopTwilio,
+    @Optional()
+    private readonly tracing?: TracingService,
   ) {}
+
+  /**
+   * Runs `fn` inside a notification span.
+   *
+   * Spans record the notification type and channel so a slow or failing
+   * dispatch can be traced. Recipient addresses, message bodies and contact
+   * details are never recorded as attributes. Tracing is optional, so a
+   * service built without it still dispatches normally.
+   */
+  private traced<T>(
+    name: string,
+    attributes: Record<string, string | number | boolean>,
+    fn: () => T | Promise<T>,
+  ): Promise<T> {
+    if (!this.tracing) {
+      return Promise.resolve(fn());
+    }
+    return this.tracing.withSpan(name, { attributes }, fn);
+  }
 
   /**
    * Notifies the vendor (at `escrow.vendorAddress`) that the escrow has been
@@ -199,8 +221,33 @@ export class NotificationsService {
     escrow: EscrowRecord,
     recipientAddress: string,
   ): Promise<void> {
-    await this.dispatchEmail(type, escrow, recipientAddress);
-    await this.dispatchSms(type, escrow, recipientAddress);
+    return this.traced(
+      'notification.dispatch',
+      {
+        'trustlink.notification.type': type,
+        'trustlink.escrow.id': escrow.id,
+      },
+      async () => {
+        await this.traced(
+          'notification.dispatch.email',
+          {
+            'trustlink.notification.type': type,
+            'trustlink.notification.channel': 'email',
+            'trustlink.escrow.id': escrow.id,
+          },
+          () => this.dispatchEmail(type, escrow, recipientAddress),
+        );
+        await this.traced(
+          'notification.dispatch.sms',
+          {
+            'trustlink.notification.type': type,
+            'trustlink.notification.channel': 'sms',
+            'trustlink.escrow.id': escrow.id,
+          },
+          () => this.dispatchSms(type, escrow, recipientAddress),
+        );
+      },
+    );
   }
 
   private async dispatchEmail(

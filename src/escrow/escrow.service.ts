@@ -22,6 +22,7 @@ import { S3PresignService } from '../common/services/s3-presign.service';
 import { EscrowRepository } from './escrow.repository';
 import { UpdateBuyerContactDto } from './dto/update-buyer-contact.dto';
 import { encryptContact } from '../common/sanitization/contact-encryption.util';
+import { TracingService } from '../tracing/tracing.service';
 import { EventsResult } from './escrow.types';
 
 export type EscrowWithPaymentUrl = EscrowRecord & {
@@ -52,13 +53,15 @@ const TERMINAL_STATES = new Set<string>([
 ]);
 
 export type SyncResult =
-  { skipped: boolean; reason?: string } | { skipped: false };
+  | { skipped: boolean; reason?: string }
+  | { skipped: false };
 
 @Injectable()
 export class EscrowService {
   private readonly logger = new Logger(EscrowService.name);
 
   constructor(
+    private readonly tracing: TracingService,
     private readonly escrowRepository: EscrowRepository,
     private readonly notificationsService: NotificationsService,
     private readonly s3PresignService: S3PresignService,
@@ -70,6 +73,21 @@ export class EscrowService {
     @Optional()
     private readonly prisma?: PrismaService,
   ) {}
+
+  /**
+   * Runs `fn` inside a span named for the escrow operation.
+   *
+   * Identifiers are recorded as attributes so an operation can be traced
+   * back to a specific escrow. Request bodies and contact details are never
+   * recorded, and failures are captured by `withSpan` as error spans.
+   */
+  private traced<T>(
+    operation: string,
+    attributes: Record<string, string | number | boolean>,
+    fn: () => T | Promise<T>,
+  ): Promise<T> {
+    return this.tracing.withSpan(`escrow.${operation}`, { attributes }, fn);
+  }
 
   /**
    * Returns shipment tracking details for an escrow, served from cache when
@@ -87,6 +105,26 @@ export class EscrowService {
    *   service is unavailable, or the carrier lookup fails.
    */
   async getTracking(id: string): Promise<{
+    status: string;
+    estimatedDelivery?: Date;
+    carrier?: string;
+    events: Array<{
+      timestamp: Date;
+      status: string;
+      location?: string;
+      description: string;
+    }>;
+  }> {
+    return this.traced(
+      'get_tracking',
+      {
+        'trustlink.escrow.id': id,
+      },
+      () => this.getTrackingInternal(id),
+    );
+  }
+
+  private async getTrackingInternal(id: string): Promise<{
     status: string;
     estimatedDelivery?: Date;
     carrier?: string;
@@ -164,6 +202,19 @@ export class EscrowService {
     dto: CreateEscrowDto,
     vendorAddress: string,
   ): Promise<EscrowWithPaymentUrl> {
+    return this.traced(
+      'create',
+      {
+        'trustlink.vendor.address': vendorAddress,
+      },
+      () => this.createEscrowInternal(dto, vendorAddress),
+    );
+  }
+
+  private async createEscrowInternal(
+    dto: CreateEscrowDto,
+    vendorAddress: string,
+  ): Promise<EscrowWithPaymentUrl> {
     if (dto.amount <= 0) {
       throw new BadRequestException('Amount must be positive');
     }
@@ -227,6 +278,21 @@ export class EscrowService {
     dto: CreateEscrowDto,
     vendorAddress: string,
   ): Promise<EscrowWithPaymentUrl> {
+    return this.traced(
+      'create_idempotent',
+      {
+        'trustlink.escrow.idempotency_key': idempotencyKey,
+        'trustlink.vendor.address': vendorAddress,
+      },
+      () => this.createIdempotentInternal(idempotencyKey, dto, vendorAddress),
+    );
+  }
+
+  private async createIdempotentInternal(
+    idempotencyKey: string,
+    dto: CreateEscrowDto,
+    vendorAddress: string,
+  ): Promise<EscrowWithPaymentUrl> {
     const cacheKey = `idempotency:${vendorAddress}:${idempotencyKey}`;
     if (this.cacheService) {
       const cached =
@@ -261,6 +327,16 @@ export class EscrowService {
    * @throws BadRequestException if the lookup fails for any other reason.
    */
   async findById(id: string): Promise<EscrowRecord> {
+    return this.traced(
+      'get',
+      {
+        'trustlink.escrow.id': id,
+      },
+      () => this.findByIdInternal(id),
+    );
+  }
+
+  private async findByIdInternal(id: string): Promise<EscrowRecord> {
     try {
       const escrow = await this.escrowRepository.findById(id);
       if (!escrow) {
@@ -288,6 +364,16 @@ export class EscrowService {
    * events.
    */
   async getEvents(id: string): Promise<EventsResult> {
+    return this.traced(
+      'get_events',
+      {
+        'trustlink.escrow.id': id,
+      },
+      () => this.getEventsInternal(id),
+    );
+  }
+
+  private async getEventsInternal(id: string): Promise<EventsResult> {
     return this.escrowRepository.findEvents(id);
   }
 
@@ -302,6 +388,18 @@ export class EscrowService {
    * @throws NotFoundException if the escrow does not exist.
    */
   async getPublicEscrow(id: string): Promise<EscrowResponseDto> {
+    return this.traced(
+      'get_public',
+      {
+        'trustlink.escrow.id': id,
+      },
+      () => this.getPublicEscrowInternal(id),
+    );
+  }
+
+  private async getPublicEscrowInternal(
+    id: string,
+  ): Promise<EscrowResponseDto> {
     const escrow = await this.findById(id);
     return this.toPublicEscrow(escrow);
   }
@@ -312,6 +410,21 @@ export class EscrowService {
    * existing record — no additional DB query is needed.
    */
   async getEscrowForViewer(
+    id: string,
+    callerAddress?: string,
+  ): Promise<
+    EscrowResponseDto & { viewer?: { isBuyer: boolean; isVendor: boolean } }
+  > {
+    return this.traced(
+      'get_for_viewer',
+      {
+        'trustlink.escrow.id': id,
+      },
+      () => this.getEscrowForViewerInternal(id, callerAddress),
+    );
+  }
+
+  private async getEscrowForViewerInternal(
     id: string,
     callerAddress?: string,
   ): Promise<
@@ -341,6 +454,30 @@ export class EscrowService {
    * user.
    */
   async findVendorEscrows(
+    vendorAddress: string,
+    query: {
+      state?: string;
+      sort?: 'date' | 'amount';
+      order?: 'asc' | 'desc';
+      page?: number;
+      limit?: number;
+    },
+  ): Promise<{
+    data: EscrowSummaryDto[];
+    total: number;
+    page: number;
+    limit: number;
+  }> {
+    return this.traced(
+      'find_vendor',
+      {
+        'trustlink.vendor.address': vendorAddress,
+      },
+      () => this.findVendorEscrowsInternal(vendorAddress, query),
+    );
+  }
+
+  private async findVendorEscrowsInternal(
     vendorAddress: string,
     query: {
       state?: string;
@@ -423,7 +560,20 @@ export class EscrowService {
    * validates the file — and the returned link expires one hour after issuance
    * (`expiresInSeconds` is 3600).
    */
-  generateEvidenceUploadUrl(
+  async generateEvidenceUploadUrl(
+    callerAddress: string,
+    fileName: string,
+  ): Promise<EvidenceUploadResponseDto> {
+    return this.traced(
+      'evidence_upload_url',
+      {
+        'trustlink.actor.address': callerAddress,
+      },
+      () => this.generateEvidenceUploadUrlInternal(callerAddress, fileName),
+    );
+  }
+
+  private generateEvidenceUploadUrlInternal(
     callerAddress: string,
     fileName: string,
   ): EvidenceUploadResponseDto {
@@ -458,6 +608,21 @@ export class EscrowService {
    * @throws ConflictException if the escrow is not in `FUNDED` state.
    */
   async cancelEscrow(
+    escrowId: string,
+    callerAddress: string,
+    isAdmin = false,
+  ): Promise<EscrowRecord> {
+    return this.traced(
+      'cancel',
+      {
+        'trustlink.escrow.id': escrowId,
+        'trustlink.actor.is_admin': isAdmin,
+      },
+      () => this.cancelEscrowInternal(escrowId, callerAddress, isAdmin),
+    );
+  }
+
+  private async cancelEscrowInternal(
     escrowId: string,
     callerAddress: string,
     isAdmin = false,
@@ -502,6 +667,21 @@ export class EscrowService {
    *   on-chain escrow is in a non-cancellable state.
    */
   async cancelPendingEscrow(
+    escrowId: string,
+    callerAddress: string,
+    isAdmin = false,
+  ): Promise<EscrowRecord> {
+    return this.traced(
+      'cancel_pending',
+      {
+        'trustlink.escrow.id': escrowId,
+        'trustlink.actor.is_admin': isAdmin,
+      },
+      () => this.cancelPendingEscrowInternal(escrowId, callerAddress, isAdmin),
+    );
+  }
+
+  private async cancelPendingEscrowInternal(
     escrowId: string,
     callerAddress: string,
     isAdmin = false,
@@ -580,6 +760,28 @@ export class EscrowService {
    *   shipped.
    */
   async handleShipment(
+    escrowId: string,
+    vendorAddress: string,
+    trackingId: string,
+    isAdmin = false,
+  ): Promise<EscrowRecord> {
+    return this.traced(
+      'handle_shipment',
+      {
+        'trustlink.escrow.id': escrowId,
+        'trustlink.vendor.address': vendorAddress,
+      },
+      () =>
+        this.handleShipmentInternal(
+          escrowId,
+          vendorAddress,
+          trackingId,
+          isAdmin,
+        ),
+    );
+  }
+
+  private async handleShipmentInternal(
     escrowId: string,
     vendorAddress: string,
     trackingId: string,
@@ -667,6 +869,19 @@ export class EscrowService {
     escrowId: string,
     dto: UpdateBuyerContactDto,
   ): Promise<{ message: string }> {
+    return this.traced(
+      'update_buyer_contact',
+      {
+        'trustlink.escrow.id': escrowId,
+      },
+      () => this.updateBuyerContactInternal(escrowId, dto),
+    );
+  }
+
+  private async updateBuyerContactInternal(
+    escrowId: string,
+    dto: UpdateBuyerContactDto,
+  ): Promise<{ message: string }> {
     const escrow = await this.findById(escrowId);
 
     if (TERMINAL_STATES.has(escrow.state)) {
@@ -702,6 +917,18 @@ export class EscrowService {
    * the two identifier spaces are separate.
    */
   findIdByContractEscrowId(contractEscrowId: bigint): Promise<string | null> {
+    return this.traced(
+      'find_by_contract_id',
+      {
+        'trustlink.escrow.contract_id': contractEscrowId.toString(),
+      },
+      () => this.findIdByContractEscrowIdInternal(contractEscrowId),
+    );
+  }
+
+  private findIdByContractEscrowIdInternal(
+    contractEscrowId: bigint,
+  ): Promise<string | null> {
     return this.escrowRepository.findIdByContractEscrowId(contractEscrowId);
   }
 
@@ -729,6 +956,19 @@ export class EscrowService {
    *   ignored.
    */
   async syncStateFromChain(event: SorobanChainEvent): Promise<SyncResult> {
+    return this.traced(
+      'sync_from_chain',
+      {
+        'trustlink.escrow.id': event.escrowId,
+        'trustlink.chain.event_type': event.eventType,
+      },
+      () => this.syncStateFromChainInternal(event),
+    );
+  }
+
+  private async syncStateFromChainInternal(
+    event: SorobanChainEvent,
+  ): Promise<SyncResult> {
     const { eventType, escrowId } = event;
 
     this.logger.log(

@@ -9,6 +9,7 @@
  * All dependencies are mocked; no real DB or HTTP calls are made.
  */
 
+import { createTracingMock } from '../../test/unit/tracing-mock';
 import { TrackingPollWorker } from './tracking-poll.worker';
 import { EscrowRepository } from '../escrow/escrow.repository';
 import { LogisticsService } from '../logistics/logistics.service';
@@ -91,6 +92,7 @@ describe('TrackingPollWorker', () => {
       logisticsService as unknown as LogisticsService,
       contractService as unknown as ContractService,
       configService as unknown as ConfigService,
+      createTracingMock().service,
     );
   });
 
