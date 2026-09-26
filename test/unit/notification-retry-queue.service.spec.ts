@@ -107,6 +107,16 @@ describe('computeBackoffDelay (#73)', () => {
     expect(computeBackoffDelay(20, backoff)).toBe(4_000); // capped
   });
 
+  it('leaves the delay uncapped when maxDelayMs is omitted', () => {
+    const backoff: NotificationRetryBackoff = { attempts: 40, delay: 1_000 };
+
+    // 1_000 * 2^28 with jitter pinned to zero by the Math.random stub.
+    expect(computeBackoffDelay(30, backoff)).toBe(1_000 * 2 ** 28);
+    expect(computeBackoffDelay(30, backoff)).toBeGreaterThan(
+      DEFAULT_BACKOFF.maxDelayMs as number,
+    );
+  });
+
   it('uses the DEFAULT_BACKOFF when no override is supplied', () => {
     expect(computeBackoffDelay(2)).toBe(DEFAULT_BACKOFF.delay);
   });

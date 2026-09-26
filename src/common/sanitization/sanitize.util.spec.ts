@@ -17,6 +17,21 @@ describe('sanitizeString', () => {
     expect(sanitizeString('be\x07ll')).toBe('bell');
   });
 
+  it('treats a character whose code point cannot be read as a control character', () => {
+    // `codePointAt` never returns undefined for a character produced by
+    // string iteration, so the `?? 0` fallback is only reachable through the
+    // prototype. Code point 0 is NUL, which is a control character and is
+    // dropped.
+    const spy = jest
+      .spyOn(String.prototype, 'codePointAt')
+      .mockReturnValueOnce(undefined);
+    try {
+      expect(sanitizeString('xyz')).toBe('yz');
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it('preserves tab, newline and carriage return', () => {
     const input = 'line1\nline2\r\n\ttabbed';
     expect(sanitizeString(input)).toBe(input);

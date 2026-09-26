@@ -7,6 +7,7 @@ import {
   ConfigService,
 } from '../config/config.service';
 import { EscrowRecord, DisputeRecord } from '../prisma/prisma.service';
+import { Test } from '@nestjs/testing';
 
 const TEST_AUTO_RELEASE_SOURCE =
   'GCKFBEIYTKP5RQGHKGKFHVOPXQVQPQWO7EEQOFTIYSDIN2R7RQNU3XXY';
@@ -182,6 +183,44 @@ describe('AutoReleaseWorker', () => {
       );
     });
 
+    it('skips an escrow with no contract id without claiming or submitting it', async () => {
+      const unmapped = makeEscrow({
+        id: 'escrow-unmapped',
+        contractEscrowId: null,
+      });
+      const mapped = makeEscrow({ id: 'escrow-mapped', contractEscrowId: 9n });
+      escrowRepository.findAutoReleaseEligible.mockResolvedValue([
+        unmapped,
+        mapped,
+      ]);
+      disputeRepository.findByEscrow.mockResolvedValue(null);
+      contractService.submitAutoRelease.mockResolvedValue('tx-hash-mapped');
+      const warn = jest
+        .spyOn(worker['logger'], 'warn')
+        .mockImplementation(() => undefined);
+
+      await worker.run();
+
+      expect(
+        escrowRepository.markAutoReleaseSubmitting,
+      ).not.toHaveBeenCalledWith('escrow-unmapped');
+      expect(contractService.submitAutoRelease).toHaveBeenCalledTimes(1);
+      expect(contractService.submitAutoRelease).toHaveBeenCalledWith(
+        9n,
+        expect.any(String),
+      );
+      expect(
+        escrowRepository.recordAutoReleaseSubmission,
+      ).not.toHaveBeenCalledWith('escrow-unmapped', expect.anything());
+      expect(warn).toHaveBeenCalledWith(
+        JSON.stringify({
+          msg: 'auto_release.unmapped_escrow',
+          escrowId: 'escrow-unmapped',
+          eventType: 'auto_release',
+        }),
+      );
+    });
+
     it('skips an escrow that cannot be claimed because another run already holds it', async () => {
       const escrow = makeEscrow();
       escrowRepository.findAutoReleaseEligible.mockResolvedValue([escrow]);
@@ -229,6 +268,69 @@ describe('AutoReleaseWorker', () => {
         'escrow-ok',
         'tx-hash-ok',
       );
+    });
+  });
+
+  describe('ported from test/unit — query reference time and top-level failures (issue #10)', () => {
+    it('queries eligibility with the supplied reference time and submits once per eligible escrow', async () => {
+      const referenceTime = new Date('2026-05-26T00:00:00.000Z');
+      escrowRepository.findAutoReleaseEligible.mockResolvedValue([
+        makeEscrow({ id: 'escrow-1', contractEscrowId: 7n }),
+      ]);
+      disputeRepository.findByEscrow.mockResolvedValue(null);
+      contractService.submitAutoRelease.mockResolvedValue('tx-hash');
+
+      await worker.run(referenceTime);
+
+      expect(escrowRepository.findAutoReleaseEligible).toHaveBeenCalledTimes(1);
+      expect(escrowRepository.findAutoReleaseEligible).toHaveBeenCalledWith(
+        referenceTime,
+      );
+      expect(contractService.submitAutoRelease).toHaveBeenCalledTimes(1);
+      expect(contractService.submitAutoRelease).toHaveBeenCalledWith(
+        7n,
+        expect.any(String),
+      );
+      expect(escrowRepository.recordAutoReleaseSubmission).toHaveBeenCalledWith(
+        'escrow-1',
+        'tx-hash',
+      );
+    });
+
+    it('catches top-level worker failures so interval handlers do not reject', async () => {
+      escrowRepository.findAutoReleaseEligible.mockRejectedValue(
+        new Error('database unavailable'),
+      );
+      const loggerSpy = jest
+        .spyOn(worker['logger'], 'error')
+        .mockImplementation(() => undefined);
+
+      await expect(worker.run()).resolves.toBeUndefined();
+
+      expect(loggerSpy).toHaveBeenCalledWith(
+        expect.stringContaining('auto_release.worker_failed'),
+        expect.any(String),
+      );
+    });
+
+    it('resolves through Nest dependency injection with the same collaborators', async () => {
+      const moduleRef = await Test.createTestingModule({
+        providers: [
+          AutoReleaseWorker,
+          { provide: EscrowRepository, useValue: escrowRepository },
+          { provide: DisputeRepository, useValue: disputeRepository },
+          { provide: ContractService, useValue: contractService },
+          { provide: ConfigService, useValue: configService },
+        ],
+      }).compile();
+
+      const injected = moduleRef.get(AutoReleaseWorker);
+      escrowRepository.findAutoReleaseEligible.mockResolvedValue([]);
+
+      await injected.run();
+
+      expect(injected).toBeInstanceOf(AutoReleaseWorker);
+      expect(contractService.submitAutoRelease).not.toHaveBeenCalled();
     });
   });
 

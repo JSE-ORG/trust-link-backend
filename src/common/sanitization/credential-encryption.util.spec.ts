@@ -57,6 +57,17 @@ describe('CredentialEncryption', () => {
       expect(decrypted).toBe(plaintext);
     });
 
+    it('rejects a key that is not 32 bytes before touching the ciphertext', () => {
+      const encrypted = encryptCredential('secret', encryptionKey);
+      const shortKey = 'ab'.repeat(16); // 16 bytes
+
+      expect(() => decryptCredential(encrypted, shortKey)).toThrow(
+        new Error(
+          'Encryption key must be exactly 64 hex characters (32 bytes). Got 16 bytes.',
+        ),
+      );
+    });
+
     it('should throw when encrypted format is invalid', () => {
       const invalidEncrypted = 'invalid-format';
 
