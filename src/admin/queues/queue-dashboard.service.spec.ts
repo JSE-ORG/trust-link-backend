@@ -131,6 +131,39 @@ describe('QueueDashboardService', () => {
       expect(result.queues[1].counts.failed).toBe(0);
       expect(result.queues[2].counts.waiting).toBe(5);
     });
+
+    it('returns dashboard data with all registered queues and expected shape', async () => {
+      const dashboard = await service.getDashboard();
+
+      expect(dashboard).toHaveProperty('queues');
+      expect(dashboard).toHaveProperty('generatedAt');
+      expect(Array.isArray(dashboard.queues)).toBe(true);
+      expect(dashboard.queues.length).toBeGreaterThan(0);
+
+      const names = dashboard.queues.map((q) => q.name);
+      expect(names).toContain('auto-release');
+      expect(names).toContain('tracking-poll');
+
+      for (const queue of dashboard.queues) {
+        expect(queue).toHaveProperty('name');
+        expect(queue).toHaveProperty('isPaused');
+        expect(queue).toHaveProperty('counts');
+        expect(queue.counts).toMatchObject({
+          waiting: expect.any(Number),
+          active: expect.any(Number),
+          completed: expect.any(Number),
+          failed: expect.any(Number),
+          delayed: expect.any(Number),
+          paused: expect.any(Number),
+        });
+      }
+    });
+
+    it('generatedAt is a valid ISO-8601 timestamp', async () => {
+      const dashboard = await service.getDashboard();
+      const date = new Date(dashboard.generatedAt);
+      expect(date.toISOString()).toBe(dashboard.generatedAt);
+    });
   });
 
   describe('onApplicationShutdown', () => {

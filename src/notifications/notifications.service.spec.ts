@@ -1,235 +1,359 @@
+import { Logger } from '@nestjs/common';
+import { Test } from '@nestjs/testing';
 import { NotificationsService } from './notifications.service';
+import { SENDGRID_CLIENT, TWILIO_CLIENT } from './notifications.tokens';
 import {
+  EscrowRecord,
   PrismaService,
   toEscrowRecord,
-  type EscrowRecord,
 } from '../prisma/prisma.service';
 import { ensureVendors } from '../../test/prisma-helpers';
 
-// Populated per test from a real row. Notification.escrowId is a foreign key
-// onto Escrow.id, and Escrow.vendorAddress onto VendorProfile.address, so a
-// hand-built literal is no longer enough to write a notification against (#475).
-let baseEscrow: EscrowRecord;
-
-describe('NotificationsService (#240)', () => {
-  let prisma: PrismaService;
+describe('NotificationsService', () => {
   let service: NotificationsService;
-
-  beforeEach(async () => {
-    prisma = new PrismaService();
-    await prisma.reset();
-    await ensureVendors(prisma, 'GVENDOR');
-    baseEscrow = toEscrowRecord(
-      await prisma.escrow.create({
-        data: {
-          itemName: 'Widget',
-          itemRef: 'ref-1',
-          amount: 100,
-          currency: 'USDC',
-          buyerAddress: 'GBUYER',
-          vendorAddress: 'GVENDOR',
-          state: 'FUNDED',
-        },
-      }),
-    );
-    service = new NotificationsService(prisma);
-  });
-
-  afterEach(async () => {
-    // Each `new PrismaService()` opens its own connection pool. Constructed in
-    // beforeEach across ~100 suites, undisconnected clients exhaust Postgres
-    // (`sorry, too many clients already`) partway through a full run.
-    await prisma?.$disconnect();
-  });
-
-  it('creates a notification record with the message field set', async () => {
-    await service.notifyFunded(baseEscrow);
-
-    const notifications = await prisma.notification.findMany();
-    expect(notifications.length).toBeGreaterThan(0);
-
-    const record = notifications[0];
-    expect(record.message).toBeDefined();
-    expect(record.message).toBe(`FUNDED: ${baseEscrow.itemName}`);
-  });
-
-  it('sets all required fields (message, escrowId, type, channel, recipientAddress)', async () => {
-    await service.notifyFunded(baseEscrow);
-
-    const notifications = await prisma.notification.findMany();
-    const record = notifications[0];
-
-    expect(record.escrowId).toBe(baseEscrow.id);
-    expect(record.type).toBe('FUNDED');
-    expect(record.channel).toMatch(/^(EMAIL|SMS)$/);
-    expect(record.recipientAddress).toBe(baseEscrow.vendorAddress);
-    expect(record.message).toBeTruthy();
-  });
-
-  it('creates a notification record with message field for SMS channel', async () => {
-    await service.notifyDisputed(baseEscrow);
-
-    const notifications = await prisma.notification.findMany();
-    const smsRecord = notifications.find((n) => n.channel === 'SMS');
-
-    expect(smsRecord).toBeDefined();
-    expect(smsRecord!.message).toBe(`DISPUTED: ${baseEscrow.itemName}`);
-  });
-});
-
-describe('NotificationsService (#288) — email dispatch', () => {
   let prisma: PrismaService;
+  let sendGrid: { send: jest.Mock };
+  let twilio: { messages: { create: jest.Mock } };
+
+  let escrow: EscrowRecord = {
+    id: 'escrow-1',
+    contractEscrowId: null,
+    itemName: 'Widget',
+    itemRef: 'ref-1',
+    amount: 100,
+    currency: 'USDC',
+    buyerAddress: 'GBUYER',
+    vendorAddress: 'GVENDOR',
+    state: 'FUNDED',
+    trackingId: null,
+    shippedAt: null,
+    deliveredAt: null,
+    deliveryRecordedAt: null,
+    autoReleaseSubmittedAt: null,
+    autoReleaseTxHash: null,
+    disputeId: null,
+    cancelledAt: null,
+    createdAt: new Date('2026-01-01T00:00:00.000Z'),
+    updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+  };
 
   beforeEach(async () => {
-    prisma = new PrismaService();
-    // State now lives in a shared database rather than a per-instance Map, so
-    // rows leak between tests unless each one starts clean (#475).
+    sendGrid = { send: jest.fn().mockResolvedValue([{ headers: {} }]) };
+    twilio = {
+      messages: { create: jest.fn().mockResolvedValue({ sid: 'SM123' }) },
+    };
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        NotificationsService,
+        PrismaService,
+        { provide: SENDGRID_CLIENT, useValue: sendGrid },
+        { provide: TWILIO_CLIENT, useValue: twilio },
+      ],
+    }).compile();
+
+    service = moduleRef.get(NotificationsService);
+    prisma = moduleRef.get(PrismaService);
+
     await prisma.reset();
-    await ensureVendors(prisma, 'GVENDOR');
-    baseEscrow = toEscrowRecord(
+    await ensureVendors(prisma, escrow.vendorAddress);
+    escrow = toEscrowRecord(
       await prisma.escrow.create({
         data: {
-          itemName: 'Widget',
-          itemRef: 'ref-1',
-          amount: 100,
-          currency: 'USDC',
-          buyerAddress: 'GBUYER',
-          vendorAddress: 'GVENDOR',
-          state: 'FUNDED',
+          itemName: escrow.itemName,
+          itemRef: escrow.itemRef,
+          amount: escrow.amount,
+          currency: escrow.currency,
+          buyerAddress: escrow.buyerAddress,
+          vendorAddress: escrow.vendorAddress,
+          state: escrow.state,
         },
       }),
     );
-  });
 
-  afterEach(async () => {
-    await prisma?.$disconnect();
-  });
-
-  it('dispatches email via SendGrid and records EMAIL notification', async () => {
-    const mockSend = jest
-      .fn()
-      .mockResolvedValue([
-        { statusCode: 202, headers: { 'x-message-id': 'msg-abc' } },
-      ]);
-    const sendGrid = { send: mockSend };
-    const service = new NotificationsService(prisma, sendGrid);
-
-    await service.notifyFunded(baseEscrow);
-
-    expect(mockSend).toHaveBeenCalledTimes(1);
-    expect(mockSend).toHaveBeenCalledWith(
-      expect.objectContaining({ to: baseEscrow.vendorAddress }),
-    );
-
-    const notifications = await prisma.notification.findMany();
-    const emailRecord = notifications.find((n) => n.channel === 'EMAIL');
-    expect(emailRecord).toBeDefined();
-    expect(emailRecord!.type).toBe('FUNDED');
-    expect(emailRecord!.recipientAddress).toBe(baseEscrow.vendorAddress);
-  });
-
-  it('dispatches SMS via Twilio and records SMS notification', async () => {
-    const mockCreate = jest.fn().mockResolvedValue({ sid: 'SM123' });
-    const twilio = { messages: { create: mockCreate } };
-    const service = new NotificationsService(prisma, undefined, twilio);
-
-    await service.notifyShipped(baseEscrow);
-
-    expect(mockCreate).toHaveBeenCalledTimes(1);
-    expect(mockCreate).toHaveBeenCalledWith(
-      expect.objectContaining({ to: baseEscrow.buyerAddress }),
-    );
-
-    const notifications = await prisma.notification.findMany();
-    const smsRecord = notifications.find((n) => n.channel === 'SMS');
-    expect(smsRecord).toBeDefined();
-    expect(smsRecord!.type).toBe('SHIPPED');
-    expect(smsRecord!.providerMessageId).toBe('SM123');
-  });
-
-  it('is a no-op (noop provider) when SendGrid is not configured', async () => {
-    // No sendGrid injected — service uses noopSendGrid internally
-    const service = new NotificationsService(prisma);
-
-    await expect(service.notifyFunded(baseEscrow)).resolves.toBeUndefined();
-
-    const notifications = await prisma.notification.findMany();
-    // Notification record is still written even when noop provider is used
-    const emailRecord = notifications.find((n) => n.channel === 'EMAIL');
-    expect(emailRecord).toBeDefined();
-    expect(emailRecord!.attemptCount).toBe(1);
-  });
-
-  it('is a no-op (noop provider) when Twilio is not configured', async () => {
-    const service = new NotificationsService(prisma);
-
-    await expect(service.notifyDisputed(baseEscrow)).resolves.toBeUndefined();
-
-    const notifications = await prisma.notification.findMany();
-    const smsRecord = notifications.find((n) => n.channel === 'SMS');
-    expect(smsRecord).toBeDefined();
-    expect(smsRecord!.attemptCount).toBe(1);
-  });
-
-  it('creates a notification record on each dispatch', async () => {
-    const service = new NotificationsService(prisma);
-
-    await service.notifyFunded(baseEscrow);
-    await service.notifyDisputed(baseEscrow);
-
-    const notifications = await prisma.notification.findMany();
-    // Each notify call sends email + SMS = 2 records per call → 4 total
-    expect(notifications.length).toBeGreaterThanOrEqual(2);
-  });
-
-  it('retries on provider failure and records attemptCount > 1', async () => {
-    const mockSend = jest
-      .fn()
-      .mockRejectedValueOnce(
-        Object.assign(new Error('rate limit'), { code: 429 }),
-      )
-      .mockRejectedValueOnce(
-        Object.assign(new Error('rate limit'), { code: 429 }),
-      )
-      .mockResolvedValue([{ statusCode: 202, headers: {} }]);
-
-    const sendGrid = { send: mockSend };
-    const service = new NotificationsService(prisma, sendGrid);
-
-    // Spy on sleep so retries don't actually delay the test
+    // Prevent actual timer delays in all tests
     jest
       .spyOn(service, 'sleep' as keyof NotificationsService)
       .mockResolvedValue(undefined);
-
-    await service.notifyFunded(baseEscrow);
-
-    expect(mockSend).toHaveBeenCalledTimes(3);
-
-    const notifications = await prisma.notification.findMany();
-    const emailRecord = notifications.find((n) => n.channel === 'EMAIL');
-    expect(emailRecord!.attemptCount).toBe(3);
+    jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
   });
 
-  it('records lastResponseCode from provider error on all-failed retries', async () => {
-    const mockSend = jest
-      .fn()
-      .mockRejectedValue(
-        Object.assign(new Error('server error'), { code: 500 }),
+  afterEach(async () => {
+    await prisma?.$disconnect();
+    jest.restoreAllMocks();
+  });
+
+  describe('notification message formatting and required fields (#240)', () => {
+    it('creates a notification record with the message field set', async () => {
+      await service.notifyFunded(escrow);
+
+      const notifications = await prisma.notification.findMany();
+      expect(notifications.length).toBeGreaterThan(0);
+
+      const record = notifications[0];
+      expect(record.message).toBeDefined();
+      expect(record.message).toBe(`FUNDED: ${escrow.itemName}`);
+    });
+
+    it('sets all required fields (message, escrowId, type, channel, recipientAddress)', async () => {
+      await service.notifyFunded(escrow);
+
+      const notifications = await prisma.notification.findMany();
+      const record = notifications[0];
+
+      expect(record.escrowId).toBe(escrow.id);
+      expect(record.type).toBe('FUNDED');
+      expect(record.channel).toMatch(/^(EMAIL|SMS)$/);
+      expect(record.recipientAddress).toBe(escrow.vendorAddress);
+      expect(record.message).toBeTruthy();
+    });
+
+    it('creates a notification record with message field for SMS channel', async () => {
+      await service.notifyDisputed(escrow);
+
+      const notifications = await prisma.notification.findMany();
+      const smsRecord = notifications.find((n) => n.channel === 'SMS');
+
+      expect(smsRecord).toBeDefined();
+      expect(smsRecord!.message).toBe(`DISPUTED: ${escrow.itemName}`);
+    });
+  });
+
+  describe('happy-path dispatch behaviour (#18, #288)', () => {
+    it('notifyFunded calls SendGrid and Twilio with the funded template', async () => {
+      await service.notifyFunded(escrow);
+
+      expect(sendGrid.send).toHaveBeenCalledWith(
+        expect.objectContaining({
+          to: escrow.vendorAddress,
+          templateId: 'trustlink-funded',
+        }),
+      );
+      expect(twilio.messages.create).toHaveBeenCalledWith(
+        expect.objectContaining({ to: escrow.vendorAddress }),
+      );
+    });
+
+    it('dispatches SMS via Twilio and records providerMessageId', async () => {
+      await service.notifyShipped(escrow);
+
+      expect(twilio.messages.create).toHaveBeenCalledTimes(1);
+      expect(twilio.messages.create).toHaveBeenCalledWith(
+        expect.objectContaining({ to: escrow.buyerAddress }),
       );
 
-    const sendGrid = { send: mockSend };
-    const service = new NotificationsService(prisma, sendGrid);
+      const notifications = await prisma.notification.findMany();
+      const smsRecord = notifications.find((n) => n.channel === 'SMS');
+      expect(smsRecord).toBeDefined();
+      expect(smsRecord!.type).toBe('SHIPPED');
+      expect(smsRecord!.providerMessageId).toBe('SM123');
+    });
 
-    jest
-      .spyOn(service, 'sleep' as keyof NotificationsService)
-      .mockResolvedValue(undefined);
+    it('creates a notification record for each dispatch', async () => {
+      await service.notifyFunded(escrow);
 
-    await service.notifyFunded(baseEscrow);
+      const records = await prisma.notification.findMany();
+      expect(records).toHaveLength(2);
+      expect(records).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ channel: 'EMAIL', type: 'FUNDED' }),
+          expect.objectContaining({ channel: 'SMS', type: 'FUNDED' }),
+        ]),
+      );
+    });
 
-    const notifications = await prisma.notification.findMany();
-    const emailRecord = notifications.find((n) => n.channel === 'EMAIL');
-    expect(emailRecord!.attemptCount).toBe(3);
-    expect(emailRecord!.lastResponseCode).toBe(500);
+    it('supports all escrow notification event types and stores records', async () => {
+      await service.notifyFunded(escrow);
+      await service.notifyShipped(escrow);
+      await service.notifyDelivered(escrow);
+      await service.notifyDisputed(escrow);
+      await service.notifyCompleted(escrow);
+      await service.notifyRefunded(escrow);
+
+      const records = await prisma.notification.findMany();
+      expect(records).toHaveLength(12);
+      expect(records).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ type: 'DELIVERED' }),
+          expect.objectContaining({ type: 'DISPUTED' }),
+          expect.objectContaining({ type: 'COMPLETED' }),
+          expect.objectContaining({ type: 'REFUNDED' }),
+        ]),
+      );
+    });
+
+    it('uses vendor for funded notifications and buyer for shipped notifications', async () => {
+      await service.notifyFunded(escrow);
+      await service.notifyShipped({ ...escrow, state: 'SHIPPED' });
+
+      const recipients = (await prisma.notification.findMany()).map(
+        (record) => record.recipientAddress,
+      );
+      expect(recipients).toEqual([
+        escrow.vendorAddress,
+        escrow.vendorAddress,
+        escrow.buyerAddress,
+        escrow.buyerAddress,
+      ]);
+    });
+
+    it('is a no-op (noop provider) when SendGrid is not configured', async () => {
+      const serviceNoSendgrid = new NotificationsService(
+        prisma,
+        undefined,
+        twilio,
+      );
+
+      await expect(
+        serviceNoSendgrid.notifyFunded(escrow),
+      ).resolves.toBeUndefined();
+
+      const notifications = await prisma.notification.findMany();
+      const emailRecord = notifications.find((n) => n.channel === 'EMAIL');
+      expect(emailRecord).toBeDefined();
+      expect(emailRecord!.attemptCount).toBe(1);
+    });
+
+    it('is a no-op (noop provider) when Twilio is not configured', async () => {
+      const serviceNoTwilio = new NotificationsService(
+        prisma,
+        sendGrid,
+        undefined,
+      );
+
+      await expect(
+        serviceNoTwilio.notifyDisputed(escrow),
+      ).resolves.toBeUndefined();
+
+      const notifications = await prisma.notification.findMany();
+      const smsRecord = notifications.find((n) => n.channel === 'SMS');
+      expect(smsRecord).toBeDefined();
+      expect(smsRecord!.attemptCount).toBe(1);
+    });
+  });
+
+  describe('retry behaviour (#18, #288)', () => {
+    it('retries up to 3 times on transient provider failure then resolves', async () => {
+      sendGrid.send
+        .mockRejectedValueOnce(new Error('upstream down'))
+        .mockRejectedValueOnce(new Error('upstream down'))
+        .mockResolvedValueOnce([{ headers: {} }]);
+      twilio.messages.create
+        .mockRejectedValueOnce(new Error('upstream down'))
+        .mockRejectedValueOnce(new Error('upstream down'))
+        .mockResolvedValueOnce({ sid: 'SM2' });
+
+      await expect(service.notifyShipped(escrow)).resolves.toBeUndefined();
+
+      expect(sendGrid.send).toHaveBeenCalledTimes(3);
+      expect(twilio.messages.create).toHaveBeenCalledTimes(3);
+    });
+
+    it('records attemptCount=1 on first-attempt success', async () => {
+      await service.notifyFunded(escrow);
+
+      const records = await prisma.notification.findMany();
+      for (const r of records) {
+        expect(r.attemptCount).toBe(1);
+      }
+    });
+
+    it('records attemptCount=2 when second attempt succeeds', async () => {
+      sendGrid.send
+        .mockRejectedValueOnce(new Error('transient'))
+        .mockResolvedValueOnce([{ headers: {} }]);
+      twilio.messages.create
+        .mockRejectedValueOnce(new Error('transient'))
+        .mockResolvedValueOnce({ sid: 'SM3' });
+
+      await service.notifyFunded(escrow);
+
+      const records = await prisma.notification.findMany();
+      for (const r of records) {
+        expect(r.attemptCount).toBe(2);
+      }
+    });
+
+    it('records attemptCount=3 after exhausting all retries', async () => {
+      sendGrid.send.mockRejectedValue(new Error('persistent failure'));
+      twilio.messages.create.mockRejectedValue(new Error('persistent failure'));
+
+      await service.notifyFunded(escrow);
+
+      const records = await prisma.notification.findMany();
+      for (const r of records) {
+        expect(r.attemptCount).toBe(3);
+      }
+    });
+
+    it('applies exponentially increasing delays between retries', async () => {
+      const sleepSpy = jest.spyOn(
+        service,
+        'sleep' as keyof NotificationsService,
+      );
+      sendGrid.send
+        .mockRejectedValueOnce(new Error('fail'))
+        .mockRejectedValueOnce(new Error('fail'))
+        .mockResolvedValueOnce([{ headers: {} }]);
+      twilio.messages.create.mockResolvedValue({ sid: 'SM1' });
+
+      await service.notifyFunded(escrow);
+
+      const emailSleepCalls = sleepSpy.mock.calls.filter((_, i) => i < 2);
+      expect(emailSleepCalls[0][0]).toBe(1000);
+      expect(emailSleepCalls[1][0]).toBe(2000);
+    });
+
+    it('catches provider failures and logs without throwing', async () => {
+      sendGrid.send.mockRejectedValue(new Error('sendgrid down'));
+      twilio.messages.create.mockRejectedValue(new Error('twilio down'));
+
+      await expect(service.notifyFunded(escrow)).resolves.toBeUndefined();
+      expect(Logger.prototype.error).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('response-code logging (#18, #288)', () => {
+    it('logs HTTP response code from provider error into the notification record', async () => {
+      const httpError = Object.assign(new Error('rate limited'), { code: 429 });
+      sendGrid.send.mockRejectedValue(httpError);
+      twilio.messages.create.mockRejectedValue(httpError);
+
+      await service.notifyFunded(escrow);
+
+      const records = await prisma.notification.findMany();
+      for (const r of records) {
+        expect(r.lastResponseCode).toBe(429);
+      }
+    });
+
+    it('stores null response code when provider error carries no status', async () => {
+      sendGrid.send.mockRejectedValue(new Error('unknown error'));
+      twilio.messages.create.mockRejectedValue(new Error('unknown error'));
+
+      await service.notifyFunded(escrow);
+
+      const records = await prisma.notification.findMany();
+      for (const r of records) {
+        expect(r.lastResponseCode).toBeNull();
+      }
+    });
+
+    it('logs response code from nested error.response.statusCode', async () => {
+      const nestedError = Object.assign(new Error('server error'), {
+        response: { statusCode: 503 },
+      });
+      sendGrid.send.mockRejectedValue(nestedError);
+      twilio.messages.create.mockRejectedValue(nestedError);
+
+      await service.notifyFunded(escrow);
+
+      const records = await prisma.notification.findMany();
+      for (const r of records) {
+        expect(r.lastResponseCode).toBe(503);
+      }
+    });
   });
 });
 
