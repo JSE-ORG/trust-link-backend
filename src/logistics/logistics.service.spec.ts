@@ -30,15 +30,19 @@ function makeConfig(
   };
 }
 
-function makePrisma(): jest.Mocked<
-  Pick<PrismaService, 'providerCredential'>
-> & { providerCredential: { upsert: jest.Mock; findUnique: jest.Mock } } {
+type MockPrisma = Pick<PrismaService, 'providerCredential'> & {
+  providerCredential: { upsert: jest.Mock; findUnique: jest.Mock };
+};
+
+function makePrisma(): MockPrisma {
+  // The real delegate carries dozens of members the service never touches, so
+  // the literal is widened rather than stubbed out in full.
   return {
     providerCredential: {
       findUnique: jest.fn().mockResolvedValue(null),
       upsert: jest.fn().mockResolvedValue({}),
     },
-  };
+  } as unknown as MockPrisma;
 }
 
 function makeService(

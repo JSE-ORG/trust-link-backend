@@ -54,7 +54,9 @@ describe('SEP-10 authentication (issue #23)', () => {
           return record;
         }),
         findUnique: jest.fn(async ({ where }: Prisma.NonceFindUniqueArgs) => {
-          return (where.nonce ? mockNonces.get(where.nonce) : undefined) ?? null;
+          return (
+            (where.nonce ? mockNonces.get(where.nonce) : undefined) ?? null
+          );
         }),
         update: jest.fn(async ({ where, data }: Prisma.NonceUpdateArgs) => {
           const record =
@@ -87,15 +89,17 @@ describe('SEP-10 authentication (issue #23)', () => {
             );
           },
         ),
-        update: jest.fn(async ({ where, data }: Prisma.RefreshTokenUpdateArgs) => {
-          const record =
-            (where.tokenHash
-              ? mockRefreshTokens.get(where.tokenHash)
-              : undefined) ?? null;
-          if (!record) return null;
-          Object.assign(record, data);
-          return record;
-        }),
+        update: jest.fn(
+          async ({ where, data }: Prisma.RefreshTokenUpdateArgs) => {
+            const record =
+              (where.tokenHash
+                ? mockRefreshTokens.get(where.tokenHash)
+                : undefined) ?? null;
+            if (!record) return null;
+            Object.assign(record, data);
+            return record;
+          },
+        ),
         updateMany: jest.fn(
           async ({ where, data }: Prisma.RefreshTokenUpdateManyArgs) => {
             for (const record of mockRefreshTokens.values()) {
