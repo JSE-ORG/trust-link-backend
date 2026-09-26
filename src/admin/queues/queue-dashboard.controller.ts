@@ -46,7 +46,11 @@ export class QueueDashboardController {
    * @authentication Requires valid SEP-10 JWT (admin only)
    */
   @ApiOperation({ summary: 'Get real-time BullMQ queue dashboard data' })
-  @ApiResponse({ status: 200, description: 'Queue counts returned.' })
+  @ApiResponse({
+    status: 200,
+    description: 'Queue counts returned.',
+    type: QueuesDashboardDto,
+  })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   @ApiResponse({ status: 403, description: 'Admin access required.' })
   @Throttle({ auth: { limit: 20, ttl: 60000 } })
