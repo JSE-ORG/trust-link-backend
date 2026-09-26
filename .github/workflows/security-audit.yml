@@ -9,14 +9,21 @@ on:
     - cron: '0 6 * * 1'
   workflow_dispatch:
 
+# No concurrency cancel-in-progress: this is scheduled, not per-push (#767).
+# Cancelling a Monday run would skip the week's audit.
+
 permissions:
   contents: read
   issues: write
+  # upload-artifact for audit/licence reports
+  actions: write
 
 jobs:
   audit:
     name: Dependency Audit and Licence Compliance
     runs-on: ubuntu-latest
+    # Recent runs finish in ~1 minute; 10m avoids the 360m default (#769).
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 

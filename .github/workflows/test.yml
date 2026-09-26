@@ -5,6 +5,16 @@ on:
     branches: [main, dev]
   pull_request:
 
+# Cancel superseded runs for the same workflow + ref (#767).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# contents:read for checkout; actions:write for upload-artifact (#768).
+permissions:
+  contents: read
+  actions: write
+
 jobs:
   test:
     runs-on: ubuntu-latest
