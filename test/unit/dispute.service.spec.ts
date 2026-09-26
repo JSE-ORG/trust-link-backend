@@ -326,7 +326,15 @@ describe('PATCH /admin/dispute/:id/resolve (admin guard)', () => {
         { provide: ConfigService, useValue: mockConfigService },
         JwtGuard,
         AdminGuard,
-        AuditLogService,
+        {
+          provide: AuditLogService,
+          useValue: {
+            append: jest.fn().mockResolvedValue({ id: '1' }),
+            findAll: jest
+              .fn()
+              .mockResolvedValue({ data: [], total: 0, page: 1, limit: 20 }),
+          },
+        },
       ],
     }).compile();
 
