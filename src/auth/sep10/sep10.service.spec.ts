@@ -19,7 +19,9 @@ import { REFRESH_TOKEN_TTL_DEFAULT } from './sep10.constants';
 type MockKeypair = { publicKey: jest.Mock; sign: jest.Mock };
 
 /** Exposes Sep10Service's private hashToken() for direct testing without `any`. */
-type Sep10ServiceWithPrivates = Sep10Service & {
+// Not an intersection with Sep10Service: hashToken is `private` there, and
+// intersecting a private member with a public one resolves to `never`.
+type Sep10ServiceWithPrivates = {
   hashToken(token: string): string;
 };
 
@@ -768,8 +770,12 @@ describe('Sep10Service', () => {
     it('should consistently hash the same token and change when secret changes', () => {
       const token = 'some-random-refresh-token';
 
-      const first = (service as unknown as Sep10ServiceWithPrivates).hashToken(token);
-      const second = (service as unknown as Sep10ServiceWithPrivates).hashToken(token);
+      const first = (service as unknown as Sep10ServiceWithPrivates).hashToken(
+        token,
+      );
+      const second = (service as unknown as Sep10ServiceWithPrivates).hashToken(
+        token,
+      );
 
       expect(first).toBe(second);
 
@@ -786,7 +792,9 @@ describe('Sep10Service', () => {
         return configMap[key];
       });
 
-      const third = (service as unknown as Sep10ServiceWithPrivates).hashToken(token);
+      const third = (service as unknown as Sep10ServiceWithPrivates).hashToken(
+        token,
+      );
       expect(third).not.toBe(first);
     });
   });
@@ -1029,9 +1037,9 @@ describe('Sep10Service', () => {
 
       // rotateRefreshToken calls hashToken (→ jwtSecret) before any DB access,
       // so no token can be produced and no refresh token is created.
-      await expect(
-        service.rotateRefreshToken('any-token'),
-      ).rejects.toThrow('SEP10_JWT_SECRET is not configured');
+      await expect(service.rotateRefreshToken('any-token')).rejects.toThrow(
+        'SEP10_JWT_SECRET is not configured',
+      );
 
       expect(prisma.refreshToken.create).not.toHaveBeenCalled();
     });
@@ -1071,10 +1079,8 @@ describe('Sep10Service', () => {
         .calls[0][0];
       const expiresAt: Date = createCall.data.expiresAt;
 
-      const expectedMin =
-        before + REFRESH_TOKEN_TTL_DEFAULT * 1000 - 2000;
-      const expectedMax =
-        after + REFRESH_TOKEN_TTL_DEFAULT * 1000 + 2000;
+      const expectedMin = before + REFRESH_TOKEN_TTL_DEFAULT * 1000 - 2000;
+      const expectedMax = after + REFRESH_TOKEN_TTL_DEFAULT * 1000 + 2000;
       expect(expiresAt.getTime()).toBeGreaterThanOrEqual(expectedMin);
       expect(expiresAt.getTime()).toBeLessThanOrEqual(expectedMax);
     });
@@ -1083,8 +1089,12 @@ describe('Sep10Service', () => {
   describe('hashToken', () => {
     it('should produce a consistent SHA-256 hash for the same input', () => {
       const token = 'my-secret-refresh-token';
-      const hash1 = (service as unknown as Sep10ServiceWithPrivates).hashToken(token);
-      const hash2 = (service as unknown as Sep10ServiceWithPrivates).hashToken(token);
+      const hash1 = (service as unknown as Sep10ServiceWithPrivates).hashToken(
+        token,
+      );
+      const hash2 = (service as unknown as Sep10ServiceWithPrivates).hashToken(
+        token,
+      );
 
       expect(hash1).toBe(hash2);
       expect(hash1).toBe(
@@ -1095,8 +1105,12 @@ describe('Sep10Service', () => {
     it('should produce a different hash for a different input', () => {
       const token1 = 'my-secret-refresh-token';
       const token2 = 'my-other-secret-refresh-token';
-      const hash1 = (service as unknown as Sep10ServiceWithPrivates).hashToken(token1);
-      const hash2 = (service as unknown as Sep10ServiceWithPrivates).hashToken(token2);
+      const hash1 = (service as unknown as Sep10ServiceWithPrivates).hashToken(
+        token1,
+      );
+      const hash2 = (service as unknown as Sep10ServiceWithPrivates).hashToken(
+        token2,
+      );
 
       expect(hash1).not.toBe(hash2);
     });

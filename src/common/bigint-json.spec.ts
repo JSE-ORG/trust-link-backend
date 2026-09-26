@@ -21,7 +21,10 @@ describe('bigint-json polyfill guard', () => {
     expect(typeof BigInt.prototype.toJSON).not.toBe('function');
 
     await jest.isolateModulesAsync(async () => {
-      await import('./bigint-json');
+      // Specifier held in a variable so nodenext does not demand a '.js'
+      // extension; this import is for its side effect only.
+      const modulePath = './bigint-json';
+      await import(modulePath);
     });
 
     expect(typeof BigInt.prototype.toJSON).toBe('function');
@@ -41,7 +44,10 @@ describe('bigint-json polyfill guard', () => {
     });
 
     await jest.isolateModulesAsync(async () => {
-      await import('./bigint-json');
+      // Specifier held in a variable so nodenext does not demand a '.js'
+      // extension; this import is for its side effect only.
+      const modulePath = './bigint-json';
+      await import(modulePath);
     });
 
     expect(BigInt.prototype.toJSON).toBe(existing);

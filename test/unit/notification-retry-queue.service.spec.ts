@@ -896,7 +896,9 @@ describe('NotificationRetryQueueService — retry-path persistence guards (#725)
       it('handles prisma error on success path gracefully', async () => {
         const prisma = {
           notification: {
-            update: jest.fn().mockRejectedValue(new Error('db connection lost')),
+            update: jest
+              .fn()
+              .mockRejectedValue(new Error('db connection lost')),
           },
         };
         const dispatch = jest.fn().mockResolvedValue(undefined);
@@ -995,9 +997,7 @@ describe('NotificationRetryQueueService — retry-path persistence guards (#725)
             update: jest.fn().mockRejectedValue(new Error('db down')),
           },
         };
-        const dispatch = jest
-          .fn()
-          .mockRejectedValue(new Error('always fails'));
+        const dispatch = jest.fn().mockRejectedValue(new Error('always fails'));
         const dlq: NotificationDeadLetterRecord[] = [];
         const service = new NotificationRetryQueueService(
           {
@@ -1024,9 +1024,7 @@ describe('NotificationRetryQueueService — retry-path persistence guards (#725)
         const prisma = {
           notification: { update: jest.fn().mockResolvedValue(undefined) },
         };
-        const dispatch = jest
-          .fn()
-          .mockRejectedValue(new Error('exhausted'));
+        const dispatch = jest.fn().mockRejectedValue(new Error('exhausted'));
         const service = new NotificationRetryQueueService(
           {
             backoff: { attempts: 2, delay: 1, maxDelayMs: 5 },
@@ -1048,6 +1046,41 @@ describe('NotificationRetryQueueService — retry-path persistence guards (#725)
   });
 
   describe('Per-job attempts override — job.opts.attempts ?? this.options.backoff.attempts', () => {
+    // The two BullMQ cases below reach the worker's 'failed' handler, which is
+    // registered in onModuleInit. This block has its own Queue and Worker mocks
+    // because the handler captured in the BullMQ integration describe above is
+    // out of scope here.
+    let failedHandler:
+      | ((
+          job: {
+            data: NotificationRetryJobData;
+            attemptsMade: number;
+            opts: { attempts: number | undefined };
+          } | null,
+          error: Error,
+        ) => void)
+      | undefined;
+
+    beforeEach(() => {
+      const mod = jest.requireMock('bullmq');
+      const MockQueue = mod.Queue as jest.Mock;
+      const MockWorker = mod.Worker as jest.Mock;
+      MockQueue.mockReset();
+      MockWorker.mockReset();
+      failedHandler = undefined;
+
+      MockQueue.mockImplementation(() => ({
+        add: jest.fn().mockResolvedValue(undefined),
+        close: jest.fn().mockResolvedValue(undefined),
+      }));
+      MockWorker.mockReturnValue({
+        close: jest.fn().mockResolvedValue(undefined),
+        on: jest.fn((event: string, handler: (...args: unknown[]) => void) => {
+          if (event === 'failed') failedHandler = handler;
+        }),
+      });
+    });
+
     it('BullMQ worker uses job.opts.attempts when set instead of service default', async () => {
       const sink: NotificationDeadLetterRecord[] = [];
       const service = new NotificationRetryQueueService(
@@ -1107,9 +1140,7 @@ describe('NotificationRetryQueueService — retry-path persistence guards (#725)
     });
 
     it('in-process path uses service backoff.attempts (no per-job override mechanism)', async () => {
-      const dispatch = jest
-        .fn()
-        .mockRejectedValue(new Error('fail'));
+      const dispatch = jest.fn().mockRejectedValue(new Error('fail'));
       const dlq: NotificationDeadLetterRecord[] = [];
       const service = new NotificationRetryQueueService(
         {
@@ -1164,9 +1195,7 @@ describe('NotificationRetryQueueService — retry-path persistence guards (#725)
         .fn()
         .mockRejectedValueOnce(new Error('fail1'))
         .mockResolvedValueOnce(undefined);
-      
-      // Set a fast setTimeout for test
-      const originalSetTimeout = global.setTimeout;
+
       const setTimeoutSpy = jest.spyOn(global, 'setTimeout');
 
       const service = new NotificationRetryQueueService(
@@ -1183,7 +1212,7 @@ describe('NotificationRetryQueueService — retry-path persistence guards (#725)
       expect(dispatch).toHaveBeenCalledTimes(2);
       // setTimeout should be called for the retry delay
       expect(setTimeoutSpy).toHaveBeenCalled();
-      
+
       setTimeoutSpy.mockRestore();
     });
 
@@ -1194,9 +1223,7 @@ describe('NotificationRetryQueueService — retry-path persistence guards (#725)
         cb();
       };
 
-      const dispatch = jest
-        .fn()
-        .mockRejectedValue(new Error('always fails'));
+      const dispatch = jest.fn().mockRejectedValue(new Error('always fails'));
       const service = new NotificationRetryQueueService(
         {
           backoff: { attempts: 3, delay: 1000, maxDelayMs: 10000 },

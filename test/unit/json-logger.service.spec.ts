@@ -169,12 +169,16 @@ describe('JsonLoggerService (issue #81)', () => {
     it('treats an unknown level argument as info priority and emits the entry', () => {
       // Call shouldLog indirectly via structured() with a fabricated level string.
       // Cast needed because the public API only accepts LogLevel | 'trace'.
-      (logger as unknown as { structured: Function }).structured(
-        'unknownlevel' as never,
-        'msg',
-        {},
-        'Ctx',
-      );
+      (
+        logger as unknown as {
+          structured: (
+            level: string,
+            msg: string,
+            fields: Record<string, unknown>,
+            context?: string,
+          ) => void;
+        }
+      ).structured('unknownlevel', 'msg', {}, 'Ctx');
       expect(writeSpy).toHaveBeenCalled();
       const entry = lastEntry();
       expect(entry.msg).toBe('msg');
@@ -182,23 +186,31 @@ describe('JsonLoggerService (issue #81)', () => {
 
     it('unknown level argument is treated as info, so it passes an info-minimum filter', () => {
       process.env.LOG_LEVEL = 'info';
-      (logger as unknown as { structured: Function }).structured(
-        'unknownlevel' as never,
-        'visible',
-        {},
-        'Ctx',
-      );
+      (
+        logger as unknown as {
+          structured: (
+            level: string,
+            msg: string,
+            fields: Record<string, unknown>,
+            context?: string,
+          ) => void;
+        }
+      ).structured('unknownlevel', 'visible', {}, 'Ctx');
       expect(writeSpy).toHaveBeenCalled();
     });
 
     it('unknown level argument is treated as info priority, so it is suppressed by error minimum', () => {
       process.env.LOG_LEVEL = 'error';
-      (logger as unknown as { structured: Function }).structured(
-        'unknownlevel' as never,
-        'hidden',
-        {},
-        'Ctx',
-      );
+      (
+        logger as unknown as {
+          structured: (
+            level: string,
+            msg: string,
+            fields: Record<string, unknown>,
+            context?: string,
+          ) => void;
+        }
+      ).structured('unknownlevel', 'hidden', {}, 'Ctx');
       expect(writeSpy).not.toHaveBeenCalled();
     });
   });

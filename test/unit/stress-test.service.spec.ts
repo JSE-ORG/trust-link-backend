@@ -21,7 +21,17 @@ import {
   VirtualProfile,
   PerformanceThresholds,
 } from '../../src/stress-test/dto/stress-test-config.dto';
-import { of } from 'rxjs';
+import { Observable, of, throwError } from 'rxjs';
+import { delay } from 'rxjs/operators';
+import type { AxiosResponse } from 'axios';
+
+/**
+ * HttpService.request is typed as Observable<AxiosResponse>. The fields these
+ * tests care about are status and data, so the literal is widened here once
+ * rather than cast at each of the call sites below.
+ */
+const axiosOk = (r: Record<string, unknown>): Observable<AxiosResponse> =>
+  of(r as unknown as AxiosResponse);
 
 describe('StressTestService (#729)', () => {
   let service: StressTestService;
@@ -50,14 +60,17 @@ describe('StressTestService (#729)', () => {
         };
 
         configService.get.mockReturnValue('http://localhost:3000');
+        // responseTime is measured as Date.now() - startTime, and a bare of()
+        // emits synchronously, so it would always be 0 and could never exceed
+        // the 100ms threshold. The response is delayed past it deliberately.
         httpService.request.mockReturnValue(
-          of({
+          axiosOk({
             status: 200,
             statusText: 'OK',
             headers: {},
             config: { url: '' },
             data: {},
-          }),
+          }).pipe(delay(150)),
         );
 
         const profile: VirtualProfile = {
@@ -80,8 +93,7 @@ describe('StressTestService (#729)', () => {
         // Should have at least one alert for response time
         const alertFound = result.alerts.some(
           (a) =>
-            a.type === 'PERFORMANCE_DROP' &&
-            a.metric === 'averageResponseTime',
+            a.type === 'PERFORMANCE_DROP' && a.metric === 'averageResponseTime',
         );
         expect(alertFound).toBe(true);
       });
@@ -95,7 +107,7 @@ describe('StressTestService (#729)', () => {
 
         configService.get.mockReturnValue('http://localhost:3000');
         httpService.request.mockReturnValue(
-          of({
+          axiosOk({
             status: 200,
             statusText: 'OK',
             headers: {},
@@ -124,8 +136,7 @@ describe('StressTestService (#729)', () => {
         // Should have no PERFORMANCE_DROP alert
         const alertFound = result.alerts.some(
           (a) =>
-            a.type === 'PERFORMANCE_DROP' &&
-            a.metric === 'averageResponseTime',
+            a.type === 'PERFORMANCE_DROP' && a.metric === 'averageResponseTime',
         );
         expect(alertFound).toBe(false);
       });
@@ -143,7 +154,7 @@ describe('StressTestService (#729)', () => {
         // First request succeeds, second fails
         httpService.request
           .mockReturnValueOnce(
-            of({
+            axiosOk({
               status: 200,
               statusText: 'OK',
               headers: {},
@@ -151,7 +162,9 @@ describe('StressTestService (#729)', () => {
               data: {},
             }),
           )
-          .mockReturnValueOnce(Promise.reject(new Error('Connection refused')));
+          .mockReturnValueOnce(
+            throwError(() => new Error('Connection refused')),
+          );
 
         const profile: VirtualProfile = {
           concurrentUsers: 1,
@@ -170,12 +183,9 @@ describe('StressTestService (#729)', () => {
 
         const result = await service.runStressTest(config);
 
-        // Should have ERROR_RATE alert if any errors occurred
-        const alertFound = result.alerts.some(
-          (a) => a.type === 'ERROR_RATE' && a.metric === 'errorRate',
-        );
-        // Alert may or may not be present depending on timing of requests
-        // Just verify the logic runs without error
+        // Whether an ERROR_RATE alert fires depends on request timing, so this
+        // case only asserts the run completes. The threshold itself is asserted
+        // in the deterministic tests above.
         expect(result.status).toBe('COMPLETED');
       });
 
@@ -188,7 +198,7 @@ describe('StressTestService (#729)', () => {
 
         configService.get.mockReturnValue('http://localhost:3000');
         httpService.request.mockReturnValue(
-          of({
+          axiosOk({
             status: 200,
             statusText: 'OK',
             headers: {},
@@ -232,7 +242,7 @@ describe('StressTestService (#729)', () => {
 
         configService.get.mockReturnValue('http://localhost:3000');
         httpService.request.mockReturnValue(
-          of({
+          axiosOk({
             status: 200,
             statusText: 'OK',
             headers: {},
@@ -260,8 +270,7 @@ describe('StressTestService (#729)', () => {
 
         // Should have THROUGHPUT_DROP alert
         const alertFound = result.alerts.some(
-          (a) =>
-            a.type === 'THROUGHPUT_DROP' && a.metric === 'throughput',
+          (a) => a.type === 'THROUGHPUT_DROP' && a.metric === 'throughput',
         );
         expect(alertFound).toBe(true);
       });
@@ -275,7 +284,7 @@ describe('StressTestService (#729)', () => {
 
         configService.get.mockReturnValue('http://localhost:3000');
         httpService.request.mockReturnValue(
-          of({
+          axiosOk({
             status: 200,
             statusText: 'OK',
             headers: {},
@@ -303,8 +312,7 @@ describe('StressTestService (#729)', () => {
 
         // Should have no THROUGHPUT_DROP alert
         const alertFound = result.alerts.some(
-          (a) =>
-            a.type === 'THROUGHPUT_DROP' && a.metric === 'throughput',
+          (a) => a.type === 'THROUGHPUT_DROP' && a.metric === 'throughput',
         );
         expect(alertFound).toBe(false);
       });
@@ -320,7 +328,7 @@ describe('StressTestService (#729)', () => {
 
         configService.get.mockReturnValue('http://localhost:3000');
         httpService.request.mockReturnValue(
-          of({
+          axiosOk({
             status: 200,
             statusText: 'OK',
             headers: {},
@@ -363,7 +371,7 @@ describe('StressTestService (#729)', () => {
 
       configService.get.mockReturnValue('http://localhost:3000');
       httpService.request.mockReturnValue(
-        of({
+        axiosOk({
           status: 200,
           statusText: 'OK',
           headers: {},
@@ -405,7 +413,7 @@ describe('StressTestService (#729)', () => {
 
       configService.get.mockReturnValue('http://localhost:3000');
       httpService.request.mockReturnValue(
-        of({
+        axiosOk({
           status: 200,
           statusText: 'OK',
           headers: {},
@@ -445,7 +453,7 @@ describe('StressTestService (#729)', () => {
 
       configService.get.mockReturnValue('http://localhost:3000');
       httpService.request.mockReturnValue(
-        of({
+        axiosOk({
           status: 200,
           statusText: 'OK',
           headers: {},
@@ -485,7 +493,7 @@ describe('StressTestService (#729)', () => {
 
       configService.get.mockReturnValue('http://localhost:3000');
       httpService.request.mockReturnValue(
-        of({
+        axiosOk({
           status: 200,
           statusText: 'OK',
           headers: {},
@@ -521,7 +529,7 @@ describe('StressTestService (#729)', () => {
       const customBaseUrl = 'https://api.production.example.com';
       configService.get.mockReturnValue(customBaseUrl);
       httpService.request.mockReturnValue(
-        of({
+        axiosOk({
           status: 200,
           statusText: 'OK',
           headers: {},
@@ -557,7 +565,7 @@ describe('StressTestService (#729)', () => {
     it('falls back to localhost:3000 when API_BASE_URL is not set', async () => {
       configService.get.mockReturnValue(undefined); // API_BASE_URL not set
       httpService.request.mockReturnValue(
-        of({
+        axiosOk({
           status: 200,
           statusText: 'OK',
           headers: {},
@@ -593,7 +601,7 @@ describe('StressTestService (#729)', () => {
     it('falls back to localhost:3000 when API_BASE_URL is empty string', async () => {
       configService.get.mockReturnValue(''); // Empty string is falsy
       httpService.request.mockReturnValue(
-        of({
+        axiosOk({
           status: 200,
           statusText: 'OK',
           headers: {},
@@ -630,7 +638,7 @@ describe('StressTestService (#729)', () => {
     it('uses the method from profile when provided', async () => {
       configService.get.mockReturnValue('http://localhost:3000');
       httpService.request.mockReturnValue(
-        of({
+        axiosOk({
           status: 200,
           statusText: 'OK',
           headers: {},
@@ -665,7 +673,7 @@ describe('StressTestService (#729)', () => {
     it('defaults to GET when profile.method is not provided', async () => {
       configService.get.mockReturnValue('http://localhost:3000');
       httpService.request.mockReturnValue(
-        of({
+        axiosOk({
           status: 200,
           statusText: 'OK',
           headers: {},
@@ -701,7 +709,7 @@ describe('StressTestService (#729)', () => {
     it('respects various HTTP methods (PUT, DELETE, PATCH)', async () => {
       configService.get.mockReturnValue('http://localhost:3000');
       httpService.request.mockReturnValue(
-        of({
+        axiosOk({
           status: 200,
           statusText: 'OK',
           headers: {},
@@ -744,7 +752,7 @@ describe('StressTestService (#729)', () => {
     it('applies all fallbacks together: no base URL, no method, default alerts', async () => {
       configService.get.mockReturnValue(undefined); // No API_BASE_URL
       httpService.request.mockReturnValue(
-        of({
+        axiosOk({
           status: 200,
           statusText: 'OK',
           headers: {},
@@ -782,7 +790,7 @@ describe('StressTestService (#729)', () => {
     it('handles profile without any optional fields', async () => {
       configService.get.mockReturnValue(undefined);
       httpService.request.mockReturnValue(
-        of({
+        axiosOk({
           status: 200,
           statusText: 'OK',
           headers: {},
@@ -817,7 +825,7 @@ describe('StressTestService (#729)', () => {
     it('returns a properly structured StressTestResult', async () => {
       configService.get.mockReturnValue('http://localhost:3000');
       httpService.request.mockReturnValue(
-        of({
+        axiosOk({
           status: 200,
           statusText: 'OK',
           headers: {},

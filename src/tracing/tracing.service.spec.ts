@@ -360,10 +360,7 @@ describe('TracingService', () => {
       });
 
       it('withWorkflowSpan runs fn without span overhead when disabled', async () => {
-        const result = await service.withWorkflowSpan(
-          'escrow.get',
-          () => 'ok',
-        );
+        const result = await service.withWorkflowSpan('escrow.get', () => 'ok');
         expect(result).toBe('ok');
         expect(mockTracer.startActiveSpan).not.toHaveBeenCalled();
       });
