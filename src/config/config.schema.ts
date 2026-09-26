@@ -110,6 +110,7 @@ const sorobanRpcUrl = Joi.string()
 /** Exported so tests can validate environment shapes without booting Nest. */
 export const configValidationSchema = Joi.object({
   PORT: Joi.number().default(3000),
+  API_BASE_URL: Joi.string().uri().default('http://localhost:3000'),
   DATABASE_URL: Joi.string().required(),
   CONTACT_ENCRYPTION_KEY: Joi.string()
     .hex()

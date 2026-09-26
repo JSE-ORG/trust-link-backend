@@ -103,7 +103,7 @@ export class JsonLoggerService extends ConsoleLogger {
    *   this.logger.structured('info', 'escrow.created', { escrowId, amount });
    */
   structured(
-    level: LogLevel | 'trace',
+    level: LogLevel | 'trace' | 'info',
     msg: string,
     fields: Record<string, unknown>,
     context?: string,
@@ -111,7 +111,7 @@ export class JsonLoggerService extends ConsoleLogger {
     if (!shouldLog(level)) return;
 
     const entry: Record<string, unknown> = {
-      level,
+      level: level === 'log' ? 'info' : level,
       time: new Date().toISOString(),
       pid: process.pid,
       env: process.env.NODE_ENV ?? 'development',
