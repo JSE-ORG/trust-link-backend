@@ -173,6 +173,27 @@ describe('EventReplayService', () => {
       expect(cursorService.set).toHaveBeenCalledWith('401');
     });
 
+    it('defaults to TESTNET horizon URL when STELLAR_NETWORK is not configured', async () => {
+      configService.get.mockReturnValue(undefined);
+      mockedAxios.get = jest.fn().mockResolvedValue({
+        data: { _embedded: { records: [] } },
+      });
+
+      await service.onModuleInit();
+
+      const url: string = (mockedAxios.get as jest.Mock).mock.calls[0][0];
+      expect(url).toContain('horizon-testnet.stellar.org');
+      expect(url).not.toContain('horizon.stellar.org/');
+    });
+
+    it('completes without error and replays nothing when the response has no _embedded property', async () => {
+      mockedAxios.get = jest.fn().mockResolvedValue({ data: {} });
+
+      await expect(service.onModuleInit()).resolves.toBeUndefined();
+      expect(webhookService.processOperationDto).not.toHaveBeenCalled();
+      expect(cursorService.set).not.toHaveBeenCalled();
+    });
+
     it('does not throw when the Horizon request fails', async () => {
       mockedAxios.get = jest.fn().mockRejectedValue(new Error('network error'));
 
