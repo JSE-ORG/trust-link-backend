@@ -238,7 +238,9 @@ describe('EscrowService.handleShipment (issue #16)', () => {
       } as unknown as ContractService;
 
       // replace module service instance with one that has contract hooks
-      (service as any).contractService = contractService;
+      (
+        service as unknown as { contractService: ContractService }
+      ).contractService = contractService;
       repository.markCancelled = jest
         .fn()
         .mockResolvedValue({ ...escrow, state: 'CANCELLED' });
@@ -284,7 +286,7 @@ describe('EscrowService.handleShipment (issue #16)', () => {
       repository.findById.mockResolvedValue(escrow);
 
       await expect(
-        service.updateBuyerContact(escrow.id, { email: 'x@x.com' } as any),
+        service.updateBuyerContact(escrow.id, { email: 'x@x.com' }),
       ).rejects.toThrow(ConflictException);
     });
 
@@ -309,7 +311,7 @@ describe('EscrowService.handleShipment (issue #16)', () => {
       expect(withVendor.viewer).toEqual({ isBuyer: false, isVendor: true });
 
       const noViewer = await service.getEscrowForViewer(escrow.id);
-      expect((noViewer as any).viewer).toBeUndefined();
+      expect(noViewer.viewer).toBeUndefined();
     });
 
     it('toPublicEscrow never exposes buyerContactEmail or buyerContactPhone', async () => {
@@ -321,8 +323,9 @@ describe('EscrowService.handleShipment (issue #16)', () => {
       repository.findById.mockResolvedValue(escrow);
 
       const pub = await service.getPublicEscrow(escrow.id);
-      expect((pub as any).buyerContactEmail).toBeUndefined();
-      expect((pub as any).buyerContactPhone).toBeUndefined();
+      const rawPub = pub as unknown as Record<string, unknown>;
+      expect(rawPub.buyerContactEmail).toBeUndefined();
+      expect(rawPub.buyerContactPhone).toBeUndefined();
     });
   });
 

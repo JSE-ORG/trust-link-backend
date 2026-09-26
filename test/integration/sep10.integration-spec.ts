@@ -7,6 +7,7 @@
  */
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import { Prisma } from '@prisma/client';
 import { Keypair, Networks, TransactionBuilder } from '@stellar/stellar-sdk';
 import request from 'supertest';
 import { Sep10Controller } from '../../src/auth/sep10/sep10.controller';
@@ -15,11 +16,14 @@ import { ConfigService } from '../../src/config/config.service';
 import { PrismaService } from '../../src/prisma/prisma.service';
 import { TEST_SIGNING_SECRET } from '../auth-helper';
 
+type MockNonce = Prisma.NonceCreateInput & { id: string };
+type MockRefreshToken = Prisma.RefreshTokenCreateInput & { id: string };
+
 describe('SEP-10 authentication (issue #23)', () => {
   let app: INestApplication;
   let sep10Service: Sep10Service;
-  const mockNonces = new Map<string, any>();
-  const mockRefreshTokens = new Map<string, any>();
+  const mockNonces = new Map<string, MockNonce>();
+  const mockRefreshTokens = new Map<string, MockRefreshToken>();
   let nextId = 1;
   /** A fresh client keypair per test run. */
   const clientKeypair = Keypair.random();
@@ -44,21 +48,21 @@ describe('SEP-10 authentication (issue #23)', () => {
 
     const mockPrismaService = {
       nonce: {
-        create: jest.fn(async ({ data }: any) => {
-          const record = { ...data, id: `nonce-${nextId++}` };
+        create: jest.fn(async ({ data }: Prisma.NonceCreateArgs) => {
+          const record: MockNonce = { ...data, id: `nonce-${nextId++}` };
           mockNonces.set(data.nonce, record);
           return record;
         }),
-        findUnique: jest.fn(async ({ where }: any) => {
-          return mockNonces.get(where.nonce) ?? null;
+        findUnique: jest.fn(async ({ where }: Prisma.NonceFindUniqueArgs) => {
+          return (where.nonce ? mockNonces.get(where.nonce) : undefined) ?? null;
         }),
-        update: jest.fn(async ({ where, data }: any) => {
+        update: jest.fn(async ({ where, data }: Prisma.NonceUpdateArgs) => {
           const record =
-            mockNonces.get(where.id) ??
+            (where.id ? mockNonces.get(where.id) : undefined) ??
             Array.from(mockNonces.values()).find(
               (entry) => entry.id === where.id,
             ) ??
-            mockNonces.get(where.nonce) ??
+            (where.nonce ? mockNonces.get(where.nonce) : undefined) ??
             null;
           if (!record) return null;
           Object.assign(record, data);
@@ -66,28 +70,42 @@ describe('SEP-10 authentication (issue #23)', () => {
         }),
       },
       refreshToken: {
-        create: jest.fn(async ({ data }: any) => {
-          const record = { ...data, id: `refresh-${nextId++}` };
+        create: jest.fn(async ({ data }: Prisma.RefreshTokenCreateArgs) => {
+          const record: MockRefreshToken = {
+            ...data,
+            id: `refresh-${nextId++}`,
+          };
           mockRefreshTokens.set(data.tokenHash, record);
           return record;
         }),
-        findUnique: jest.fn(async ({ where }: any) => {
-          return mockRefreshTokens.get(where.tokenHash) ?? null;
-        }),
-        update: jest.fn(async ({ where, data }: any) => {
-          const record = mockRefreshTokens.get(where.tokenHash) ?? null;
+        findUnique: jest.fn(
+          async ({ where }: Prisma.RefreshTokenFindUniqueArgs) => {
+            return (
+              (where.tokenHash
+                ? mockRefreshTokens.get(where.tokenHash)
+                : undefined) ?? null
+            );
+          },
+        ),
+        update: jest.fn(async ({ where, data }: Prisma.RefreshTokenUpdateArgs) => {
+          const record =
+            (where.tokenHash
+              ? mockRefreshTokens.get(where.tokenHash)
+              : undefined) ?? null;
           if (!record) return null;
           Object.assign(record, data);
           return record;
         }),
-        updateMany: jest.fn(async ({ where, data }: any) => {
-          for (const record of mockRefreshTokens.values()) {
-            if (record.userId === where.userId) {
-              Object.assign(record, data);
+        updateMany: jest.fn(
+          async ({ where, data }: Prisma.RefreshTokenUpdateManyArgs) => {
+            for (const record of mockRefreshTokens.values()) {
+              if (record.userId === where?.userId) {
+                Object.assign(record, data);
+              }
             }
-          }
-          return { count: 0 };
-        }),
+            return { count: 0 };
+          },
+        ),
       },
     } as unknown as PrismaService;
 

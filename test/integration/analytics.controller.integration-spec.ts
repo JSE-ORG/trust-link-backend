@@ -7,6 +7,7 @@
  */
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import { EscrowState } from '@prisma/client';
 import request from 'supertest';
 import { AppModule } from '../../src/app.module';
 import { PrismaService } from '../../src/prisma/prisma.service';
@@ -47,7 +48,7 @@ describe('Analytics controller endpoints (issue #641)', () => {
   async function seedEscrow(
     vendorAddress: string,
     amount: number,
-    overrides?: { state?: string; createdAt?: Date },
+    overrides?: { state?: EscrowState; createdAt?: Date },
   ) {
     return prisma.escrow.create({
       data: {
@@ -57,7 +58,7 @@ describe('Analytics controller endpoints (issue #641)', () => {
         currency: 'USDC',
         buyerAddress: BUYER,
         vendorAddress,
-        state: (overrides?.state as any) ?? 'FUNDED',
+        state: overrides?.state ?? EscrowState.FUNDED,
         ...(overrides?.createdAt ? { createdAt: overrides.createdAt } : {}),
       },
     });
