@@ -11,7 +11,10 @@ const PUBLIC_TESTNET_RPC = 'https://soroban-testnet.stellar.org';
 interface Mocks {
   blockchainListener: { parseEvent: jest.Mock };
   cursorService: { get: jest.Mock; set: jest.Mock };
-  escrowService: { syncStateFromChain: jest.Mock };
+  escrowService: {
+    syncStateFromChain: jest.Mock;
+    findIdByContractEscrowId: jest.Mock;
+  };
   dlqService: { enqueue: jest.Mock };
 }
 
@@ -24,10 +27,34 @@ function makeMocks(): Mocks {
     },
     escrowService: {
       syncStateFromChain: jest.fn().mockResolvedValue(undefined),
+      findIdByContractEscrowId: jest.fn().mockResolvedValue('escrow-1'),
     },
     dlqService: {
       enqueue: jest.fn().mockResolvedValue(undefined),
     },
+  };
+}
+
+function rawEvent(id: string, pagingToken: string) {
+  return {
+    id,
+    contractId: 'CONTRACT',
+    type: 'contract',
+    ledger: 100,
+    pagingToken,
+    topic: ['Escrow', 'Funded'],
+    value: 'AAAA',
+  };
+}
+
+function parsedEventFor(contractEscrowId: bigint | number | string) {
+  return {
+    contractId: 'CONTRACT',
+    type: 'contract',
+    ledger: 100,
+    name: 'Funded',
+    topics: ['Escrow', 'Funded'],
+    data: { escrow_id: contractEscrowId },
   };
 }
 
@@ -364,6 +391,156 @@ describe('SorobanPollerService', () => {
       await expect(service['fetchEvents']('PAGING_TOKEN')).rejects.toThrow(
         /^Soroban RPC error: internal server error$/,
       );
+    });
+  });
+
+  describe('cursor advancement and dead-lettering on poll (issue #554)', () => {
+    let mocks: Mocks;
+    let service: SorobanPollerService;
+
+    function mockRpcResponse(events: ReturnType<typeof rawEvent>[]) {
+      global.fetch = jest.fn().mockResolvedValue(
+        jsonResponse({
+          result: { events, latestLedger: 200, sequence: 200 },
+        }),
+      );
+    }
+
+    beforeEach(() => {
+      mocks = makeMocks();
+      mocks.cursorService.get.mockResolvedValue('ledger:900');
+      mocks.escrowService.syncStateFromChain.mockResolvedValue({
+        skipped: false,
+      });
+      ({ service } = makeService(makeConfig(), mocks));
+    });
+
+    it('advances the cursor to the last event when all events succeed', async () => {
+      const events = [
+        rawEvent('evt-1', 'token-1'),
+        rawEvent('evt-2', 'token-2'),
+        rawEvent('evt-3', 'token-3'),
+      ];
+      mockRpcResponse(events);
+      mocks.blockchainListener.parseEvent
+        .mockReturnValueOnce(parsedEventFor(1n))
+        .mockReturnValueOnce(parsedEventFor(1n))
+        .mockReturnValueOnce(parsedEventFor(1n));
+
+      await service.poll();
+
+      expect(mocks.escrowService.syncStateFromChain).toHaveBeenCalledTimes(3);
+      expect(mocks.cursorService.set).toHaveBeenCalledWith('token-3');
+      expect(mocks.dlqService.enqueue).not.toHaveBeenCalled();
+    });
+
+    it('stops at the middle event that throws and only advances the cursor past the events before it', async () => {
+      const events = [
+        rawEvent('evt-1', 'token-1'),
+        rawEvent('evt-2', 'token-2'),
+        rawEvent('evt-3', 'token-3'),
+      ];
+      mockRpcResponse(events);
+      mocks.blockchainListener.parseEvent
+        .mockReturnValueOnce(parsedEventFor(1n))
+        .mockReturnValueOnce(parsedEventFor(1n))
+        .mockReturnValueOnce(parsedEventFor(1n));
+
+      mocks.escrowService.syncStateFromChain
+        .mockResolvedValueOnce({ skipped: false })
+        .mockRejectedValueOnce(new Error('db unavailable'));
+
+      await service.poll();
+
+      expect(mocks.escrowService.syncStateFromChain).toHaveBeenCalledTimes(2);
+      expect(mocks.cursorService.set).toHaveBeenCalledWith('token-1');
+      expect(mocks.cursorService.set).not.toHaveBeenCalledWith('token-2');
+      expect(mocks.cursorService.set).not.toHaveBeenCalledWith('token-3');
+    });
+
+    it('does not advance the cursor at all when the first event throws', async () => {
+      const events = [
+        rawEvent('evt-1', 'token-1'),
+        rawEvent('evt-2', 'token-2'),
+      ];
+      mockRpcResponse(events);
+      mocks.blockchainListener.parseEvent
+        .mockReturnValueOnce(parsedEventFor(1n))
+        .mockReturnValueOnce(parsedEventFor(1n));
+
+      mocks.escrowService.syncStateFromChain.mockRejectedValueOnce(
+        new Error('db unavailable'),
+      );
+
+      await service.poll();
+
+      expect(mocks.escrowService.syncStateFromChain).toHaveBeenCalledTimes(1);
+      expect(mocks.cursorService.set).not.toHaveBeenCalled();
+    });
+
+    it('dead-letters an event with an unparseable payload and still advances the cursor past it', async () => {
+      const events = [rawEvent('evt-1', 'token-1')];
+      mockRpcResponse(events);
+      mocks.blockchainListener.parseEvent.mockReturnValueOnce(null);
+
+      await service.poll();
+
+      expect(mocks.escrowService.syncStateFromChain).not.toHaveBeenCalled();
+      expect(mocks.dlqService.enqueue).toHaveBeenCalledWith(
+        expect.objectContaining({
+          operation: 'soroban_event_sync',
+          escrowId: null,
+        }),
+      );
+      expect(mocks.cursorService.set).toHaveBeenCalledWith('token-1');
+    });
+
+    it('dead-letters an event with a missing escrowId and still advances the cursor past it', async () => {
+      const events = [rawEvent('evt-1', 'token-1')];
+      mockRpcResponse(events);
+      mocks.blockchainListener.parseEvent.mockReturnValueOnce({
+        contractId: 'CONTRACT',
+        type: 'contract',
+        ledger: 100,
+        name: 'Funded',
+        topics: ['Escrow', 'Funded'],
+        data: {},
+      });
+
+      await service.poll();
+
+      expect(mocks.escrowService.syncStateFromChain).not.toHaveBeenCalled();
+      expect(mocks.dlqService.enqueue).toHaveBeenCalledWith(
+        expect.objectContaining({ operation: 'soroban_event_sync' }),
+      );
+      expect(mocks.cursorService.set).toHaveBeenCalledWith('token-1');
+    });
+
+    it('dead-letters a permanently-failing event after MAX_SYNC_RETRIES and then advances past it', async () => {
+      const events = [rawEvent('evt-1', 'token-1')];
+      mocks.blockchainListener.parseEvent.mockReturnValue(parsedEventFor(1n));
+      mocks.escrowService.syncStateFromChain.mockRejectedValue(
+        new Error('permanently broken'),
+      );
+
+      for (let i = 0; i < 4; i += 1) {
+        mockRpcResponse(events);
+        await service.poll();
+      }
+
+      expect(mocks.cursorService.set).not.toHaveBeenCalled();
+      expect(mocks.dlqService.enqueue).not.toHaveBeenCalled();
+
+      mockRpcResponse(events);
+      await service.poll();
+
+      expect(mocks.dlqService.enqueue).toHaveBeenCalledWith(
+        expect.objectContaining({
+          operation: 'soroban_event_sync',
+          escrowId: 'escrow-1',
+        }),
+      );
+      expect(mocks.cursorService.set).toHaveBeenCalledWith('token-1');
     });
   });
 });
