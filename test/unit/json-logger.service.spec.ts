@@ -72,6 +72,31 @@ describe('JsonLoggerService (issue #81)', () => {
     expect(entry.amount).toBe(100);
   });
 
+  it('structured("info", ...) compiles and emits "level":"info"', () => {
+    logger.structured(
+      'info',
+      'escrow.created',
+      { escrowId: 'e-1', amount: 100 },
+      'EscrowCtx',
+    );
+    const entry = lastEntry();
+    expect(entry.level).toBe('info');
+    expect(entry.msg).toBe('escrow.created');
+    expect(entry.escrowId).toBe('e-1');
+    expect(entry.amount).toBe(100);
+  });
+
+  it('suppresses structured("info", ...) when LOG_LEVEL=error', () => {
+    process.env.LOG_LEVEL = 'error';
+    logger.structured(
+      'info',
+      'escrow.created',
+      { escrowId: 'e-1', amount: 100 },
+      'EscrowCtx',
+    );
+    expect(writeSpy).not.toHaveBeenCalled();
+  });
+
   it('each entry contains pid and env fields', () => {
     logger.log('check fields');
     const entry = lastEntry();

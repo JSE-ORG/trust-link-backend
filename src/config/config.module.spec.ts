@@ -695,4 +695,36 @@ describe('ConfigModule — Stellar Key Validation', () => {
       ).rejects.toThrow(/PRESIGN_SECRET/);
     });
   });
+
+  describe('API_BASE_URL — base URL validation', () => {
+    it('accepts a valid URI', () => {
+      const { error, value } = configValidationSchema.validate(
+        { ...VALID_ENV, API_BASE_URL: 'https://staging.trust-link.io' },
+        VALIDATE_OPTIONS,
+      );
+
+      expect(error).toBeUndefined();
+      expect(value.API_BASE_URL).toBe('https://staging.trust-link.io');
+    });
+
+    it('defaults to http://localhost:3000 when unset', () => {
+      const { error, value } = configValidationSchema.validate(
+        { ...VALID_ENV },
+        VALIDATE_OPTIONS,
+      );
+
+      expect(error).toBeUndefined();
+      expect(value.API_BASE_URL).toBe('http://localhost:3000');
+    });
+
+    it('rejects a malformed URI value', () => {
+      const { error } = configValidationSchema.validate(
+        { ...VALID_ENV, API_BASE_URL: 'not-a-valid-uri' },
+        VALIDATE_OPTIONS,
+      );
+
+      expect(error).toBeDefined();
+      expect(error?.message).toContain('API_BASE_URL');
+    });
+  });
 });
