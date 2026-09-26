@@ -5,6 +5,15 @@ on:
     branches: [main, dev]
   pull_request:
 
+# Cancel superseded runs for the same workflow + ref (#767).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Read-only: lint and typecheck never write back to the repo (#768).
+permissions:
+  contents: read
+
 jobs:
   lint:
     runs-on: ubuntu-latest

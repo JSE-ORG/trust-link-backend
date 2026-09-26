@@ -15,10 +15,24 @@ on:
           - 'true'
           - 'false'
 
+# Do not cancel in-progress migrations for the same ref (#767). This job
+# applies Prisma migrations against Postgres; aborting mid-deploy can leave
+# the schema partially applied. Newer pushes still queue separately.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+# Read-only: migrations run against the ephemeral CI Postgres service (#768).
+permissions:
+  contents: read
+
 jobs:
   migrate:
     name: Apply DB Migrations
     runs-on: ubuntu-latest
+    # Recent runs complete in ~1 minute; 10m leaves headroom without the
+    # 360m GitHub default (#769).
+    timeout-minutes: 10
 
     services:
       postgres:
