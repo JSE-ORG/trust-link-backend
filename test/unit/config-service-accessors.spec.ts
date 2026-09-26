@@ -82,6 +82,18 @@ describe('ConfigService.isProduction / isDevelopment / isTest', () => {
   });
 });
 
+describe('ConfigService.getRedisUrl', () => {
+  it('returns the configured REDIS_URL when set', () => {
+    const service = buildService({ REDIS_URL: 'redis://redis.example.com:6379' });
+    expect(service.getRedisUrl()).toBe('redis://redis.example.com:6379');
+  });
+
+  it('falls back to redis://localhost:6379 when REDIS_URL is unset', () => {
+    const service = buildService({});
+    expect(service.getRedisUrl()).toBe('redis://localhost:6379');
+  });
+});
+
 describe('ConfigService database pool accessors (getDatabaseUrl)', () => {
   const base = 'postgresql://user:pass@localhost:5432/db';
 
