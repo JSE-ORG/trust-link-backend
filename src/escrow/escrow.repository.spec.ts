@@ -2,6 +2,7 @@ import { EscrowRepository } from './escrow.repository';
 import { PrismaService } from '../prisma/prisma.service';
 import { encryptContact } from '../common/sanitization/contact-encryption.util';
 import { ensureVendors } from '../../test/prisma-helpers';
+import { AUTO_RELEASE_WINDOW_HOURS } from './escrow.constants';
 
 // Required by the encryption util
 process.env.CONTACT_ENCRYPTION_KEY = 'a'.repeat(64);
@@ -605,6 +606,40 @@ describe('EscrowRepository', () => {
       await expect(repo.clearDeliveryClaim(escrow.id)).resolves.toMatchObject({
         deliveryRecordedAt: null,
       });
+    });
+
+    it('markDelivered uses the current time when deliveredAt is omitted', async () => {
+      const escrow = await repo.create(
+        { ...makeDto(), itemRef: 'default-delivered-at' },
+        'vendor-addr',
+      );
+      const before = new Date();
+      const result = await repo.markDelivered(escrow.id);
+      const after = new Date();
+
+      expect(result.state).toBe('DELIVERED');
+      expect(result.deliveredAt).toBeInstanceOf(Date);
+      expect(result.deliveredAt!.getTime()).toBeGreaterThanOrEqual(
+        before.getTime(),
+      );
+      expect(result.deliveredAt!.getTime()).toBeLessThanOrEqual(after.getTime());
+    });
+
+    it('findAutoReleaseEligible uses the current time when referenceTime is omitted', async () => {
+      const escrow = await repo.create(
+        { ...makeDto(), itemRef: 'default-reference-time' },
+        'vendor-addr',
+      );
+      // Deliver the escrow well past the auto-release window so it qualifies
+      // when referenceTime defaults to now.
+      const longPast = new Date(
+        Date.now() - (AUTO_RELEASE_WINDOW_HOURS + 1) * 60 * 60 * 1000,
+      );
+      await repo.markDelivered(escrow.id, longPast);
+
+      const results = await repo.findAutoReleaseEligible();
+
+      expect(results.map((r) => r.id)).toContain(escrow.id);
     });
 
     it('uses cached records before the database and invalidates them after a write', async () => {
