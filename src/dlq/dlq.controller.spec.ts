@@ -29,6 +29,7 @@ describe('DlqController', () => {
 
   const buildController = async (
     autoReleaseSourceAddress: string | undefined,
+    escrowFindUniqueResult: unknown = { contractEscrowId: 42n },
   ) => {
     const dlq = {
       list: jest.fn(),
@@ -63,9 +64,7 @@ describe('DlqController', () => {
           provide: PrismaService,
           useValue: {
             escrow: {
-              findUnique: jest.fn().mockResolvedValue({
-                contractEscrowId: 42n,
-              }),
+              findUnique: jest.fn().mockResolvedValue(escrowFindUniqueResult),
             },
           },
         },
@@ -107,6 +106,54 @@ describe('DlqController', () => {
         ServiceUnavailableException,
       );
       expect(contract.submitAutoRelease).not.toHaveBeenCalled();
+    });
+
+    it('responds with HTTP 503 and an error body when AUTO_RELEASE_SOURCE_ADDRESS is not configured', async () => {
+      const { controller, dlq } = await buildController(undefined);
+      dlq.get.mockResolvedValue(autoReleaseRecord);
+      dlq.replay.mockImplementation(async (_id, replay) => {
+        await replay(autoReleaseRecord);
+        return autoReleaseRecord;
+      });
+
+      const err = await controller.replay(autoReleaseRecord.id).catch((e) => e);
+      expect(err).toBeInstanceOf(ServiceUnavailableException);
+      expect(err.getStatus()).toBe(503);
+      expect(err.getResponse()).toMatchObject({ message: expect.any(String) });
+    });
+  });
+
+  describe('POST /admin/dlq/:id/replay — missing contractEscrowId', () => {
+    it('rejects replay when the escrow record has no contractEscrowId', async () => {
+      const { controller, dlq } = await buildController(
+        'GAUTORELEASESOURCEADDRESS0000000000000000000000000000',
+        null,
+      );
+      dlq.get.mockResolvedValue(autoReleaseRecord);
+      dlq.replay.mockImplementation(async (_id, replay) => {
+        await replay(autoReleaseRecord);
+        return autoReleaseRecord;
+      });
+
+      await expect(controller.replay('failed-tx-1')).rejects.toThrow(
+        'has no contractEscrowId',
+      );
+    });
+
+    it('rejects replay when the escrow exists but contractEscrowId is null', async () => {
+      const { controller, dlq } = await buildController(
+        'GAUTORELEASESOURCEADDRESS0000000000000000000000000000',
+        { contractEscrowId: null },
+      );
+      dlq.get.mockResolvedValue(autoReleaseRecord);
+      dlq.replay.mockImplementation(async (_id, replay) => {
+        await replay(autoReleaseRecord);
+        return autoReleaseRecord;
+      });
+
+      await expect(controller.replay('failed-tx-1')).rejects.toThrow(
+        'has no contractEscrowId',
+      );
     });
   });
 
