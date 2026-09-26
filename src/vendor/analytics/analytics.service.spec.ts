@@ -716,6 +716,62 @@ describe('AnalyticsService', () => {
     });
   });
 
+  // ─── getDailyVolumeChart (UTC default + toDateKey Date branch) ───────────
+
+  describe('getDailyVolumeChart — UTC timezone default', () => {
+    it('groups escrows by UTC date when called without a timezone argument', async () => {
+      const vendorAddress = '0xVendorDefaults';
+      const now = new Date();
+      // Pin the escrow to noon UTC yesterday so it is always within 30 days.
+      const createdAt = new Date(
+        Date.UTC(
+          now.getUTCFullYear(),
+          now.getUTCMonth(),
+          now.getUTCDate() - 1,
+          12,
+          0,
+          0,
+        ),
+      );
+      const expectedDate = createdAt.toISOString().slice(0, 10);
+
+      await prisma.escrow.create({
+        data: {
+          vendorAddress,
+          itemName: 'UTC Default Item',
+          itemRef: 'ref-utc-default',
+          amount: 250,
+          currency: 'USD',
+          buyerAddress: '0xBuyerUTC',
+          state: 'COMPLETED',
+          createdAt,
+        },
+      });
+
+      // Call without timezone — exercises the `timezone: string = 'UTC'` default.
+      const result = await service.getDailyVolumeChart(vendorAddress);
+
+      expect(result.data.length).toBe(30);
+      const day = result.data.find((d) => d.date === expectedDate);
+      expect(day).toBeDefined();
+      expect(day?.transactionCount).toBe(1);
+      expect(day?.totalVolume).toBe(250);
+    });
+  });
+
+  // ─── toDateKey ────────────────────────────────────────────────────────────
+
+  describe('toDateKey (private)', () => {
+    it('returns the ISO date slice when value is a Date instance', () => {
+      const d = new Date('2024-03-15T14:30:00Z');
+      expect(service['toDateKey'](d)).toBe('2024-03-15');
+    });
+
+    it('returns the ISO date slice when value is a plain string', () => {
+      expect(service['toDateKey']('2024-07-20')).toBe('2024-07-20');
+    });
+  });
+
   // ─── fillDateGaps ──────────────────────────────────────────────────────────
 
   describe('fillDateGaps', () => {
