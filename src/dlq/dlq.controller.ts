@@ -1,4 +1,6 @@
 import {
+  BadRequestException,
+  ConflictException,
   Controller,
   Get,
   Param,
@@ -185,7 +187,7 @@ export class DlqController {
           select: { contractEscrowId: true },
         });
         if (!escrow?.contractEscrowId) {
-          throw new Error(
+          throw new ConflictException(
             `Escrow "${r.escrowId}" has no contractEscrowId, so auto-release ` +
               `cannot be replayed on-chain.`,
           );
@@ -195,7 +197,7 @@ export class DlqController {
           this.requireAutoReleaseSource(),
         );
       }
-      throw new Error(
+      throw new BadRequestException(
         `Operation "${r.operation}" cannot be replayed automatically; replay manually.`,
       );
     });
