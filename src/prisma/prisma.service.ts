@@ -20,7 +20,7 @@ export type EscrowState =
   | 'DISPUTED'
   | 'REFUNDED'
   | 'CANCELLED';
-export type NotificationChannel = 'EMAIL' | 'SMS';
+type NotificationChannel = 'EMAIL' | 'SMS';
 export type NotificationType =
   'FUNDED' | 'SHIPPED' | 'DELIVERED' | 'DISPUTED' | 'COMPLETED' | 'REFUNDED';
 export type DisputeState =
@@ -78,9 +78,9 @@ export interface DisputeRecord {
   updatedAt: Date;
 }
 
-export type NotificationStatus = 'PENDING' | 'SENT' | 'FAILED';
+type NotificationStatus = 'PENDING' | 'SENT' | 'FAILED';
 
-export interface NotificationRecord {
+interface NotificationRecord {
   id: string;
   escrowId: string;
   type: NotificationType;
@@ -124,12 +124,12 @@ export interface VendorTrackingSettingsRecord {
   updatedAt: Date;
 }
 
-export interface ProcessedWebhookEventRecord {
+interface ProcessedWebhookEventRecord {
   operationId: string;
   processedAt: Date;
 }
 
-export interface RefreshTokenRecord {
+interface RefreshTokenRecord {
   id: string;
   userId: string;
   tokenHash: string;
@@ -139,7 +139,7 @@ export interface RefreshTokenRecord {
   createdAt: Date;
 }
 
-export interface NonceRecord {
+interface NonceRecord {
   id: string;
   nonce: string;
   walletAddress: string;
@@ -149,7 +149,7 @@ export interface NonceRecord {
   createdAt: Date;
 }
 
-export interface EscrowEventRecord {
+interface EscrowEventRecord {
   id: string;
   escrowId: string;
   fromState: EscrowState | null;
@@ -192,14 +192,14 @@ export interface VendorAccountDetailsRecord {
   updatedAt: Date;
 }
 
-export interface CursorRecord {
+interface CursorRecord {
   id: string;
   cursorValue: string;
   createdAt: Date;
   updatedAt: Date;
 }
 
-export interface ProviderCredentialRecord {
+interface ProviderCredentialRecord {
   provider: string;
   encryptedKey: string;
   createdAt: Date;
@@ -224,7 +224,7 @@ export interface FailedTransactionRecord {
   replayedAt: Date | null;
 }
 
-export type EscrowCreateInput = Omit<
+type EscrowCreateInput = Omit<
   EscrowRecord,
   | 'id'
   | 'itemRef'

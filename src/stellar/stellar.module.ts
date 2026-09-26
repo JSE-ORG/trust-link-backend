@@ -13,6 +13,7 @@ import { EscrowModule } from '../escrow/escrow.module';
 import { ConfigModule } from '../config/config.module';
 import { ConfigService } from '../config/config.service';
 import { DlqModule } from '../dlq/dlq.module';
+import { STELLAR_RPC_URLS } from './stellar-endpoints';
 
 @Module({
   imports: [
@@ -37,8 +38,8 @@ import { DlqModule } from '../dlq/dlq.module';
         const rpcUrl =
           config.get('SOROBAN_RPC_URL') ||
           (config.get('STELLAR_NETWORK') === 'MAINNET'
-            ? 'https://mainnet.stellar.validationcloud.io/v1/soroban/rpc'
-            : 'https://soroban-testnet.stellar.org');
+            ? STELLAR_RPC_URLS.MAINNET
+            : STELLAR_RPC_URLS.TESTNET);
         return new rpc.Server(rpcUrl);
       },
       inject: [ConfigService],

@@ -1,8 +1,9 @@
 import { createHmac } from 'crypto';
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '../../config/config.service';
+import { MILLISECONDS_PER_HOUR } from '../constants/time.constants';
 
-const PRESIGN_TTL_MS = 3600_000; // 1 hour
+const PRESIGN_TTL_MS = MILLISECONDS_PER_HOUR;
 
 /**
  * Simulated S3 pre-signing.

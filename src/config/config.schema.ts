@@ -17,7 +17,7 @@ import { Keypair } from '@stellar/stellar-sdk';
  * malformed strings, and checksum failures. Same template-overrides as
  * `stellarSecretKey` so callers see the full reason on `error.message`.
  */
-export const stellarPublicKey = Joi.string()
+const stellarPublicKey = Joi.string()
   .custom((value: string, helpers) => {
     if (!value.startsWith('G')) {
       return helpers.error('any.invalid', {

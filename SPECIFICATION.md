@@ -207,6 +207,8 @@ R-API-07: String inputs must pass through SanitizationPipe (HTML stripping, cont
 | Method | Path | Auth | Rate Limit |
 |---|---|---|---|
 | GET | `/health` | None | — |
+| GET | `/health/live` | None | 60/min |
+| GET | `/health/ready` | None | 60/min |
 | GET | `/version` | None | — |
 | POST | `/auth/challenge` | None | 10/min |
 | POST | `/auth` | None | 10/min |
@@ -238,9 +240,15 @@ R-API-07: String inputs must pass through SanitizationPipe (HTML stripping, cont
 | GET | `/admin/queues` | JWT+Admin | 60/min |
 | GET | `/admin/audit-log` | JWT+Admin | 60/min |
 | PATCH | `/admin/credentials/logistics` | JWT+Admin | 60/min |
-| GET | `/admin/dlq` | JWT+Admin | 60/min |
-| POST | `/admin/dlq/:id/replay` | JWT+Admin | 60/min |
-| POST | `/admin/dlq/:id/abandon` | JWT+Admin | 60/min |
+| GET | `/admin/dlq` | JWT+Admin | 20/min |
+| GET | `/admin/dlq/:id` | JWT+Admin | 30/min |
+| POST | `/admin/dlq/:id/replay` | JWT+Admin | 5/min |
+| POST | `/admin/dlq/:id/abandon` | JWT+Admin | 5/min |
+| GET | `/stress-test/active` | JWT+Admin | 30/min |
+| GET | `/stress-test/active/{id}` | JWT+Admin | 30/min |
+| POST | `/stress-test` | JWT+Admin | 10/min |
+| GET | `/vendor/account-details` | JWT | 60/min |
+| PATCH | `/vendor/account-details` | JWT | 60/min |
 
 ---
 

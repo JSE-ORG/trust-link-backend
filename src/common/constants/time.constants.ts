@@ -22,8 +22,20 @@ export const SECONDS_PER_HOUR = SECONDS_PER_MINUTE * MINUTES_PER_HOUR;
 /** Seconds in one day (86 400). */
 export const SECONDS_PER_DAY = SECONDS_PER_HOUR * HOURS_PER_DAY;
 
+/** Milliseconds in one minute. */
+const MILLISECONDS_PER_MINUTE = SECONDS_PER_MINUTE * MILLISECONDS_PER_SECOND;
+
 /** Milliseconds in one hour. */
 export const MILLISECONDS_PER_HOUR = SECONDS_PER_HOUR * MILLISECONDS_PER_SECOND;
 
-/** Milliseconds in one day. */
-export const MILLISECONDS_PER_DAY = SECONDS_PER_DAY * MILLISECONDS_PER_SECOND;
+/** Five minutes in milliseconds. */
+export const FIVE_MINUTES_MS = 5 * MILLISECONDS_PER_MINUTE;
+
+/** Ten minutes in milliseconds. */
+export const TEN_MINUTES_MS = 10 * MILLISECONDS_PER_MINUTE;
+
+/** One hour in seconds, for API TTLs expressed in seconds. */
+export const ONE_HOUR_SECONDS = SECONDS_PER_HOUR;
+
+/** One year in seconds. */
+export const ONE_YEAR_SECONDS = 365 * SECONDS_PER_DAY;

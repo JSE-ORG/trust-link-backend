@@ -8,8 +8,7 @@ import { EscrowRepository } from '../escrow/escrow.repository';
 import { LogisticsService } from '../logistics/logistics.service';
 import { ContractService } from '../stellar/contract.service';
 import { ConfigService } from '../config/config.service';
-
-const EVERY_10_MINUTES = 10 * 60 * 1000;
+import { TEN_MINUTES_MS } from '../common/constants/time.constants';
 
 @Injectable()
 export class TrackingPollWorker implements OnModuleInit, OnApplicationShutdown {
@@ -49,7 +48,7 @@ export class TrackingPollWorker implements OnModuleInit, OnApplicationShutdown {
 
     this.timer = setInterval(() => {
       void this.run();
-    }, EVERY_10_MINUTES);
+    }, TEN_MINUTES_MS);
   }
 
   onApplicationShutdown(): void {

@@ -4,6 +4,7 @@ import { ConfigService } from '../config/config.service';
 import { StellarWebhookDto } from '../webhooks/dto/stellar-webhook.dto';
 import { StellarWebhookService } from '../webhooks/stellar-webhook.service';
 import { CursorService } from './cursor.service';
+import { STELLAR_HORIZON_URLS } from './stellar-endpoints';
 
 @Injectable()
 export class EventReplayService implements OnModuleInit {
@@ -20,9 +21,7 @@ export class EventReplayService implements OnModuleInit {
     try {
       const network = this.config.get('STELLAR_NETWORK') || 'TESTNET';
       const horizon =
-        network === 'MAINNET'
-          ? 'https://horizon.stellar.org'
-          : 'https://horizon-testnet.stellar.org';
+        STELLAR_HORIZON_URLS[network === 'MAINNET' ? 'MAINNET' : 'TESTNET'];
 
       const cursor = await this.cursorService.get();
 
