@@ -247,6 +247,12 @@ describe('CacheService (issue #285) — in-memory fallback mode', () => {
     });
   });
 
+  describe('ping()', () => {
+    it('returns "disabled" when no Redis client is configured', async () => {
+      await expect(service.ping()).resolves.toBe('disabled');
+    });
+  });
+
   describe('onModuleDestroy()', () => {
     it('resolves without error when there is no Redis client', async () => {
       await expect(service.onModuleDestroy()).resolves.toBeUndefined();
