@@ -65,3 +65,33 @@ describe('VendorEscrowsQueryDto pagination validation (#241)', () => {
     expect(errs.some((e) => /integer/i.test(e))).toBe(true);
   });
 });
+
+// Ported from test/unit/vendor-escrows-query.dto.spec.ts (issue #761) —
+// pagination and state validation were tested in separate files.
+describe('VendorEscrowsQueryDto state validation', () => {
+  it.each([
+    'CREATED',
+    'FUNDED',
+    'SHIPPED',
+    'DELIVERED',
+    'RELEASED',
+    'COMPLETED',
+    'DISPUTED',
+    'REFUNDED',
+    'CANCELLED',
+  ])('accepts state "%s"', async (state) => {
+    const errs = await validate(toDto({ state }));
+    expect(errs).toHaveLength(0);
+  });
+
+  it('rejects an unrecognised state value', async () => {
+    const errs = await validate(toDto({ state: 'PENDING' }));
+    expect(errs.length).toBeGreaterThan(0);
+    expect(errs[0].property).toBe('state');
+  });
+
+  it('is valid with no state supplied (optional field)', async () => {
+    const errs = await validate(toDto({}));
+    expect(errs).toHaveLength(0);
+  });
+});
