@@ -1,4 +1,4 @@
-import { Inject, Injectable, Optional } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import {
   Account,
   Address,
@@ -64,6 +64,8 @@ function toResolutionType(resolution: 'RELEASE' | 'REFUND'): xdr.ScVal {
 
 @Injectable()
 export class ContractService {
+  private readonly logger = new Logger(ContractService.name);
+
   constructor(
     @Optional()
     @Inject(STELLAR_SERVER)
@@ -327,14 +329,21 @@ export class ContractService {
       try {
         signerKeypair = Keypair.fromSecret(secret);
       } catch {
-        // Ignore keypair parsing errors if invalid test secret
+        this.logger.warn(
+          'SYSTEM_SIGNER_SECRET is present but cannot be parsed as a Stellar secret key — check the value',
+        );
       }
     }
 
     const sourcePublic =
       (legacyParams.sourceAddress as string | undefined) ||
-      signerKeypair?.publicKey() ||
-      'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5';
+      signerKeypair?.publicKey();
+
+    if (!sourcePublic) {
+      throw new ContractCallFailedException(
+        'No source address available: SYSTEM_SIGNER_SECRET is missing or invalid and no sourceAddress was provided',
+      );
+    }
 
     // Step 1: Fetch source account
     const account = await this.fetchAccount(sourcePublic);

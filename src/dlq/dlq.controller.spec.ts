@@ -1,4 +1,8 @@
-import { ServiceUnavailableException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import type { TestingModule } from '@nestjs/testing';
 import { DlqController } from './dlq.controller';
@@ -124,7 +128,7 @@ describe('DlqController', () => {
   });
 
   describe('POST /admin/dlq/:id/replay — missing contractEscrowId', () => {
-    it('rejects replay when the escrow record has no contractEscrowId', async () => {
+    it('rejects replay with 409 when the escrow record has no contractEscrowId', async () => {
       const { controller, dlq } = await buildController(
         'GAUTORELEASESOURCEADDRESS0000000000000000000000000000',
         null,
@@ -135,12 +139,14 @@ describe('DlqController', () => {
         return autoReleaseRecord;
       });
 
-      await expect(controller.replay('failed-tx-1')).rejects.toThrow(
-        'has no contractEscrowId',
-      );
+      const err = await controller.replay('failed-tx-1').catch((e) => e);
+      expect(err).toBeInstanceOf(ConflictException);
+      expect(err.getStatus()).toBe(409);
+      expect(err.message).toContain('has no contractEscrowId');
+      expect(err.message).toContain('escrow-123');
     });
 
-    it('rejects replay when the escrow exists but contractEscrowId is null', async () => {
+    it('rejects replay with 409 when the escrow exists but contractEscrowId is null', async () => {
       const { controller, dlq } = await buildController(
         'GAUTORELEASESOURCEADDRESS0000000000000000000000000000',
         { contractEscrowId: null },
@@ -151,9 +157,9 @@ describe('DlqController', () => {
         return autoReleaseRecord;
       });
 
-      await expect(controller.replay('failed-tx-1')).rejects.toThrow(
-        'has no contractEscrowId',
-      );
+      const err = await controller.replay('failed-tx-1').catch((e) => e);
+      expect(err).toBeInstanceOf(ConflictException);
+      expect(err.getStatus()).toBe(409);
     });
   });
 
@@ -186,7 +192,7 @@ describe('DlqController', () => {
       expect(result.lastReplayTxHash).toBe('tx-hash-abc');
     });
 
-    it('rejects operations other than submitAutoRelease', async () => {
+    it('rejects operations other than submitAutoRelease with 400', async () => {
       const { controller, dlq, contract } = await buildController(
         'GAUTORELEASESOURCEADDRESS0000000000000000000000000000',
       );
@@ -200,9 +206,11 @@ describe('DlqController', () => {
         throw new Error('unreachable');
       });
 
-      await expect(controller.replay('failed-tx-1')).rejects.toThrow(
-        'cannot be replayed automatically',
-      );
+      const err = await controller.replay('failed-tx-1').catch((e) => e);
+      expect(err).toBeInstanceOf(BadRequestException);
+      expect(err.getStatus()).toBe(400);
+      expect(err.message).toContain('cannot be replayed automatically');
+      expect(err.message).toContain('resolveDispute');
       expect(contract.submitAutoRelease).not.toHaveBeenCalled();
     });
 

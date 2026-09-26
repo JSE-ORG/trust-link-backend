@@ -1,4 +1,6 @@
 import {
+  BadRequestException,
+  ConflictException,
   Controller,
   Get,
   Param,
@@ -20,9 +22,11 @@ import { THROTTLE_WINDOW_MS } from '../common/security/throttle.config';
 import { JwtGuard } from '../auth/guards/jwt.guard';
 import { AdminGuard } from '../admin/guards/admin.guard';
 import { DlqService } from './dlq.service';
-import type {
-  FailedTransactionStatus,
-  ListFailedTransactionsQuery,
+import {
+  FailedTransactionRecord,
+  PaginatedFailedTransactions,
+  type FailedTransactionStatus,
+  type ListFailedTransactionsQuery,
 } from './dlq.types';
 import { ContractService } from '../stellar/contract.service';
 import {
@@ -104,6 +108,7 @@ export class DlqController {
   @ApiResponse({
     status: 200,
     description: 'Failed transaction records returned.',
+    type: PaginatedFailedTransactions,
   })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   @ApiResponse({ status: 403, description: 'Admin access required.' })
@@ -140,6 +145,7 @@ export class DlqController {
   @ApiResponse({
     status: 200,
     description: 'Failed transaction record returned.',
+    type: FailedTransactionRecord,
   })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   @ApiResponse({ status: 403, description: 'Admin access required.' })
@@ -163,6 +169,7 @@ export class DlqController {
   @ApiResponse({
     status: 200,
     description: 'Replay request accepted and replay execution started.',
+    type: FailedTransactionRecord,
   })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   @ApiResponse({ status: 403, description: 'Admin access required.' })
@@ -185,7 +192,7 @@ export class DlqController {
           select: { contractEscrowId: true },
         });
         if (!escrow?.contractEscrowId) {
-          throw new Error(
+          throw new ConflictException(
             `Escrow "${r.escrowId}" has no contractEscrowId, so auto-release ` +
               `cannot be replayed on-chain.`,
           );
@@ -195,7 +202,7 @@ export class DlqController {
           this.requireAutoReleaseSource(),
         );
       }
-      throw new Error(
+      throw new BadRequestException(
         `Operation "${r.operation}" cannot be replayed automatically; replay manually.`,
       );
     });
@@ -208,6 +215,7 @@ export class DlqController {
   @ApiResponse({
     status: 200,
     description: 'Failed transaction record abandoned.',
+    type: FailedTransactionRecord,
   })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   @ApiResponse({ status: 403, description: 'Admin access required.' })

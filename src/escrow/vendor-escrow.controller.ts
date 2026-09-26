@@ -12,6 +12,7 @@ import type { AuthUser } from '../auth/auth-user';
 import { JwtGuard } from '../auth/guards/jwt.guard';
 import { EscrowService } from './escrow.service';
 import { VendorEscrowsQueryDto } from './dto/vendor-escrows-query.dto';
+import { VendorEscrowsPaginatedResponseDto } from './dto/vendor-escrows-paginated-response.dto';
 
 @ApiTags('Vendor')
 @ApiBearerAuth()
@@ -35,6 +36,7 @@ export class VendorEscrowController {
   @ApiResponse({
     status: 200,
     description: 'Paginated list of vendor escrows returned.',
+    type: VendorEscrowsPaginatedResponseDto,
   })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   @ApiResponse({ status: 403, description: 'Forbidden.' })

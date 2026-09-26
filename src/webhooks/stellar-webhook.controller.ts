@@ -12,6 +12,7 @@ import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import type { Request } from 'express';
 import { StellarWebhookDto } from './dto/stellar-webhook.dto';
+import { StellarWebhookResponseDto } from './dto/stellar-webhook-response.dto';
 import { StellarWebhookService } from './stellar-webhook.service';
 
 @ApiTags('Webhooks')
@@ -32,7 +33,7 @@ export class StellarWebhookController {
    * @authentication None (HMAC signature verification instead)
    */
   @ApiOperation({ summary: 'Receive Stellar Horizon ledger event webhook' })
-  @ApiResponse({ status: 200, description: 'Webhook event processed.' })
+  @ApiResponse({ status: 200, description: 'Webhook event processed.', type: StellarWebhookResponseDto })
   @ApiResponse({
     status: 400,
     description: 'Invalid payload or missing HMAC signature.',
@@ -44,7 +45,7 @@ export class StellarWebhookController {
     @Req() req: Request,
     @Headers('x-stellar-signature') signature: string | undefined,
     @Body() dto: StellarWebhookDto,
-  ): Promise<{ received: boolean; skipped?: boolean; reason?: string }> {
+  ): Promise<StellarWebhookResponseDto> {
     const rawBody = this.extractRawBody(req);
     return this.webhookService.handleEvent(rawBody, signature, dto);
   }

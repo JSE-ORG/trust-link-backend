@@ -23,6 +23,7 @@ import { CacheService } from './cache/cache.service';
 import { HorizonService } from './stellar/horizon.service';
 import { LivenessResponseDto } from './common/dto/liveness-response.dto';
 import { ReadinessResponseDto } from './common/dto/readiness-response.dto';
+import { VersionResponseDto } from './common/dto/version-response.dto';
 import { ErrorResponseDto } from './common/dto/error-response.dto';
 
 type ComponentStatus = 'ok' | 'down';
@@ -238,11 +239,14 @@ export class AppController {
    * @authentication None (public endpoint)
    */
   @ApiOperation({ summary: 'Get current application version and environment' })
-  @ApiResponse({ status: 200, description: 'Version information returned.' })
+  @ApiOkResponse({
+    description: 'Version information returned.',
+    type: VersionResponseDto,
+  })
   @Throttle({ public: { limit: 100, ttl: THROTTLE_WINDOW_MS } })
   @Get('version')
   @HttpCode(HttpStatus.OK)
-  getVersion() {
+  getVersion(): VersionResponseDto {
     return {
       version: getAppVersion(),
       name: '@truestlink/trustlink-backend',

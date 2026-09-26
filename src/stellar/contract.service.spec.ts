@@ -1,7 +1,8 @@
-import { Account } from '@stellar/stellar-sdk';
+import { Account, Keypair } from '@stellar/stellar-sdk';
 import { ContractService } from './contract.service';
 import { ContractCallFailedException } from './contract-call-failed.exception';
 import { DEFAULT_AUTO_RELEASE_MAX_RETRIES } from './contract.constants';
+import { ConfigService } from '../config/config.service';
 
 // Minimal StellarServer stub — jest.fn() so each test controls its behaviour.
 function makeServer() {
@@ -476,6 +477,71 @@ describe('ContractService', () => {
         'Max retries exceeded',
       );
       expect(server.loadAccount).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('SYSTEM_SIGNER_SECRET handling', () => {
+    function makeSorobanServer() {
+      return {
+        getAccount: jest.fn().mockResolvedValue({
+          sequenceNumber: () => '10',
+          accountId: () => SOURCE,
+        }),
+        simulateTransaction: jest
+          .fn()
+          .mockResolvedValue({ transactionData: {} }),
+        prepareTransaction: jest
+          .fn()
+          .mockImplementation((tx) => Promise.resolve(tx)),
+        sendTransaction: jest.fn().mockResolvedValue({
+          status: 'PENDING',
+          hash: 'signer-test-hash',
+        }),
+        pollTransaction: jest.fn().mockResolvedValue({ status: 'SUCCESS' }),
+      };
+    }
+
+    it('throws ContractCallFailedException with a malformed secret and no sourceAddress', async () => {
+      const server = makeSorobanServer();
+      const config = {
+        get: jest.fn((key: string) => {
+          if (key === 'SYSTEM_SIGNER_SECRET') return 'not-a-valid-stellar-secret';
+          if (key === 'CONTRACT_ID')
+            return 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4';
+          return undefined;
+        }),
+      } as unknown as ConfigService;
+
+      const svc = new ContractService(server, config);
+
+      await expect(
+        svc.resolveDispute(ESCROW, 'RELEASE', ADMIN),
+      ).rejects.toThrow(ContractCallFailedException);
+
+      await expect(
+        svc.resolveDispute(ESCROW, 'RELEASE', ADMIN),
+      ).rejects.toThrow('No source address available');
+    });
+
+    it('uses the valid secret to derive sourceAddress when none is explicitly provided', async () => {
+      const server = makeSorobanServer();
+      const validKeypair = Keypair.random();
+      const config = {
+        get: jest.fn((key: string) => {
+          if (key === 'SYSTEM_SIGNER_SECRET') return validKeypair.secret();
+          if (key === 'CONTRACT_ID')
+            return 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4';
+          if (key === 'STELLAR_NETWORK') return 'TESTNET';
+          return undefined;
+        }),
+      } as unknown as ConfigService;
+
+      const svc = new ContractService(server, config);
+      const hash = await svc.resolveDispute(ESCROW, 'RELEASE', ADMIN);
+
+      expect(hash).toBe('signer-test-hash');
+      // getAccount is called with the derived public key from the valid secret
+      expect(server.getAccount).toHaveBeenCalled();
     });
   });
 
