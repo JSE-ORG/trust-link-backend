@@ -128,6 +128,33 @@ describe('VendorProfileRepository', () => {
     });
   });
 
+  it('upserts with email: null in both create and update when email is omitted', async () => {
+    const dto = { businessName: 'No-email vendor' };
+    vendorProfile.upsert.mockResolvedValue({ ...profile, ...dto, email: null });
+
+    await expect(repository.upsert('vendor-1', dto)).resolves.toMatchObject({
+      businessName: 'No-email vendor',
+      email: null,
+    });
+
+    expect(vendorProfile.upsert).toHaveBeenCalledWith({
+      where: { address: 'vendor-1' },
+      create: {
+        address: 'vendor-1',
+        businessName: 'No-email vendor',
+        email: null,
+        phone: null,
+        description: null,
+      },
+      update: {
+        businessName: 'No-email vendor',
+        email: null,
+        phone: null,
+        description: null,
+      },
+    });
+  });
+
   it.each([
     [
       'creates settings with defaults',
