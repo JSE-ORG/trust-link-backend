@@ -299,9 +299,21 @@ describe('ContractService', () => {
       };
     }
 
+    function makeConfig(
+      contractId = 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4',
+    ) {
+      return {
+        get: jest.fn((key: string) => {
+          if (key === 'CONTRACT_ID') return contractId;
+          if (key === 'STELLAR_NETWORK') return 'TESTNET';
+          return undefined;
+        }),
+      } as unknown as import('../config/config.service').ConfigService;
+    }
+
     it('executes successful Soroban contract invocation flow', async () => {
       const server = makeSorobanRpcServer();
-      const svc = new ContractService(server);
+      const svc = new ContractService(server, makeConfig());
 
       const disputeHash = await svc.resolveDispute(ESCROW, 'RELEASE', ADMIN);
       expect(disputeHash).toBe('soroban-hash-1');
@@ -327,7 +339,7 @@ describe('ContractService', () => {
         error: 'Host error: ContractError(101)',
       });
 
-      const svc = new ContractService(server);
+      const svc = new ContractService(server, makeConfig());
       await expect(
         svc.resolveDispute(ESCROW, 'RELEASE', ADMIN),
       ).rejects.toThrow(ContractCallFailedException);
@@ -339,7 +351,7 @@ describe('ContractService', () => {
         new Error('Resource limits exceeded'),
       );
 
-      const svc = new ContractService(server);
+      const svc = new ContractService(server, makeConfig());
       await expect(
         svc.resolveDispute(ESCROW, 'RELEASE', ADMIN),
       ).rejects.toThrow(ContractCallFailedException);
@@ -352,7 +364,7 @@ describe('ContractService', () => {
         errorResultXdr: 'tx_failed',
       });
 
-      const svc = new ContractService(server);
+      const svc = new ContractService(server, makeConfig());
       await expect(
         svc.resolveDispute(ESCROW, 'RELEASE', ADMIN),
       ).rejects.toThrow(ContractCallFailedException);
@@ -369,7 +381,7 @@ describe('ContractService', () => {
         resultXdr: 'Error(Contract, #404)',
       });
 
-      const svc = new ContractService(server);
+      const svc = new ContractService(server, makeConfig());
       await expect(
         svc.resolveDispute(ESCROW, 'RELEASE', ADMIN),
       ).rejects.toThrow(ContractCallFailedException);
@@ -387,7 +399,7 @@ describe('ContractService', () => {
           hash: 'soroban-retry-success-hash',
         });
 
-      const svc = new ContractService(server);
+      const svc = new ContractService(server, makeConfig());
       const hash = await svc.submitAutoRelease(ESCROW, SOURCE, 2);
 
       expect(hash).toBe('soroban-retry-success-hash');
@@ -396,7 +408,7 @@ describe('ContractService', () => {
 
     it('simulates getEscrowState with Soroban RPC', async () => {
       const server = makeSorobanRpcServer();
-      const svc = new ContractService(server);
+      const svc = new ContractService(server, makeConfig());
 
       const resultOk = await svc.getEscrowState(ESCROW);
       expect(resultOk).toEqual({ state: 'CREATED', exists: true });
@@ -413,7 +425,7 @@ describe('ContractService', () => {
       const realAccount = new Account(SOURCE, '55');
       server.getAccount.mockResolvedValue(realAccount);
 
-      const svc = new ContractService(server);
+      const svc = new ContractService(server, makeConfig());
       const hash = await svc.resolveDispute(ESCROW, 'RELEASE', ADMIN);
 
       expect(hash).toBe('soroban-hash-1');
@@ -425,11 +437,34 @@ describe('ContractService', () => {
       delete server.pollTransaction;
       server.getTransaction.mockResolvedValue({ status: 'SUCCESS' });
 
-      const svc = new ContractService(server);
+      const svc = new ContractService(server, makeConfig());
       const hash = await svc.resolveDispute(ESCROW, 'RELEASE', ADMIN);
 
       expect(hash).toBe('soroban-hash-1');
       expect(server.getTransaction).toHaveBeenCalledWith('soroban-hash-1');
+    });
+
+    describe('CONTRACT_ID configuration requirement (Issue #814)', () => {
+      it('throws ContractCallFailedException naming CONTRACT_ID when config is missing', async () => {
+        const server = makeSorobanRpcServer();
+        const svc = new ContractService(server, undefined);
+
+        await expect(
+          svc.resolveDispute(ESCROW, 'RELEASE', ADMIN),
+        ).rejects.toThrow(/CONTRACT_ID/);
+      });
+
+      it('throws ContractCallFailedException naming CONTRACT_ID when CONTRACT_ID is empty', async () => {
+        const server = makeSorobanRpcServer();
+        const emptyConfig = {
+          get: jest.fn(() => ''),
+        } as unknown as import('../config/config.service').ConfigService;
+        const svc = new ContractService(server, emptyConfig);
+
+        await expect(
+          svc.resolveDispute(ESCROW, 'RELEASE', ADMIN),
+        ).rejects.toThrow(/CONTRACT_ID/);
+      });
     });
   });
 

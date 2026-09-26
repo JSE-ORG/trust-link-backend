@@ -55,7 +55,7 @@ model Escrow {
   updatedAt              DateTime      @updatedAt
   disputes               Dispute[]
   notifications          Notification[]
-  vendor                 VendorProfile @relation("VendorEscrows", fields: [vendorAddress], references: [address])
+  vendor                 VendorProfile @relation("VendorEscrows", fields: [vendorAddress], references: [address], onDelete: Restrict)
   events                 EscrowEvent[]
  
   @@index([vendorAddress])
@@ -285,4 +285,20 @@ model ProviderCredential {
   encryptedKey String
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+}
+
+// Issue #816 - Persistent database-backed audit log for administrative actions
+model AuditLog {
+  id           String   @id @default(cuid())
+  action       String
+  adminAddress String
+  entityType   String
+  entityId     String
+  details      Json     @default("{}")
+  occurredAt   DateTime @default(now())
+
+  @@index([adminAddress])
+  @@index([entityType, entityId])
+  @@index([occurredAt])
+  @@index([action])
 }

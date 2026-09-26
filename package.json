@@ -124,6 +124,9 @@
                 }
             ]
         },
+        "transformIgnorePatterns": [
+            "[/\\\\]node_modules[/\\\\](?!(.pnpm[/\\\\])?(uint8array-extras|@exodus|@noble|@stellar))"
+        ],
         "collectCoverageFrom": [
             "src/**/*.ts",
             "!src/**/*.spec.ts",

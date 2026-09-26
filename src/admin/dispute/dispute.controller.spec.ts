@@ -165,14 +165,93 @@ describe('DisputeController', () => {
   });
 
   describe('getAuditLog', () => {
-    it('delegates to the audit log service', () => {
-      const log = [{ id: '1', action: 'DISPUTE_RESOLVED' }];
-      auditLogService.findAll.mockReturnValue(log as never);
+    it('delegates with undefined pagination when no query params are provided', async () => {
+      const expected = {
+        data: [],
+        total: 0,
+        page: 1,
+        limit: 20,
+      };
+      auditLogService.findAll.mockResolvedValue(expected as never);
 
-      const result = controller.getAuditLog();
+      const result = await controller.getAuditLog();
 
-      expect(auditLogService.findAll).toHaveBeenCalledTimes(1);
-      expect(result).toBe(log);
+      expect(auditLogService.findAll).toHaveBeenCalledWith({
+        page: undefined,
+        limit: undefined,
+      });
+      expect(result).toBe(expected);
+    });
+
+    it('delegates with the supplied page and limit', async () => {
+      const expected = {
+        data: [{ id: '1', action: 'DISPUTE_RESOLVED' }],
+        total: 1,
+        page: 2,
+        limit: 25,
+      };
+      auditLogService.findAll.mockResolvedValue(expected as never);
+
+      const result = await controller.getAuditLog('2', '25');
+
+      expect(auditLogService.findAll).toHaveBeenCalledWith({
+        page: 2,
+        limit: 25,
+      });
+      expect(result).toBe(expected);
+    });
+
+    it('delegates with page only when limit is omitted', async () => {
+      const expected = {
+        data: [],
+        total: 0,
+        page: 3,
+        limit: 20,
+      };
+      auditLogService.findAll.mockResolvedValue(expected as never);
+
+      const result = await controller.getAuditLog('3', undefined);
+
+      expect(auditLogService.findAll).toHaveBeenCalledWith({
+        page: 3,
+        limit: undefined,
+      });
+      expect(result).toBe(expected);
+    });
+
+    it('delegates with limit only when page is omitted', async () => {
+      const expected = {
+        data: [],
+        total: 0,
+        page: 1,
+        limit: 15,
+      };
+      auditLogService.findAll.mockResolvedValue(expected as never);
+
+      const result = await controller.getAuditLog(undefined, '15');
+
+      expect(auditLogService.findAll).toHaveBeenCalledWith({
+        page: undefined,
+        limit: 15,
+      });
+      expect(result).toBe(expected);
+    });
+
+    it('handles non-numeric page or limit', async () => {
+      const expected = {
+        data: [],
+        total: 0,
+        page: 1,
+        limit: 20,
+      };
+      auditLogService.findAll.mockResolvedValue(expected as never);
+
+      await controller.getAuditLog('abc', 'xyz');
+
+      expect(auditLogService.findAll).toHaveBeenCalledWith({
+        page: Number.NaN,
+        limit: Number.NaN,
+      });
     });
   });
 });

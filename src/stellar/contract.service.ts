@@ -195,9 +195,7 @@ export class ContractService {
     }
 
     try {
-      const contractId =
-        this.config?.get('CONTRACT_ID') ||
-        'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4';
+      const contractId = this.getContractId();
       const contract = new Contract(contractId);
       const dummyAccount = new Account(
         'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
@@ -350,9 +348,7 @@ export class ContractService {
     // Step 1: Fetch source account
     const account = await this.fetchAccount(sourcePublic);
 
-    const contractId =
-      this.config?.get('CONTRACT_ID') ||
-      'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4';
+    const contractId = this.getContractId();
     let contract: Contract;
     try {
       contract = new Contract(contractId);
@@ -561,6 +557,16 @@ export class ContractService {
         : JSON.stringify(resultXdr);
     }
     return 'Transaction failed on chain';
+  }
+
+  private getContractId(): string {
+    const contractId = this.config?.get<string>('CONTRACT_ID');
+    if (!contractId) {
+      throw new ContractCallFailedException(
+        'CONTRACT_ID is not configured; cannot invoke contract.',
+      );
+    }
+    return contractId;
   }
 
   private isSequenceError(error: unknown): boolean {

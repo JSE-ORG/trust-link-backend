@@ -23,8 +23,8 @@ import { AuditLogService } from '../../audit-log/audit-log.service';
 import { ResolveDisputeDto } from './dto/resolve-dispute.dto';
 import { DisputeService } from './dispute.service';
 import { AdminDisputesPaginatedResponseDto } from './dto/admin-disputes-paginated-response.dto';
+import { AdminAuditLogPaginatedResponseDto } from './dto/admin-audit-log-paginated-response.dto';
 import { EscrowResponseDto } from '../../escrow/dto/escrow-response.dto';
-import { AuditLogEntryDto } from '../stats/dto/audit-log-entry.dto';
 
 @ApiTags('Admin')
 @ApiBearerAuth()
@@ -78,7 +78,7 @@ export class DisputeController {
     @CurrentUser() admin: AuthUser,
   ) {
     const result = await this.disputeService.resolve(id, dto.resolution);
-    this.auditLogService.append({
+    await this.auditLogService.append({
       action: 'DISPUTE_RESOLVED',
       adminAddress: admin.address,
       entityType: 'escrow',
@@ -91,14 +91,20 @@ export class DisputeController {
   @ApiOperation({ summary: 'Get admin audit log entries' })
   @ApiResponse({
     status: 200,
-    description: 'Audit log returned.',
-    type: [AuditLogEntryDto],
+    description: 'Paginated audit log returned.',
+    type: AdminAuditLogPaginatedResponseDto,
   })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   @ApiResponse({ status: 403, description: 'Admin access required.' })
   @Throttle({ auth: { limit: 20, ttl: THROTTLE_WINDOW_MS } })
   @Get('audit-log')
-  getAuditLog() {
-    return this.auditLogService.findAll();
+  async getAuditLog(
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.auditLogService.findAll({
+      page: page ? parseInt(page, 10) : undefined,
+      limit: limit ? parseInt(limit, 10) : undefined,
+    });
   }
 }
