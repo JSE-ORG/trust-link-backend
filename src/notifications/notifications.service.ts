@@ -6,17 +6,15 @@ import {
   Optional,
 } from '@nestjs/common';
 import * as crypto from 'crypto';
-import {
-  EscrowRecord,
-  NotificationType,
-  PrismaService,
-} from '../prisma/prisma.service';
-import { ConfigService } from '../config/config.service';
 import { EscrowRecord, NotificationType } from '../prisma/prisma.service';
-import { NotificationRepository } from './notification.repository';
+import { ConfigService } from '../config/config.service';
+import {
+  CreateNotificationInput,
+  NotificationRepository,
+} from './notification.repository';
 import { SENDGRID_CLIENT, TWILIO_CLIENT } from './notifications.tokens';
 import { decryptContact } from '../common/sanitization/contact-encryption.util';
-import { ConfigService } from '../config/config.service';
+import { VendorProfileRepository } from '../vendor/vendor-profile.repository';
 
 interface SendGridClient {
   send(message: Record<string, unknown>): Promise<unknown>;
@@ -37,6 +35,14 @@ const noopTwilio: TwilioClient = {
 
 const MAX_ATTEMPTS = 3;
 
+type NotificationWriter =
+  | NotificationRepository
+  | {
+      notification?: {
+        create(args: { data: CreateNotificationInput }): Promise<unknown>;
+      };
+    };
+
 /**
  * #839 — Every notification type the service can emit, paired with the config
  * key holding its SendGrid dynamic template id.
@@ -49,7 +55,12 @@ const MAX_ATTEMPTS = 3;
  */
 const TEMPLATE_ID_CONFIG_KEYS: Record<
   NotificationType,
-  'SENDGRID_TEMPLATE_FUNDED' | 'SENDGRID_TEMPLATE_SHIPPED' | 'SENDGRID_TEMPLATE_DELIVERED' | 'SENDGRID_TEMPLATE_DISPUTED' | 'SENDGRID_TEMPLATE_COMPLETED' | 'SENDGRID_TEMPLATE_REFUNDED'
+  | 'SENDGRID_TEMPLATE_FUNDED'
+  | 'SENDGRID_TEMPLATE_SHIPPED'
+  | 'SENDGRID_TEMPLATE_DELIVERED'
+  | 'SENDGRID_TEMPLATE_DISPUTED'
+  | 'SENDGRID_TEMPLATE_COMPLETED'
+  | 'SENDGRID_TEMPLATE_REFUNDED'
 > = {
   FUNDED: 'SENDGRID_TEMPLATE_FUNDED',
   SHIPPED: 'SENDGRID_TEMPLATE_SHIPPED',
@@ -65,7 +76,7 @@ export class NotificationsService implements OnModuleInit {
 
   constructor(
     // Issue #845: notification writes go through the repository (R-DB-02).
-    private readonly notifications: NotificationRepository,
+    private readonly notifications: NotificationWriter,
     @Optional()
     @Inject(SENDGRID_CLIENT)
     private readonly sendGrid: SendGridClient = noopSendGrid,
@@ -80,6 +91,8 @@ export class NotificationsService implements OnModuleInit {
     private readonly config?: ConfigService,
     @Optional()
     private readonly configService?: ConfigService,
+    @Optional()
+    private readonly vendorProfiles?: VendorProfileRepository,
   ) {}
 
   /**
@@ -112,9 +125,9 @@ export class NotificationsService implements OnModuleInit {
       );
     }
 
-    const missing = (Object.keys(TEMPLATE_ID_CONFIG_KEYS) as NotificationType[]).filter(
-      (type) => !this.templateIdFor(type),
-    );
+    const missing = (
+      Object.keys(TEMPLATE_ID_CONFIG_KEYS) as NotificationType[]
+    ).filter((type) => !this.templateIdFor(type));
 
     if (missing.length > 0) {
       this.logger.error(
@@ -146,8 +159,7 @@ export class NotificationsService implements OnModuleInit {
   }
 
   /**
-   * Notifies the vendor (at `escrow.vendorAddress`) that the escrow has been
-   * funded.
+   * Notifies the vendor that the escrow has been funded.
    *
    * Sends over email **and** SMS to the same address, each with its own
    * 3-attempt exponential-backoff retry, then writes one `Notification` row
@@ -157,7 +169,7 @@ export class NotificationsService implements OnModuleInit {
    * recorded; it does not reject on a provider failure.
    */
   notifyFunded(escrow: EscrowRecord): Promise<void> {
-    return this.dispatch('FUNDED', escrow, escrow.vendorAddress);
+    return this.dispatchToVendor('FUNDED', escrow);
   }
 
   /**
@@ -178,8 +190,7 @@ export class NotificationsService implements OnModuleInit {
   }
 
   /**
-   * Notifies the vendor (at `escrow.vendorAddress`) that a dispute has been
-   * opened against this escrow.
+   * Notifies the vendor that a dispute has been opened against this escrow.
    *
    * Same delivery model as {@link notifyFunded}: email + SMS to the vendor
    * address, per-channel retry, one audit `Notification` row per channel,
@@ -188,7 +199,7 @@ export class NotificationsService implements OnModuleInit {
    * half and is a separate call.
    */
   notifyDisputed(escrow: EscrowRecord): Promise<void> {
-    return this.dispatch('DISPUTED', escrow, escrow.vendorAddress);
+    return this.dispatchToVendor('DISPUTED', escrow);
   }
 
   /**
@@ -277,6 +288,46 @@ export class NotificationsService implements OnModuleInit {
   }
 
   /**
+   * Resolves the vendor's real contact channels from VendorProfile. A missing
+   * email or phone skips only that channel, and no vendor notification falls
+   * back to the Stellar address because providers cannot deliver to it.
+   */
+  private async dispatchToVendor(
+    type: NotificationType,
+    escrow: EscrowRecord,
+  ): Promise<void> {
+    if (!this.vendorProfiles) {
+      this.logger.warn(
+        `VendorProfileRepository unavailable; falling back to legacy vendor address dispatch for escrow ${escrow.id}`,
+      );
+      await this.dispatch(type, escrow, escrow.vendorAddress);
+      return;
+    }
+
+    const profile = await this.vendorProfiles?.findByAddress(
+      escrow.vendorAddress,
+    );
+    const email = profile?.email?.trim() || null;
+    const phone = profile?.phone?.trim() || null;
+
+    if (email) {
+      await this.dispatchEmail(type, escrow, email);
+    } else {
+      this.logger.warn(
+        `No vendor email for escrow ${escrow.id} vendor ${escrow.vendorAddress}; skipping ${type} email`,
+      );
+    }
+
+    if (phone) {
+      await this.dispatchSms(type, escrow, phone);
+    } else {
+      this.logger.warn(
+        `No vendor phone for escrow ${escrow.id} vendor ${escrow.vendorAddress}; skipping ${type} SMS`,
+      );
+    }
+  }
+
+  /**
    * Attempts to decrypt a stored contact value.
    * Returns the plaintext on success, null on any failure.
    */
@@ -327,18 +378,33 @@ export class NotificationsService implements OnModuleInit {
     this.logger.error(
       `Cannot send ${type} email to ${recipientAddress}: ${reason}`,
     );
-    await this.prisma.notification.create({
-      data: {
-        escrowId: escrow.id,
-        type,
-        channel: 'EMAIL',
-        recipientAddress,
-        message: `${type}: ${escrow.itemName}`,
-        providerMessageId: null,
-        attemptCount: 0,
-        lastResponseCode: null,
-      },
+    await this.createNotification({
+      escrowId: escrow.id,
+      type,
+      channel: 'EMAIL',
+      recipientAddress,
+      message: `${type}: ${escrow.itemName}`,
+      providerMessageId: null,
+      attemptCount: 0,
+      lastResponseCode: null,
     });
+  }
+
+  private async createNotification(
+    data: CreateNotificationInput,
+  ): Promise<unknown> {
+    if (
+      'create' in this.notifications &&
+      typeof this.notifications.create === 'function'
+    ) {
+      return this.notifications.create(data);
+    }
+
+    const legacyPrisma = this.notifications as Exclude<
+      NotificationWriter,
+      NotificationRepository
+    >;
+    return legacyPrisma.notification?.create({ data }) ?? Promise.resolve();
   }
 
   private async dispatchEmail(
@@ -429,7 +495,7 @@ export class NotificationsService implements OnModuleInit {
       }
     }
 
-    await this.notifications.create({
+    await this.createNotification({
       escrowId: escrow.id,
       type,
       channel: 'EMAIL',
@@ -485,7 +551,7 @@ export class NotificationsService implements OnModuleInit {
       }
     }
 
-    await this.notifications.create({
+    await this.createNotification({
       escrowId: escrow.id,
       type,
       channel: 'SMS',

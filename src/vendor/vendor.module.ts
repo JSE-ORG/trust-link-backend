@@ -19,6 +19,10 @@ import { AnalyticsModule } from './analytics/analytics.module';
     VendorAccountDetailsRepository,
     JwtGuard,
   ],
-  exports: [VendorProfileService, VendorAccountDetailsService],
+  exports: [
+    VendorProfileService,
+    VendorProfileRepository,
+    VendorAccountDetailsService,
+  ],
 })
 export class VendorModule {}

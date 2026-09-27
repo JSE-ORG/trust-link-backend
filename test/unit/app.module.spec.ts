@@ -1,11 +1,12 @@
 import 'reflect-metadata';
+import { ThrottlerStorageRedisService } from '@nest-lab/throttler-storage-redis';
 import { ThrottlerModule } from '@nestjs/throttler';
-import { AppModule } from '../../src/app.module';
+import { AppModule, buildThrottlerOptions } from '../../src/app.module';
 import { ConfigService } from '../../src/config/config.service';
 
 function getThrottlerFactory(): (
   config: ConfigService,
-) => { ttl: number; limit: number }[] {
+) => ReturnType<typeof buildThrottlerOptions> {
   const imports: unknown[] =
     (Reflect.getMetadata('imports', AppModule) as unknown[]) ?? [];
   const throttlerDynamic = imports.find(
@@ -29,7 +30,7 @@ function getThrottlerFactory(): (
 
   return optionsProvider.useFactory as (
     config: ConfigService,
-  ) => { ttl: number; limit: number }[];
+  ) => ReturnType<typeof buildThrottlerOptions>;
 }
 
 describe('AppModule throttler useFactory', () => {
@@ -43,7 +44,8 @@ describe('AppModule throttler useFactory', () => {
       }),
     } as unknown as ConfigService;
 
-    const [throttler] = factory(mockConfig);
+    const options = factory(mockConfig);
+    const [throttler] = options.throttlers ?? [];
 
     expect(throttler.ttl).toBe(30000);
     expect(throttler.limit).toBe(100);
@@ -55,9 +57,29 @@ describe('AppModule throttler useFactory', () => {
       get: jest.fn().mockReturnValue(undefined),
     } as unknown as ConfigService;
 
-    const [throttler] = factory(mockConfig);
+    const options = factory(mockConfig);
+    const [throttler] = options.throttlers ?? [];
 
     expect(throttler.ttl).toBe(60000);
     expect(throttler.limit).toBe(60);
+  });
+
+  it('uses in-memory throttler storage when REDIS_URL is unset', () => {
+    const options = buildThrottlerOptions({
+      get: jest.fn().mockReturnValue(undefined),
+    } as unknown as ConfigService);
+
+    expect(options.storage).toBeUndefined();
+  });
+
+  it('uses Redis throttler storage when REDIS_URL is set', () => {
+    const options = buildThrottlerOptions({
+      get: jest.fn((key: string) =>
+        key === 'REDIS_URL' ? 'redis://localhost:6379/0' : undefined,
+      ),
+    } as unknown as ConfigService);
+
+    expect(options.storage).toBeInstanceOf(ThrottlerStorageRedisService);
+    (options.storage as ThrottlerStorageRedisService).onModuleDestroy();
   });
 });

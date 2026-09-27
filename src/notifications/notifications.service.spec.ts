@@ -10,6 +10,7 @@ import {
 } from '../prisma/prisma.service';
 import { NotificationRepository } from './notification.repository';
 import { ensureVendors } from '../../test/prisma-helpers';
+import { VendorProfileRepository } from '../vendor/vendor-profile.repository';
 
 /** A syntactically valid SendGrid dynamic template id (d- + 32 hex). */
 function templateId(seed: string): string {
@@ -26,9 +27,13 @@ const EMAIL_CONFIG: Record<string, string> = {
   SENDGRID_TEMPLATE_COMPLETED: templateId('e'),
   SENDGRID_TEMPLATE_REFUNDED: templateId('f'),
 };
+const VENDOR_EMAIL = 'vendor@example.test';
+const VENDOR_PHONE = '+15555550100';
 
 /** Minimal ConfigService stand-in returning `values[key]`. */
-function emailConfig(values: Record<string, string | undefined>): ConfigService {
+function emailConfig(
+  values: Record<string, string | undefined>,
+): ConfigService {
   return {
     get: jest.fn((key: string) => values[key]),
   } as unknown as ConfigService;
@@ -79,6 +84,7 @@ describe('NotificationsService', () => {
         // spec keeps PrismaService directly to seed and assert against the
         // same database.
         NotificationRepository,
+        VendorProfileRepository,
         PrismaService,
         { provide: SENDGRID_CLIENT, useValue: sendGrid },
         { provide: TWILIO_CLIENT, useValue: twilio },
@@ -91,6 +97,10 @@ describe('NotificationsService', () => {
 
     await prisma.reset();
     await ensureVendors(prisma, escrow.vendorAddress);
+    await prisma.vendorProfile.update({
+      where: { address: escrow.vendorAddress },
+      data: { email: VENDOR_EMAIL, phone: VENDOR_PHONE },
+    });
     escrow = toEscrowRecord(
       await prisma.escrow.create({
         data: {
@@ -139,7 +149,7 @@ describe('NotificationsService', () => {
       expect(record.escrowId).toBe(escrow.id);
       expect(record.type).toBe('FUNDED');
       expect(record.channel).toMatch(/^(EMAIL|SMS)$/);
-      expect(record.recipientAddress).toBe(escrow.vendorAddress);
+      expect([VENDOR_EMAIL, VENDOR_PHONE]).toContain(record.recipientAddress);
       expect(record.message).toBeTruthy();
     });
 
@@ -162,13 +172,13 @@ describe('NotificationsService', () => {
       // `trustlink-funded` that exists in no SendGrid account.
       expect(sendGrid.send).toHaveBeenCalledWith(
         expect.objectContaining({
-          to: escrow.vendorAddress,
+          to: VENDOR_EMAIL,
           from: 'notifications@example.test',
           templateId: EMAIL_CONFIG.SENDGRID_TEMPLATE_FUNDED,
         }),
       );
       expect(twilio.messages.create).toHaveBeenCalledWith(
-        expect.objectContaining({ to: escrow.vendorAddress }),
+        expect.objectContaining({ to: VENDOR_PHONE }),
       );
     });
 
@@ -228,11 +238,74 @@ describe('NotificationsService', () => {
         (record) => record.recipientAddress,
       );
       expect(recipients).toEqual([
-        escrow.vendorAddress,
-        escrow.vendorAddress,
+        VENDOR_EMAIL,
+        VENDOR_PHONE,
         escrow.buyerAddress,
         escrow.buyerAddress,
       ]);
+    });
+
+    it('sends vendor notifications to VendorProfile email and phone when both are set', async () => {
+      await service.notifyDisputed(escrow);
+
+      expect(sendGrid.send).toHaveBeenCalledWith(
+        expect.objectContaining({ to: VENDOR_EMAIL }),
+      );
+      expect(twilio.messages.create).toHaveBeenCalledWith(
+        expect.objectContaining({ to: VENDOR_PHONE }),
+      );
+    });
+
+    it('skips only the missing vendor phone channel', async () => {
+      await prisma.vendorProfile.update({
+        where: { address: escrow.vendorAddress },
+        data: { phone: null },
+      });
+
+      await service.notifyFunded(escrow);
+
+      expect(sendGrid.send).toHaveBeenCalledWith(
+        expect.objectContaining({ to: VENDOR_EMAIL }),
+      );
+      expect(twilio.messages.create).not.toHaveBeenCalled();
+      expect(Logger.prototype.warn).toHaveBeenCalledWith(
+        expect.stringContaining('No vendor phone'),
+      );
+    });
+
+    it('skips only the missing vendor email channel', async () => {
+      await prisma.vendorProfile.update({
+        where: { address: escrow.vendorAddress },
+        data: { email: null },
+      });
+
+      await service.notifyFunded(escrow);
+
+      expect(sendGrid.send).not.toHaveBeenCalled();
+      expect(twilio.messages.create).toHaveBeenCalledWith(
+        expect.objectContaining({ to: VENDOR_PHONE }),
+      );
+      expect(Logger.prototype.warn).toHaveBeenCalledWith(
+        expect.stringContaining('No vendor email'),
+      );
+    });
+
+    it('skips both vendor channels when neither contact field is set', async () => {
+      await prisma.vendorProfile.update({
+        where: { address: escrow.vendorAddress },
+        data: { email: null, phone: null },
+      });
+
+      await service.notifyFunded(escrow);
+
+      expect(sendGrid.send).not.toHaveBeenCalled();
+      expect(twilio.messages.create).not.toHaveBeenCalled();
+      expect(Logger.prototype.warn).toHaveBeenCalledWith(
+        expect.stringContaining('No vendor email'),
+      );
+      expect(Logger.prototype.warn).toHaveBeenCalledWith(
+        expect.stringContaining('No vendor phone'),
+      );
     });
 
     it('is a no-op (noop provider) when SendGrid is not configured', async () => {
@@ -589,13 +662,10 @@ describe('NotificationsService (#726) — extractResponseCode shapes', () => {
     // the provider; these tests are about reading the status code off the
     // rejection, not about the configuration guard.
     const svc = new NotificationsService(
-      stubPrisma,
+      new NotificationRepository(stubPrisma),
       sendGrid,
       undefined,
       emailConfig(EMAIL_CONFIG),
-    const svc = new NotificationsService(
-      new NotificationRepository(stubPrisma),
-      sendGrid,
     );
     jest
       .spyOn(svc, 'sleep' as keyof NotificationsService)
@@ -762,9 +832,7 @@ describe('NotificationsService SendGrid sender and template ids (#839)', () => {
   });
 
   it('gives each type a distinct template id', () => {
-    const ids = Object.values(EMAIL_CONFIG).filter((v) =>
-      v.startsWith('d-'),
-    );
+    const ids = Object.values(EMAIL_CONFIG).filter((v) => v.startsWith('d-'));
     expect(new Set(ids).size).toBe(ids.length);
   });
 
@@ -793,7 +861,9 @@ describe('NotificationsService SendGrid sender and template ids (#839)', () => {
     expect(message).toContain('COMPLETED');
     expect(message).toContain('REFUNDED');
     // The configured type must not be reported as missing.
-    expect(message).not.toContain('FUNDED');
+    expect(message).not.toMatch(
+      /notification type\(s\): .*?(^|,\s*)FUNDED(,|\.|$)/,
+    );
     // And the config key is named so the operator knows what to set.
     expect(message).toContain('SENDGRID_TEMPLATE_SHIPPED');
   });
