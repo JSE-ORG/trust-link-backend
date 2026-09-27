@@ -9,7 +9,7 @@ import { DlqController } from './dlq.controller';
 import { ListFailedTransactionsQueryDto } from './dto/list-failed-transactions-query.dto';
 import { DlqService } from './dlq.service';
 import { ContractService } from '../stellar/contract.service';
-import { PrismaService } from '../prisma/prisma.service';
+import { EscrowRepository } from '../escrow/escrow.repository';
 import {
   AutoReleaseSourceNotConfiguredError,
   ConfigService,
@@ -34,7 +34,10 @@ describe('DlqController', () => {
 
   const buildController = async (
     autoReleaseSourceAddress: string | undefined,
-    escrowFindUniqueResult: unknown = { contractEscrowId: 42n },
+    // Issue #844: EscrowRepository.findContractEscrowId returns the contract's
+    // own u64 (or null), where the controller previously read it off a Prisma
+    // row itself.
+    contractEscrowId: bigint | null = 42n,
   ) => {
     const dlq = {
       list: jest.fn(),
@@ -66,11 +69,9 @@ describe('DlqController', () => {
         {
           // Replay translates the DLQ record's backend UUID to the contract's
           // own u64 before calling auto_release.
-          provide: PrismaService,
+          provide: EscrowRepository,
           useValue: {
-            escrow: {
-              findUnique: jest.fn().mockResolvedValue(escrowFindUniqueResult),
-            },
+            findContractEscrowId: jest.fn().mockResolvedValue(contractEscrowId),
           },
         },
       ],
@@ -128,8 +129,12 @@ describe('DlqController', () => {
     });
   });
 
-  describe('POST /admin/dlq/:id/replay — missing contractEscrowId', () => {
-    it('rejects replay with 409 when the escrow record has no contractEscrowId', async () => {
+  describe('POST /admin/dlq/:id/replay — no on-chain escrow id', () => {
+    // Issue #844: the escrow lookup now goes through
+    // EscrowRepository.findContractEscrowId, which returns the contract's u64
+    // or null — "no such escrow" and "escrow not yet submitted on-chain" are
+    // the same answer to the controller, so they are one case here.
+    it('rejects replay with 409 when there is no contractEscrowId', async () => {
       const { controller, dlq } = await buildController(
         'GAUTORELEASESOURCEADDRESS0000000000000000000000000000',
         null,
@@ -145,22 +150,6 @@ describe('DlqController', () => {
       expect(err.getStatus()).toBe(409);
       expect(err.message).toContain('has no contractEscrowId');
       expect(err.message).toContain('escrow-123');
-    });
-
-    it('rejects replay with 409 when the escrow exists but contractEscrowId is null', async () => {
-      const { controller, dlq } = await buildController(
-        'GAUTORELEASESOURCEADDRESS0000000000000000000000000000',
-        { contractEscrowId: null },
-      );
-      dlq.get.mockResolvedValue(autoReleaseRecord);
-      dlq.replay.mockImplementation(async (_id, replay) => {
-        await replay(autoReleaseRecord);
-        return autoReleaseRecord;
-      });
-
-      const err = await controller.replay('failed-tx-1').catch((e) => e);
-      expect(err).toBeInstanceOf(ConflictException);
-      expect(err.getStatus()).toBe(409);
     });
   });
 

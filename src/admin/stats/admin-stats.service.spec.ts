@@ -1,4 +1,5 @@
 import { AdminStatsService } from './admin-stats.service';
+import { AdminStatsRepository } from './admin-stats.repository';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ensureVendors } from '../../../test/prisma-helpers';
 
@@ -17,7 +18,9 @@ describe('AdminStatsService', () => {
       'GVENDOR_A',
       'GVENDOR_B',
     );
-    service = new AdminStatsService(prisma);
+    // Issue #846: the service composes the repository's aggregates; the suite
+    // keeps PrismaService to seed and read back the same database.
+    service = new AdminStatsService(new AdminStatsRepository(prisma));
   });
 
   afterEach(async () => {

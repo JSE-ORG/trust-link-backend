@@ -1,6 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
-import { PrismaService } from '../prisma/prisma.service';
+import { AuditLogRepository } from './audit-log.repository';
 
 export interface AuditLogEntry {
   id: string;
@@ -26,7 +25,8 @@ export interface PaginatedAuditLogResponse {
 
 @Injectable()
 export class AuditLogService {
-  constructor(private readonly prisma: PrismaService) {}
+  // Issue #846: every auditLog query moved into AuditLogRepository (R-DB-02).
+  constructor(private readonly auditLog: AuditLogRepository) {}
 
   /**
    * Appends an immutable admin action record to persistent storage.
@@ -35,25 +35,13 @@ export class AuditLogService {
   async append(
     entry: Omit<AuditLogEntry, 'id' | 'occurredAt'>,
   ): Promise<AuditLogEntry> {
-    const record = await this.prisma.auditLog.create({
-      data: {
-        action: entry.action,
-        adminAddress: entry.adminAddress,
-        entityType: entry.entityType,
-        entityId: entry.entityId,
-        details: (entry.details ?? {}) as Prisma.InputJsonValue,
-      },
+    return this.auditLog.append({
+      action: entry.action,
+      adminAddress: entry.adminAddress,
+      entityType: entry.entityType,
+      entityId: entry.entityId,
+      details: entry.details,
     });
-
-    return {
-      id: record.id,
-      action: record.action,
-      adminAddress: record.adminAddress,
-      entityType: record.entityType,
-      entityId: record.entityId,
-      details: record.details as Record<string, unknown>,
-      occurredAt: record.occurredAt,
-    };
   }
 
   /**
@@ -79,25 +67,13 @@ export class AuditLogService {
 
     const skip = (page - 1) * limit;
 
-    const [records, total] = await Promise.all([
-      this.prisma.auditLog.findMany({
-        skip,
-        take: limit,
-        orderBy: { occurredAt: 'desc' },
-      }),
-      this.prisma.auditLog.count(),
+    const [data, total] = await Promise.all([
+      this.auditLog.findPage({ skip, take: limit }),
+      this.auditLog.count(),
     ]);
 
     return {
-      data: records.map((record) => ({
-        id: record.id,
-        action: record.action,
-        adminAddress: record.adminAddress,
-        entityType: record.entityType,
-        entityId: record.entityId,
-        details: record.details as Record<string, unknown>,
-        occurredAt: record.occurredAt,
-      })),
+      data,
       total,
       page,
       limit,

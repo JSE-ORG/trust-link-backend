@@ -16,7 +16,8 @@ import {
   NotificationRetryJobData,
   computeBackoffDelay,
 } from '../../src/notifications/notification-retry-queue.types';
-import { EscrowRecord, PrismaService } from '../../src/prisma/prisma.service';
+import { EscrowRecord } from '../../src/prisma/prisma.service';
+import { NotificationRepository } from '../../src/notifications/notification.repository';
 import { Job, Queue, Worker } from 'bullmq';
 import { ConfigService } from '../../src/config/config.service';
 
@@ -70,6 +71,46 @@ const makeJob = (
   recipientAddress: 'someone@example.test',
   ...overrides,
 });
+
+/**
+ * Issue #845: the retry runner writes notification status through
+ * `NotificationRepository` instead of `PrismaService` directly. These suites
+ * assert on a Prisma-shaped `update` record, so the mock records the three
+ * repository writes in that shape — the expectations below stay exactly as
+ * they were while still checking which status transition the runner issued.
+ */
+function makeRepositoryMock(
+  overrides: {
+    markSent?: jest.Mock;
+    markAttemptFailed?: jest.Mock;
+    markFailed?: jest.Mock;
+  } = {},
+) {
+  const update = jest.fn().mockResolvedValue(undefined);
+
+  const markSent =
+    overrides.markSent ??
+    jest.fn((id: string, retryCount: number) => {
+      update({ where: { id }, data: { status: 'SENT', sentAt: new Date(), retryCount } });
+      return Promise.resolve(undefined);
+    });
+
+  const markAttemptFailed =
+    overrides.markAttemptFailed ??
+    jest.fn((id: string, retryCount: number, lastError: string) => {
+      update({ where: { id }, data: { retryCount, failedAt: new Date(), lastError } });
+      return Promise.resolve(undefined);
+    });
+
+  const markFailed =
+    overrides.markFailed ??
+    jest.fn((id: string) => {
+      update({ where: { id }, data: { status: 'FAILED' } });
+      return Promise.resolve(undefined);
+    });
+
+  return { notification: { update }, markSent, markAttemptFailed, markFailed };
+}
 
 describe('computeBackoffDelay (#73)', () => {
   beforeEach(() => {
@@ -129,7 +170,7 @@ describe('NotificationRetryQueueService (in-process fallback) (#73)', () => {
     overrides: {
       dispatcher?: NotificationChannelDispatcher;
       backoff?: NotificationRetryBackoff;
-      prisma?: { notification: { update: jest.Mock } };
+      notifications?: Partial<ReturnType<typeof makeRepositoryMock>>;
     } = {},
   ) => {
     const dispatcher: NotificationChannelDispatcher = overrides.dispatcher ?? {
@@ -146,10 +187,10 @@ describe('NotificationRetryQueueService (in-process fallback) (#73)', () => {
         deadLetterSink: { record: (entry) => void dlq.push(entry) },
         scheduleDelayed: synchronousScheduler,
       },
-      // The real PrismaService is an in-memory fake; a minimal mock with
-      // notification.update is all the retry runner touches, and it lets
-      // us assert the per-attempt failure state that #490 restored.
-      overrides.prisma as unknown as never,
+      // Issue #845: the retry runner writes notification status through the
+      // repository, so the suite mocks the three methods it calls — which
+      // also lets it assert the per-attempt failure state that #490 restored.
+      overrides.notifications as unknown as NotificationRepository,
     );
     service.registerDispatcher('EMAIL', dispatcher);
     return { service, dispatcher, dlq };
@@ -225,7 +266,7 @@ describe('NotificationRetryQueueService (in-process fallback) (#73)', () => {
     const update = jest.fn().mockResolvedValue(undefined);
     const { service, dlq } = setup({
       dispatcher: { dispatch },
-      prisma: { notification: { update } },
+      notifications: makeRepositoryMock({ update })
     });
 
     await service.enqueue(makeJob({ notificationId: 'notif-1' }));
@@ -270,7 +311,7 @@ describe('NotificationRetryQueueService (in-process fallback) (#73)', () => {
     const update = jest.fn().mockRejectedValue(new Error('db down'));
     const { service, dlq } = setup({
       dispatcher: { dispatch },
-      prisma: { notification: { update } },
+      notifications: makeRepositoryMock({ update })
     });
 
     await service.enqueue(makeJob({ notificationId: 'notif-2' }));
@@ -325,12 +366,8 @@ describe('NotificationRetryQueueService (in-process fallback) (#73)', () => {
 // Prisma-integration tests — in-process retry path with database interaction
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('NotificationRetryQueueService (in-process with Prisma) (#73)', () => {
+describe('NotificationRetryQueueService (in-process with a repository) (#73)', () => {
   const synchronousScheduler = (cb: () => void) => cb();
-
-  const makePrismaMock = () => ({
-    notification: { update: jest.fn().mockResolvedValue(undefined) },
-  });
 
   const makeJob = (
     overrides: Partial<NotificationRetryJobData> = {},
@@ -342,75 +379,70 @@ describe('NotificationRetryQueueService (in-process with Prisma) (#73)', () => {
     ...overrides,
   });
 
-  it('updates notification to SENT on first-success when prisma + notificationId are provided', async () => {
-    const prisma = makePrismaMock();
+  it('marks the notification SENT on first success when a repository + notificationId are provided', async () => {
+    const prisma = makeRepositoryMock();
     const dispatch = jest.fn().mockResolvedValue(undefined);
     const service = new NotificationRetryQueueService(
       {
         backoff: { attempts: 3, delay: 1, maxDelayMs: 10 },
         scheduleDelayed: synchronousScheduler,
       },
-      prisma as unknown as PrismaService,
+      prisma as unknown as NotificationRepository,
     );
     service.registerDispatcher('EMAIL', { dispatch });
     await service.enqueue(makeJob({ notificationId: 'n-1' }));
-    expect(prisma.notification.update).toHaveBeenCalledTimes(1);
-    expect(prisma.notification.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { id: 'n-1' },
-        data: expect.objectContaining({ status: 'SENT', retryCount: 0 }),
-      }),
-    );
+    expect(prisma.markSent).toHaveBeenCalledTimes(1);
+    expect(prisma.markSent).toHaveBeenCalledWith('n-1', 0);
   });
 
-  it('updates retryCount and failedAt on each retry attempt', async () => {
-    const prisma = makePrismaMock();
+  it('records the failure on each attempt and FAILED when the budget runs out', async () => {
+    const prisma = makeRepositoryMock();
     const dispatch = jest.fn().mockRejectedValue(new Error('transient'));
     const service = new NotificationRetryQueueService(
       {
         backoff: { attempts: 3, delay: 1, maxDelayMs: 10 },
         scheduleDelayed: synchronousScheduler,
       },
-      prisma as unknown as PrismaService,
+      prisma as unknown as NotificationRepository,
     );
     service.registerDispatcher('EMAIL', { dispatch });
     await service.enqueue(makeJob({ notificationId: 'n-1' }));
-    expect(prisma.notification.update).toHaveBeenCalled();
-    const allCalls = prisma.notification.update.mock.calls;
-    const lastCallArg = allCalls[allCalls.length - 1][0];
-    expect(lastCallArg).toMatchObject({
-      data: expect.objectContaining({ status: 'FAILED' }),
-    });
+    expect(prisma.markAttemptFailed).toHaveBeenCalledWith(
+      'n-1',
+      1,
+      'transient',
+    );
+    expect(prisma.markFailed).toHaveBeenCalledWith('n-1');
   });
 
-  it('skips prisma when notificationId is not set', async () => {
-    const prisma = makePrismaMock();
+  it('skips persistence when notificationId is not set', async () => {
+    const prisma = makeRepositoryMock();
     const dispatch = jest.fn().mockResolvedValue(undefined);
     const service = new NotificationRetryQueueService(
       {
         backoff: { attempts: 2, delay: 1, maxDelayMs: 5 },
         scheduleDelayed: synchronousScheduler,
       },
-      prisma as unknown as PrismaService,
+      prisma as unknown as NotificationRepository,
     );
     service.registerDispatcher('EMAIL', { dispatch });
     await service.enqueue(makeJob({ notificationId: undefined }));
-    expect(prisma.notification.update).not.toHaveBeenCalled();
+    expect(prisma.markSent).not.toHaveBeenCalled();
+    expect(prisma.markAttemptFailed).not.toHaveBeenCalled();
+    expect(prisma.markFailed).not.toHaveBeenCalled();
   });
 
-  it('catches prisma error on success path without crashing', async () => {
-    const prisma = {
-      notification: {
-        update: jest.fn().mockRejectedValue(new Error('db down')),
-      },
-    };
+  it('catches a repository error on the success path without crashing', async () => {
+    const prisma = makeRepositoryMock({
+      markSent: jest.fn().mockRejectedValue(new Error('db down')),
+    });
     const dispatch = jest.fn().mockResolvedValue(undefined);
     const service = new NotificationRetryQueueService(
       {
         backoff: { attempts: 2, delay: 1, maxDelayMs: 5 },
         scheduleDelayed: synchronousScheduler,
       },
-      prisma as unknown as PrismaService,
+      prisma as unknown as NotificationRepository,
     );
     service.registerDispatcher('EMAIL', { dispatch });
     await expect(
@@ -419,18 +451,16 @@ describe('NotificationRetryQueueService (in-process with Prisma) (#73)', () => {
   });
 
   it('catches prisma error on failure path without crashing', async () => {
-    const prisma = {
-      notification: {
-        update: jest.fn().mockRejectedValue(new Error('db down')),
-      },
-    };
+    const prisma = makeRepositoryMock({
+      markSent: jest.fn().mockRejectedValue(new Error('db down')),
+    });
     const dispatch = jest.fn().mockRejectedValue(new Error('fail'));
     const service = new NotificationRetryQueueService(
       {
         backoff: { attempts: 2, delay: 1, maxDelayMs: 5 },
         scheduleDelayed: synchronousScheduler,
       },
-      prisma as unknown as PrismaService,
+      prisma as unknown as NotificationRepository,
     );
     service.registerDispatcher('EMAIL', { dispatch });
     await expect(
@@ -438,9 +468,9 @@ describe('NotificationRetryQueueService (in-process with Prisma) (#73)', () => {
     ).resolves.toBeUndefined();
   });
 
-  it('records to DLQ after exhaustion with prisma FAILED update', async () => {
+  it('records to DLQ after exhaustion with a FAILED status write', async () => {
     const dlqSink: NotificationDeadLetterRecord[] = [];
-    const prisma = makePrismaMock();
+    const prisma = makeRepositoryMock();
     const dispatch = jest.fn().mockRejectedValue(new Error('exhausted'));
     const service = new NotificationRetryQueueService(
       {
@@ -448,7 +478,7 @@ describe('NotificationRetryQueueService (in-process with Prisma) (#73)', () => {
         deadLetterSink: { record: (entry) => void dlqSink.push(entry) },
         scheduleDelayed: synchronousScheduler,
       },
-      prisma as unknown as PrismaService,
+      prisma as unknown as NotificationRepository,
     );
     service.registerDispatcher('EMAIL', { dispatch });
     await service.enqueue(
@@ -764,15 +794,13 @@ describe('NotificationRetryQueueService (BullMQ integration) (#73)', () => {
 
   it('worker failed handler updates prisma FAILED status when notificationId present', async () => {
     const sink: NotificationDeadLetterRecord[] = [];
-    const prisma = {
-      notification: { update: jest.fn().mockResolvedValue(undefined) },
-    };
+    const prisma = makeRepositoryMock();
     const service = new NotificationRetryQueueService(
       {
         backoff: { attempts: 3, delay: 1, maxDelayMs: 10 },
         deadLetterSink: { record: (entry) => void sink.push(entry) },
       },
-      prisma as unknown as PrismaService,
+      prisma as unknown as NotificationRepository,
       configWith({ REDIS_URL: 'redis://localhost:6379' }),
     );
     service.registerDispatcher('EMAIL', { dispatch: jest.fn() });
@@ -831,16 +859,14 @@ describe('NotificationRetryQueueService — retry-path persistence guards (#725)
   describe('Prisma persistence guards — if (job.notificationId && this.prisma)', () => {
     describe('Success path (first site)', () => {
       it('updates SENT status when notificationId and prisma are both present', async () => {
-        const prisma = {
-          notification: { update: jest.fn().mockResolvedValue(undefined) },
-        };
+        const prisma = makeRepositoryMock();
         const dispatch = jest.fn().mockResolvedValue(undefined);
         const service = new NotificationRetryQueueService(
           {
             backoff: { attempts: 2, delay: 1, maxDelayMs: 5 },
             scheduleDelayed: synchronousScheduler,
           },
-          prisma as unknown as PrismaService,
+          prisma as unknown as NotificationRepository,
         );
         service.registerDispatcher('EMAIL', { dispatch });
 
@@ -858,16 +884,14 @@ describe('NotificationRetryQueueService — retry-path persistence guards (#725)
       });
 
       it('skips prisma update when notificationId is missing (both conditions false)', async () => {
-        const prisma = {
-          notification: { update: jest.fn().mockResolvedValue(undefined) },
-        };
+        const prisma = makeRepositoryMock();
         const dispatch = jest.fn().mockResolvedValue(undefined);
         const service = new NotificationRetryQueueService(
           {
             backoff: { attempts: 2, delay: 1, maxDelayMs: 5 },
             scheduleDelayed: synchronousScheduler,
           },
-          prisma as unknown as PrismaService,
+          prisma as unknown as NotificationRepository,
         );
         service.registerDispatcher('EMAIL', { dispatch });
 
@@ -894,20 +918,16 @@ describe('NotificationRetryQueueService — retry-path persistence guards (#725)
       });
 
       it('handles prisma error on success path gracefully', async () => {
-        const prisma = {
-          notification: {
-            update: jest
-              .fn()
-              .mockRejectedValue(new Error('db connection lost')),
-          },
-        };
+        const prisma = makeRepositoryMock({
+          markSent: jest.fn().mockRejectedValue(new Error('db connection lost')),
+        });
         const dispatch = jest.fn().mockResolvedValue(undefined);
         const service = new NotificationRetryQueueService(
           {
             backoff: { attempts: 2, delay: 1, maxDelayMs: 5 },
             scheduleDelayed: synchronousScheduler,
           },
-          prisma as unknown as PrismaService,
+          prisma as unknown as NotificationRepository,
         );
         service.registerDispatcher('EMAIL', { dispatch });
 
@@ -920,9 +940,7 @@ describe('NotificationRetryQueueService — retry-path persistence guards (#725)
 
     describe('Failure path (second site)', () => {
       it('updates failure state when notificationId and prisma are both present on retry', async () => {
-        const prisma = {
-          notification: { update: jest.fn().mockResolvedValue(undefined) },
-        };
+        const prisma = makeRepositoryMock();
         const dispatch = jest
           .fn()
           .mockRejectedValue(new Error('network timeout'));
@@ -931,7 +949,7 @@ describe('NotificationRetryQueueService — retry-path persistence guards (#725)
             backoff: { attempts: 2, delay: 1, maxDelayMs: 5 },
             scheduleDelayed: synchronousScheduler,
           },
-          prisma as unknown as PrismaService,
+          prisma as unknown as NotificationRepository,
         );
         service.registerDispatcher('EMAIL', { dispatch });
 
@@ -949,9 +967,7 @@ describe('NotificationRetryQueueService — retry-path persistence guards (#725)
       });
 
       it('skips prisma failure update when notificationId is missing', async () => {
-        const prisma = {
-          notification: { update: jest.fn().mockResolvedValue(undefined) },
-        };
+        const prisma = makeRepositoryMock();
         const dispatch = jest
           .fn()
           .mockRejectedValue(new Error('permanent failure'));
@@ -960,7 +976,7 @@ describe('NotificationRetryQueueService — retry-path persistence guards (#725)
             backoff: { attempts: 2, delay: 1, maxDelayMs: 5 },
             scheduleDelayed: synchronousScheduler,
           },
-          prisma as unknown as PrismaService,
+          prisma as unknown as NotificationRepository,
         );
         service.registerDispatcher('EMAIL', { dispatch });
 
@@ -992,11 +1008,9 @@ describe('NotificationRetryQueueService — retry-path persistence guards (#725)
       });
 
       it('handles prisma error on failure path without stopping retry loop', async () => {
-        const prisma = {
-          notification: {
-            update: jest.fn().mockRejectedValue(new Error('db down')),
-          },
-        };
+        const prisma = makeRepositoryMock({
+          markAttemptFailed: jest.fn().mockRejectedValue(new Error('db down')),
+        });
         const dispatch = jest.fn().mockRejectedValue(new Error('always fails'));
         const dlq: NotificationDeadLetterRecord[] = [];
         const service = new NotificationRetryQueueService(
@@ -1005,7 +1019,7 @@ describe('NotificationRetryQueueService — retry-path persistence guards (#725)
             scheduleDelayed: synchronousScheduler,
             deadLetterSink: { record: (entry) => void dlq.push(entry) },
           },
-          prisma as unknown as PrismaService,
+          prisma as unknown as NotificationRepository,
         );
         service.registerDispatcher('EMAIL', { dispatch });
 
@@ -1021,16 +1035,14 @@ describe('NotificationRetryQueueService — retry-path persistence guards (#725)
       });
 
       it('updates FAILED status when attempts exhausted with both notificationId and prisma', async () => {
-        const prisma = {
-          notification: { update: jest.fn().mockResolvedValue(undefined) },
-        };
+        const prisma = makeRepositoryMock();
         const dispatch = jest.fn().mockRejectedValue(new Error('exhausted'));
         const service = new NotificationRetryQueueService(
           {
             backoff: { attempts: 2, delay: 1, maxDelayMs: 5 },
             scheduleDelayed: synchronousScheduler,
           },
-          prisma as unknown as PrismaService,
+          prisma as unknown as NotificationRepository,
         );
         service.registerDispatcher('EMAIL', { dispatch });
 
@@ -1280,16 +1292,14 @@ describe('NotificationRetryQueueService — retry-path persistence guards (#725)
     });
 
     it('handles all conditions true: dispatcher, notificationId, and prisma present', async () => {
-      const prisma = {
-        notification: { update: jest.fn().mockResolvedValue(undefined) },
-      };
+      const prisma = makeRepositoryMock();
       const dispatch = jest.fn().mockResolvedValue(undefined);
       const service = new NotificationRetryQueueService(
         {
           backoff: { attempts: 2, delay: 1, maxDelayMs: 5 },
           scheduleDelayed: synchronousScheduler,
         },
-        prisma as unknown as PrismaService,
+        prisma as unknown as NotificationRepository,
       );
       service.registerDispatcher('EMAIL', { dispatch });
 
@@ -1305,16 +1315,14 @@ describe('NotificationRetryQueueService — retry-path persistence guards (#725)
     });
 
     it('SMS channel uses same guards as EMAIL channel', async () => {
-      const prisma = {
-        notification: { update: jest.fn().mockResolvedValue(undefined) },
-      };
+      const prisma = makeRepositoryMock();
       const dispatch = jest.fn().mockResolvedValue(undefined);
       const service = new NotificationRetryQueueService(
         {
           backoff: { attempts: 2, delay: 1, maxDelayMs: 5 },
           scheduleDelayed: synchronousScheduler,
         },
-        prisma as unknown as PrismaService,
+        prisma as unknown as NotificationRepository,
       );
       service.registerDispatcher('SMS', { dispatch });
 
