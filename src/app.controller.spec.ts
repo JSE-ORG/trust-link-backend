@@ -6,6 +6,7 @@ import { ConfigService } from './config/config.service';
 import { PrismaService } from './prisma/prisma.service';
 import { CacheService } from './cache/cache.service';
 import { HorizonService } from './stellar/horizon.service';
+import { SorobanHealthService } from './stellar/soroban-health.service';
 
 function createMockResponse() {
   const res: Partial<Response> & {
@@ -28,10 +29,14 @@ describe('AppController', () => {
   let fetchSpy: jest.SpyInstance | undefined;
   let escrowFindManyMock: jest.Mock;
   let cachePingMock: jest.Mock;
+  // #841 — The readiness probe checks the Soroban RPC; default healthy so the
+  // pre-existing db/horizon/redis cases are unaffected by the new component.
+  let sorobanCheckMock: jest.Mock;
 
   beforeEach(async () => {
     escrowFindManyMock = jest.fn().mockResolvedValue([]);
     cachePingMock = jest.fn().mockResolvedValue('ok');
+    sorobanCheckMock = jest.fn().mockResolvedValue({ status: 'ok' });
 
     const mockConfigService = {
       get: jest.fn().mockImplementation((key: string) => {
@@ -58,6 +63,10 @@ describe('AppController', () => {
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: CacheService, useValue: { ping: cachePingMock } },
         HorizonService,
+        {
+          provide: SorobanHealthService,
+          useValue: { checkHealth: sorobanCheckMock },
+        },
       ],
     }).compile();
 
@@ -353,5 +362,170 @@ describe('AppController', () => {
       expect(version.version).toBe('1.0.0');
       expect(version.environment).toBe('test');
     });
+  });
+});
+
+/**
+ * Issue #841 — the readiness probe now reports the Soroban RPC, and returns
+ * 503 when it is down, because every contract call is submitted through it.
+ */
+describe('AppController readiness — Soroban RPC (#841)', () => {
+  let appController: AppController;
+  let escrowFindManyMock: jest.Mock;
+  let cachePingMock: jest.Mock;
+  let sorobanCheckMock: jest.Mock;
+  let fetchSpy: jest.SpyInstance | undefined;
+
+  beforeEach(async () => {
+    escrowFindManyMock = jest.fn().mockResolvedValue([]);
+    cachePingMock = jest.fn().mockResolvedValue('ok');
+    sorobanCheckMock = jest.fn().mockResolvedValue({ status: 'ok' });
+    // Horizon healthy by default; each test overrides it if it cares.
+    fetchSpy = jest
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue({ ok: true } as never);
+
+    const app: TestingModule = await Test.createTestingModule({
+      controllers: [AppController],
+      providers: [
+        AppService,
+        {
+          provide: ConfigService,
+          useValue: {
+            get: jest.fn((key: string) =>
+              key === 'NODE_ENV' ? 'test' : undefined,
+            ),
+          },
+        },
+        {
+          provide: PrismaService,
+          useValue: { escrow: { findMany: escrowFindManyMock } },
+        },
+        { provide: CacheService, useValue: { ping: cachePingMock } },
+        HorizonService,
+        {
+          provide: SorobanHealthService,
+          useValue: { checkHealth: sorobanCheckMock },
+        },
+      ],
+    }).compile();
+
+    appController = app.get<AppController>(AppController);
+  });
+
+  afterEach(() => {
+    if (fetchSpy) {
+      fetchSpy.mockRestore();
+      fetchSpy = undefined;
+    }
+  });
+
+  it('includes a soroban status when healthy', async () => {
+    const res = createMockResponse();
+    await appController.getReadiness(res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toMatchObject({
+      status: 'ok',
+      db: 'ok',
+      horizon: 'ok',
+      soroban: 'ok',
+    });
+  });
+
+  it('reports the soroban status on the legacy /health alias too', async () => {
+    const res = createMockResponse();
+    await appController.getHealth(res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toMatchObject({ soroban: 'ok' });
+  });
+
+  it('returns 503 when the Soroban RPC is down', async () => {
+    sorobanCheckMock.mockResolvedValue({
+      status: 'down',
+      error: 'ECONNREFUSED',
+    });
+
+    const res = createMockResponse();
+    await appController.getReadiness(res);
+
+    expect(res.statusCode).toBe(503);
+    expect(res.body).toMatchObject({
+      status: 'down',
+      db: 'ok',
+      horizon: 'ok',
+      soroban: 'down',
+    });
+  });
+
+  it('includes the soroban failure detail', async () => {
+    sorobanCheckMock.mockResolvedValue({
+      status: 'down',
+      error: 'ECONNREFUSED',
+    });
+
+    const res = createMockResponse();
+    await appController.getReadiness(res);
+
+    const body = res.body as { details?: Record<string, unknown> };
+    expect(body.details?.soroban).toEqual({
+      status: 'down',
+      error: 'ECONNREFUSED',
+    });
+  });
+
+  it('returns 503 on the legacy /health alias when the RPC is down', async () => {
+    sorobanCheckMock.mockResolvedValue({ status: 'down', error: 'timeout' });
+
+    const res = createMockResponse();
+    await appController.getHealth(res);
+
+    expect(res.statusCode).toBe(503);
+    expect(res.body).toMatchObject({ status: 'down', soroban: 'down' });
+  });
+
+  it('agrees between /health and /health/ready when the RPC is down', async () => {
+    sorobanCheckMock.mockResolvedValue({ status: 'down', error: 'timeout' });
+
+    const alias = createMockResponse();
+    const ready = createMockResponse();
+    await appController.getHealth(alias);
+    await appController.getReadiness(ready);
+
+    expect(alias.statusCode).toBe(ready.statusCode);
+    expect(alias.statusCode).toBe(503);
+    const ab = alias.body as Record<string, unknown>;
+    const rb = ready.body as Record<string, unknown>;
+    expect(ab.soroban).toBe(rb.soroban);
+  });
+
+  it('keeps a Redis outage from masking a Soroban outage', async () => {
+    sorobanCheckMock.mockResolvedValue({ status: 'down', error: 'timeout' });
+    cachePingMock.mockResolvedValue('down');
+
+    const res = createMockResponse();
+    await appController.getReadiness(res);
+
+    const body = res.body as Record<string, unknown>;
+    expect(res.statusCode).toBe(503);
+    expect(body.soroban).toBe('down');
+    // Redis is optional, so it is reported but does not appear in details.
+    expect(body.redis).toBe('down');
+    const details = body.details as Record<string, unknown>;
+    expect(details.redis).toBeUndefined();
+    expect(details.soroban).toBeDefined();
+  });
+
+  it('does not check the RPC on the liveness probe', () => {
+    const live = appController.getLiveness();
+
+    expect(Object.keys(live)).toEqual([
+      'status',
+      'timestamp',
+      'environment',
+      'version',
+    ]);
+    expect(sorobanCheckMock).not.toHaveBeenCalled();
   });
 });

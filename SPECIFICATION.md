@@ -86,7 +86,7 @@ The system covers:
 | R-OB-02 | Request correlation ID on every request | RequestIdMiddleware must inject and propagate X-Request-ID |
 | R-OB-03 | OpenTelemetry distributed tracing | Span must be created for each request handler |
 | R-OB-04 | Sentry error tracking (optional) | SENTRY_DSN enables Sentry; app must work without it |
-| R-OB-05 | Health check at GET /health | Must report db, horizon, redis status with 200/503 |
+| R-OB-05 | Health check at GET /health | Must report db, horizon, soroban, redis status with 200/503 |
 
 ---
 
