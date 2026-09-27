@@ -8,6 +8,7 @@ import {
   PrismaService,
   toEscrowRecord,
 } from '../prisma/prisma.service';
+import { NotificationRepository } from './notification.repository';
 import { ensureVendors } from '../../test/prisma-helpers';
 
 /** A syntactically valid SendGrid dynamic template id (d- + 32 hex). */
@@ -74,6 +75,10 @@ describe('NotificationsService', () => {
     const moduleRef = await Test.createTestingModule({
       providers: [
         NotificationsService,
+        // Issue #845: NotificationsService writes through the repository; the
+        // spec keeps PrismaService directly to seed and assert against the
+        // same database.
+        NotificationRepository,
         PrismaService,
         { provide: SENDGRID_CLIENT, useValue: sendGrid },
         { provide: TWILIO_CLIENT, useValue: twilio },
@@ -232,7 +237,7 @@ describe('NotificationsService', () => {
 
     it('is a no-op (noop provider) when SendGrid is not configured', async () => {
       const serviceNoSendgrid = new NotificationsService(
-        prisma,
+        new NotificationRepository(prisma),
         undefined,
         twilio,
       );
@@ -249,7 +254,7 @@ describe('NotificationsService', () => {
 
     it('is a no-op (noop provider) when Twilio is not configured', async () => {
       const serviceNoTwilio = new NotificationsService(
-        prisma,
+        new NotificationRepository(prisma),
         sendGrid,
         undefined,
       );
@@ -453,7 +458,11 @@ describe('NotificationsService (#726) — channel selection', () => {
   beforeEach(() => {
     const stub = makeStubPrisma();
     created = stub.created;
-    service = new NotificationsService(stub.stubPrisma);
+    // Issue #845: the service takes the repository; the Prisma-shaped
+    // stub keeps working because the repository calls `notification.create`.
+    service = new NotificationsService(
+      new NotificationRepository(stub.stubPrisma),
+    );
     jest
       .spyOn(service, 'sleep' as keyof NotificationsService)
       .mockResolvedValue(undefined);
@@ -584,6 +593,9 @@ describe('NotificationsService (#726) — extractResponseCode shapes', () => {
       sendGrid,
       undefined,
       emailConfig(EMAIL_CONFIG),
+    const svc = new NotificationsService(
+      new NotificationRepository(stubPrisma),
+      sendGrid,
     );
     jest
       .spyOn(svc, 'sleep' as keyof NotificationsService)

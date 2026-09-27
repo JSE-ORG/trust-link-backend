@@ -1,6 +1,6 @@
-import './common/bigint-json';
+import './sentry.instrument';
 import './tracing/tracing.bootstrap';
-import * as Sentry from '@sentry/nestjs';
+import './common/bigint-json';
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import compression from 'compression';
@@ -33,18 +33,6 @@ async function bootstrap(): Promise<void> {
   const configService = app.get(ConfigService);
 
   const sentryDsn = configService.get<string | undefined>('SENTRY_DSN');
-  if (sentryDsn) {
-    Sentry.init({
-      dsn: sentryDsn,
-      release: configService.get<string | undefined>('GIT_SHA'),
-      environment:
-        configService.get<string | undefined>('NODE_ENV') ?? 'development',
-      tracesSampleRate:
-        configService.get<string | undefined>('NODE_ENV') === 'production'
-          ? 0.2
-          : 1.0,
-    });
-  }
   const connectSrc = buildCspConnectSrc({
     stellarNetwork: configService.get('STELLAR_NETWORK'),
     stellarHorizonUrl: configService.get<string | undefined>(

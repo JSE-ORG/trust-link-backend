@@ -118,7 +118,7 @@ describe('Escrow Cancel Endpoints (issue #516)', () => {
 
       // Verify escrow was created with payment URL
       expect(res.body).toHaveProperty('paymentUrl');
-      expect(res.body.paymentUrl).toContain('trust-link.local/pay/');
+      expect(res.body.paymentUrl).toContain('http://localhost:3000/pay/');
 
       // Verify the state is CREATED, not FUNDED
       expect(res.body.state).toBe('CREATED');

@@ -1,12 +1,8 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import {
-  Prisma,
-  FailedTransaction as PrismaFailedTransaction,
-} from '@prisma/client';
-import {
-  PrismaService,
-  toFailedTransactionRecord,
-} from '../prisma/prisma.service';
+  FailedTransactionFilter,
+  FailedTransactionRepository,
+} from './failed-transaction.repository';
 import {
   EnqueueFailedTransactionInput,
   FailedTransactionRecord,
@@ -17,16 +13,17 @@ import {
 
 /**
  * Issue #303 – Persistent dead-letter queue backed by Prisma.
+ * Issue #844 – all `failedTransaction` queries moved into
+ * FailedTransactionRepository, so this service holds only the state machine
+ * and no longer references `PrismaService` (R-DB-02).
  *
- * Migrates the in-memory DLQ to database-backed storage so failed Stellar
- * contract submissions survive application restarts. The API surface is
- * unchanged — existing callers see no difference.
+ * The API surface is unchanged — existing callers see no difference.
  */
 @Injectable()
 export class DlqService {
   private readonly logger = new Logger(DlqService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly failedTransactions: FailedTransactionRepository) {}
 
   /**
    * Records a failed Stellar contract submission as a new
@@ -41,20 +38,13 @@ export class DlqService {
   async enqueue(
     input: EnqueueFailedTransactionInput,
   ): Promise<FailedTransactionRecord> {
-    const record = await this.prisma.failedTransaction.create({
-      data: {
-        operation: input.operation,
-        escrowId: input.escrowId ?? null,
-        errorMessage: input.errorMessage,
-        ledgerFeedback:
-          input.ledgerFeedback == null
-            ? Prisma.DbNull
-            : (input.ledgerFeedback as Prisma.InputJsonValue),
-        attempts: input.attempts ?? 1,
-        status: 'PENDING_REVIEW',
-      },
+    return this.failedTransactions.create({
+      operation: input.operation,
+      escrowId: input.escrowId,
+      errorMessage: input.errorMessage,
+      ledgerFeedback: input.ledgerFeedback,
+      attempts: input.attempts,
     });
-    return this.toRecord(record);
   }
 
   /**
@@ -74,23 +64,18 @@ export class DlqService {
     const limit = Math.min(100, Math.max(1, rawLimit));
     const skip = (page - 1) * limit;
 
-    const where: Prisma.FailedTransactionWhereInput = {};
+    const where: FailedTransactionFilter = {};
     if (query.status) where.status = query.status;
     if (query.operation) where.operation = query.operation;
     if (query.escrowId) where.escrowId = query.escrowId;
 
     const [records, total] = await Promise.all([
-      this.prisma.failedTransaction.findMany({
-        where,
-        orderBy: { createdAt: 'desc' },
-        skip,
-        take: limit,
-      }),
-      this.prisma.failedTransaction.count({ where }),
+      this.failedTransactions.findMany({ where, skip, take: limit }),
+      this.failedTransactions.count(where),
     ]);
 
     return {
-      data: records.map((r) => this.toRecord(r)),
+      data: records,
       total,
       page,
       limit,
@@ -105,13 +90,11 @@ export class DlqService {
    * through here, so a missing id is always a 404, never a silent no-op.
    */
   async get(id: string): Promise<FailedTransactionRecord> {
-    const record = await this.prisma.failedTransaction.findUnique({
-      where: { id },
-    });
+    const record = await this.failedTransactions.findById(id);
     if (!record) {
       throw new NotFoundException(`Failed transaction ${id} not found`);
     }
-    return this.toRecord(record);
+    return record;
   }
 
   /**
@@ -129,13 +112,10 @@ export class DlqService {
     try {
       txHash = await replay(record);
     } catch (err: unknown) {
-      await this.prisma.failedTransaction.update({
-        where: { id },
-        data: {
-          attempts: { increment: 1 },
-          errorMessage: err instanceof Error ? err.message : String(err),
-        },
-      });
+      await this.failedTransactions.incrementAttempts(
+        id,
+        err instanceof Error ? err.message : String(err),
+      );
       this.logger.warn(
         JSON.stringify({
           msg: 'dlq.replay.failed',
@@ -148,15 +128,7 @@ export class DlqService {
       throw err;
     }
 
-    const updated = await this.prisma.failedTransaction.update({
-      where: { id },
-      data: {
-        status: 'REPLAYED',
-        replayedAt: new Date(),
-        lastReplayTxHash: txHash,
-      },
-    });
-    return this.toRecord(updated);
+    return this.failedTransactions.markReplayed(id, txHash);
   }
 
   /**
@@ -172,14 +144,7 @@ export class DlqService {
    */
   async abandon(id: string): Promise<FailedTransactionRecord> {
     await this.requireRecord(id);
-    const updated = await this.prisma.failedTransaction.update({
-      where: { id },
-      data: {
-        status: 'ABANDONED',
-        reviewedAt: new Date(),
-      },
-    });
-    return this.toRecord(updated);
+    return this.failedTransactions.markAbandoned(id);
   }
 
   /**
@@ -192,20 +157,10 @@ export class DlqService {
    */
   async markReviewed(id: string): Promise<FailedTransactionRecord> {
     await this.requireRecord(id);
-    const updated = await this.prisma.failedTransaction.update({
-      where: { id },
-      data: {
-        reviewedAt: new Date(),
-      },
-    });
-    return this.toRecord(updated);
+    return this.failedTransactions.markReviewed(id);
   }
 
   private async requireRecord(id: string): Promise<FailedTransactionRecord> {
     return this.get(id);
-  }
-
-  private toRecord(row: PrismaFailedTransaction): FailedTransactionRecord {
-    return toFailedTransactionRecord(row);
   }
 }

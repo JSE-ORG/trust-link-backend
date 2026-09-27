@@ -10,7 +10,7 @@
 
 import { LogisticsService } from './logistics.service';
 import { ConfigService } from '../config/config.service';
-import { PrismaService } from '../prisma/prisma.service';
+import { ProviderCredentialRepository } from './provider-credential.repository';
 
 // A valid 64-hex-char (32-byte) AES-256 encryption key for tests that need one.
 const VALID_KEY = 'a'.repeat(64);
@@ -30,29 +30,18 @@ function makeConfig(
   };
 }
 
-type MockPrisma = Pick<PrismaService, 'providerCredential'> & {
-  providerCredential: { upsert: jest.Mock; findUnique: jest.Mock };
-};
-
-function makePrisma(): MockPrisma {
-  // The real delegate carries dozens of members the service never touches, so
-  // the literal is widened rather than stubbed out in full.
-  return {
-    providerCredential: {
-      findUnique: jest.fn().mockResolvedValue(null),
-      upsert: jest.fn().mockResolvedValue({}),
-    },
-  } as unknown as MockPrisma;
+function makeRepository(): ProviderCredentialRepository {
+  const repository = new ProviderCredentialRepository();
+  jest.spyOn(repository, 'findByProvider').mockResolvedValue(null);
+  jest.spyOn(repository, 'upsert').mockResolvedValue(undefined);
+  return repository;
 }
 
 function makeService(
   config: jest.Mocked<Pick<ConfigService, 'get'>>,
-  prisma?: ReturnType<typeof makePrisma>,
+  repository?: ReturnType<typeof makeRepository>,
 ): LogisticsService {
-  return new LogisticsService(
-    prisma as unknown as PrismaService,
-    config as unknown as ConfigService,
-  );
+  return new LogisticsService(repository, config as unknown as ConfigService);
 }
 
 // ── Suite ─────────────────────────────────────────────────────────────────────
@@ -63,8 +52,8 @@ describe('LogisticsService — missing encryption-key branches (issue #731)', ()
   describe('setApiKey() with no CREDENTIAL_ENCRYPTION_KEY', () => {
     it('throws an error instead of storing a plaintext credential', () => {
       const config = makeConfig({ CREDENTIAL_ENCRYPTION_KEY: undefined });
-      const prisma = makePrisma();
-      const service = makeService(config, prisma);
+      const repository = makeRepository();
+      const service = makeService(config, repository);
 
       expect(() => service.setApiKey('my-secret-key')).toThrow(
         'CREDENTIAL_ENCRYPTION_KEY is not configured',
@@ -91,22 +80,22 @@ describe('LogisticsService — missing encryption-key branches (issue #731)', ()
   describe('rotateApiKey() with no CREDENTIAL_ENCRYPTION_KEY', () => {
     it('rejects with an error instead of persisting a plaintext credential', async () => {
       const config = makeConfig({ CREDENTIAL_ENCRYPTION_KEY: undefined });
-      const prisma = makePrisma();
-      const service = makeService(config, prisma);
+      const repository = makeRepository();
+      const service = makeService(config, repository);
 
       await expect(service.rotateApiKey('my-secret-key')).rejects.toThrow(
         'CREDENTIAL_ENCRYPTION_KEY is not configured',
       );
     });
 
-    it('never calls prisma.providerCredential.upsert when the encryption key is absent', async () => {
+    it('never persists a credential when the encryption key is absent', async () => {
       const config = makeConfig({ CREDENTIAL_ENCRYPTION_KEY: undefined });
-      const prisma = makePrisma();
-      const service = makeService(config, prisma);
+      const repository = makeRepository();
+      const service = makeService(config, repository);
 
       await service.rotateApiKey('my-secret-key').catch(() => undefined);
 
-      expect(prisma.providerCredential.upsert).not.toHaveBeenCalled();
+      expect(repository.upsert).not.toHaveBeenCalled();
     });
 
     it('does not update the in-memory apiKey when the encryption key is absent', async () => {
@@ -174,8 +163,8 @@ describe('LogisticsService — missing encryption-key branches (issue #731)', ()
         LOGISTICS_API_KEY: 'raw-token-from-env',
         CREDENTIAL_ENCRYPTION_KEY: undefined,
       });
-      const prisma = makePrisma(); // findUnique returns null → no persisted key
-      const service = makeService(config, prisma);
+      const repository = makeRepository(); // no persisted key
+      const service = makeService(config, repository);
 
       await service.onModuleInit();
 
@@ -188,8 +177,8 @@ describe('LogisticsService — missing encryption-key branches (issue #731)', ()
         LOGISTICS_API_KEY: 'raw-token-from-env',
         CREDENTIAL_ENCRYPTION_KEY: VALID_KEY,
       });
-      const prisma = makePrisma();
-      const service = makeService(config, prisma);
+      const repository = makeRepository();
+      const service = makeService(config, repository);
 
       await service.onModuleInit();
 

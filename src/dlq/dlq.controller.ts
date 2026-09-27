@@ -25,15 +25,15 @@ import { DlqService } from './dlq.service';
 import {
   FailedTransactionRecord,
   PaginatedFailedTransactions,
-  type FailedTransactionStatus,
-  type ListFailedTransactionsQuery,
 } from './dlq.types';
 import { ContractService } from '../stellar/contract.service';
 import {
   AutoReleaseSourceNotConfiguredError,
   ConfigService,
 } from '../config/config.service';
+import { EscrowRepository } from '../escrow/escrow.repository';
 import { PrismaService } from '../prisma/prisma.service';
+import { ListFailedTransactionsQueryDto } from './dto/list-failed-transactions-query.dto';
 
 /**
  * Admin endpoints for reviewing and re-executing failed Stellar contract
@@ -49,7 +49,7 @@ export class DlqController {
     private readonly dlq: DlqService,
     private readonly contract: ContractService,
     private readonly config: ConfigService,
-    private readonly prisma: PrismaService,
+    private readonly escrows: EscrowRepository,
   ) {}
 
   /**
@@ -125,19 +125,7 @@ export class DlqController {
   })
   @Throttle({ default: { limit: 20, ttl: THROTTLE_WINDOW_MS } })
   @Get()
-  list(
-    @Query('status') status?: FailedTransactionStatus,
-    @Query('operation') operation?: string,
-    @Query('escrowId') escrowId?: string,
-    @Query('page') page?: string,
-    @Query('limit') limit?: string,
-  ) {
-    const query: ListFailedTransactionsQuery = {};
-    if (status) query.status = status;
-    if (operation) query.operation = operation;
-    if (escrowId) query.escrowId = escrowId;
-    if (page) query.page = parseInt(page, 10);
-    if (limit) query.limit = parseInt(limit, 10);
+  list(@Query() query: ListFailedTransactionsQueryDto) {
     return this.dlq.list(query);
   }
 
@@ -187,18 +175,19 @@ export class DlqController {
         // `auto_release(env, escrow_id: u64)` takes the contract's own id.
         // The DLQ record carries the backend UUID, so it has to be translated
         // before replay; without a mapping there is no valid call to make.
-        const escrow = await this.prisma.escrow.findUnique({
-          where: { id: r.escrowId },
-          select: { contractEscrowId: true },
-        });
-        if (!escrow?.contractEscrowId) {
+        // Issue #844: the lookup goes through EscrowRepository so the
+        // controller never reaches for PrismaService itself.
+        const contractEscrowId = await this.escrows.findContractEscrowId(
+          r.escrowId,
+        );
+        if (contractEscrowId === null) {
           throw new ConflictException(
             `Escrow "${r.escrowId}" has no contractEscrowId, so auto-release ` +
               `cannot be replayed on-chain.`,
           );
         }
         return this.contract.submitAutoRelease(
-          escrow.contractEscrowId,
+          contractEscrowId,
           this.requireAutoReleaseSource(),
         );
       }

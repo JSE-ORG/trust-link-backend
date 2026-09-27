@@ -62,7 +62,7 @@ Before contributing, read **[SPECIFICATION.md](SPECIFICATION.md)** — it is the
 
 Key requirements from the SRD:
 - **No `any` types** — strict TypeScript required
-- **Tests required** for all new code — line coverage of `src/` must not drop below **70%**, enforced by `scripts/check_coverage.js`
+- **Tests required** for all new code — coverage of `src/` must stay at or above **95% lines / 82% branches / 90% functions**, enforced by `scripts/check_coverage.js` (issue #850 raised these floors from 70% / 64% / 65%)
 - **Security first** — JWT signature verification, input sanitization, PII encryption
 - **CI must pass** — lint, test, integration tests and migrations are required checks. Dependency auditing runs weekly in `security-audit.yml` and does not block merges
 - **Conventional commits** — `type(scope): description`

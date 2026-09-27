@@ -1,14 +1,9 @@
-import {
-  ArgumentsHost,
-  Catch,
-  ExceptionFilter,
-  HttpException,
-  HttpStatus,
-  Logger,
-} from '@nestjs/common';
+import { Catch, HttpException, HttpStatus, Logger } from '@nestjs/common';
+import type { ArgumentsHost, ExceptionFilter } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { ConfigService } from '../../config/config.service';
 import { StandardErrorResponse } from '../dto/error-response.dto';
+import { SentryExceptionCaptured } from '@sentry/nestjs';
 
 interface HttpExceptionResponseBody {
   message?: string | string[];
@@ -26,6 +21,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
 
   constructor(private readonly configService: ConfigService) {}
 
+  @SentryExceptionCaptured()
   catch(exception: unknown, host: ArgumentsHost): void {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();

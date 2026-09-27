@@ -22,6 +22,7 @@ export class AutoReleaseSourceNotConfiguredError extends Error {
 export interface Config {
   PORT: number;
   DATABASE_URL: string;
+  FRONTEND_URL: string;
   CONTACT_ENCRYPTION_KEY?: string;
   CREDENTIAL_ENCRYPTION_KEY?: string;
   DB_POOL_CONNECTION_LIMIT?: number;
@@ -47,6 +48,7 @@ export interface Config {
   SENDGRID_TEMPLATE_REFUNDED?: string;
   TWILIO_ACCOUNT_SID?: string;
   TWILIO_AUTH_TOKEN?: string;
+  TWILIO_FROM_NUMBER?: string;
   STELLAR_NETWORK: 'TESTNET' | 'MAINNET';
   STELLAR_HORIZON_URL?: string;
   ALLOWED_ORIGINS?: string;
@@ -96,6 +98,7 @@ export class ConfigService {
     return {
       PORT: this.get('PORT'),
       DATABASE_URL: this.get('DATABASE_URL'),
+      FRONTEND_URL: this.get('FRONTEND_URL'),
       CONTACT_ENCRYPTION_KEY: this.nestConfigService.get(
         'CONTACT_ENCRYPTION_KEY',
         { infer: true },
@@ -148,6 +151,9 @@ export class ConfigService {
         infer: true,
       }),
       TWILIO_AUTH_TOKEN: this.nestConfigService.get('TWILIO_AUTH_TOKEN', {
+        infer: true,
+      }),
+      TWILIO_FROM_NUMBER: this.nestConfigService.get('TWILIO_FROM_NUMBER', {
         infer: true,
       }),
       STELLAR_NETWORK: this.get('STELLAR_NETWORK'),

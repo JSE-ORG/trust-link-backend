@@ -204,6 +204,24 @@ export class EscrowRepository {
    * unique, so at most one row can match. Returns null when the on-chain escrow
    * has not been mapped to a backend row yet.
    */
+  /**
+   * Returns the on-chain `contractEscrowId` for a backend escrow, or null
+   * when the row does not exist or was never submitted on-chain.
+   *
+   * Callers that need to invoke the contract (e.g. the DLQ replay path,
+   * issue #844) only ever want the u64 the contract minted — not the whole
+   * row — so the lookup selects just that column.
+   */
+  async findContractEscrowId(
+    id: string,
+  ): Promise<bigint | null> {
+    const row = await this.prisma.escrow.findUnique({
+      where: { id },
+      select: { contractEscrowId: true },
+    });
+    return row?.contractEscrowId ?? null;
+  }
+
   async findIdByContractEscrowId(
     contractEscrowId: bigint,
   ): Promise<string | null> {

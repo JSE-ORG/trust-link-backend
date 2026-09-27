@@ -32,7 +32,7 @@ import {
 import * as crypto from 'crypto';
 import type { ConnectionOptions } from 'bullmq';
 
-import { PrismaService } from '../prisma/prisma.service';
+import { NotificationRepository } from './notification.repository';
 import { ConfigService } from '../config/config.service';
 import {
   NotificationRetryJobData,
@@ -122,7 +122,10 @@ export class NotificationRetryQueueService
 
   constructor(
     @Optional() options?: CommonOptions,
-    @Optional() private readonly prisma?: PrismaService,
+    // Issue #845: notification status writes go through the repository
+    // (R-DB-02). Optional, matching the old optional PrismaService — the
+    // in-process runner still works without a database.
+    @Optional() private readonly notifications?: NotificationRepository,
     @Optional() private readonly configService?: ConfigService,
   ) {
     if (options?.backoff) this.options.backoff = options.backoff;
@@ -192,16 +195,9 @@ export class NotificationRetryQueueService
     for (let attempt = 1; attempt <= attempts; attempt++) {
       try {
         await dispatcher.dispatch(job);
-        if (job.notificationId && this.prisma) {
-          await this.prisma.notification
-            .update({
-              where: { id: job.notificationId },
-              data: {
-                status: 'SENT',
-                sentAt: new Date(),
-                retryCount: attempt - 1,
-              },
-            })
+        if (job.notificationId && this.notifications) {
+          await this.notifications
+            .markSent(job.notificationId, attempt - 1)
             .catch((err) =>
               this.logger.error(
                 'Failed to update notification status to SENT',
@@ -212,16 +208,13 @@ export class NotificationRetryQueueService
         return;
       } catch (err) {
         lastError = err;
-        if (job.notificationId && this.prisma) {
-          await this.prisma.notification
-            .update({
-              where: { id: job.notificationId },
-              data: {
-                retryCount: attempt,
-                failedAt: new Date(),
-                lastError: err instanceof Error ? err.message : String(err),
-              },
-            })
+        if (job.notificationId && this.notifications) {
+          await this.notifications
+            .markAttemptFailed(
+              job.notificationId,
+              attempt,
+              err instanceof Error ? err.message : String(err),
+            )
             .catch((dbErr) =>
               this.logger.error(
                 'Failed to update notification status on error in worker',
@@ -238,14 +231,9 @@ export class NotificationRetryQueueService
         await this.sleep(delay);
       }
     }
-    if (job.notificationId && this.prisma) {
-      await this.prisma.notification
-        .update({
-          where: { id: job.notificationId },
-          data: {
-            status: 'FAILED',
-          },
-        })
+    if (job.notificationId && this.notifications) {
+      await this.notifications
+        .markFailed(job.notificationId)
         .catch((err) =>
           this.logger.error(
             'Failed to update notification status to FAILED',
@@ -329,16 +317,9 @@ export class NotificationRetryQueueService
           }
           try {
             await dispatcher.dispatch(job.data);
-            if (job.data.notificationId && this.prisma) {
-              await this.prisma.notification
-                .update({
-                  where: { id: job.data.notificationId },
-                  data: {
-                    status: 'SENT',
-                    sentAt: new Date(),
-                    retryCount: job.attemptsMade,
-                  },
-                })
+            if (job.data.notificationId && this.notifications) {
+              await this.notifications
+                .markSent(job.data.notificationId, job.attemptsMade)
                 .catch((err) =>
                   this.logger.error(
                     'Failed to update notification status to SENT in worker',
@@ -347,16 +328,13 @@ export class NotificationRetryQueueService
                 );
             }
           } catch (err) {
-            if (job.data.notificationId && this.prisma) {
-              await this.prisma.notification
-                .update({
-                  where: { id: job.data.notificationId },
-                  data: {
-                    retryCount: job.attemptsMade + 1,
-                    failedAt: new Date(),
-                    lastError: err instanceof Error ? err.message : String(err),
-                  },
-                })
+            if (job.data.notificationId && this.notifications) {
+              await this.notifications
+                .markAttemptFailed(
+                  job.data.notificationId,
+                  job.attemptsMade + 1,
+                  err instanceof Error ? err.message : String(err),
+                )
                 .catch((dbErr) =>
                   this.logger.error(
                     'Failed to update notification status on error in worker',
@@ -377,14 +355,9 @@ export class NotificationRetryQueueService
           if (job.attemptsMade < attemptsAllowed) {
             return;
           }
-          if (job.data.notificationId && this.prisma) {
-            await this.prisma.notification
-              .update({
-                where: { id: job.data.notificationId },
-                data: {
-                  status: 'FAILED',
-                },
-              })
+          if (job.data.notificationId && this.notifications) {
+            await this.notifications
+              .markFailed(job.data.notificationId)
               .catch((err) =>
                 this.logger.error(
                   'Failed to update notification status to FAILED in worker',

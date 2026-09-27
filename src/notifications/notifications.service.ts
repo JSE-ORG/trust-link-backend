@@ -12,8 +12,11 @@ import {
   PrismaService,
 } from '../prisma/prisma.service';
 import { ConfigService } from '../config/config.service';
+import { EscrowRecord, NotificationType } from '../prisma/prisma.service';
+import { NotificationRepository } from './notification.repository';
 import { SENDGRID_CLIENT, TWILIO_CLIENT } from './notifications.tokens';
 import { decryptContact } from '../common/sanitization/contact-encryption.util';
+import { ConfigService } from '../config/config.service';
 
 interface SendGridClient {
   send(message: Record<string, unknown>): Promise<unknown>;
@@ -61,7 +64,8 @@ export class NotificationsService implements OnModuleInit {
   private readonly logger = new Logger(NotificationsService.name);
 
   constructor(
-    private readonly prisma: PrismaService,
+    // Issue #845: notification writes go through the repository (R-DB-02).
+    private readonly notifications: NotificationRepository,
     @Optional()
     @Inject(SENDGRID_CLIENT)
     private readonly sendGrid: SendGridClient = noopSendGrid,
@@ -74,6 +78,8 @@ export class NotificationsService implements OnModuleInit {
     // Nest resolution failure.
     @Optional()
     private readonly config?: ConfigService,
+    @Optional()
+    private readonly configService?: ConfigService,
   ) {}
 
   /**
@@ -423,17 +429,15 @@ export class NotificationsService implements OnModuleInit {
       }
     }
 
-    await this.prisma.notification.create({
-      data: {
-        escrowId: escrow.id,
-        type,
-        channel: 'EMAIL',
-        recipientAddress,
-        message: `${type}: ${escrow.itemName}`,
-        providerMessageId,
-        attemptCount,
-        lastResponseCode,
-      },
+    await this.notifications.create({
+      escrowId: escrow.id,
+      type,
+      channel: 'EMAIL',
+      recipientAddress,
+      message: `${type}: ${escrow.itemName}`,
+      providerMessageId,
+      attemptCount,
+      lastResponseCode,
     });
   }
 
@@ -456,6 +460,9 @@ export class NotificationsService implements OnModuleInit {
         const response = await this.twilio.messages.create({
           to: recipientAddress,
           body: `${type}: ${escrow.itemName}`,
+          ...(this.configService?.get('TWILIO_FROM_NUMBER')
+            ? { from: this.configService.get('TWILIO_FROM_NUMBER') }
+            : {}),
         });
         providerMessageId = response.sid ?? null;
         break;
@@ -478,17 +485,15 @@ export class NotificationsService implements OnModuleInit {
       }
     }
 
-    await this.prisma.notification.create({
-      data: {
-        escrowId: escrow.id,
-        type,
-        channel: 'SMS',
-        recipientAddress,
-        message: `${type}: ${escrow.itemName}`,
-        providerMessageId,
-        attemptCount,
-        lastResponseCode,
-      },
+    await this.notifications.create({
+      escrowId: escrow.id,
+      type,
+      channel: 'SMS',
+      recipientAddress,
+      message: `${type}: ${escrow.itemName}`,
+      providerMessageId,
+      attemptCount,
+      lastResponseCode,
     });
   }
 
