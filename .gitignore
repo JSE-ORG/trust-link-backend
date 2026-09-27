@@ -24,3 +24,10 @@ WAVE_ISSUES.md
 .github/copilot-instructions.md
 /data
 .pg_data
+
+# Wave issue drafts and survey notes, kept locally
+ISSUE_DRAFTS_WAVE*.md
+DEV_BREAKAGE_*.md
+issue-*-body.md
+publish-wave-*.sh
+/wave-bodies/
