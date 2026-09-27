@@ -14,7 +14,10 @@ import { SanitizationPipe } from './common/pipes/sanitization.pipe';
 import { SentryInterceptor } from './common/interceptors/sentry.interceptor';
 import { buildCspConnectSrc } from './common/security/csp.config';
 import { CORS_ALLOWED_HEADERS } from './common/security/cors.config';
-import { ONE_YEAR_SECONDS, SECONDS_PER_DAY } from './common/constants/time.constants';
+import {
+  ONE_YEAR_SECONDS,
+  SECONDS_PER_DAY,
+} from './common/constants/time.constants';
 
 const bootstrapLogger = new JsonLoggerService('Bootstrap');
 

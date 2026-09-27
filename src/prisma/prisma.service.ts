@@ -20,7 +20,6 @@ export type EscrowState =
   | 'DISPUTED'
   | 'REFUNDED'
   | 'CANCELLED';
-type NotificationChannel = 'EMAIL' | 'SMS';
 export type NotificationType =
   'FUNDED' | 'SHIPPED' | 'DELIVERED' | 'DISPUTED' | 'COMPLETED' | 'REFUNDED';
 export type DisputeState =
@@ -78,27 +77,6 @@ export interface DisputeRecord {
   updatedAt: Date;
 }
 
-type NotificationStatus = 'PENDING' | 'SENT' | 'FAILED';
-
-interface NotificationRecord {
-  id: string;
-  escrowId: string;
-  type: NotificationType;
-  channel: NotificationChannel;
-  recipientAddress: string;
-  message: string;
-  status: NotificationStatus;
-  retryCount: number;
-  sentAt: Date | null;
-  failedAt: Date | null;
-  lastError: string | null;
-  providerMessageId?: string | null;
-  attemptCount?: number;
-  lastResponseCode?: number | null;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
 export interface VendorTrackingSettingsRecord {
   id: string;
   vendorAddress: string;
@@ -122,39 +100,6 @@ export interface VendorTrackingSettingsRecord {
   trackingHistoryRetentionDays: number;
   createdAt: Date;
   updatedAt: Date;
-}
-
-interface ProcessedWebhookEventRecord {
-  operationId: string;
-  processedAt: Date;
-}
-
-interface RefreshTokenRecord {
-  id: string;
-  userId: string;
-  tokenHash: string;
-  parentTokenId: string | null;
-  revoked: boolean;
-  expiresAt: Date;
-  createdAt: Date;
-}
-
-interface NonceRecord {
-  id: string;
-  nonce: string;
-  walletAddress: string;
-  challenge: string;
-  used: boolean;
-  expiresAt: Date;
-  createdAt: Date;
-}
-
-interface EscrowEventRecord {
-  id: string;
-  escrowId: string;
-  fromState: EscrowState | null;
-  toState: EscrowState;
-  createdAt: Date;
 }
 
 export interface VendorAccountDetailsRecord {
@@ -192,20 +137,6 @@ export interface VendorAccountDetailsRecord {
   updatedAt: Date;
 }
 
-interface CursorRecord {
-  id: string;
-  cursorValue: string;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-interface ProviderCredentialRecord {
-  provider: string;
-  encryptedKey: string;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
 export type FailedTransactionStatus =
   'PENDING_REVIEW' | 'REPLAYED' | 'ABANDONED';
 
@@ -223,36 +154,6 @@ export interface FailedTransactionRecord {
   reviewedAt: Date | null;
   replayedAt: Date | null;
 }
-
-type EscrowCreateInput = Omit<
-  EscrowRecord,
-  | 'id'
-  | 'itemRef'
-  | 'state'
-  | 'trackingId'
-  | 'shippedAt'
-  | 'deliveredAt'
-  | 'deliveryRecordedAt'
-  | 'autoReleaseSubmittedAt'
-  | 'autoReleaseTxHash'
-  | 'disputeId'
-  | 'cancelledAt'
-  | 'createdAt'
-  | 'updatedAt'
-> & {
-  id?: string;
-  itemRef?: string;
-  state?: EscrowState;
-  trackingId?: string | null;
-  shippedAt?: Date | null;
-  deliveredAt?: Date | null;
-  deliveryRecordedAt?: Date | null;
-  autoReleaseSubmittedAt?: Date | null;
-  autoReleaseTxHash?: string | null;
-  disputeId?: string | null;
-  cancelledAt?: Date | null;
-  createdAt?: Date;
-};
 
 /**
  * Boundary mappers: a real PrismaClient returns Prisma's generated row types

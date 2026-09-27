@@ -332,7 +332,8 @@ export class EscrowRepository {
     referenceTime = new Date(),
   ): Promise<AutoReleaseEligibleResult> {
     const cutoff = new Date(
-      referenceTime.getTime() - AUTO_RELEASE_WINDOW_HOURS * MILLISECONDS_PER_HOUR,
+      referenceTime.getTime() -
+        AUTO_RELEASE_WINDOW_HOURS * MILLISECONDS_PER_HOUR,
     );
     return this.prisma.escrow
       .findMany({
