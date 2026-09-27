@@ -49,7 +49,7 @@ describe('GET /vendor/analytics (issue #289)', () => {
 
   async function seedEscrow(
     vendorAddress: string,
-    amount: number,
+    amount: number | string,
     state: EscrowState = 'FUNDED',
   ): Promise<void> {
     await prisma.escrow.create({
@@ -188,6 +188,102 @@ describe('GET /vendor/analytics (issue #289)', () => {
   });
 
   // ── Auth guard ────────────────────────────────────────────────────────────
+
+  // ── Decimal precision (#843) ─────────────────────────────────────────────
+
+  it('sums 8-decimal amounts exactly instead of as floats', async () => {
+    // 0.1 + 0.2 === 0.30000000000000004 in binary floating point. The column
+    // is Decimal(18, 8), so the exact total is 0.3 and the response must say so.
+    await seedEscrow(VENDOR_A, '0.1', 'FUNDED');
+    await seedEscrow(VENDOR_A, '0.2', 'FUNDED');
+
+    const res = await request(app.getHttpServer())
+      .get('/vendor/analytics')
+      .set('Authorization', AUTH_A)
+      .expect(200);
+
+    expect(res.body.stats.totalVolume).toBe(0.3);
+  });
+
+  it('sums many small amounts without accumulating float error', async () => {
+    // 0.1 added ten times is 0.9999999999999999 as a float, 1 exactly in
+    // decimal.
+    for (let i = 0; i < 10; i++) {
+      await seedEscrow(VENDOR_A, '0.1', 'COMPLETED');
+    }
+
+    const res = await request(app.getHttpServer())
+      .get('/vendor/analytics')
+      .set('Authorization', AUTH_A)
+      .expect(200);
+
+    expect(res.body.stats.totalTransactions).toBe(10);
+    expect(res.body.stats.totalVolume).toBe(1);
+  });
+
+  it('keeps a total past 2^53 minor units exact', async () => {
+    // As floats these sum to ...995; the exact total is ...994.
+    await seedEscrow(VENDOR_A, '90071992.54740993', 'FUNDED');
+    await seedEscrow(VENDOR_A, '0.00000001', 'COMPLETED');
+
+    const res = await request(app.getHttpServer())
+      .get('/vendor/analytics')
+      .set('Authorization', AUTH_A)
+      .expect(200);
+
+    expect(res.body.stats.totalVolume).toBe(90071992.54740994);
+  });
+
+  it('averages fractional volumes exactly', async () => {
+    await seedEscrow(VENDOR_A, '0.1', 'FUNDED');
+    await seedEscrow(VENDOR_A, '0.1', 'FUNDED');
+    await seedEscrow(VENDOR_A, '0.1', 'COMPLETED');
+
+    const res = await request(app.getHttpServer())
+      .get('/vendor/analytics')
+      .set('Authorization', AUTH_A)
+      .expect(200);
+
+    expect(res.body.stats.totalVolume).toBe(0.3);
+    expect(res.body.stats.averageTransactionValue).toBe(0.1);
+  });
+
+  it('returns the same response shape after the groupBy change', async () => {
+    await seedEscrow(VENDOR_A, 100, 'FUNDED');
+    await seedEscrow(VENDOR_A, 200, 'COMPLETED');
+    await seedEscrow(VENDOR_A, 50, 'DISPUTED');
+
+    const res = await request(app.getHttpServer())
+      .get('/vendor/analytics')
+      .set('Authorization', AUTH_A)
+      .expect(200);
+
+    expect(Object.keys(res.body).sort()).toEqual([
+      'channels',
+      'lastUpdated',
+      'stats',
+    ]);
+    expect(Object.keys(res.body.stats).sort()).toEqual(
+      [
+        'activeTransactions',
+        'activeVolume',
+        'averageTransactionValue',
+        'cancelledTransactions',
+        'completedTransactions',
+        'completionRate',
+        'disputedTransactions',
+        'disputeRate',
+        'totalTransactions',
+        'totalVolume',
+      ].sort(),
+    );
+    expect(res.body.stats.totalTransactions).toBe(3);
+    expect(res.body.stats.totalVolume).toBe(350);
+    expect(res.body.stats.activeTransactions).toBe(1);
+    expect(res.body.stats.activeVolume).toBe(100);
+  });
+
+  // ── Auth guard ───────────────────────────────────────────────────────────
 
   it('returns 401 for unauthenticated requests', async () => {
     await request(app.getHttpServer()).get('/vendor/analytics').expect(401);
