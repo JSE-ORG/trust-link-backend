@@ -266,6 +266,50 @@ describe('BuyerDisputeService.openDispute (issue #41)', () => {
       expect(disputeRepository.create).not.toHaveBeenCalled();
     });
 
+    it.each([
+      'CREATED',
+      'CANCELLED',
+      'COMPLETED',
+      'RELEASED',
+      'REFUNDED',
+    ] as const)(
+      'throws ConflictException naming the state when escrow is %s',
+      async (state) => {
+        escrowRepository.findById.mockResolvedValue({
+          ...shippedEscrow,
+          state,
+        });
+
+        await expect(
+          service.openDispute('escrow-abc', BUYER, openDisputeDto),
+        ).rejects.toThrow(
+          new ConflictException(
+            `Cannot open a dispute on an escrow in ${state} state`,
+          ),
+        );
+
+        expect(disputeRepository.create).not.toHaveBeenCalled();
+        expect(escrowRepository.updateState).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each(['FUNDED', 'SHIPPED', 'DELIVERED'] as const)(
+      'allows a dispute when escrow is %s',
+      async (state) => {
+        escrowRepository.findById.mockResolvedValue({
+          ...shippedEscrow,
+          state,
+        });
+        disputeRepository.create.mockResolvedValue(createdDispute);
+
+        await expect(
+          service.openDispute('escrow-abc', BUYER, openDisputeDto),
+        ).resolves.toMatchObject({ id: 'dispute-xyz' });
+
+        expect(disputeRepository.create).toHaveBeenCalled();
+      },
+    );
+
     it('does not notify when dispute repository throws', async () => {
       escrowRepository.findById.mockResolvedValue(shippedEscrow);
       disputeRepository.create.mockRejectedValue(new Error('DB error'));

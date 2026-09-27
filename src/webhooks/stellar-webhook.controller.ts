@@ -42,7 +42,7 @@ export class StellarWebhookController {
     status: 400,
     description: 'Invalid payload or missing HMAC signature.',
   })
-  @Throttle({ public: { limit: 60, ttl: 60000 } })
+  @Throttle({ default: { limit: 60, ttl: 60000 } })
   @Post('stellar')
   @HttpCode(HttpStatus.OK)
   async handleStellarWebhook(

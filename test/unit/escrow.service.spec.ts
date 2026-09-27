@@ -551,6 +551,19 @@ describe('EscrowService: tracking, idempotency, evidence upload, and vendor list
 
       expect(result.publicUrl).toMatch(/\.bin$/);
     });
+
+    it('never writes a path segment from the filename into the object key', () => {
+      s3Presign.presign.mockReturnValue('https://signed-url');
+
+      const result = service.generateEvidenceUploadUrl(
+        'buyer-1',
+        'a.jpg/../../x',
+      );
+
+      expect(result.publicUrl).toMatch(
+        /^[^?]*\/evidence\/buyer-1\/[0-9a-f-]+\.bin$/,
+      );
+    });
   });
 
   describe('findVendorEscrows', () => {

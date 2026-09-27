@@ -35,3 +35,9 @@ export const EVIDENCE_UPLOAD_THROTTLE = {
   ttl: toPositiveInt(process.env.EVIDENCE_UPLOAD_TTL, 60_000),
   limit: toPositiveInt(process.env.EVIDENCE_UPLOAD_LIMIT, 10),
 };
+
+/** Limit for every `/auth` route, set by `AUTH_CHALLENGE_LIMIT` and `AUTH_CHALLENGE_WINDOW`. */
+export const AUTH_CHALLENGE_THROTTLE = {
+  ttl: toPositiveInt(process.env.AUTH_CHALLENGE_WINDOW, 60_000),
+  limit: toPositiveInt(process.env.AUTH_CHALLENGE_LIMIT, 10),
+};

@@ -67,7 +67,7 @@ describe('Dispute Flow E2E (issue #57)', () => {
     const contractEscrowId = nextContractEscrowId++;
     await prisma.escrow.update({
       where: { id: escrowId },
-      data: { contractEscrowId },
+      data: { contractEscrowId, state: 'FUNDED' },
     });
 
     const disputeResponse = await request(app.getHttpServer())
@@ -145,7 +145,7 @@ describe('Dispute Flow E2E (issue #57)', () => {
     const contractEscrowId = nextContractEscrowId++;
     await prisma.escrow.update({
       where: { id: escrowId },
-      data: { contractEscrowId },
+      data: { contractEscrowId, state: 'FUNDED' },
     });
 
     await request(app.getHttpServer())
@@ -235,7 +235,7 @@ describe('Dispute Flow E2E (issue #57)', () => {
     const contractEscrowId = nextContractEscrowId++;
     await prisma.escrow.update({
       where: { id: escrowId },
-      data: { contractEscrowId },
+      data: { contractEscrowId, state: 'FUNDED' },
     });
 
     await request(app.getHttpServer())

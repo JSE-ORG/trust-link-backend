@@ -132,15 +132,53 @@ describe('POST /escrow/evidence-upload (issue #295)', () => {
     expect(res.body.publicUrl).toContain('.pdf');
   });
 
-  it('handles filenames without extension', async () => {
-    const res = await request(app.getHttpServer())
+  it('rejects a filename without an extension', async () => {
+    await request(app.getHttpServer())
       .post('/escrow/evidence-upload')
       .set('Authorization', AUTH)
       .query({ fileName: 'noext' })
+      .expect(400);
+  });
+
+  it('rejects a request with no fileName', async () => {
+    await request(app.getHttpServer())
+      .post('/escrow/evidence-upload')
+      .set('Authorization', AUTH)
+      .expect(400);
+  });
+
+  it('rejects a fileName containing a path separator', async () => {
+    await request(app.getHttpServer())
+      .post('/escrow/evidence-upload')
+      .set('Authorization', AUTH)
+      .query({ fileName: 'a.jpg/../../x.png' })
+      .expect(400);
+  });
+
+  it('rejects a disallowed extension', async () => {
+    await request(app.getHttpServer())
+      .post('/escrow/evidence-upload')
+      .set('Authorization', AUTH)
+      .query({ fileName: 'payload.exe' })
+      .expect(400);
+  });
+
+  it('rejects a fileName longer than 255 characters', async () => {
+    await request(app.getHttpServer())
+      .post('/escrow/evidence-upload')
+      .set('Authorization', AUTH)
+      .query({ fileName: `${'a'.repeat(252)}.jpg` })
+      .expect(400);
+  });
+
+  it('accepts an upper-case extension and stores it lower-case', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/escrow/evidence-upload')
+      .set('Authorization', AUTH)
+      .query({ fileName: 'PHOTO.JPG' })
       .expect(201);
 
-    expect(res.body.uploadUrl).toBeDefined();
-    expect(res.body.publicUrl).toContain(`evidence/${VENDOR_ADDR}/`);
+    expect(res.body.publicUrl).toMatch(/\.jpg$/);
   });
 
   // ── JWT auth requirement ───────────────────────────────────────────────────

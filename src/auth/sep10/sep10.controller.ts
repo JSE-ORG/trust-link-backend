@@ -16,6 +16,7 @@ import {
 import { IsString, MinLength } from 'class-validator';
 import { Throttle } from '@nestjs/throttler';
 import { IsStellarAddress } from '../../common/validators/stellar-address.validator';
+import { AUTH_CHALLENGE_THROTTLE } from '../../common/security/throttle.config';
 import { Sep10Service } from './sep10.service';
 
 export class ChallengeRequestDto {
@@ -92,7 +93,7 @@ export class AuthTokenResponseDto {
 }
 
 @ApiTags('Auth')
-@Throttle({ auth: { ttl: 60000, limit: 10 } })
+@Throttle({ default: AUTH_CHALLENGE_THROTTLE })
 @Controller('auth')
 export class Sep10Controller {
   constructor(private readonly sep10Service: Sep10Service) {}

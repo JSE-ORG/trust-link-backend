@@ -76,7 +76,7 @@ describe('JwtGuard', () => {
 
   describe('canActivate', () => {
     it('should return true and set request.user for a valid JWT', () => {
-      const payload = { sub: TEST_USER_ADDRESS };
+      const payload = { sub: TEST_USER_ADDRESS, exp: 9_999_999_999 };
       const token = createMockJwt(payload);
       const context = createMockExecutionContext(`Bearer ${token}`);
 
@@ -88,7 +88,11 @@ describe('JwtGuard', () => {
     });
 
     it('should return true and set request.user with role for a valid JWT with role', () => {
-      const payload = { sub: TEST_USER_ADDRESS, role: 'admin' };
+      const payload = {
+        sub: TEST_USER_ADDRESS,
+        role: 'admin',
+        exp: 9_999_999_999,
+      };
       const token = createMockJwt(payload);
       const context = createMockExecutionContext(`Bearer ${token}`);
 
@@ -205,6 +209,28 @@ describe('JwtGuard', () => {
       );
     });
 
+    it('rejects a correctly signed token with no exp claim', () => {
+      const token = createMockJwt({ sub: TEST_USER_ADDRESS, iat: 1 });
+      const context = createMockExecutionContext(`Bearer ${token}`);
+
+      expect(() => guard.canActivate(context)).toThrow(
+        new UnauthorizedException('Authentication required'),
+      );
+    });
+
+    it('rejects a correctly signed token whose exp is not a number', () => {
+      const token = createMockJwt({
+        sub: TEST_USER_ADDRESS,
+        iat: 1,
+        exp: '9999999999',
+      });
+      const context = createMockExecutionContext(`Bearer ${token}`);
+
+      expect(() => guard.canActivate(context)).toThrow(
+        new UnauthorizedException('Authentication required'),
+      );
+    });
+
     it('fails closed when no signing secret is configured anywhere', () => {
       const previous = process.env.SEP10_JWT_SECRET;
       delete process.env.SEP10_JWT_SECRET;
@@ -232,6 +258,7 @@ describe('JwtGuard', () => {
       const token = createMockJwt({
         sub: TEST_USER_ADDRESS,
         role: 'superuser',
+        exp: 9_999_999_999,
       });
       const context = createMockExecutionContext(`Bearer ${token}`);
 

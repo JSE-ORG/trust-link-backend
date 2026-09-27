@@ -88,7 +88,7 @@ describe('Admin Dispute Resolution Flow E2E (issue #299)', () => {
     const contractEscrowId = nextContractEscrowId++;
     await prisma.escrow.update({
       where: { id: escrowId },
-      data: { contractEscrowId },
+      data: { contractEscrowId, state: 'FUNDED' },
     });
 
     const disputeRes = await request(app.getHttpServer())
@@ -128,6 +128,12 @@ describe('Admin Dispute Resolution Flow E2E (issue #299)', () => {
           buyerAddress: BUYER_ADDRESS,
         })
         .expect(201);
+
+      // Funding happens on chain; only a funded escrow can be disputed.
+      await prisma.escrow.update({
+        where: { id: createRes.body.id },
+        data: { state: 'FUNDED' },
+      });
 
       const res = await request(app.getHttpServer())
         .post(`/escrow/${createRes.body.id}/dispute`)

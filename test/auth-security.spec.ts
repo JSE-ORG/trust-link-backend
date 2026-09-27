@@ -111,7 +111,11 @@ describe('Auth Security Tests (Refresh, Nonce, Rate Limiting)', () => {
   });
 
   it('accepts valid HS256 JWTs and attaches the authenticated user', () => {
-    const token = signJwt({ sub: 'GVENDOR_ADDRESS', role: 'vendor' });
+    const token = signJwt({
+      sub: 'GVENDOR_ADDRESS',
+      role: 'vendor',
+      exp: 9_999_999_999,
+    });
     request.headers.authorization = `Bearer ${token}`;
 
     expect(jwtGuard.canActivate(executionContext())).toBe(true);

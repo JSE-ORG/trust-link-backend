@@ -57,7 +57,7 @@ export class AppController {
 
   @ApiOperation({ summary: 'Root endpoint — welcome message' })
   @ApiResponse({ status: 200, description: 'Service welcome message.' })
-  @Throttle({ public: { limit: 100, ttl: THROTTLE_WINDOW_MS } })
+  @Throttle({ default: { limit: 100, ttl: THROTTLE_WINDOW_MS } })
   @Get()
   getHello(): string {
     return this.appService.getHello();
@@ -168,7 +168,7 @@ export class AppController {
   })
   @ApiResponse({ status: 200, description: 'All components healthy.' })
   @ApiResponse({ status: 503, description: 'One or more components are down.' })
-  @SkipThrottle({ public: true }) // Health checks should never be throttled.
+  @SkipThrottle() // Health checks should never be throttled.
   @Get('health')
   async getHealth(
     @Res() res: Response,
@@ -243,7 +243,7 @@ export class AppController {
     description: 'Version information returned.',
     type: VersionResponseDto,
   })
-  @Throttle({ public: { limit: 100, ttl: THROTTLE_WINDOW_MS } })
+  @Throttle({ default: { limit: 100, ttl: THROTTLE_WINDOW_MS } })
   @Get('version')
   @HttpCode(HttpStatus.OK)
   getVersion(): VersionResponseDto {
