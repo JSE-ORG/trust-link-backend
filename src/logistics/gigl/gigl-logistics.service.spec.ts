@@ -20,6 +20,7 @@ import {
 } from './gigl.client';
 import { GiglTrackingResponse } from './gigl.types';
 import { PrismaService } from '../../prisma/prisma.service';
+import { ProviderCredentialRepository } from '../provider-credential.repository';
 
 // ── Fixture factory ──────────────────────────────────────────────────────────
 
@@ -403,7 +404,7 @@ describe('GiglLogisticsService', () => {
       } as unknown as PrismaService;
       const configured = new GiglLogisticsService(
         client as unknown as GiglClient,
-        prisma,
+        new ProviderCredentialRepository(prisma),
       );
       const warn = jest
         .spyOn(Logger.prototype, 'warn')

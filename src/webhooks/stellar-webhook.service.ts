@@ -10,7 +10,7 @@ import * as crypto from 'crypto';
 import { ConfigService } from '../config/config.service';
 import { EscrowRepository } from '../escrow/escrow.repository';
 import { NotificationsService } from '../notifications/notifications.service';
-import { PrismaService } from '../prisma/prisma.service';
+import { StellarWebhookRepository } from './stellar-webhook.repository';
 import { StellarWebhookDto } from './dto/stellar-webhook.dto';
 
 /**
@@ -36,7 +36,7 @@ export class StellarWebhookService {
     private readonly escrowRepository: EscrowRepository,
     private readonly notificationsService: NotificationsService,
     @Optional()
-    private readonly prisma?: PrismaService,
+    private readonly webhookRepository?: StellarWebhookRepository,
   ) {}
 
   // ---------------------------------------------------------------------------
@@ -59,10 +59,8 @@ export class StellarWebhookService {
       this.verifySignature(rawBody, signature);
 
       // --- Idempotency check (DB-backed, survives restarts) ------------------
-      const duplicate = this.prisma
-        ? await this.prisma.processedWebhookEvent.findUnique({
-            where: { operationId: dto.id },
-          })
+      const duplicate = this.webhookRepository
+        ? await this.webhookRepository.isProcessed(dto.id)
         : this.processedIds.has(dto.id);
       if (duplicate) {
         this.logger.log(
@@ -75,10 +73,8 @@ export class StellarWebhookService {
       }
 
       // Persist before processing so concurrent Horizon retries are blocked.
-      if (this.prisma) {
-        await this.prisma.processedWebhookEvent.create({
-          data: { operationId: dto.id },
-        });
+      if (this.webhookRepository) {
+        await this.webhookRepository.markProcessed(dto.id);
       } else {
         this.processedIds.add(dto.id);
       }
@@ -87,10 +83,8 @@ export class StellarWebhookService {
         await this.processEvent(dto);
       } catch (err) {
         // Roll back the cursor so the event can be retried on the next delivery.
-        if (this.prisma) {
-          await this.prisma.processedWebhookEvent.delete({
-            where: { operationId: dto.id },
-          });
+        if (this.webhookRepository) {
+          await this.webhookRepository.unmarkProcessed(dto.id);
         } else {
           this.processedIds.delete(dto.id);
         }
