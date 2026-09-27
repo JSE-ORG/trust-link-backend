@@ -26,6 +26,23 @@ export class AutoReleaseWorker implements OnModuleInit, OnApplicationShutdown {
   private readonly logger = new Logger(AutoReleaseWorker.name);
   private timer: NodeJS.Timeout | null = null;
 
+  /**
+   * #840 — True while a run is in progress.
+   *
+   * `setInterval` fires every 5 minutes regardless of whether the previous
+   * run finished, and a run submits one on-chain transaction per eligible
+   * escrow, so a run that takes longer than the interval overlaps the next
+   * one. Overlapping runs both read the same eligible snapshot and both walk
+   * it; `markAutoReleaseSubmitting` stops a double *submission* per escrow, but
+   * the second run still issues every eligibility query and dispute lookup
+   * against the database for a set of escrows the first run is already
+   * handling, and its summary log then reports those escrows as its own work.
+   *
+   * The claim is what makes correctness safe; this flag stops the wasted
+   * duplicate cycle. `SorobanPollerService.poll()` guards the same way.
+   */
+  private running = false;
+
   constructor(
     private readonly escrowRepository: EscrowRepository,
     private readonly disputeRepository: DisputeRepository,
@@ -70,6 +87,27 @@ export class AutoReleaseWorker implements OnModuleInit, OnApplicationShutdown {
   }
 
   async run(referenceTime = new Date()): Promise<void> {
+    // #840 — Skip a tick that arrives while the previous run is still going,
+    // rather than starting a second overlapping cycle.
+    if (this.running) {
+      this.logger.warn(
+        'AutoReleaseWorker: previous run is still in progress — skipping this tick',
+      );
+      return;
+    }
+    this.running = true;
+
+    try {
+      await this.runCycle(referenceTime);
+    } finally {
+      // Cleared even when the cycle throws, or the worker would refuse every
+      // subsequent tick and silently stop releasing escrows for the lifetime
+      // of the process.
+      this.running = false;
+    }
+  }
+
+  private async runCycle(referenceTime: Date): Promise<void> {
     let eligible: Awaited<
       ReturnType<typeof this.escrowRepository.findAutoReleaseEligible>
     > = [];

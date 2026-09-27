@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { AutoReleaseWorker } from './auto-release.worker';
 import { EscrowRepository } from '../escrow/escrow.repository';
 import { DisputeRepository } from '../dispute/dispute.repository';
@@ -417,5 +418,192 @@ describe('AutoReleaseWorker', () => {
       expect(() => worker.onApplicationShutdown()).not.toThrow();
       expect(worker['timer']).toBeNull();
     });
+  });
+});
+
+/**
+ * Issue #840 — `AutoReleaseWorker` called `run()` from a 5-minute
+ * `setInterval` with no check for a run still in progress. A run submits one
+ * on-chain transaction per eligible escrow, so a slow run outlives the
+ * interval and the next tick starts a second overlapping cycle.
+ *
+ * `SorobanPollerService.poll()` already guards this with a `polling` flag.
+ */
+describe('AutoReleaseWorker reentrancy guard (#840)', () => {
+  let worker: AutoReleaseWorker;
+  let escrowRepository: jest.Mocked<EscrowRepository>;
+  let disputeRepository: jest.Mocked<DisputeRepository>;
+  let contractService: jest.Mocked<ContractService>;
+  let warnSpy: jest.SpyInstance;
+
+  beforeEach(() => {
+    escrowRepository = {
+      findAutoReleaseEligible: jest.fn(),
+      recordAutoReleaseSubmission: jest.fn(),
+      markAutoReleaseSubmitting: jest
+        .fn()
+        .mockImplementation((id: string) =>
+          Promise.resolve(makeEscrow({ id })),
+        ),
+      clearAutoReleaseSubmitting: jest
+        .fn()
+        .mockImplementation((id: string) =>
+          Promise.resolve(makeEscrow({ id })),
+        ),
+    } as unknown as jest.Mocked<EscrowRepository>;
+
+    disputeRepository = {
+      findByEscrow: jest.fn().mockResolvedValue(null),
+    } as unknown as jest.Mocked<DisputeRepository>;
+
+    contractService = {
+      submitAutoRelease: jest.fn().mockResolvedValue('tx-hash'),
+    } as unknown as jest.Mocked<ContractService>;
+
+    const configService = {
+      get: jest.fn().mockImplementation((key: string) => {
+        if (key === 'NODE_ENV') return 'test';
+        return TEST_AUTO_RELEASE_SOURCE;
+      }),
+      requireAutoReleaseSourceAddress: jest.fn(
+        (): string => TEST_AUTO_RELEASE_SOURCE,
+      ),
+    } as unknown as jest.Mocked<ConfigService>;
+
+    warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+
+    worker = new AutoReleaseWorker(
+      escrowRepository,
+      disputeRepository,
+      contractService,
+      configService,
+    );
+  });
+
+  afterEach(() => jest.restoreAllMocks());
+
+  it('skips a tick that starts while a run is in progress', async () => {
+    // An eligibility query that never settles: the first run is still going
+    // when the second tick arrives.
+    let release: () => void = () => undefined;
+    escrowRepository.findAutoReleaseEligible.mockReturnValue(
+      new Promise((resolve) => {
+        release = () => resolve([makeEscrow()]);
+      }),
+    );
+
+    const first = worker.run();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const second = await worker.run();
+
+    release();
+    await first;
+
+    expect(second).toBeUndefined();
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('still in progress'),
+    );
+    expect(escrowRepository.findAutoReleaseEligible).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not re-query eligibility on the skipped tick', async () => {
+    let release: () => void = () => undefined;
+    escrowRepository.findAutoReleaseEligible.mockReturnValue(
+      new Promise((resolve) => {
+        release = () => resolve([]);
+      }),
+    );
+
+    const first = worker.run();
+    await Promise.resolve();
+    await worker.run();
+    release();
+    await first;
+
+    expect(escrowRepository.findAutoReleaseEligible).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not submit a transaction from the skipped tick', async () => {
+    let release: () => void = () => undefined;
+    escrowRepository.findAutoReleaseEligible.mockReturnValue(
+      new Promise((resolve) => {
+        release = () => resolve([makeEscrow()]);
+      }),
+    );
+
+    const first = worker.run();
+    await Promise.resolve();
+    await worker.run();
+    release();
+    await first;
+
+    expect(contractService.submitAutoRelease).toHaveBeenCalledTimes(1);
+  });
+
+  it('runs normally again once the previous run finishes', async () => {
+    escrowRepository.findAutoReleaseEligible.mockResolvedValue([]);
+    await worker.run();
+    await worker.run();
+
+    expect(escrowRepository.findAutoReleaseEligible).toHaveBeenCalledTimes(2);
+  });
+
+  it('clears the flag when a run throws, so later ticks still work', async () => {
+    escrowRepository.findAutoReleaseEligible.mockRejectedValueOnce(
+      new Error('database unavailable'),
+    );
+
+    await worker.run();
+    expect(warnSpy).not.toHaveBeenCalledWith(
+      expect.stringContaining('still in progress'),
+    );
+
+    escrowRepository.findAutoReleaseEligible.mockResolvedValue([]);
+    await worker.run();
+
+    expect(escrowRepository.findAutoReleaseEligible).toHaveBeenCalledTimes(2);
+  });
+
+  it('resolves rather than rejecting when a run throws', async () => {
+    escrowRepository.findAutoReleaseEligible.mockRejectedValue(
+      new Error('database unavailable'),
+    );
+
+    await expect(worker.run()).resolves.toBeUndefined();
+  });
+
+  it('does not overlap after many rapid ticks', async () => {
+    let release: () => void = () => undefined;
+    escrowRepository.findAutoReleaseEligible.mockReturnValue(
+      new Promise((resolve) => {
+        release = () => resolve([]);
+      }),
+    );
+
+    const first = worker.run();
+    await Promise.resolve();
+    for (let i = 0; i < 5; i++) {
+      await worker.run();
+    }
+    release();
+    await first;
+
+    expect(escrowRepository.findAutoReleaseEligible).toHaveBeenCalledTimes(1);
+  });
+
+  it('still submits normally when runs are sequential', async () => {
+    escrowRepository.findAutoReleaseEligible.mockResolvedValue([
+      makeEscrow({ id: 'escrow-a' }),
+    ]);
+
+    await worker.run();
+    await worker.run();
+
+    expect(contractService.submitAutoRelease).toHaveBeenCalledTimes(2);
+    expect(escrowRepository.recordAutoReleaseSubmission).toHaveBeenCalledTimes(
+      2,
+    );
   });
 });
