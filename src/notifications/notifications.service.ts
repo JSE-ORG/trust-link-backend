@@ -1,10 +1,7 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import * as crypto from 'crypto';
-import {
-  EscrowRecord,
-  NotificationType,
-  PrismaService,
-} from '../prisma/prisma.service';
+import { EscrowRecord, NotificationType } from '../prisma/prisma.service';
+import { NotificationRepository } from './notification.repository';
 import { SENDGRID_CLIENT, TWILIO_CLIENT } from './notifications.tokens';
 import { decryptContact } from '../common/sanitization/contact-encryption.util';
 
@@ -32,7 +29,8 @@ export class NotificationsService {
   private readonly logger = new Logger(NotificationsService.name);
 
   constructor(
-    private readonly prisma: PrismaService,
+    // Issue #845: notification writes go through the repository (R-DB-02).
+    private readonly notifications: NotificationRepository,
     @Optional()
     @Inject(SENDGRID_CLIENT)
     private readonly sendGrid: SendGridClient = noopSendGrid,
@@ -250,17 +248,15 @@ export class NotificationsService {
       }
     }
 
-    await this.prisma.notification.create({
-      data: {
-        escrowId: escrow.id,
-        type,
-        channel: 'EMAIL',
-        recipientAddress,
-        message: `${type}: ${escrow.itemName}`,
-        providerMessageId,
-        attemptCount,
-        lastResponseCode,
-      },
+    await this.notifications.create({
+      escrowId: escrow.id,
+      type,
+      channel: 'EMAIL',
+      recipientAddress,
+      message: `${type}: ${escrow.itemName}`,
+      providerMessageId,
+      attemptCount,
+      lastResponseCode,
     });
   }
 
@@ -305,17 +301,15 @@ export class NotificationsService {
       }
     }
 
-    await this.prisma.notification.create({
-      data: {
-        escrowId: escrow.id,
-        type,
-        channel: 'SMS',
-        recipientAddress,
-        message: `${type}: ${escrow.itemName}`,
-        providerMessageId,
-        attemptCount,
-        lastResponseCode,
-      },
+    await this.notifications.create({
+      escrowId: escrow.id,
+      type,
+      channel: 'SMS',
+      recipientAddress,
+      message: `${type}: ${escrow.itemName}`,
+      providerMessageId,
+      attemptCount,
+      lastResponseCode,
     });
   }
 
