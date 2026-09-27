@@ -808,3 +808,151 @@ describe('ConfigModule — Stellar Key Validation', () => {
     });
   });
 });
+
+/**
+ * Issue #839 — email configuration.
+ *
+ * `SENDGRID_FROM_EMAIL` must be present whenever a SendGrid key is set, and
+ * every template id must be a real dynamic template id (`d-` + 32 hex). Both
+ * are validated here so a misconfiguration is reported when the process boots
+ * rather than as a rejected API call on every notification.
+ */
+describe('SendGrid email configuration (#839)', () => {
+  const FROM_EMAIL = 'notifications@example.test';
+  const VALID_TEMPLATE = 'd-1234567890abcdef1234567890abcdef';
+
+  const ALL_TEMPLATE_KEYS = [
+    'SENDGRID_TEMPLATE_FUNDED',
+    'SENDGRID_TEMPLATE_SHIPPED',
+    'SENDGRID_TEMPLATE_DELIVERED',
+    'SENDGRID_TEMPLATE_DISPUTED',
+    'SENDGRID_TEMPLATE_COMPLETED',
+    'SENDGRID_TEMPLATE_REFUNDED',
+  ] as const;
+
+  function envWithEmail(extra: Record<string, string>): Record<string, string> {
+    return {
+      ...VALID_ENV,
+      SENDGRID_API_KEY: 'SG.test-api-key',
+      SENDGRID_FROM_EMAIL: FROM_EMAIL,
+      ...ALL_TEMPLATE_KEYS.reduce<Record<string, string>>((acc, key) => {
+        acc[key] = VALID_TEMPLATE;
+        return acc;
+      }, {}),
+      ...extra,
+    };
+  }
+
+  it('accepts a complete, valid email configuration', () => {
+    const { error } = configValidationSchema.validate(
+      envWithEmail({}),
+      VALIDATE_OPTIONS,
+    );
+
+    expect(error).toBeUndefined();
+  });
+
+  it('rejects a SendGrid key with no sender address', () => {
+    const env = envWithEmail({});
+    delete env.SENDGRID_FROM_EMAIL;
+
+    const { error } = configValidationSchema.validate(env, VALIDATE_OPTIONS);
+
+    expect(error).toBeDefined();
+    expect(error?.message).toContain('SENDGRID_FROM_EMAIL');
+    expect(error?.message).toContain('required');
+  });
+
+  it('rejects a sender address that is not an email', () => {
+    const { error } = configValidationSchema.validate(
+      envWithEmail({ SENDGRID_FROM_EMAIL: 'not-an-email' }),
+      VALIDATE_OPTIONS,
+    );
+
+    expect(error).toBeDefined();
+    expect(error?.message).toContain('SENDGRID_FROM_EMAIL');
+  });
+
+  it('allows a sender address to be set with no API key (email disabled)', () => {
+    const { error } = configValidationSchema.validate(
+      { ...VALID_ENV, SENDGRID_FROM_EMAIL: FROM_EMAIL },
+      VALIDATE_OPTIONS,
+    );
+
+    expect(error).toBeUndefined();
+  });
+
+  it('allows an API key with no sender to validate as an error, not a crash', () => {
+    expect(() =>
+      configValidationSchema.validate(
+        { ...VALID_ENV, SENDGRID_API_KEY: 'SG.test-api-key' },
+        VALIDATE_OPTIONS,
+      ),
+    ).not.toThrow();
+  });
+
+  it.each(ALL_TEMPLATE_KEYS)(
+    'accepts a well-formed dynamic template id for %s',
+    (key) => {
+      const { error } = configValidationSchema.validate(
+        envWithEmail({ [key]: VALID_TEMPLATE }),
+        VALIDATE_OPTIONS,
+      );
+
+      expect(error).toBeUndefined();
+    },
+  );
+
+  it.each(ALL_TEMPLATE_KEYS)('rejects a malformed %s', (key) => {
+    const { error } = configValidationSchema.validate(
+      envWithEmail({ [key]: 'trustlink-funded' }),
+      VALIDATE_OPTIONS,
+    );
+
+    expect(error).toBeDefined();
+    expect(error?.message).toContain(key);
+  });
+
+  it('rejects a template id with too few hex characters', () => {
+    const { error } = configValidationSchema.validate(
+      envWithEmail({ SENDGRID_TEMPLATE_FUNDED: 'd-1234' }),
+      VALIDATE_OPTIONS,
+    );
+
+    expect(error).toBeDefined();
+    expect(error?.message).toContain('SENDGRID_TEMPLATE_FUNDED');
+  });
+
+  it('rejects a template id missing the d- prefix', () => {
+    const { error } = configValidationSchema.validate(
+      envWithEmail({ SENDGRID_TEMPLATE_SHIPPED: '1234567890abcdef1234567890abcdef' }),
+      VALIDATE_OPTIONS,
+    );
+
+    expect(error).toBeDefined();
+    expect(error?.message).toContain('SENDGRID_TEMPLATE_SHIPPED');
+  });
+
+  it('leaves a template id optional so one bad key does not block boot for the rest', () => {
+    // An absent id is reported at startup by NotificationsService rather than
+    // being a hard validation failure, so disabling one type is possible.
+    const env = envWithEmail({});
+    delete env.SENDGRID_TEMPLATE_REFUNDED;
+
+    const { error } = configValidationSchema.validate(env, VALIDATE_OPTIONS);
+
+    expect(error).toBeUndefined();
+  });
+
+  it('rejects uppercase hex in a template id', () => {
+    const { error } = configValidationSchema.validate(
+      envWithEmail({
+        SENDGRID_TEMPLATE_COMPLETED: 'd-ABCDEF7890ABCDEF1234567890ABCDEF',
+      }),
+      VALIDATE_OPTIONS,
+    );
+
+    expect(error).toBeDefined();
+    expect(error?.message).toContain('SENDGRID_TEMPLATE_COMPLETED');
+  });
+});

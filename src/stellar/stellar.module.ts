@@ -8,6 +8,7 @@ import { CursorService } from './cursor.service';
 import { CursorRepository } from './cursor.repository';
 import { SorobanPollerService } from './soroban-poller.service';
 import { HorizonService } from './horizon.service';
+import { SorobanHealthService } from './soroban-health.service';
 import { WebhooksModule } from '../webhooks/webhooks.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { EscrowModule } from '../escrow/escrow.module';
@@ -34,6 +35,9 @@ import { STELLAR_RPC_URLS } from './stellar-endpoints';
     CursorRepository,
     SorobanPollerService,
     HorizonService,
+    // #841 — Checks the RPC server below, so the readiness probe reports the
+    // same endpoint every contract call is submitted through.
+    SorobanHealthService,
     {
       provide: STELLAR_SERVER,
       useFactory: (config: ConfigService) => {
@@ -52,6 +56,7 @@ import { STELLAR_RPC_URLS } from './stellar-endpoints';
     BlockchainListenerService,
     CursorService,
     HorizonService,
+    SorobanHealthService,
     STELLAR_SERVER,
   ],
 })

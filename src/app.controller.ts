@@ -4,6 +4,7 @@ import {
   HttpCode,
   HttpStatus,
   Logger,
+  Optional,
   Res,
 } from '@nestjs/common';
 import {
@@ -21,6 +22,7 @@ import { ConfigService } from './config/config.service';
 import { PrismaService } from './prisma/prisma.service';
 import { CacheService } from './cache/cache.service';
 import { HorizonService } from './stellar/horizon.service';
+import { SorobanHealthService } from './stellar/soroban-health.service';
 import { LivenessResponseDto } from './common/dto/liveness-response.dto';
 import { ReadinessResponseDto } from './common/dto/readiness-response.dto';
 import { VersionResponseDto } from './common/dto/version-response.dto';
@@ -39,6 +41,8 @@ interface ComponentHealth {
 interface DependencyCheckResults {
   db: ComponentHealth;
   horizon: ComponentHealth;
+  // #841 — The Soroban RPC is a required component, like the database.
+  soroban: ComponentHealth;
   redis: ComponentHealth & { rawStatus?: string };
 }
 
@@ -53,6 +57,11 @@ export class AppController {
     private readonly prismaService: PrismaService,
     private readonly cacheService: CacheService,
     private readonly horizonService: HorizonService,
+    // #841 — @Optional so a caller assembling AppController without the
+    // Stellar module still resolves; the probe then reports the RPC as down
+    // rather than failing to construct the controller at all.
+    @Optional()
+    private readonly sorobanHealthService?: SorobanHealthService,
   ) {}
 
   @ApiOperation({ summary: 'Root endpoint — welcome message' })
@@ -99,13 +108,18 @@ export class AppController {
 
   /**
    * Readiness probe that verifies database connectivity, Stellar Horizon
-   * reachability, and Redis status. Returns 503 when PostgreSQL or Horizon
-   * is unavailable; Redis is optional (graceful fallback — issue #31).
-   * Used by load balancers and orchestrators to decide whether this
-   * instance should receive production traffic.
+   * reachability, Soroban RPC reachability, and Redis status. Returns 503 when
+   * PostgreSQL, Horizon or the Soroban RPC is unavailable; Redis is optional
+   * (graceful fallback — issue #31). Used by load balancers and orchestrators
+   * to decide whether this instance should receive production traffic.
+   *
+   * #841 — The Soroban RPC is checked because every contract call is submitted
+   * through it. An instance that cannot reach the RPC cannot fund, release or
+   * deliver an escrow, so reporting `ok` would keep routing traffic to it.
    *
    * This endpoint is intentionally heavier than the liveness probe: every
-   * call performs a DB query, a Horizon fetch and a Redis PING.
+   * call performs a DB query, a Horizon fetch, a Soroban RPC health call and
+   * a Redis PING.
    *
    * @param res - Express response object
    * @returns Per-component status, version, timing, and optional error details
@@ -113,7 +127,7 @@ export class AppController {
    */
   @ApiOperation({
     summary:
-      'Readiness probe — checks database, Horizon, and Redis; returns 503 on downstream failure.',
+      'Readiness probe — checks database, Horizon, Soroban RPC, and Redis; returns 503 on downstream failure.',
   })
   @ApiOkResponse({
     description: 'All required components healthy, instance is ready.',
@@ -178,7 +192,7 @@ export class AppController {
 
   /**
    * Shared implementation used by both GET /health and GET /health/ready.
-   * Runs the three dependency checks concurrently, composes the response
+   * Runs the four dependency checks concurrently, composes the response
    * body, and returns 200/503 based on the combined status of required
    * components only (Redis is optional).
    */
@@ -195,11 +209,18 @@ export class AppController {
           ? 'ok'
           : 'down';
 
-    const allOk = checks.db.status === 'ok' && checks.horizon.status === 'ok';
+    // #841 — The Soroban RPC is required: without it no escrow can be funded,
+    // released or delivered on-chain, so an instance that cannot reach it must
+    // not be advertised as ready.
+    const allOk =
+      checks.db.status === 'ok' &&
+      checks.horizon.status === 'ok' &&
+      checks.soroban.status === 'ok';
 
     if (!allOk) {
       this.logger.warn(
-        `Readiness check failed: db=${checks.db.status}, horizon=${checks.horizon.status}, redis=${redisStatus}`,
+        `Readiness check failed: db=${checks.db.status}, horizon=${checks.horizon.status}, ` +
+          `soroban=${checks.soroban.status}, redis=${redisStatus}`,
       );
     }
 
@@ -207,6 +228,7 @@ export class AppController {
       status: allOk ? 'ok' : 'down',
       db: checks.db.status,
       horizon: checks.horizon.status,
+      soroban: checks.soroban.status,
       redis: redisStatus,
       timestamp: new Date().toISOString(),
       environment: this.configService.get('NODE_ENV'),
@@ -223,6 +245,12 @@ export class AppController {
         body.details.horizon = {
           status: 'down',
           error: checks.horizon.error,
+        };
+      }
+      if (checks.soroban.status === 'down') {
+        body.details.soroban = {
+          status: 'down',
+          error: checks.soroban.error,
         };
       }
     }
@@ -255,12 +283,16 @@ export class AppController {
   }
 
   private async checkAllDependencies(): Promise<DependencyCheckResults> {
-    const [db, horizon, redis] = await Promise.all([
+    // #841 — The Soroban RPC check joins the same Promise.all, so a slow or
+    // unreachable endpoint is bounded by its own timeout rather than delaying
+    // the whole probe.
+    const [db, horizon, soroban, redis] = await Promise.all([
       this.checkDatabase(),
       this.checkHorizon(),
+      this.checkSoroban(),
       this.checkRedis(),
     ]);
-    return { db, horizon, redis };
+    return { db, horizon, soroban, redis };
   }
 
   /**
@@ -291,6 +323,22 @@ export class AppController {
 
   private async checkHorizon(): Promise<ComponentHealth> {
     return this.horizonService.checkHealth();
+  }
+
+  /**
+   * #841 — Liveness check for the Soroban RPC server.
+   *
+   * The service never throws (see `SorobanHealthService.checkHealth`), and a
+   * missing service resolves to `down` so an incompletely wired module is
+   * reported rather than silently treated as healthy.
+   */
+  private async checkSoroban(): Promise<ComponentHealth> {
+    if (!this.sorobanHealthService) {
+      const error = 'Soroban RPC health service is not available';
+      this.logger.error(`Soroban RPC health check failed: ${error}`);
+      return { status: 'down', error };
+    }
+    return this.sorobanHealthService.checkHealth();
   }
 
   private async checkRedis(): Promise<

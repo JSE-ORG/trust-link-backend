@@ -34,6 +34,18 @@ export interface Config {
   AUTO_RELEASE_SOURCE_ADDRESS?: string;
   NODE_ENV: 'development' | 'production' | 'test';
   SENDGRID_API_KEY?: string;
+  /** #839 — Verified sender address. Required whenever SENDGRID_API_KEY is set. */
+  SENDGRID_FROM_EMAIL?: string;
+  /**
+   * #839 — Dynamic template id per notification type. A missing id for a type
+   * is reported at boot by NotificationsService rather than at send time.
+   */
+  SENDGRID_TEMPLATE_FUNDED?: string;
+  SENDGRID_TEMPLATE_SHIPPED?: string;
+  SENDGRID_TEMPLATE_DELIVERED?: string;
+  SENDGRID_TEMPLATE_DISPUTED?: string;
+  SENDGRID_TEMPLATE_COMPLETED?: string;
+  SENDGRID_TEMPLATE_REFUNDED?: string;
   TWILIO_ACCOUNT_SID?: string;
   TWILIO_AUTH_TOKEN?: string;
   TWILIO_FROM_NUMBER?: string;
@@ -106,6 +118,35 @@ export class ConfigService {
       SENDGRID_API_KEY: this.nestConfigService.get('SENDGRID_API_KEY', {
         infer: true,
       }),
+      // #839 — Sender and per-type template ids travel with the snapshot so a
+      // consumer can see the whole email configuration in one read.
+      SENDGRID_FROM_EMAIL: this.nestConfigService.get('SENDGRID_FROM_EMAIL', {
+        infer: true,
+      }),
+      SENDGRID_TEMPLATE_FUNDED: this.nestConfigService.get(
+        'SENDGRID_TEMPLATE_FUNDED',
+        { infer: true },
+      ),
+      SENDGRID_TEMPLATE_SHIPPED: this.nestConfigService.get(
+        'SENDGRID_TEMPLATE_SHIPPED',
+        { infer: true },
+      ),
+      SENDGRID_TEMPLATE_DELIVERED: this.nestConfigService.get(
+        'SENDGRID_TEMPLATE_DELIVERED',
+        { infer: true },
+      ),
+      SENDGRID_TEMPLATE_DISPUTED: this.nestConfigService.get(
+        'SENDGRID_TEMPLATE_DISPUTED',
+        { infer: true },
+      ),
+      SENDGRID_TEMPLATE_COMPLETED: this.nestConfigService.get(
+        'SENDGRID_TEMPLATE_COMPLETED',
+        { infer: true },
+      ),
+      SENDGRID_TEMPLATE_REFUNDED: this.nestConfigService.get(
+        'SENDGRID_TEMPLATE_REFUNDED',
+        { infer: true },
+      ),
       TWILIO_ACCOUNT_SID: this.nestConfigService.get('TWILIO_ACCOUNT_SID', {
         infer: true,
       }),

@@ -9,6 +9,7 @@
  * All dependencies are mocked; no real DB or HTTP calls are made.
  */
 
+import { Logger } from '@nestjs/common';
 import { TrackingPollWorker } from './tracking-poll.worker';
 import { EscrowRepository } from '../escrow/escrow.repository';
 import { LogisticsService } from '../logistics/logistics.service';
@@ -292,5 +293,202 @@ describe('TrackingPollWorker', () => {
         'escrow-1',
       );
     });
+  });
+});
+
+/**
+ * Issue #840 — `TrackingPollWorker` called `run()` from a 10-minute
+ * `setInterval` with no check for a run still in progress, and the tracking
+ * loop calls the logistics API once per shipped escrow with a 10s timeout
+ * each. A slow provider makes a run outlast the interval, so the next tick
+ * started a second overlapping cycle.
+ *
+ * `SorobanPollerService.poll()` already guards this with a `polling` flag.
+ */
+describe('TrackingPollWorker reentrancy guard (#840)', () => {
+  let worker: TrackingPollWorker;
+  let escrowRepository: jest.Mocked<
+    Pick<
+      EscrowRepository,
+      | 'findShippedWithTracking'
+      | 'claimDelivery'
+      | 'markDelivered'
+      | 'clearDeliveryClaim'
+    >
+  >;
+  let logisticsService: jest.Mocked<Pick<LogisticsService, 'getStatus'>>;
+  let contractService: jest.Mocked<Pick<ContractService, 'recordDelivery'>>;
+  let warnSpy: jest.SpyInstance;
+
+  beforeEach(() => {
+    escrowRepository = {
+      findShippedWithTracking: jest.fn().mockResolvedValue([]),
+      claimDelivery: jest.fn().mockResolvedValue(makeEscrow()),
+      markDelivered: jest.fn().mockResolvedValue(makeEscrow()),
+      clearDeliveryClaim: jest.fn().mockResolvedValue(makeEscrow()),
+    };
+    logisticsService = {
+      getStatus: jest.fn().mockResolvedValue({ status: 'DELIVERED', events: [] }),
+    };
+    contractService = {
+      recordDelivery: jest.fn().mockResolvedValue(undefined),
+    };
+    const configService = {
+      get: jest.fn().mockImplementation((key: string) => {
+        if (key === 'NODE_ENV') return 'test';
+        if (key === 'ADMIN_ADDRESS') return 'GADMIN-ADDR';
+        return undefined;
+      }),
+    };
+
+    warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+
+    worker = new TrackingPollWorker(
+      escrowRepository as unknown as EscrowRepository,
+      logisticsService as unknown as LogisticsService,
+      contractService as unknown as ContractService,
+      configService as unknown as ConfigService,
+    );
+    jest
+      .spyOn(worker, 'sleep' as keyof TrackingPollWorker)
+      .mockResolvedValue(undefined);
+  });
+
+  afterEach(() => jest.restoreAllMocks());
+
+  it('skips a tick that starts while a run is in progress', async () => {
+    // A provider call that never settles: the first run is still going when
+    // the second tick arrives.
+    let releaseFirst: () => void = () => undefined;
+    logisticsService.getStatus.mockReturnValue(
+      new Promise((resolve) => {
+        releaseFirst = () => resolve({ status: 'DELIVERED', events: [] });
+      }),
+    );
+    escrowRepository.findShippedWithTracking.mockResolvedValue([
+      makeEscrow({ id: 'escrow-slow', trackingId: 'TRACK-SLOW' }),
+    ]);
+
+    const first = worker.run();
+    // Let the first run reach the in-flight provider call.
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const second = await worker.run();
+
+    releaseFirst();
+    await first;
+
+    // The skipped tick did no work and said so.
+    expect(second).toBeUndefined();
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('still in progress'),
+    );
+    expect(logisticsService.getStatus).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not re-query shipments on the skipped tick', async () => {
+    let release: () => void = () => undefined;
+    escrowRepository.findShippedWithTracking.mockReturnValue(
+      new Promise((resolve) => {
+        release = () => resolve([makeEscrow()]);
+      }),
+    );
+
+    const first = worker.run();
+    await Promise.resolve();
+    await worker.run();
+    release();
+    await first;
+
+    expect(escrowRepository.findShippedWithTracking).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not submit a contract call from the skipped tick', async () => {
+    let release: () => void = () => undefined;
+    escrowRepository.findShippedWithTracking.mockReturnValue(
+      new Promise((resolve) => {
+        release = () => resolve([makeEscrow()]);
+      }),
+    );
+
+    const first = worker.run();
+    await Promise.resolve();
+    await worker.run();
+    release();
+    await first;
+
+    // Only the first run's own single delivery is submitted.
+    expect(contractService.recordDelivery).toHaveBeenCalledTimes(1);
+  });
+
+  it('runs normally again once the previous run finishes', async () => {
+    await worker.run();
+    const callsAfterFirst = escrowRepository.findShippedWithTracking.mock.calls
+      .length;
+
+    await worker.run();
+
+    expect(escrowRepository.findShippedWithTracking).toHaveBeenCalledTimes(
+      callsAfterFirst + 1,
+    );
+  });
+
+  it('clears the flag when a run throws, so later ticks still work', async () => {
+    escrowRepository.findShippedWithTracking.mockRejectedValueOnce(
+      new Error('database unavailable'),
+    );
+
+    await worker.run();
+    expect(warnSpy).not.toHaveBeenCalledWith(
+      expect.stringContaining('still in progress'),
+    );
+
+    escrowRepository.findShippedWithTracking.mockResolvedValue([]);
+    await worker.run();
+
+    expect(escrowRepository.findShippedWithTracking).toHaveBeenCalledTimes(2);
+  });
+
+  it('resolves rather than rejecting when a run throws', async () => {
+    escrowRepository.findShippedWithTracking.mockRejectedValue(
+      new Error('database unavailable'),
+    );
+
+    await expect(worker.run()).resolves.toBeUndefined();
+  });
+
+  it('clears the flag when a per-escrow failure throws out of the loop', async () => {
+    // A throwing logistics call is caught per-escrow, so the cycle still
+    // completes; the flag must be released.
+    logisticsService.getStatus.mockRejectedValue(new Error('logistics down'));
+    escrowRepository.findShippedWithTracking.mockResolvedValue([
+      makeEscrow(),
+    ]);
+
+    await worker.run();
+    await worker.run();
+
+    expect(logisticsService.getStatus).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not overlap after many rapid ticks', async () => {
+    let release: () => void = () => undefined;
+    escrowRepository.findShippedWithTracking.mockReturnValue(
+      new Promise((resolve) => {
+        release = () => resolve([]);
+      }),
+    );
+
+    const first = worker.run();
+    await Promise.resolve();
+    // Five ticks land while the first is still in flight.
+    for (let i = 0; i < 5; i++) {
+      await worker.run();
+    }
+    release();
+    await first;
+
+    expect(escrowRepository.findShippedWithTracking).toHaveBeenCalledTimes(1);
   });
 });

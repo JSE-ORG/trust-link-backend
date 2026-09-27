@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ChartDataResponse, DailyVolumeDataDto } from './analytics.dto';
 import {
@@ -6,6 +7,39 @@ import {
   TransactionStatsDto,
   ChannelMetricsDto,
 } from './analytics-stats.dto';
+
+/**
+ * Exact decimal arithmetic for the vendor stats aggregation (#843).
+ *
+ * `Escrow.amount` is `Decimal(18, 8)`. Reading each value with `Number()` and
+ * adding it into a running float total silently loses precision: a double
+ * carries 53 bits of mantissa, so an 8-decimal amount stops being exactly
+ * representable past ~$0.90, and every addition can round. Summing in decimal
+ * keeps the total exact; it is converted to a `number` once, at the end,
+ * because the response contract is numeric.
+ *
+ * `null`/`undefined` is treated as absent rather than zero so a `groupBy` group
+ * with no rows contributes nothing instead of throwing.
+ */
+function decimalZero(): Prisma.Decimal {
+  return new Prisma.Decimal(0);
+}
+
+/** Adds a possibly-absent Prisma Decimal into an exact running total. */
+function decimalAdd(
+  total: Prisma.Decimal,
+  value: Prisma.Decimal | number | null | undefined,
+): Prisma.Decimal {
+  if (value === null || value === undefined) {
+    return total;
+  }
+  return total.plus(value);
+}
+
+/** Converts an exact total to a `number` for the response body. */
+function decimalToNumber(value: Prisma.Decimal): number {
+  return value.toNumber();
+}
 
 @Injectable()
 export class AnalyticsService {
@@ -195,64 +229,104 @@ export class AnalyticsService {
 
   /**
    * Retrieves overall transaction statistics for a vendor.
-   * Uses fast query paths with composite indexes on (vendorAddress, state).
    * Includes conversion metrics and channel preferences.
+   *
+   * #843 — Counts and sums are aggregated by the database with a single
+   * `groupBy` on `state`, and the per-state sums are added as decimals.
+   *
+   * The previous implementation ran `findMany` over every escrow the vendor
+   * has ever created and counted and summed the rows in a JavaScript loop. The
+   * result set grew without bound with vendor history while the response
+   * stayed a fixed handful of numbers, so the cost of a dashboard page scaled
+   * with total escrows rather than with the number of states. Each amount was
+   * also pulled through `Number()` before being added: `amount` is
+   * `Decimal(18, 8)`, so converting to a double first and then summing loses
+   * precision below 2^53 minor units — exactly the small-vendor case where
+   * the total is supposed to be exact.
+   *
+   * `groupBy` narrows the transfer to one row per state and lets Postgres sum
+   * the `numeric` column exactly.
    */
   async getTransactionStats(
     vendorAddress: string,
   ): Promise<AnalyticsStatsResponse> {
-    // Query all escrows for the vendor, grouped by state
-    // Uses index on (vendorAddress, state) for fast filtering
-    const escrows = await this.prisma.escrow.findMany({
-      where: {
-        vendorAddress,
-      },
-      select: {
-        id: true,
-        amount: true,
-        state: true,
-      },
+    // One row per state, with the count and the exact `numeric` sum for that
+    // state. Uses the composite index on (vendorAddress, state).
+    const groups = await this.prisma.escrow.groupBy({
+      by: ['state'],
+      where: { vendorAddress },
+      _count: true,
+      _sum: { amount: true },
     });
 
-    // Calculate transaction statistics
-    const stats: TransactionStatsDto = {
-      totalVolume: 0,
-      activeVolume: 0,
-      totalTransactions: escrows.length,
-      activeTransactions: 0,
-      completedTransactions: 0,
-      completionRate: 0,
-      disputedTransactions: 0,
-      disputeRate: 0,
-      averageTransactionValue: 0,
-      cancelledTransactions: 0,
-    };
-
     // Active states: CREATED, FUNDED, SHIPPED, DELIVERED
-    const activeStates = ['CREATED', 'FUNDED', 'SHIPPED', 'DELIVERED'];
+    const activeStates = new Set([
+      'CREATED',
+      'FUNDED',
+      'SHIPPED',
+      'DELIVERED',
+    ]);
 
-    for (const escrow of escrows) {
-      const amount = Number(escrow.amount);
-      const state = (escrow as { state: string }).state;
-      stats.totalVolume += amount;
+    // Decimal accumulators, not floats. The running totals stay exact for the
+    // whole loop and are converted to `number` once, at the end, for the
+    // response.
+    let totalVolume = decimalZero();
+    let activeVolume = decimalZero();
+    let totalTransactions = 0;
+    let activeTransactions = 0;
+    let completedTransactions = 0;
+    let disputedTransactions = 0;
+    let cancelledTransactions = 0;
 
-      if (activeStates.includes(state)) {
-        stats.activeVolume += amount;
-        stats.activeTransactions += 1;
+    for (const group of groups) {
+      // Narrowed explicitly: `groupBy` infers a wide union here, and a null
+      // `_sum` is what an empty state group returns.
+      const { state, _count, _sum } = group as {
+        state: string;
+        _count?: number | { _all?: number };
+        _sum?: { amount?: Prisma.Decimal | null } | null;
+      };
+      const count = Number(typeof _count === 'object' ? _count?._all : _count ?? 0);
+      const sum = _sum?.amount ?? null;
+
+      totalTransactions += count;
+      totalVolume = decimalAdd(totalVolume, sum);
+
+      if (activeStates.has(state)) {
+        activeTransactions += count;
+        activeVolume = decimalAdd(activeVolume, sum);
       }
 
       if (state === 'COMPLETED' || state === 'RELEASED') {
-        stats.completedTransactions += 1;
+        completedTransactions += count;
       }
 
       if (state === 'DISPUTED') {
-        stats.disputedTransactions += 1;
+        disputedTransactions += count;
       }
 
       if (state === 'CANCELLED') {
-        stats.cancelledTransactions += 1;
+        cancelledTransactions += count;
       }
     }
+
+    // The response contract is numeric, so the exact decimals are converted
+    // once here rather than being carried as floats through the additions.
+    const totalVolumeNumber = decimalToNumber(totalVolume);
+    const activeVolumeNumber = decimalToNumber(activeVolume);
+
+    const stats: TransactionStatsDto = {
+      totalVolume: totalVolumeNumber,
+      activeVolume: activeVolumeNumber,
+      totalTransactions,
+      activeTransactions,
+      completedTransactions,
+      completionRate: 0,
+      disputedTransactions,
+      disputeRate: 0,
+      averageTransactionValue: 0,
+      cancelledTransactions,
+    };
 
     // Calculate rates
     if (stats.totalTransactions > 0) {
@@ -260,8 +334,11 @@ export class AnalyticsService {
         (stats.completedTransactions / stats.totalTransactions) * 100;
       stats.disputeRate =
         (stats.disputedTransactions / stats.totalTransactions) * 100;
-      stats.averageTransactionValue =
-        stats.totalVolume / stats.totalTransactions;
+      // Divided in decimal so the average of an exact total is not itself
+      // rounded twice; converted to a number only for the response.
+      stats.averageTransactionValue = decimalToNumber(
+        totalVolume.div(stats.totalTransactions),
+      );
     }
 
     // Fetch vendor tracking settings for channel preferences

@@ -15,6 +15,23 @@ export class TrackingPollWorker implements OnModuleInit, OnApplicationShutdown {
   private readonly logger = new Logger(TrackingPollWorker.name);
   private timer: NodeJS.Timeout | null = null;
 
+  /**
+   * #840 — True while a run is in progress.
+   *
+   * This is the worker most likely to overrun its interval: the loop calls the
+   * logistics API once per shipped escrow, one after another, with a 10s
+   * timeout each. A provider that is slow or timing out pushes a run well past
+   * the 10-minute tick, and `setInterval` starts another one on schedule
+   * regardless. Overlapping runs then both walk the same shipped escrows, both
+   * claim and both submit `record_delivery`, and a slow provider means more
+   * than one run in flight at a time.
+   *
+   * `claimDelivery` keeps a single delivery from being recorded twice; this
+   * flag stops the duplicated polling cycle itself. `SorobanPollerService.poll()`
+   * guards the same way.
+   */
+  private running = false;
+
   constructor(
     private readonly escrowRepository: EscrowRepository,
     private readonly logisticsService: LogisticsService,
@@ -59,6 +76,26 @@ export class TrackingPollWorker implements OnModuleInit, OnApplicationShutdown {
   }
 
   async run(): Promise<void> {
+    // #840 — Skip a tick that arrives while the previous run is still going,
+    // rather than starting a second overlapping cycle.
+    if (this.running) {
+      this.logger.warn(
+        'TrackingPollWorker: previous run is still in progress — skipping this tick',
+      );
+      return;
+    }
+    this.running = true;
+
+    try {
+      await this.runCycle();
+    } finally {
+      // Cleared even when the cycle throws, or the worker would refuse every
+      // subsequent tick and silently stop recording deliveries.
+      this.running = false;
+    }
+  }
+
+  private async runCycle(): Promise<void> {
     try {
       const shipments = await this.escrowRepository.findShippedWithTracking();
 
