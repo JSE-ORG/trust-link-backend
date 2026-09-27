@@ -9,6 +9,7 @@ import {
   Optional,
 } from '@nestjs/common';
 import { NotificationsService } from '../notifications/notifications.service';
+import { ConfigService } from '../config/config.service';
 import { EscrowRecord } from '../prisma/prisma.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { LogisticsService } from '../logistics/logistics.service';
@@ -74,6 +75,8 @@ export class EscrowService {
     private readonly cacheService?: CacheService,
     @Optional()
     private readonly prisma?: PrismaService,
+    @Optional()
+    private readonly configService?: ConfigService,
   ) {}
 
   /**
@@ -413,7 +416,9 @@ export class EscrowService {
   }
 
   private buildPaymentUrl(id: string): string {
-    return `https://trust-link.local/pay/${id}`;
+    const frontendUrl =
+      this.configService?.get('FRONTEND_URL') ?? 'http://localhost:3000';
+    return `${frontendUrl.replace(/\/+$/, '')}/pay/${encodeURIComponent(id)}`;
   }
 
   /**

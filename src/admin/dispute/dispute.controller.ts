@@ -25,6 +25,8 @@ import { DisputeService } from './dispute.service';
 import { AdminDisputesPaginatedResponseDto } from './dto/admin-disputes-paginated-response.dto';
 import { AdminAuditLogPaginatedResponseDto } from './dto/admin-audit-log-paginated-response.dto';
 import { EscrowResponseDto } from '../../escrow/dto/escrow-response.dto';
+import { AdminDisputesQueryDto } from './dto/admin-disputes-query.dto';
+import { AdminAuditLogQueryDto } from './dto/admin-audit-log-query.dto';
 
 @ApiTags('Admin')
 @ApiBearerAuth()
@@ -46,16 +48,8 @@ export class DisputeController {
   @ApiResponse({ status: 403, description: 'Admin access required.' })
   @Throttle({ default: { limit: 20, ttl: THROTTLE_WINDOW_MS } })
   @Get('disputes')
-  async getDisputes(
-    @Query('status') status?: string,
-    @Query('page') page?: string,
-    @Query('limit') limit?: string,
-  ) {
-    return this.disputeService.getDisputes({
-      status,
-      page: page ? parseInt(page, 10) : undefined,
-      limit: limit ? parseInt(limit, 10) : undefined,
-    });
+  async getDisputes(@Query() query: AdminDisputesQueryDto) {
+    return this.disputeService.getDisputes(query);
   }
 
   @ApiOperation({
@@ -98,13 +92,7 @@ export class DisputeController {
   @ApiResponse({ status: 403, description: 'Admin access required.' })
   @Throttle({ default: { limit: 20, ttl: THROTTLE_WINDOW_MS } })
   @Get('audit-log')
-  async getAuditLog(
-    @Query('page') page?: string,
-    @Query('limit') limit?: string,
-  ) {
-    return this.auditLogService.findAll({
-      page: page ? parseInt(page, 10) : undefined,
-      limit: limit ? parseInt(limit, 10) : undefined,
-    });
+  async getAuditLog(@Query() query: AdminAuditLogQueryDto) {
+    return this.auditLogService.findAll(query);
   }
 }
