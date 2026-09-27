@@ -3,11 +3,12 @@ import { Sep10Controller } from './sep10.controller';
 import { Sep10Service } from './sep10.service';
 import { NonceCleanupService } from './nonce-cleanup.service';
 import { PrismaModule } from '../../prisma/prisma.module';
+import { NonceRepository } from './nonce.repository';
 
 @Module({
   imports: [PrismaModule],
   controllers: [Sep10Controller],
-  providers: [Sep10Service, NonceCleanupService],
+  providers: [Sep10Service, NonceCleanupService, NonceRepository],
   exports: [Sep10Service],
 })
 export class Sep10Module {}

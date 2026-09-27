@@ -27,20 +27,20 @@ enum DisputeStatus {
 }
 
 model Escrow {
-  id                     String        @id @default(uuid())
+  id                     String         @id @default(uuid())
   /// The escrow's id in the Soroban contract, which mints its own `u64` from an
   /// on-chain counter. The backend mints `id` as a UUID before any chain call,
   /// so the two identifiers are unrelated and this column is what joins them.
   /// Null until the on-chain escrow exists and has been matched to this row;
   /// every contract call and every inbound chain event resolves through it.
-  contractEscrowId       BigInt?       @unique
+  contractEscrowId       BigInt?        @unique
   itemName               String
   itemRef                String
-  amount                 Decimal       @db.Decimal(18, 8)
+  amount                 Decimal        @db.Decimal(18, 8)
   currency               String
   buyerAddress           String
   vendorAddress          String
-  state                  EscrowState   @default(CREATED)
+  state                  EscrowState    @default(CREATED)
   trackingId             String?
   shippedAt              DateTime?
   deliveredAt            DateTime?
@@ -51,17 +51,18 @@ model Escrow {
   buyerContactEmail      String?
   buyerContactPhone      String?
   cancelledAt            DateTime?
-  createdAt              DateTime      @default(now())
-  updatedAt              DateTime      @updatedAt
+  createdAt              DateTime       @default(now())
+  updatedAt              DateTime       @updatedAt
   disputes               Dispute[]
   notifications          Notification[]
-  vendor                 VendorProfile @relation("VendorEscrows", fields: [vendorAddress], references: [address], onDelete: Restrict)
+  vendor                 VendorProfile  @relation("VendorEscrows", fields: [vendorAddress], references: [address], onDelete: Restrict)
   events                 EscrowEvent[]
- 
+
+  @@unique([vendorAddress, itemRef])
   @@index([vendorAddress])
   @@index([buyerAddress])
   @@index([vendorAddress, state])
-  @@unique([vendorAddress, itemRef])
+  @@index([vendorAddress, itemRef], map: "Escrow_vendorAddress_itemRef_idx")
   @@index([state, trackingId])
   @@index([state, createdAt])
   @@index([state, deliveredAt])
@@ -87,22 +88,22 @@ model EscrowEvent {
 }
 
 model Dispute {
-  id           String        @id @default(cuid())
-  escrowId     String        @unique
+  id           String    @id @default(cuid())
+  escrowId     String    @unique
   reason       String
-  description  String        @default("")
-  evidenceUrls String[]      @default([])
+  description  String    @default("")
+  evidenceUrls String[]  @default([])
   // Stored as text, not the DisputeStatus enum. Migration
   // 20260529120000_add_state_deliveredat_composite_index deliberately
   // converted this column with `ALTER COLUMN "status" TYPE TEXT`, but the
   // model was never updated to match. The resulting drift made the generated
   // client compare a text column against an enum, which Postgres rejects with
   // `operator does not exist: text = "DisputeStatus"`.
-  status       String        @default("OPEN")
+  status       String    @default("OPEN")
   resolvedAt   DateTime?
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
-  escrow       Escrow        @relation(fields: [escrowId], references: [id], onDelete: Cascade)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  escrow       Escrow    @relation(fields: [escrowId], references: [id], onDelete: Cascade)
 
   @@index([status])
   @@index([resolvedAt])
@@ -116,37 +117,36 @@ enum NotificationStatus {
 }
 
 model Notification {
-  id               String             @id @default(uuid())
-  escrowId         String
-  type             String
-  channel          String
-  recipientAddress String
-  message          String
-  status           NotificationStatus @default(PENDING)
-  retryCount       Int                @default(0)
-  sentAt           DateTime?
-  failedAt         DateTime?
-  lastError        String?
+  id                String             @id @default(uuid())
+  escrowId          String
+  type              String
+  channel           String
+  recipientAddress  String
+  message           String
+  status            NotificationStatus @default(PENDING)
+  retryCount        Int                @default(0)
+  sentAt            DateTime?
+  failedAt          DateTime?
+  lastError         String?
   providerMessageId String?
-  attemptCount     Int                @default(0)
-  lastResponseCode Int?
-  createdAt        DateTime           @default(now())
-  updatedAt        DateTime           @updatedAt
-  escrow           Escrow             @relation(fields: [escrowId], references: [id], onDelete: Cascade)
+  attemptCount      Int                @default(0)
+  lastResponseCode  Int?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  escrow            Escrow             @relation(fields: [escrowId], references: [id], onDelete: Cascade)
 
   @@index([escrowId])
   @@index([status, createdAt])
 }
 
-
 model VendorProfile {
-  address          String                  @id
-  businessName     String
-  email            String?
-  phone            String?
-  description      String?
-  createdAt        DateTime                @default(now())
-  updatedAt        DateTime                @updatedAt
+  address      String   @id
+  businessName String
+  email        String?
+  phone        String?
+  description  String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   accountDetails   VendorAccountDetails?
   trackingSettings VendorTrackingSettings?
@@ -154,67 +154,73 @@ model VendorProfile {
 }
 
 model VendorAccountDetails {
-  id                  String    @id @default(cuid())
-  vendorAddress       String    @unique
-  businessLicense     String?
-  taxId               String?
-  bankAccountNumber   String?
-  bankRoutingNumber   String?
-  paymentMethods      String[]  @default([])
-  preferredCurrency   String    @default("USD")
-  billingAddress      String?
-  billingCity         String?
-  billingState        String?
-  billingCountry      String?
-  billingPostalCode   String?
-  shippingAddress     String?
-  shippingCity        String?
-  shippingState       String?
-  shippingCountry     String?
-  shippingPostalCode  String?
-  websiteUrl          String?
-  socialMediaLinks    String[]  @default([])
-  businessHours       String?
-  timezone            String    @default("UTC")
-  language            String    @default("en")
-  verificationStatus  String    @default("PENDING")
-  verifiedAt          DateTime?
-  kycStatus           String    @default("NOT_STARTED")
-  kycCompletedAt      DateTime?
-  riskScore           Int       @default(0)
-  complianceNotes     String?
-  customFields        Json?
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
+  id                 String    @id @default(cuid())
+  vendorAddress      String    @unique
+  businessLicense    String?
+  taxId              String?
+  bankAccountNumber  String?
+  bankRoutingNumber  String?
+  paymentMethods     String[]  @default([])
+  preferredCurrency  String    @default("USD")
+  billingAddress     String?
+  billingCity        String?
+  billingState       String?
+  billingCountry     String?
+  billingPostalCode  String?
+  shippingAddress    String?
+  shippingCity       String?
+  shippingState      String?
+  shippingCountry    String?
+  shippingPostalCode String?
+  websiteUrl         String?
+  socialMediaLinks   String[]  @default([])
+  businessHours      String?
+  timezone           String    @default("UTC")
+  language           String    @default("en")
+  verificationStatus String    @default("PENDING")
+  verifiedAt         DateTime?
+  kycStatus          String    @default("NOT_STARTED")
+  kycCompletedAt     DateTime?
+  riskScore          Int       @default(0)
+  complianceNotes    String?
+  customFields       Json?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
   vendor VendorProfile @relation(fields: [vendorAddress], references: [address], onDelete: Cascade)
+
+  @@index([verificationStatus])
+  @@index([kycStatus])
+  @@index([riskScore])
 }
 
 model VendorTrackingSettings {
-  id                           String    @id @default(cuid())
-  vendorAddress                String    @unique
-  enableTracking               Boolean   @default(true)
+  id                           String   @id @default(cuid())
+  vendorAddress                String   @unique
+  enableTracking               Boolean  @default(true)
   trackingProvider             String?
   trackingApiKey               String?
-  autoUpdateTracking           Boolean   @default(false)
-  trackingUpdateInterval       Int       @default(3600)
-  notifyOnDelivery             Boolean   @default(true)
-  notifyOnDelay                Boolean   @default(true)
-  notifyOnException            Boolean   @default(true)
-  delayThresholdHours          Int       @default(24)
-  deliveryConfirmation         Boolean   @default(true)
-  requireSignature             Boolean   @default(false)
-  insuranceRequired            Boolean   @default(false)
+  autoUpdateTracking           Boolean  @default(false)
+  trackingUpdateInterval       Int      @default(3600)
+  notifyOnDelivery             Boolean  @default(true)
+  notifyOnDelay                Boolean  @default(true)
+  notifyOnException            Boolean  @default(true)
+  delayThresholdHours          Int      @default(24)
+  deliveryConfirmation         Boolean  @default(true)
+  requireSignature             Boolean  @default(false)
+  insuranceRequired            Boolean  @default(false)
   insuranceValue               Float?
   customTrackingRules          Json?
   webhookUrl                   String?
   webhookSecret                String?
-  notificationChannels         String[]  @default(["EMAIL"])
-  trackingHistoryRetentionDays Int       @default(90)
-  createdAt                    DateTime  @default(now())
-  updatedAt                    DateTime  @updatedAt
+  notificationChannels         String[] @default(["EMAIL"])
+  trackingHistoryRetentionDays Int      @default(90)
+  createdAt                    DateTime @default(now())
+  updatedAt                    DateTime @updatedAt
 
   vendor VendorProfile @relation(fields: [vendorAddress], references: [address], onDelete: Cascade)
+
+  @@index([enableTracking])
 }
 
 // Issue #77 - Persistent cursor for the Stellar webhook listener.
@@ -251,24 +257,24 @@ model Nonce {
 
 // Issue #306 - Database-backed cursor persistence for blockchain listener
 model Cursor {
-  id          String   @id @default(cuid())
+  id          String   @id @default(dbgenerated("gen_random_uuid()"))
   cursorValue String
-  updatedAt   DateTime @updatedAt
+  updatedAt   DateTime @default(now()) @updatedAt
   createdAt   DateTime @default(now())
 }
 
 // Issue #303 - Persistent dead-letter queue storage
 model FailedTransaction {
-  id               String   @id @default(cuid())
+  id               String    @id @default(dbgenerated("gen_random_uuid()"))
   operation        String
   escrowId         String?
   errorMessage     String
   ledgerFeedback   Json?
-  attempts         Int      @default(1)
-  status           String   @default("PENDING_REVIEW")
+  attempts         Int       @default(1)
+  status           String    @default("PENDING_REVIEW")
   lastReplayTxHash String?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @default(now()) @updatedAt
   reviewedAt       DateTime?
   replayedAt       DateTime?
 

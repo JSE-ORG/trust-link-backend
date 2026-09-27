@@ -4,6 +4,7 @@ import { ConfigService } from '../config/config.service';
 import { GiglLogisticsService } from './gigl/gigl-logistics.service';
 import { GiglClient } from './gigl/gigl.client';
 import { LogisticsService } from './logistics.service';
+import { ProviderCredentialRepository } from './provider-credential.repository';
 
 @Global()
 @Module({
@@ -24,6 +25,7 @@ import { LogisticsService } from './logistics.service';
       inject: [ConfigService],
     },
     GiglLogisticsService,
+    ProviderCredentialRepository,
     {
       provide: LogisticsService,
       useExisting: GiglLogisticsService,

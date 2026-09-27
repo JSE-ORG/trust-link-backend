@@ -31,9 +31,11 @@ import { StressTestModule } from './stress-test/stress-test.module';
 import { DlqModule } from './dlq/dlq.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { WorkersModule } from './workers/workers.module';
+import { SentryModule } from '@sentry/nestjs/setup';
 
 @Module({
   imports: [
+    SentryModule.forRoot(),
     // Core infrastructure
     ConfigModule,
     TracingModule,
