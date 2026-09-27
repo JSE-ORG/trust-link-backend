@@ -52,7 +52,9 @@ describe('DLQ endpoints (issue #640)', () => {
     const header = Buffer.from(
       JSON.stringify({ alg: 'HS256', typ: 'JWT' }),
     ).toString('base64url');
-    const body = Buffer.from(JSON.stringify(payload)).toString('base64url');
+    const body = Buffer.from(
+      JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600, ...payload }),
+    ).toString('base64url');
     const signature = createHmac('sha256', jwtSecret)
       .update(`${header}.${body}`)
       .digest('base64url');

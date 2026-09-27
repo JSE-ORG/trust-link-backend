@@ -42,7 +42,7 @@ export class VendorEscrowController {
   @ApiResponse({ status: 403, description: 'Forbidden.' })
   @ApiResponse({ status: 429, description: 'Too many requests.' })
   @ApiResponse({ status: 500, description: 'Internal server error.' })
-  @Throttle({ auth: { limit: 20, ttl: THROTTLE_WINDOW_MS } })
+  @Throttle({ default: { limit: 20, ttl: THROTTLE_WINDOW_MS } })
   @Get('escrows')
   async getEscrows(
     @Query() query: VendorEscrowsQueryDto,

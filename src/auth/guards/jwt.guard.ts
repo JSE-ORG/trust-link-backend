@@ -90,11 +90,14 @@ export class JwtGuard implements CanActivate {
         Buffer.from(body, 'base64url').toString('utf8'),
       ) as { role?: unknown; sub?: unknown; exp?: unknown };
 
-      if (typeof payload.exp === 'number') {
-        const nowSeconds = Math.floor(Date.now() / 1000);
-        if (payload.exp <= nowSeconds) {
-          return null;
-        }
+      // A token without a numeric expiry would never expire. Sep10Service
+      // always sets one, so reject anything that lacks it.
+      if (typeof payload.exp !== 'number') {
+        return null;
+      }
+      const nowSeconds = Math.floor(Date.now() / 1000);
+      if (payload.exp <= nowSeconds) {
+        return null;
       }
 
       if (typeof payload.sub !== 'string' || !payload.sub) {

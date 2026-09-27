@@ -24,6 +24,8 @@ export interface DisputeResponseDto {
   updatedAt: Date;
 }
 
+const DISPUTABLE_STATES = new Set<string>(['FUNDED', 'SHIPPED', 'DELIVERED']);
+
 @Injectable()
 export class BuyerDisputeService {
   constructor(
@@ -73,6 +75,13 @@ export class BuyerDisputeService {
 
     if (escrow.state === 'DISPUTED') {
       throw new ConflictException('A dispute is already open for this escrow');
+    }
+
+    // docs/state-machine.md: only these states may move to DISPUTED.
+    if (!DISPUTABLE_STATES.has(escrow.state)) {
+      throw new ConflictException(
+        `Cannot open a dispute on an escrow in ${escrow.state} state`,
+      );
     }
 
     const dispute = await this.disputeRepository.create({

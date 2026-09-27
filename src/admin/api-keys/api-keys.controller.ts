@@ -37,7 +37,7 @@ export class ApiKeysController {
   @ApiResponse({ status: 400, description: 'Invalid key payload.' })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   @ApiResponse({ status: 403, description: 'Admin access required.' })
-  @Throttle({ auth: { limit: 5, ttl: 60000 } })
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @Patch('logistics')
   @HttpCode(HttpStatus.OK)
   async rotateLogisticsKey(@Body() dto: RotateApiKeyDto) {

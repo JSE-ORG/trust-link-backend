@@ -18,6 +18,7 @@ import { EscrowResponseDto } from './dto/escrow-response.dto';
 import { EscrowSummaryDto } from './dto/escrow-summary.dto';
 import { CreateEscrowDto } from './dto/create-escrow.dto';
 import { EvidenceUploadResponseDto } from './dto/evidence-upload.dto';
+import { EVIDENCE_FILE_EXTENSIONS } from './dto/evidence-upload-query.dto';
 import { S3PresignService } from '../common/services/s3-presign.service';
 import { EscrowRepository } from './escrow.repository';
 import { UpdateBuyerContactDto } from './dto/update-buyer-contact.dto';
@@ -427,7 +428,16 @@ export class EscrowService {
     callerAddress: string,
     fileName: string,
   ): EvidenceUploadResponseDto {
-    const ext = fileName.includes('.') ? fileName.split('.').pop() : 'bin';
+    // The query DTO already restricts the extension; this keeps the object key
+    // safe for any other caller.
+    const candidate = fileName.includes('.')
+      ? fileName.slice(fileName.lastIndexOf('.') + 1).toLowerCase()
+      : '';
+    const ext = (EVIDENCE_FILE_EXTENSIONS as readonly string[]).includes(
+      candidate,
+    )
+      ? candidate
+      : 'bin';
     const uuid = crypto.randomUUID();
     const storagePath = `evidence/${callerAddress}/`;
     const objectKey = `${storagePath}${uuid}.${ext}`;

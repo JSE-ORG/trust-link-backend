@@ -44,7 +44,7 @@ export class DisputeController {
   })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   @ApiResponse({ status: 403, description: 'Admin access required.' })
-  @Throttle({ auth: { limit: 20, ttl: THROTTLE_WINDOW_MS } })
+  @Throttle({ default: { limit: 20, ttl: THROTTLE_WINDOW_MS } })
   @Get('disputes')
   async getDisputes(
     @Query('status') status?: string,
@@ -70,7 +70,7 @@ export class DisputeController {
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   @ApiResponse({ status: 403, description: 'Admin access required.' })
   @ApiResponse({ status: 404, description: 'Escrow not found.' })
-  @Throttle({ auth: { limit: 10, ttl: THROTTLE_WINDOW_MS } })
+  @Throttle({ default: { limit: 10, ttl: THROTTLE_WINDOW_MS } })
   @Patch('dispute/:id/resolve')
   async resolve(
     @Param('id') id: string,
@@ -96,7 +96,7 @@ export class DisputeController {
   })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   @ApiResponse({ status: 403, description: 'Admin access required.' })
-  @Throttle({ auth: { limit: 20, ttl: THROTTLE_WINDOW_MS } })
+  @Throttle({ default: { limit: 20, ttl: THROTTLE_WINDOW_MS } })
   @Get('audit-log')
   async getAuditLog(
     @Query('page') page?: string,
