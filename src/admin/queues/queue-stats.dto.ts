@@ -81,7 +81,8 @@ export class QueuesDashboardDto {
   queues!: QueueStatsDto[];
 
   @ApiProperty({
-    description: 'ISO-8601 timestamp when this dashboard snapshot was generated.',
+    description:
+      'ISO-8601 timestamp when this dashboard snapshot was generated.',
     type: String,
     format: 'date-time',
     example: '2026-05-27T10:00:00.000Z',

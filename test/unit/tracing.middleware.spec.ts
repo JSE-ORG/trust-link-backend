@@ -283,9 +283,7 @@ describe('TracingMiddleware.use (issue #79, issue #463)', () => {
   describe('when tracing is enabled but no span is active', () => {
     beforeEach(() => {
       mockedIsTracingEnabled.mockReturnValue(true);
-      jest
-        .spyOn(api.trace, 'getActiveSpan')
-        .mockReturnValue(undefined as unknown as api.Span);
+      jest.spyOn(api.trace, 'getActiveSpan').mockReturnValue(undefined);
       jest
         .spyOn(api.context, 'with')
         .mockImplementation(((_ctx: api.Context, fn: () => unknown) =>

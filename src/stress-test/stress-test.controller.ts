@@ -25,7 +25,11 @@ export class StressTestController {
   constructor(private readonly stressTestService: StressTestService) {}
 
   @ApiOperation({ summary: 'Start a new stress test run' })
-  @ApiResponse({ status: 200, description: 'Stress test execution started.', type: StressTestResultDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Stress test execution started.',
+    type: StressTestResultDto,
+  })
   @ApiResponse({
     status: 400,
     description: 'Invalid stress test configuration.',
@@ -54,7 +58,11 @@ export class StressTestController {
   }
 
   @ApiOperation({ summary: 'List all currently active stress tests' })
-  @ApiResponse({ status: 200, description: 'Active stress tests returned.', type: [StressTestResultDto] })
+  @ApiResponse({
+    status: 200,
+    description: 'Active stress tests returned.',
+    type: [StressTestResultDto],
+  })
   @Throttle({ public: { limit: 30, ttl: 60000 } })
   @Get('active')
   getAllActiveTests(): StressTestResult[] {

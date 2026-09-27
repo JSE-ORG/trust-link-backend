@@ -1,7 +1,10 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class PerformanceMetricsDto {
-  @ApiProperty({ description: 'Unix timestamp of the request.', example: 1690000000000 })
+  @ApiProperty({
+    description: 'Unix timestamp of the request.',
+    example: 1690000000000,
+  })
   timestamp!: number;
 
   @ApiProperty({ description: 'Response time in milliseconds.', example: 125 })
@@ -10,15 +13,24 @@ export class PerformanceMetricsDto {
   @ApiProperty({ description: 'HTTP status code returned.', example: 200 })
   statusCode!: number;
 
-  @ApiProperty({ description: 'Whether the request was successful.', example: true })
+  @ApiProperty({
+    description: 'Whether the request was successful.',
+    example: true,
+  })
   success!: boolean;
 
-  @ApiPropertyOptional({ description: 'Error message if the request failed.', example: 'timeout' })
+  @ApiPropertyOptional({
+    description: 'Error message if the request failed.',
+    example: 'timeout',
+  })
   error?: string;
 }
 
 export class AlertDto {
-  @ApiProperty({ description: 'Unix timestamp when the alert was generated.', example: 1690000000000 })
+  @ApiProperty({
+    description: 'Unix timestamp when the alert was generated.',
+    example: 1690000000000,
+  })
   timestamp!: number;
 
   @ApiProperty({
@@ -35,21 +47,33 @@ export class AlertDto {
   })
   severity!: 'INFO' | 'WARNING' | 'CRITICAL';
 
-  @ApiProperty({ description: 'Human-readable alert message.', example: 'Error rate 12.50% exceeds threshold 5%' })
+  @ApiProperty({
+    description: 'Human-readable alert message.',
+    example: 'Error rate 12.50% exceeds threshold 5%',
+  })
   message!: string;
 
-  @ApiProperty({ description: 'Name of the metric that triggered the alert.', example: 'errorRate' })
+  @ApiProperty({
+    description: 'Name of the metric that triggered the alert.',
+    example: 'errorRate',
+  })
   metric!: string;
 
   @ApiProperty({ description: 'Observed value of the metric.', example: 12.5 })
   value!: number;
 
-  @ApiProperty({ description: 'Configured threshold for the metric.', example: 5 })
+  @ApiProperty({
+    description: 'Configured threshold for the metric.',
+    example: 5,
+  })
   threshold!: number;
 }
 
 export class ProfileResultDto {
-  @ApiProperty({ description: 'Zero-based index of the profile in the test config.', example: 0 })
+  @ApiProperty({
+    description: 'Zero-based index of the profile in the test config.',
+    example: 0,
+  })
   profileIndex!: number;
 
   @ApiProperty({ example: 1000 })
@@ -85,10 +109,16 @@ export class ProfileResultDto {
   @ApiProperty({ description: 'Percentage of failed requests.', example: 5 })
   errorRate!: number;
 
-  @ApiProperty({ description: 'Per-request metrics.', type: [PerformanceMetricsDto] })
+  @ApiProperty({
+    description: 'Per-request metrics.',
+    type: [PerformanceMetricsDto],
+  })
   metrics!: PerformanceMetricsDto[];
 
-  @ApiProperty({ description: 'Alerts generated for this profile.', type: [AlertDto] })
+  @ApiProperty({
+    description: 'Alerts generated for this profile.',
+    type: [AlertDto],
+  })
   alerts!: AlertDto[];
 }
 
@@ -108,33 +138,60 @@ export class OverallMetricsDto {
   @ApiProperty({ description: 'Overall error rate percentage.', example: 5 })
   overallErrorRate!: number;
 
-  @ApiProperty({ description: 'Overall throughput in requests per second.', example: 50 })
+  @ApiProperty({
+    description: 'Overall throughput in requests per second.',
+    example: 50,
+  })
   overallThroughput!: number;
 }
 
 export class StressTestResultDto {
-  @ApiProperty({ description: 'Unique identifier for the test run.', example: 'test_1690000000000_abc123def' })
+  @ApiProperty({
+    description: 'Unique identifier for the test run.',
+    example: 'test_1690000000000_abc123def',
+  })
   testId!: string;
 
-  @ApiProperty({ description: 'Name of the stress test.', example: 'Login endpoint load test' })
+  @ApiProperty({
+    description: 'Name of the stress test.',
+    example: 'Login endpoint load test',
+  })
   testName!: string;
 
-  @ApiProperty({ description: 'Unix timestamp when the test started.', example: 1690000000000 })
+  @ApiProperty({
+    description: 'Unix timestamp when the test started.',
+    example: 1690000000000,
+  })
   startTime!: number;
 
-  @ApiProperty({ description: 'Unix timestamp when the test ended.', example: 1690000060000 })
+  @ApiProperty({
+    description: 'Unix timestamp when the test ended.',
+    example: 1690000060000,
+  })
   endTime!: number;
 
-  @ApiProperty({ description: 'Total duration in milliseconds.', example: 60000 })
+  @ApiProperty({
+    description: 'Total duration in milliseconds.',
+    example: 60000,
+  })
   duration!: number;
 
-  @ApiProperty({ description: 'Results for each virtual profile.', type: [ProfileResultDto] })
+  @ApiProperty({
+    description: 'Results for each virtual profile.',
+    type: [ProfileResultDto],
+  })
   profileResults!: ProfileResultDto[];
 
-  @ApiProperty({ description: 'Aggregated metrics across all profiles.', type: OverallMetricsDto })
+  @ApiProperty({
+    description: 'Aggregated metrics across all profiles.',
+    type: OverallMetricsDto,
+  })
   overallMetrics!: OverallMetricsDto;
 
-  @ApiProperty({ description: 'Alerts generated across all profiles.', type: [AlertDto] })
+  @ApiProperty({
+    description: 'Alerts generated across all profiles.',
+    type: [AlertDto],
+  })
   alerts!: AlertDto[];
 
   @ApiProperty({

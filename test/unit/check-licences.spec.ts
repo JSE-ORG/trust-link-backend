@@ -18,14 +18,9 @@ interface CheckLicences {
   exitCodeFor: (result: { status?: number | null; error?: Error }) => number;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const {
-  BANNED_LICENCES,
-  EXCLUDED_PACKAGES,
-  FAIL_ON,
-  buildArgs,
-  exitCodeFor,
-} = require('../../scripts/check-licences') as CheckLicences;
+const { BANNED_LICENCES, EXCLUDED_PACKAGES, FAIL_ON, buildArgs, exitCodeFor } =
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  require('../../scripts/check-licences') as CheckLicences;
 
 describe('check-licences (issue #779)', () => {
   describe('exitCodeFor', () => {
