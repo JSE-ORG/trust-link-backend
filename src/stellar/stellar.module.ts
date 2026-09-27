@@ -5,6 +5,7 @@ import { STELLAR_SERVER } from './stellar.tokens';
 import { EventReplayService } from './event-replay.service';
 import { BlockchainListenerService } from './blockchain-listener.service';
 import { CursorService } from './cursor.service';
+import { CursorRepository } from './cursor.repository';
 import { SorobanPollerService } from './soroban-poller.service';
 import { HorizonService } from './horizon.service';
 import { WebhooksModule } from '../webhooks/webhooks.module';
@@ -30,6 +31,7 @@ import { STELLAR_RPC_URLS } from './stellar-endpoints';
     EventReplayService,
     BlockchainListenerService,
     CursorService,
+    CursorRepository,
     SorobanPollerService,
     HorizonService,
     {

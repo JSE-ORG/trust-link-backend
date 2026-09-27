@@ -78,5 +78,9 @@ jobs:
         if: ${{ github.event.inputs.dry_run != 'true' }}
         run: npx prisma migrate deploy
 
+      - name: Check schema and migration parity
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        run: npx prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --script --exit-code
+
       - name: Verify migration status
         run: npx prisma migrate status

@@ -1,12 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
-import { PrismaService } from '../../prisma/prisma.service';
+import { NonceRepository } from './nonce.repository';
 
 @Injectable()
 export class NonceCleanupService {
   private readonly logger = new Logger(NonceCleanupService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly nonceRepository: NonceRepository) {}
 
   /**
    * Deletes every SEP-10 challenge nonce whose `expiresAt` is in the past.
@@ -28,13 +28,7 @@ export class NonceCleanupService {
 
     const now = new Date();
 
-    const result = await this.prisma.nonce.deleteMany({
-      where: {
-        expiresAt: {
-          lt: now,
-        },
-      },
-    });
+    const result = await this.nonceRepository.deleteExpired(now);
 
     this.logger.log(
       `Nonce cleanup completed: ${result.count} expired nonces deleted`,

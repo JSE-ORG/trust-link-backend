@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { NonceCleanupService } from '../../src/auth/sep10/nonce-cleanup.service';
+import { NonceRepository } from '../../src/auth/sep10/nonce.repository';
 import { PrismaService } from '../../src/prisma/prisma.service';
 
 describe('NonceCleanupService', () => {
@@ -12,7 +13,7 @@ describe('NonceCleanupService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         NonceCleanupService,
-        { provide: PrismaService, useValue: prisma },
+        { provide: NonceRepository, useValue: new NonceRepository(prisma) },
       ],
     }).compile();
 

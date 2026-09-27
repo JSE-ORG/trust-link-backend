@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
+import { CursorRepository } from './cursor.repository';
 
 /**
  * Issue #306 – Database-backed cursor persistence for the blockchain listener.
@@ -12,7 +12,7 @@ export class CursorService {
   private readonly logger = new Logger(CursorService.name);
   private static readonly CURSOR_KEY = 'stellar-listener';
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly cursorRepository: CursorRepository) {}
 
   /**
    * Read the persisted cursor value. Returns `undefined` when no cursor has
@@ -20,9 +20,9 @@ export class CursorService {
    */
   async get(): Promise<string | undefined> {
     try {
-      const record = await this.prisma.cursor.findFirst({
-        where: { id: CursorService.CURSOR_KEY },
-      });
+      const record = await this.cursorRepository.findById(
+        CursorService.CURSOR_KEY,
+      );
       return record?.cursorValue ?? undefined;
     } catch (err) {
       this.logger.warn(
@@ -40,11 +40,7 @@ export class CursorService {
    */
   async set(cursorValue: string): Promise<void> {
     try {
-      await this.prisma.cursor.upsert({
-        where: { id: CursorService.CURSOR_KEY },
-        update: { cursorValue },
-        create: { id: CursorService.CURSOR_KEY, cursorValue },
-      });
+      await this.cursorRepository.upsert(CursorService.CURSOR_KEY, cursorValue);
     } catch (err) {
       this.logger.warn(
         'Failed to persist cursor to DB: ' +
