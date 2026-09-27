@@ -1,6 +1,7 @@
 import { Logger } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { NotificationsService } from './notifications.service';
+import { ConfigService } from '../config/config.service';
 import { SENDGRID_CLIENT, TWILIO_CLIENT } from './notifications.tokens';
 import {
   EscrowRecord,
@@ -8,6 +9,29 @@ import {
   toEscrowRecord,
 } from '../prisma/prisma.service';
 import { ensureVendors } from '../../test/prisma-helpers';
+
+/** A syntactically valid SendGrid dynamic template id (d- + 32 hex). */
+function templateId(seed: string): string {
+  return `d-${seed.repeat(32).slice(0, 32)}`;
+}
+
+const EMAIL_CONFIG: Record<string, string> = {
+  SENDGRID_API_KEY: 'SG.test-api-key',
+  SENDGRID_FROM_EMAIL: 'notifications@example.test',
+  SENDGRID_TEMPLATE_FUNDED: templateId('a'),
+  SENDGRID_TEMPLATE_SHIPPED: templateId('b'),
+  SENDGRID_TEMPLATE_DELIVERED: templateId('c'),
+  SENDGRID_TEMPLATE_DISPUTED: templateId('d'),
+  SENDGRID_TEMPLATE_COMPLETED: templateId('e'),
+  SENDGRID_TEMPLATE_REFUNDED: templateId('f'),
+};
+
+/** Minimal ConfigService stand-in returning `values[key]`. */
+function emailConfig(values: Record<string, string | undefined>): ConfigService {
+  return {
+    get: jest.fn((key: string) => values[key]),
+  } as unknown as ConfigService;
+}
 
 describe('NotificationsService', () => {
   let service: NotificationsService;
@@ -43,12 +67,17 @@ describe('NotificationsService', () => {
       messages: { create: jest.fn().mockResolvedValue({ sid: 'SM123' }) },
     };
 
+    // #839 — A real SendGrid client is only ever handed a verified sender and a
+    // configured dynamic template id, so the spec supplies both. Without them
+    // dispatchEmail() now records the notification as unsent instead of calling
+    // the provider (see the "unconfigured email" tests below).
     const moduleRef = await Test.createTestingModule({
       providers: [
         NotificationsService,
         PrismaService,
         { provide: SENDGRID_CLIENT, useValue: sendGrid },
         { provide: TWILIO_CLIENT, useValue: twilio },
+        { provide: ConfigService, useValue: emailConfig(EMAIL_CONFIG) },
       ],
     }).compile();
 
@@ -124,10 +153,13 @@ describe('NotificationsService', () => {
     it('notifyFunded calls SendGrid and Twilio with the funded template', async () => {
       await service.notifyFunded(escrow);
 
+      // #839 — the configured dynamic template id, not a synthesised
+      // `trustlink-funded` that exists in no SendGrid account.
       expect(sendGrid.send).toHaveBeenCalledWith(
         expect.objectContaining({
           to: escrow.vendorAddress,
-          templateId: 'trustlink-funded',
+          from: 'notifications@example.test',
+          templateId: EMAIL_CONFIG.SENDGRID_TEMPLATE_FUNDED,
         }),
       );
       expect(twilio.messages.create).toHaveBeenCalledWith(
@@ -544,7 +576,15 @@ describe('NotificationsService (#726) — extractResponseCode shapes', () => {
   function makeSvc(error: unknown) {
     const { stubPrisma, created } = makeStubPrisma();
     const sendGrid = { send: jest.fn().mockRejectedValue(error) };
-    const svc = new NotificationsService(stubPrisma, sendGrid);
+    // #839 — supply a valid sender + template ids so the call actually reaches
+    // the provider; these tests are about reading the status code off the
+    // rejection, not about the configuration guard.
+    const svc = new NotificationsService(
+      stubPrisma,
+      sendGrid,
+      undefined,
+      emailConfig(EMAIL_CONFIG),
+    );
     jest
       .spyOn(svc, 'sleep' as keyof NotificationsService)
       .mockResolvedValue(undefined);
@@ -580,5 +620,315 @@ describe('NotificationsService (#726) — extractResponseCode shapes', () => {
     await svc.notifyFunded(stubEscrow);
     const email = created.find((r) => r.channel === 'EMAIL');
     expect(email!.lastResponseCode).toBeNull();
+  });
+});
+
+/**
+ * Issue #839 — SendGrid was called with no `from` and a fabricated
+ * `trustlink-<type>` template id, so every email was rejected once a real API
+ * key was configured.
+ *
+ * These tests need no database: the service's only persistence on the email
+ * path is the single `notification.create` audit row, which is stubbed.
+ */
+describe('NotificationsService SendGrid sender and template ids (#839)', () => {
+  const stubEscrow: EscrowRecord = {
+    id: 'escrow-839',
+    contractEscrowId: null,
+    itemName: 'Widget',
+    itemRef: 'ref-839',
+    amount: 100,
+    currency: 'USDC',
+    buyerAddress: 'GBUYER839',
+    vendorAddress: 'GVENDOR839',
+    state: 'FUNDED',
+    trackingId: null,
+    shippedAt: null,
+    deliveredAt: null,
+    deliveryRecordedAt: null,
+    autoReleaseSubmittedAt: null,
+    autoReleaseTxHash: null,
+    disputeId: null,
+    cancelledAt: null,
+    createdAt: new Date('2026-01-01T00:00:00.000Z'),
+    updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+  };
+
+  function stubPrismaFor(created: unknown[]): PrismaService {
+    return {
+      notification: {
+        create: jest.fn(({ data }: { data: unknown }) => {
+          created.push(data);
+          return Promise.resolve(data);
+        }),
+      },
+    } as unknown as PrismaService;
+  }
+
+  function build(
+    configValues: Record<string, string | undefined>,
+    created: unknown[],
+  ) {
+    const sendGrid = { send: jest.fn().mockResolvedValue([{ headers: {} }]) };
+    const svc = new NotificationsService(
+      stubPrismaFor(created),
+      sendGrid,
+      undefined,
+      emailConfig(configValues),
+    );
+    jest
+      .spyOn(svc, 'sleep' as keyof NotificationsService)
+      .mockResolvedValue(undefined);
+    return { svc, sendGrid, created };
+  }
+
+  afterEach(() => jest.restoreAllMocks());
+
+  // ── A sender is always sent ─────────────────────────────────────────────
+
+  it('sends a verified `from` on every email', async () => {
+    const { svc, sendGrid } = build(EMAIL_CONFIG, []);
+
+    await svc.notifyFunded(stubEscrow);
+
+    expect(sendGrid.send).toHaveBeenCalledWith(
+      expect.objectContaining({ from: 'notifications@example.test' }),
+    );
+  });
+
+  it('uses the configured sender rather than one derived from the recipient', async () => {
+    const { svc, sendGrid } = build(EMAIL_CONFIG, []);
+
+    await svc.notifyFunded(stubEscrow);
+
+    const call = sendGrid.send.mock.calls[0][0] as Record<string, unknown>;
+    expect(call.from).toBe(EMAIL_CONFIG.SENDGRID_FROM_EMAIL);
+    expect(call.from).not.toBe(stubEscrow.vendorAddress);
+  });
+
+  // ── Every type maps to its own configured template id ───────────────────
+
+  it.each([
+    ['notifyFunded', EMAIL_CONFIG.SENDGRID_TEMPLATE_FUNDED],
+    ['notifyShipped', EMAIL_CONFIG.SENDGRID_TEMPLATE_SHIPPED],
+    ['notifyDelivered', EMAIL_CONFIG.SENDGRID_TEMPLATE_DELIVERED],
+    ['notifyCompleted', EMAIL_CONFIG.SENDGRID_TEMPLATE_COMPLETED],
+    ['notifyRefunded', EMAIL_CONFIG.SENDGRID_TEMPLATE_REFUNDED],
+  ] as const)(
+    '%s sends the template id configured for that type',
+    async (method, expectedTemplateId) => {
+      const created: unknown[] = [];
+      const { svc, sendGrid } = build(EMAIL_CONFIG, created);
+
+      await svc[method](stubEscrow);
+
+      expect(sendGrid.send).toHaveBeenCalledWith(
+        expect.objectContaining({ templateId: expectedTemplateId }),
+      );
+    },
+  );
+
+  it('never sends a `trustlink-<type>` template id', async () => {
+    const { svc, sendGrid } = build(EMAIL_CONFIG, []);
+
+    await svc.notifyFunded(stubEscrow);
+
+    const call = sendGrid.send.mock.calls[0][0] as { templateId: string };
+    expect(call.templateId).not.toMatch(/^trustlink-/);
+  });
+
+  it('sends the DISPUTED template id for the vendor dispute notification', async () => {
+    const { svc, sendGrid } = build(EMAIL_CONFIG, []);
+
+    await svc.notifyDisputed(stubEscrow);
+
+    expect(sendGrid.send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        templateId: EMAIL_CONFIG.SENDGRID_TEMPLATE_DISPUTED,
+      }),
+    );
+  });
+
+  it('gives each type a distinct template id', () => {
+    const ids = Object.values(EMAIL_CONFIG).filter((v) =>
+      v.startsWith('d-'),
+    );
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  // ── A missing template id is reported at boot, not at send time ─────────
+
+  it('logs an error at startup naming every type with no template id', () => {
+    const errorSpy = jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation(() => undefined);
+
+    const { svc } = build(
+      {
+        SENDGRID_API_KEY: 'SG.test-api-key',
+        SENDGRID_FROM_EMAIL: 'notifications@example.test',
+        SENDGRID_TEMPLATE_FUNDED: EMAIL_CONFIG.SENDGRID_TEMPLATE_FUNDED,
+      },
+      [],
+    );
+
+    svc.onModuleInit();
+
+    const message = errorSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(message).toContain('SHIPPED');
+    expect(message).toContain('DELIVERED');
+    expect(message).toContain('DISPUTED');
+    expect(message).toContain('COMPLETED');
+    expect(message).toContain('REFUNDED');
+    // The configured type must not be reported as missing.
+    expect(message).not.toContain('FUNDED');
+    // And the config key is named so the operator knows what to set.
+    expect(message).toContain('SENDGRID_TEMPLATE_SHIPPED');
+  });
+
+  it('logs no template error when every type is configured', () => {
+    const errorSpy = jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation(() => undefined);
+
+    const { svc } = build(EMAIL_CONFIG, []);
+
+    svc.onModuleInit();
+
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
+
+  it('does not report template ids at boot when no API key is configured', () => {
+    const errorSpy = jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation(() => undefined);
+
+    const { svc } = build({ SENDGRID_FROM_EMAIL: 'x@example.test' }, []);
+
+    svc.onModuleInit();
+
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
+
+  it('reports a missing sender at boot while a key is configured', () => {
+    const errorSpy = jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation(() => undefined);
+
+    const { svc } = build({ SENDGRID_API_KEY: 'SG.test-api-key' }, []);
+
+    svc.onModuleInit();
+
+    const message = errorSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(message).toContain('SENDGRID_FROM_EMAIL');
+  });
+
+  // ── A missing template id is not retried at send time ───────────────────
+
+  it('does not call the provider when the type has no template id', async () => {
+    const created: unknown[] = [];
+    const { svc, sendGrid } = build(
+      {
+        SENDGRID_API_KEY: 'SG.test-api-key',
+        SENDGRID_FROM_EMAIL: 'notifications@example.test',
+        SENDGRID_TEMPLATE_FUNDED: EMAIL_CONFIG.SENDGRID_TEMPLATE_FUNDED,
+      },
+      created,
+    );
+
+    await svc.notifyShipped(stubEscrow);
+
+    expect(sendGrid.send).not.toHaveBeenCalled();
+  });
+
+  it('still records an audit row for an unconfigured type', async () => {
+    const created: unknown[] = [];
+    const { svc } = build(
+      {
+        SENDGRID_API_KEY: 'SG.test-api-key',
+        SENDGRID_FROM_EMAIL: 'notifications@example.test',
+        SENDGRID_TEMPLATE_FUNDED: EMAIL_CONFIG.SENDGRID_TEMPLATE_FUNDED,
+      },
+      created,
+    );
+
+    await svc.notifyShipped(stubEscrow);
+
+    const email = created.find(
+      (r) => (r as { channel: string }).channel === 'EMAIL',
+    ) as { type: string; attemptCount: number } | undefined;
+    expect(email).toBeDefined();
+    expect(email!.type).toBe('SHIPPED');
+    // No provider call was attempted, so no attempt was counted.
+    expect(email!.attemptCount).toBe(0);
+  });
+
+  it('does not retry a permanently unconfigured email (one audit row only)', async () => {
+    const created: unknown[] = [];
+    const { svc, sendGrid } = build(
+      { SENDGRID_API_KEY: 'SG.test-api-key' },
+      created,
+    );
+
+    await svc.notifyFunded(stubEscrow);
+
+    expect(sendGrid.send).not.toHaveBeenCalled();
+    const emailRows = created.filter(
+      (r) => (r as { channel: string }).channel === 'EMAIL',
+    );
+    expect(emailRows).toHaveLength(1);
+  });
+
+  it('treats a blank template id as unconfigured', async () => {
+    const created: unknown[] = [];
+    const { svc, sendGrid } = build(
+      {
+        SENDGRID_API_KEY: 'SG.test-api-key',
+        SENDGRID_FROM_EMAIL: 'notifications@example.test',
+        SENDGRID_TEMPLATE_FUNDED: '   ',
+      },
+      created,
+    );
+
+    await svc.notifyFunded(stubEscrow);
+
+    expect(sendGrid.send).not.toHaveBeenCalled();
+  });
+
+  it('trims surrounding whitespace from a configured template id', async () => {
+    const { svc, sendGrid } = build(
+      {
+        ...EMAIL_CONFIG,
+        SENDGRID_TEMPLATE_FUNDED: `  ${EMAIL_CONFIG.SENDGRID_TEMPLATE_FUNDED}  `,
+      },
+      [],
+    );
+
+    await svc.notifyFunded(stubEscrow);
+
+    expect(sendGrid.send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        templateId: EMAIL_CONFIG.SENDGRID_TEMPLATE_FUNDED,
+      }),
+    );
+  });
+
+  // ── Unconfigured deployments keep working ───────────────────────────────
+
+  it('still records the audit row when SendGrid is disabled (no-op client)', async () => {
+    const created: unknown[] = [];
+    const svc = new NotificationsService(stubPrismaFor(created));
+
+    await svc.notifyFunded(stubEscrow);
+
+    const email = created.find(
+      (r) => (r as { channel: string }).channel === 'EMAIL',
+    );
+    expect(email).toBeDefined();
+  });
+
+  it('does not throw at boot when no ConfigService is available', () => {
+    const svc = new NotificationsService(stubPrismaFor([]));
+    expect(() => svc.onModuleInit()).not.toThrow();
   });
 });
