@@ -24,6 +24,10 @@ import { EscrowRepository } from './escrow.repository';
 import { UpdateBuyerContactDto } from './dto/update-buyer-contact.dto';
 import { encryptContact } from '../common/sanitization/contact-encryption.util';
 import { EventsResult } from './escrow.types';
+import {
+  ONE_HOUR_SECONDS,
+  SECONDS_PER_DAY,
+} from '../common/constants/time.constants';
 
 export type EscrowWithPaymentUrl = EscrowRecord & {
   paymentUrl: string;
@@ -240,8 +244,7 @@ export class EscrowService {
     const result = await this.createEscrow(dto, vendorAddress);
 
     if (this.cacheService) {
-      // Cache for 24 hours (86400 seconds)
-      await this.cacheService.set(cacheKey, result, 86400);
+      await this.cacheService.set(cacheKey, result, SECONDS_PER_DAY);
     }
 
     return result;
@@ -443,7 +446,7 @@ export class EscrowService {
     const objectKey = `${storagePath}${uuid}.${ext}`;
     const publicUrl = `https://storage.trustlink.io/${objectKey}`;
     const presigned = this.s3PresignService.presign(publicUrl);
-    const expiresInSeconds = 3600;
+    const expiresInSeconds = ONE_HOUR_SECONDS;
 
     return {
       uploadUrl: presigned,

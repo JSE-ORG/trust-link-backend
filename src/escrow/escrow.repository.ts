@@ -7,6 +7,7 @@ import {
   PrismaService,
   toEscrowRecord,
 } from '../prisma/prisma.service';
+import { MILLISECONDS_PER_HOUR } from '../common/constants/time.constants';
 import { CreateEscrowDto } from './dto/create-escrow.dto';
 import {
   AUTO_RELEASE_WINDOW_HOURS,
@@ -331,7 +332,8 @@ export class EscrowRepository {
     referenceTime = new Date(),
   ): Promise<AutoReleaseEligibleResult> {
     const cutoff = new Date(
-      referenceTime.getTime() - AUTO_RELEASE_WINDOW_HOURS * 60 * 60 * 1000,
+      referenceTime.getTime() -
+        AUTO_RELEASE_WINDOW_HOURS * MILLISECONDS_PER_HOUR,
     );
     return this.prisma.escrow
       .findMany({

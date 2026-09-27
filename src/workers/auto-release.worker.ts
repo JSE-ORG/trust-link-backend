@@ -8,8 +8,7 @@ import { DisputeRepository } from '../dispute/dispute.repository';
 import { EscrowRepository } from '../escrow/escrow.repository';
 import { ContractService } from '../stellar/contract.service';
 import { ConfigService } from '../config/config.service';
-
-const EVERY_5_MINUTES = 5 * 60 * 1000;
+import { FIVE_MINUTES_MS } from '../common/constants/time.constants';
 
 /**
  * States an escrow can no longer move out of. Mirrors the set in
@@ -60,7 +59,7 @@ export class AutoReleaseWorker implements OnModuleInit, OnApplicationShutdown {
 
     this.timer = setInterval(() => {
       void this.run();
-    }, EVERY_5_MINUTES);
+    }, FIVE_MINUTES_MS);
   }
 
   onApplicationShutdown(): void {

@@ -1,13 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import axios from 'axios';
 import { ConfigService } from '../config/config.service';
+import { STELLAR_HORIZON_URLS } from './stellar-endpoints';
 
-export const DEFAULT_HORIZON_URL = 'https://horizon-testnet.stellar.org';
-
-const HORIZON_URLS: Record<'TESTNET' | 'MAINNET', string> = {
-  TESTNET: DEFAULT_HORIZON_URL,
-  MAINNET: 'https://horizon.stellar.org',
-};
+export const DEFAULT_HORIZON_URL = STELLAR_HORIZON_URLS.TESTNET;
 
 /** Matches the timeout the readiness probe previously used inline in AppController. */
 export const HEALTH_CHECK_TIMEOUT_MS = 150;
@@ -32,7 +28,7 @@ export class HorizonService {
     const configured = this.config.get('STELLAR_HORIZON_URL');
     const network = this.config.get('STELLAR_NETWORK');
     this.horizonUrl =
-      configured || HORIZON_URLS[network] || DEFAULT_HORIZON_URL;
+      configured || STELLAR_HORIZON_URLS[network] || DEFAULT_HORIZON_URL;
   }
 
   /**
