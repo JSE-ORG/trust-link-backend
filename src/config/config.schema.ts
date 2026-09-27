@@ -111,6 +111,16 @@ const sorobanRpcUrl = Joi.string()
 export const configValidationSchema = Joi.object({
   PORT: Joi.number().default(3000),
   API_BASE_URL: Joi.string().uri().default('http://localhost:3000'),
+  FRONTEND_URL: Joi.string()
+    .uri()
+    .when('NODE_ENV', {
+      is: 'production',
+      then: Joi.required().messages({
+        'any.required':
+          'Config validation error: FRONTEND_URL is required in production',
+      }),
+      otherwise: Joi.string().uri().default('http://localhost:3000'),
+    }),
   DATABASE_URL: Joi.string().required(),
   CONTACT_ENCRYPTION_KEY: Joi.string()
     .hex()
@@ -187,6 +197,20 @@ export const configValidationSchema = Joi.object({
   SENDGRID_API_KEY: Joi.string().optional(),
   TWILIO_ACCOUNT_SID: Joi.string().optional(),
   TWILIO_AUTH_TOKEN: Joi.string().optional(),
+  TWILIO_FROM_NUMBER: Joi.string()
+    .pattern(/^\+[1-9]\d{7,14}$/)
+    .when('TWILIO_ACCOUNT_SID', {
+      is: Joi.exist(),
+      then: Joi.required().messages({
+        'any.required':
+          'Config validation error: TWILIO_FROM_NUMBER is required when TWILIO_ACCOUNT_SID is set',
+      }),
+      otherwise: Joi.optional(),
+    })
+    .messages({
+      'string.pattern.base':
+        'Config validation error: TWILIO_FROM_NUMBER must be an E.164 phone number',
+    }),
   STELLAR_NETWORK: Joi.string().valid('TESTNET', 'MAINNET').default('TESTNET'),
   ALLOWED_ORIGINS: Joi.string().optional(),
   CSP_CONNECT_SRC: Joi.string().optional(),

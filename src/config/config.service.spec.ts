@@ -15,6 +15,7 @@ import {
 
 const validationSchema = Joi.object({
   PORT: Joi.number().default(3000),
+  FRONTEND_URL: Joi.string().uri().default('http://localhost:3000'),
   DATABASE_URL: Joi.string().required(),
   SEP10_JWT_SECRET: Joi.string().min(32).required(),
   PRESIGN_SECRET: Joi.string().required(),
@@ -32,6 +33,7 @@ const validationSchema = Joi.object({
   SENDGRID_API_KEY: Joi.string().optional(),
   TWILIO_ACCOUNT_SID: Joi.string().optional(),
   TWILIO_AUTH_TOKEN: Joi.string().optional(),
+  TWILIO_FROM_NUMBER: Joi.string().optional(),
   STELLAR_NETWORK: Joi.string().valid('TESTNET', 'MAINNET').default('TESTNET'),
   ALLOWED_ORIGINS: Joi.string().optional(),
   STELLAR_WEBHOOK_SECRET: Joi.string().optional(),

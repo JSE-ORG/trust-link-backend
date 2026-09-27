@@ -7,6 +7,7 @@ import {
 } from '../prisma/prisma.service';
 import { SENDGRID_CLIENT, TWILIO_CLIENT } from './notifications.tokens';
 import { decryptContact } from '../common/sanitization/contact-encryption.util';
+import { ConfigService } from '../config/config.service';
 
 interface SendGridClient {
   send(message: Record<string, unknown>): Promise<unknown>;
@@ -39,6 +40,8 @@ export class NotificationsService {
     @Optional()
     @Inject(TWILIO_CLIENT)
     private readonly twilio: TwilioClient = noopTwilio,
+    @Optional()
+    private readonly configService?: ConfigService,
   ) {}
 
   /**
@@ -283,6 +286,9 @@ export class NotificationsService {
         const response = await this.twilio.messages.create({
           to: recipientAddress,
           body: `${type}: ${escrow.itemName}`,
+          ...(this.configService?.get('TWILIO_FROM_NUMBER')
+            ? { from: this.configService.get('TWILIO_FROM_NUMBER') }
+            : {}),
         });
         providerMessageId = response.sid ?? null;
         break;

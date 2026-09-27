@@ -44,6 +44,28 @@ describe('AuditLogService (Issues #816 & #817)', () => {
       expect(untypedService.clear).toBeUndefined();
       expect(untypedService.truncate).toBeUndefined();
     });
+
+    it('returns a detached array and entries from findAll', async () => {
+      const storedEntry = {
+        id: 'audit-1',
+        action: 'DISPUTE_RESOLVED',
+        adminAddress: 'GADMIN123',
+        entityType: 'escrow',
+        entityId: 'escrow-1',
+        details: { resolution: 'RELEASE' },
+        occurredAt: new Date('2026-01-01T00:00:00.000Z'),
+      };
+      prisma.auditLog.findMany.mockResolvedValue([storedEntry] as never);
+      prisma.auditLog.count.mockResolvedValue(1);
+
+      const result = await service.findAll();
+      result.data[0].action = 'MUTATED';
+      result.data.splice(0, 1);
+
+      expect(storedEntry.action).toBe('DISPUTE_RESOLVED');
+      expect(storedEntry.id).toBe('audit-1');
+      expect(result.data).toHaveLength(0);
+    });
   });
 
   describe('append', () => {

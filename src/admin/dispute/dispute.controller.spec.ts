@@ -3,6 +3,8 @@ import { ConfigService } from '../../config/config.service';
 import { AuditLogService } from '../../audit-log/audit-log.service';
 import { DisputeController } from './dispute.controller';
 import { DisputeService } from './dispute.service';
+import { AdminDisputesQueryDto } from './dto/admin-disputes-query.dto';
+import { AdminAuditLogQueryDto } from './dto/admin-audit-log-query.dto';
 
 describe('DisputeController', () => {
   let controller: DisputeController;
@@ -51,13 +53,10 @@ describe('DisputeController', () => {
       };
       disputeService.getDisputes.mockResolvedValue(expected);
 
-      const result = await controller.getDisputes();
+      const query = new AdminDisputesQueryDto();
+      const result = await controller.getDisputes(query);
 
-      expect(disputeService.getDisputes).toHaveBeenCalledWith({
-        status: undefined,
-        page: undefined,
-        limit: undefined,
-      });
+      expect(disputeService.getDisputes).toHaveBeenCalledWith(query);
       expect(result).toBe(expected);
     });
 
@@ -70,70 +69,30 @@ describe('DisputeController', () => {
       };
       disputeService.getDisputes.mockResolvedValue(expected);
 
-      const result = await controller.getDisputes('OPEN', '2', '25');
-
-      expect(disputeService.getDisputes).toHaveBeenCalledWith({
+      const query = Object.assign(new AdminDisputesQueryDto(), {
         status: 'OPEN',
         page: 2,
         limit: 25,
       });
+      const result = await controller.getDisputes(query);
+
+      expect(disputeService.getDisputes).toHaveBeenCalledWith(query);
       expect(result).toBe(expected);
     });
 
-    it('delegates with page only when limit is omitted', async () => {
-      const expected = {
-        data: [],
-        total: 1,
-        page: 3,
-        limit: 20,
-      };
+    it('passes status, page, and limit through unchanged', async () => {
+      const expected = { data: [], total: 1, page: 2, limit: 25 };
+      const query = Object.assign(new AdminDisputesQueryDto(), {
+        status: 'OPEN',
+        page: 2,
+        limit: 25,
+      });
       disputeService.getDisputes.mockResolvedValue(expected);
 
-      const result = await controller.getDisputes('OPEN', '3', undefined);
+      const result = await controller.getDisputes(query);
 
-      expect(disputeService.getDisputes).toHaveBeenCalledWith({
-        status: 'OPEN',
-        page: 3,
-        limit: undefined,
-      });
+      expect(disputeService.getDisputes).toHaveBeenCalledWith(query);
       expect(result).toBe(expected);
-    });
-
-    it('delegates with limit only when page is omitted', async () => {
-      const expected = {
-        data: [],
-        total: 1,
-        page: 1,
-        limit: 15,
-      };
-      disputeService.getDisputes.mockResolvedValue(expected);
-
-      const result = await controller.getDisputes('OPEN', undefined, '15');
-
-      expect(disputeService.getDisputes).toHaveBeenCalledWith({
-        status: 'OPEN',
-        page: undefined,
-        limit: 15,
-      });
-      expect(result).toBe(expected);
-    });
-
-    it('keeps the current behavior for a non-numeric page query value', async () => {
-      const expected = {
-        data: [],
-        total: 0,
-        page: 1,
-        limit: 10,
-      };
-      disputeService.getDisputes.mockResolvedValue(expected);
-
-      await controller.getDisputes('OPEN', 'abc', '10');
-
-      expect(disputeService.getDisputes).toHaveBeenCalledWith({
-        status: 'OPEN',
-        page: Number.NaN,
-        limit: 10,
-      });
     });
   });
 
@@ -174,12 +133,10 @@ describe('DisputeController', () => {
       };
       auditLogService.findAll.mockResolvedValue(expected);
 
-      const result = await controller.getAuditLog();
+      const query = new AdminAuditLogQueryDto();
+      const result = await controller.getAuditLog(query);
 
-      expect(auditLogService.findAll).toHaveBeenCalledWith({
-        page: undefined,
-        limit: undefined,
-      });
+      expect(auditLogService.findAll).toHaveBeenCalledWith(query);
       expect(result).toBe(expected);
     });
 
@@ -192,12 +149,13 @@ describe('DisputeController', () => {
       };
       auditLogService.findAll.mockResolvedValue(expected as never);
 
-      const result = await controller.getAuditLog('2', '25');
-
-      expect(auditLogService.findAll).toHaveBeenCalledWith({
+      const query = Object.assign(new AdminAuditLogQueryDto(), {
         page: 2,
         limit: 25,
       });
+      const result = await controller.getAuditLog(query);
+
+      expect(auditLogService.findAll).toHaveBeenCalledWith(query);
       expect(result).toBe(expected);
     });
 
@@ -210,12 +168,10 @@ describe('DisputeController', () => {
       };
       auditLogService.findAll.mockResolvedValue(expected);
 
-      const result = await controller.getAuditLog('3', undefined);
+      const query = Object.assign(new AdminAuditLogQueryDto(), { page: 3 });
+      const result = await controller.getAuditLog(query);
 
-      expect(auditLogService.findAll).toHaveBeenCalledWith({
-        page: 3,
-        limit: undefined,
-      });
+      expect(auditLogService.findAll).toHaveBeenCalledWith(query);
       expect(result).toBe(expected);
     });
 
@@ -228,30 +184,11 @@ describe('DisputeController', () => {
       };
       auditLogService.findAll.mockResolvedValue(expected);
 
-      const result = await controller.getAuditLog(undefined, '15');
+      const query = Object.assign(new AdminAuditLogQueryDto(), { limit: 15 });
+      const result = await controller.getAuditLog(query);
 
-      expect(auditLogService.findAll).toHaveBeenCalledWith({
-        page: undefined,
-        limit: 15,
-      });
+      expect(auditLogService.findAll).toHaveBeenCalledWith(query);
       expect(result).toBe(expected);
-    });
-
-    it('handles non-numeric page or limit', async () => {
-      const expected = {
-        data: [],
-        total: 0,
-        page: 1,
-        limit: 20,
-      };
-      auditLogService.findAll.mockResolvedValue(expected);
-
-      await controller.getAuditLog('abc', 'xyz');
-
-      expect(auditLogService.findAll).toHaveBeenCalledWith({
-        page: Number.NaN,
-        limit: Number.NaN,
-      });
     });
   });
 });

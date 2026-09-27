@@ -727,4 +727,84 @@ describe('ConfigModule — Stellar Key Validation', () => {
       expect(error?.message).toContain('API_BASE_URL');
     });
   });
+
+  describe('FRONTEND_URL — payment links (#837)', () => {
+    it('accepts a configured frontend URI', () => {
+      const { error, value } = configValidationSchema.validate(
+        { ...VALID_ENV, FRONTEND_URL: 'https://shop.example.com/' },
+        VALIDATE_OPTIONS,
+      );
+
+      expect(error).toBeUndefined();
+      expect(value.FRONTEND_URL).toBe('https://shop.example.com/');
+    });
+
+    it('defaults to localhost outside production', () => {
+      const { error, value } = configValidationSchema.validate(
+        { ...VALID_ENV, FRONTEND_URL: undefined },
+        VALIDATE_OPTIONS,
+      );
+
+      expect(error).toBeUndefined();
+      expect(value.FRONTEND_URL).toBe('http://localhost:3000');
+    });
+
+    it('requires FRONTEND_URL in production', () => {
+      const { error } = configValidationSchema.validate(
+        { ...VALID_ENV, NODE_ENV: 'production', FRONTEND_URL: undefined },
+        VALIDATE_OPTIONS,
+      );
+
+      expect(error?.message).toContain(
+        'FRONTEND_URL is required in production',
+      );
+    });
+
+    it('rejects an invalid frontend URI', () => {
+      const { error } = configValidationSchema.validate(
+        { ...VALID_ENV, FRONTEND_URL: 'not-a-url' },
+        VALIDATE_OPTIONS,
+      );
+
+      expect(error?.message).toContain('FRONTEND_URL');
+    });
+  });
+
+  describe('TWILIO_FROM_NUMBER — SMS sender (#838)', () => {
+    it('requires a valid E.164 sender when a Twilio account is configured', () => {
+      const { error, value } = configValidationSchema.validate(
+        {
+          ...VALID_ENV,
+          TWILIO_ACCOUNT_SID: 'AC123',
+          TWILIO_FROM_NUMBER: '+15551234567',
+        },
+        VALIDATE_OPTIONS,
+      );
+
+      expect(error).toBeUndefined();
+      expect(value.TWILIO_FROM_NUMBER).toBe('+15551234567');
+    });
+
+    it('rejects a configured account without a sender', () => {
+      const { error } = configValidationSchema.validate(
+        { ...VALID_ENV, TWILIO_ACCOUNT_SID: 'AC123' },
+        VALIDATE_OPTIONS,
+      );
+
+      expect(error?.message).toContain('TWILIO_FROM_NUMBER is required');
+    });
+
+    it('rejects a sender that is not an E.164 number', () => {
+      const { error } = configValidationSchema.validate(
+        {
+          ...VALID_ENV,
+          TWILIO_ACCOUNT_SID: 'AC123',
+          TWILIO_FROM_NUMBER: '555-123-4567',
+        },
+        VALIDATE_OPTIONS,
+      );
+
+      expect(error?.message).toContain('TWILIO_FROM_NUMBER must be an E.164');
+    });
+  });
 });

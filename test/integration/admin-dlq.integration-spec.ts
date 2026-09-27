@@ -151,6 +151,17 @@ describe('Admin DLQ Operations (issue #297)', () => {
       expect(res.body.data).toHaveLength(1);
       expect(res.body.data[0].operation).toBe('submitAutoRelease');
     });
+
+    it.each([
+      ['/admin/dlq?page=abc', 'non-numeric page'],
+      ['/admin/dlq?limit=101', 'out-of-range limit'],
+      ['/admin/dlq?status=BOGUS', 'unknown status'],
+    ])('rejects %s with 400 (%s)', async (path) => {
+      await request(httpServer())
+        .get(path)
+        .set('Authorization', `Bearer ${adminJwt()}`)
+        .expect(400);
+    });
   });
 
   describe('GET /admin/dlq/:id', () => {

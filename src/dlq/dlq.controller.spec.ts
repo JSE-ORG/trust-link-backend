@@ -6,6 +6,7 @@ import {
 import { Test } from '@nestjs/testing';
 import type { TestingModule } from '@nestjs/testing';
 import { DlqController } from './dlq.controller';
+import { ListFailedTransactionsQueryDto } from './dto/list-failed-transactions-query.dto';
 import { DlqService } from './dlq.service';
 import { ContractService } from '../stellar/contract.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -245,21 +246,16 @@ describe('DlqController', () => {
       };
       dlq.list.mockResolvedValue(paginated);
 
-      const result = await controller.list(
-        'PENDING_REVIEW',
-        'submitAutoRelease',
-        'escrow-123',
-        '2',
-        '10',
-      );
-
-      expect(dlq.list).toHaveBeenCalledWith({
+      const query = Object.assign(new ListFailedTransactionsQueryDto(), {
         status: 'PENDING_REVIEW',
         operation: 'submitAutoRelease',
         escrowId: 'escrow-123',
         page: 2,
         limit: 10,
       });
+      const result = await controller.list(query);
+
+      expect(dlq.list).toHaveBeenCalledWith(query);
       expect(result).toEqual(paginated);
     });
 
@@ -270,9 +266,10 @@ describe('DlqController', () => {
       const emptyPaginated = { data: [], total: 0, page: 1, limit: 20 };
       dlq.list.mockResolvedValue(emptyPaginated);
 
-      const result = await controller.list();
+      const query = new ListFailedTransactionsQueryDto();
+      const result = await controller.list(query);
 
-      expect(dlq.list).toHaveBeenCalledWith({});
+      expect(dlq.list).toHaveBeenCalledWith(query);
       expect(result).toEqual(emptyPaginated);
     });
   });
