@@ -33,7 +33,7 @@ import {
   AutoReleaseSourceNotConfiguredError,
   ConfigService,
 } from '../config/config.service';
-import { PrismaService } from '../prisma/prisma.service';
+import { EscrowRepository } from '../escrow/escrow.repository';
 
 /**
  * Admin endpoints for reviewing and re-executing failed Stellar contract
@@ -49,7 +49,7 @@ export class DlqController {
     private readonly dlq: DlqService,
     private readonly contract: ContractService,
     private readonly config: ConfigService,
-    private readonly prisma: PrismaService,
+    private readonly escrows: EscrowRepository,
   ) {}
 
   /**
@@ -187,18 +187,19 @@ export class DlqController {
         // `auto_release(env, escrow_id: u64)` takes the contract's own id.
         // The DLQ record carries the backend UUID, so it has to be translated
         // before replay; without a mapping there is no valid call to make.
-        const escrow = await this.prisma.escrow.findUnique({
-          where: { id: r.escrowId },
-          select: { contractEscrowId: true },
-        });
-        if (!escrow?.contractEscrowId) {
+        // Issue #844: the lookup goes through EscrowRepository so the
+        // controller never reaches for PrismaService itself.
+        const contractEscrowId = await this.escrows.findContractEscrowId(
+          r.escrowId,
+        );
+        if (contractEscrowId === null) {
           throw new ConflictException(
             `Escrow "${r.escrowId}" has no contractEscrowId, so auto-release ` +
               `cannot be replayed on-chain.`,
           );
         }
         return this.contract.submitAutoRelease(
-          escrow.contractEscrowId,
+          contractEscrowId,
           this.requireAutoReleaseSource(),
         );
       }
