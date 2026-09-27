@@ -7,7 +7,8 @@ import { ApiProperty } from '@nestjs/swagger';
  */
 export class RotateApiKeyResponseDto {
   @ApiProperty({
-    description: 'Confirmation message indicating the API key was updated and encrypted.',
+    description:
+      'Confirmation message indicating the API key was updated and encrypted.',
     example: 'Logistics API key updated and encrypted',
   })
   message!: string;

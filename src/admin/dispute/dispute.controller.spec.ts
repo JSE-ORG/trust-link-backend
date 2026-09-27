@@ -172,7 +172,7 @@ describe('DisputeController', () => {
         page: 1,
         limit: 20,
       };
-      auditLogService.findAll.mockResolvedValue(expected as never);
+      auditLogService.findAll.mockResolvedValue(expected);
 
       const result = await controller.getAuditLog();
 
@@ -208,7 +208,7 @@ describe('DisputeController', () => {
         page: 3,
         limit: 20,
       };
-      auditLogService.findAll.mockResolvedValue(expected as never);
+      auditLogService.findAll.mockResolvedValue(expected);
 
       const result = await controller.getAuditLog('3', undefined);
 
@@ -226,7 +226,7 @@ describe('DisputeController', () => {
         page: 1,
         limit: 15,
       };
-      auditLogService.findAll.mockResolvedValue(expected as never);
+      auditLogService.findAll.mockResolvedValue(expected);
 
       const result = await controller.getAuditLog(undefined, '15');
 
@@ -244,7 +244,7 @@ describe('DisputeController', () => {
         page: 1,
         limit: 20,
       };
-      auditLogService.findAll.mockResolvedValue(expected as never);
+      auditLogService.findAll.mockResolvedValue(expected);
 
       await controller.getAuditLog('abc', 'xyz');
 

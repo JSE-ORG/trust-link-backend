@@ -67,7 +67,8 @@ export class ChallengeWithNetworkResponseDto {
   transaction!: string;
 
   @ApiProperty({
-    description: 'Stellar network passphrase the challenge was constructed for.',
+    description:
+      'Stellar network passphrase the challenge was constructed for.',
     example: 'Test SDF Network ; September 2015',
   })
   network_passphrase!: string;
@@ -75,7 +76,8 @@ export class ChallengeWithNetworkResponseDto {
 
 export class AuthTokenResponseDto {
   @ApiProperty({
-    description: 'JWT access token used in Authorization Bearer header for authenticated requests.',
+    description:
+      'JWT access token used in Authorization Bearer header for authenticated requests.',
     example:
       'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJHQUlHWkhIV0szUkVaUVBMUVg1RE5GUllEVVBGR0c2Vlk0UFNXU0w1M04yT1kzWjNIM0NFNVRNSyIsImlhdCI6MTc0MDUwMDAwMCwiZXhwIjoxNzQwNTAwOTAwfQ.fake_signature_placeholder',
   })

@@ -368,42 +368,47 @@ describe('NotificationsService (#726) — channel selection', () => {
 
   const makeStubEscrow = (
     overrides: Partial<EscrowRecord> = {},
-  ): EscrowRecord =>
-    ({
-      id: 'escrow-726',
-      itemName: 'Widget',
-      itemRef: 'ref-726',
-      amount: 50 as unknown as EscrowRecord['amount'],
-      currency: 'USDC',
-      buyerAddress: 'GBUYER726',
-      vendorAddress: 'GVENDOR',
-      state: 'SHIPPED',
-      trackingId: null,
-      shippedAt: null,
-      deliveredAt: null,
-      deliveryRecordedAt: null,
-      autoReleaseSubmittedAt: null,
-      autoReleaseTxHash: null,
-      disputeId: null,
-      cancelledAt: null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      contractEscrowId: null,
-      buyerContactEmail: null,
-      buyerContactPhone: null,
-      ...overrides,
-    }) as EscrowRecord;
+  ): EscrowRecord => ({
+    id: 'escrow-726',
+    itemName: 'Widget',
+    itemRef: 'ref-726',
+    amount: 50,
+    currency: 'USDC',
+    buyerAddress: 'GBUYER726',
+    vendorAddress: 'GVENDOR',
+    state: 'SHIPPED',
+    trackingId: null,
+    shippedAt: null,
+    deliveredAt: null,
+    deliveryRecordedAt: null,
+    autoReleaseSubmittedAt: null,
+    autoReleaseTxHash: null,
+    disputeId: null,
+    cancelledAt: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    contractEscrowId: null,
+    buyerContactEmail: null,
+    buyerContactPhone: null,
+    ...overrides,
+  });
 
   function makeStubPrisma() {
     const created: Array<Record<string, unknown>> = [];
     return {
       stubPrisma: {
         notification: {
-          create: jest.fn().mockImplementation(({ data }: { data: Record<string, unknown> }) => {
-            created.push(data);
-            return Promise.resolve(data);
-          }),
-          findMany: jest.fn().mockImplementation(() => Promise.resolve(created)),
+          create: jest
+            .fn()
+            .mockImplementation(
+              ({ data }: { data: Record<string, unknown> }) => {
+                created.push(data);
+                return Promise.resolve(data);
+              },
+            ),
+          findMany: jest
+            .fn()
+            .mockImplementation(() => Promise.resolve(created)),
         },
       } as unknown as PrismaService,
       created,
@@ -434,7 +439,9 @@ describe('NotificationsService (#726) — channel selection', () => {
     jest
       .spyOn(contactEncryption, 'decryptContact')
       .mockImplementationOnce(() => 'buyer@example.com') // email succeeds
-      .mockImplementationOnce(() => { throw new Error('bad phone'); }); // phone fails
+      .mockImplementationOnce(() => {
+        throw new Error('bad phone');
+      }); // phone fails
 
     await service.notifyShipped(escrow);
 
@@ -454,7 +461,9 @@ describe('NotificationsService (#726) — channel selection', () => {
 
     jest
       .spyOn(contactEncryption, 'decryptContact')
-      .mockImplementationOnce(() => { throw new Error('bad email'); }) // email fails
+      .mockImplementationOnce(() => {
+        throw new Error('bad email');
+      }) // email fails
       .mockImplementationOnce(() => '+15550001234'); // phone succeeds
 
     await service.notifyShipped(escrow);
@@ -491,7 +500,7 @@ describe('NotificationsService (#726) — extractResponseCode shapes', () => {
     id: 'escrow-726-err',
     itemName: 'Widget',
     itemRef: 'ref-726-err',
-    amount: 50 as unknown as EscrowRecord['amount'],
+    amount: 50,
     currency: 'USDC',
     buyerAddress: 'GBUYER726ERR',
     vendorAddress: 'GVENDOR',
@@ -514,14 +523,19 @@ describe('NotificationsService (#726) — extractResponseCode shapes', () => {
     const created: Array<Record<string, unknown>> = [];
     const stubPrisma = {
       notification: {
-        create: jest.fn().mockImplementation(({ data }: { data: Record<string, unknown> }) => {
-          created.push(data);
-          return Promise.resolve(data);
-        }),
-        findFirst: jest.fn().mockImplementation(
-          ({ where }: { where: { channel?: string } }) =>
-            Promise.resolve(created.find((r) => r.channel === where.channel) ?? null),
-        ),
+        create: jest
+          .fn()
+          .mockImplementation(({ data }: { data: Record<string, unknown> }) => {
+            created.push(data);
+            return Promise.resolve(data);
+          }),
+        findFirst: jest
+          .fn()
+          .mockImplementation(({ where }: { where: { channel?: string } }) =>
+            Promise.resolve(
+              created.find((r) => r.channel === where.channel) ?? null,
+            ),
+          ),
       },
     } as unknown as PrismaService;
     return { stubPrisma, created };

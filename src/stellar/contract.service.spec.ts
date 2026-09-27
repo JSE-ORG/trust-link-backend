@@ -299,6 +299,8 @@ describe('ContractService', () => {
       };
     }
 
+    const SIGNER = Keypair.random();
+
     function makeConfig(
       contractId = 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4',
     ) {
@@ -306,6 +308,7 @@ describe('ContractService', () => {
         get: jest.fn((key: string) => {
           if (key === 'CONTRACT_ID') return contractId;
           if (key === 'STELLAR_NETWORK') return 'TESTNET';
+          if (key === 'SYSTEM_SIGNER_SECRET') return SIGNER.secret();
           return undefined;
         }),
       } as unknown as import('../config/config.service').ConfigService;
@@ -317,7 +320,7 @@ describe('ContractService', () => {
 
       const disputeHash = await svc.resolveDispute(ESCROW, 'RELEASE', ADMIN);
       expect(disputeHash).toBe('soroban-hash-1');
-      expect(server.getAccount).toHaveBeenCalledWith(SOURCE);
+      expect(server.getAccount).toHaveBeenCalledWith(SIGNER.publicKey());
       expect(server.simulateTransaction).toHaveBeenCalled();
       expect(server.prepareTransaction).toHaveBeenCalled();
       expect(server.sendTransaction).toHaveBeenCalled();
@@ -505,7 +508,8 @@ describe('ContractService', () => {
       const server = makeSorobanServer();
       const config = {
         get: jest.fn((key: string) => {
-          if (key === 'SYSTEM_SIGNER_SECRET') return 'not-a-valid-stellar-secret';
+          if (key === 'SYSTEM_SIGNER_SECRET')
+            return 'not-a-valid-stellar-secret';
           if (key === 'CONTRACT_ID')
             return 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4';
           return undefined;

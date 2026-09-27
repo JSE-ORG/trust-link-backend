@@ -33,7 +33,11 @@ export class StellarWebhookController {
    * @authentication None (HMAC signature verification instead)
    */
   @ApiOperation({ summary: 'Receive Stellar Horizon ledger event webhook' })
-  @ApiResponse({ status: 200, description: 'Webhook event processed.', type: StellarWebhookResponseDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Webhook event processed.',
+    type: StellarWebhookResponseDto,
+  })
   @ApiResponse({
     status: 400,
     description: 'Invalid payload or missing HMAC signature.',

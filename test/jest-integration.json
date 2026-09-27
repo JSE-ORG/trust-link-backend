@@ -10,11 +10,15 @@
         "tsconfig": {
           "module": "commonjs",
           "moduleResolution": "node",
-          "resolvePackageJsonExports": false
+          "resolvePackageJsonExports": false,
+          "allowJs": true
         }
       }
     ]
   },
+  "transformIgnorePatterns": [
+    "[/\\\\]node_modules[/\\\\](?!(.pnpm[/\\\\])?(uint8array-extras|@exodus|@noble|@stellar))"
+  ],
   "maxWorkers": 1,
   "testTimeout": 60000,
   "setupFiles": ["<rootDir>/test/setup-env.ts"]

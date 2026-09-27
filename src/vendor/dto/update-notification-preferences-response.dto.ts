@@ -67,7 +67,8 @@ export class VendorTrackingSettingsResponseDto {
   notifyOnException!: boolean;
 
   @ApiProperty({
-    description: 'Threshold in hours before a delayed shipment triggers an alert.',
+    description:
+      'Threshold in hours before a delayed shipment triggers an alert.',
     example: 24,
   })
   delayThresholdHours!: number;
