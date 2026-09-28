@@ -113,6 +113,29 @@ describe('QueueDashboardService', () => {
       expect(result.queues[0].counts.failed).toBe(3);
     });
 
+    it('defaults every missing queue count to zero', async () => {
+      configMock.get.mockReturnValue('redis://localhost:6379');
+      service.onModuleInit();
+      const queues = service['queues'] as unknown as Array<{
+        getJobCounts: jest.Mock;
+      }>;
+      queues.forEach((queue) => queue.getJobCounts.mockResolvedValue({}));
+
+      const result = await service.getDashboard();
+
+      expect(result.queues).toHaveLength(3);
+      for (const queue of result.queues) {
+        expect(queue.counts).toEqual({
+          waiting: 0,
+          active: 0,
+          completed: 0,
+          failed: 0,
+          delayed: 0,
+          paused: 0,
+        });
+      }
+    });
+
     it('should report zeros for a queue that fails getJobCounts while others report real numbers', async () => {
       configMock.get.mockReturnValue('redis://localhost:6379');
       service.onModuleInit();

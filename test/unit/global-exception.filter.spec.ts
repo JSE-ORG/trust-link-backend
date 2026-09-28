@@ -334,18 +334,15 @@ describe('GlobalExceptionFilter (issue #727) — uncovered branches', () => {
   describe('HttpException — message fallback', () => {
     it('falls back to exception.message when exceptionBody.message is absent', () => {
       const filter = new GlobalExceptionFilter(buildConfigService('test'));
-      // Pass a string response so exceptionBody.message is undefined —
-      // the filter reaches `exceptionBody.message || exception.message`
-      // and must use exception.message.
+      // An object response without a message makes the filter reach
+      // `exceptionBody.message || exception.message`.
       const exception = new HttpException(
-        'Fallback message',
+        { statusCode: 400, error: 'Bad Request' },
         HttpStatus.BAD_REQUEST,
       );
       filter.catch(exception, host);
       const body = res.body as StandardErrorResponse;
-      // When the response is a plain string the filter uses it directly,
-      // so the message equals that string.
-      expect(body.message).toBe('Fallback message');
+      expect(body.message).toBe(exception.message);
     });
 
     it('uses exceptionBody.message when it is present', () => {

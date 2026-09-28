@@ -299,6 +299,26 @@ describe('SorobanPollerService', () => {
       expect(mocks.cursorService.set).toHaveBeenCalledWith('ledger:990');
     });
 
+    it('logs and stops when the latest-ledger response has no numeric sequence', async () => {
+      const mocks = makeMocks();
+      mocks.cursorService.get.mockResolvedValue(undefined);
+      const { service } = makeService(makeConfig(), mocks);
+      const fetchMock = jest
+        .fn()
+        .mockResolvedValue(jsonResponse({ result: { sequence: '1000' } }));
+      global.fetch = fetchMock;
+
+      await service.poll();
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(bodyOfCall(fetchMock, 0).method).toBe('getLatestLedger');
+      expect(mocks.cursorService.set).not.toHaveBeenCalled();
+      expect(Logger.prototype.error).toHaveBeenCalledWith(
+        'SorobanPollerService: poll cycle failed',
+        expect.any(String),
+      );
+    });
+
     it('with a stored paging-token cursor, resumes via the cursor parameter', async () => {
       const mocks = makeMocks();
       mocks.cursorService.get.mockResolvedValue('PAGING_TOKEN');
@@ -432,6 +452,44 @@ describe('SorobanPollerService', () => {
       expect(mocks.escrowService.syncStateFromChain).toHaveBeenCalledTimes(3);
       expect(mocks.cursorService.set).toHaveBeenCalledWith('token-3');
       expect(mocks.dlqService.enqueue).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      { value: 42, expected: 42n },
+      { value: '9007199254740993', expected: 9007199254740993n },
+    ])(
+      'normalizes a numeric or digit-string escrow id ($value) and applies the event',
+      async ({ value, expected }) => {
+        mockRpcResponse([rawEvent('evt-coercion', 'token-coercion')]);
+        mocks.blockchainListener.parseEvent.mockReturnValueOnce(
+          parsedEventFor(value),
+        );
+
+        await service.poll();
+
+        expect(mocks.escrowService.findIdByContractEscrowId).toHaveBeenCalledWith(
+          expected,
+        );
+        expect(mocks.escrowService.syncStateFromChain).toHaveBeenCalledWith(
+          expect.objectContaining({
+            eventType: 'EscrowFunded',
+            escrowId: 'escrow-1',
+          }),
+        );
+        expect(mocks.cursorService.set).toHaveBeenCalledWith('token-coercion');
+        expect(mocks.dlqService.enqueue).not.toHaveBeenCalled();
+      },
+    );
+
+    it('treats a response without events as an empty batch and leaves the cursor unchanged', async () => {
+      global.fetch = jest.fn().mockResolvedValue(jsonResponse({ result: {} }));
+
+      await service.poll();
+
+      expect(mocks.blockchainListener.parseEvent).not.toHaveBeenCalled();
+      expect(mocks.escrowService.syncStateFromChain).not.toHaveBeenCalled();
+      expect(mocks.dlqService.enqueue).not.toHaveBeenCalled();
+      expect(mocks.cursorService.set).not.toHaveBeenCalled();
     });
 
     it('stops at the middle event that throws and only advances the cursor past the events before it', async () => {
