@@ -16,12 +16,12 @@ Replaced the 1532-line in-memory PrismaService fake with a real `PrismaClient` u
   - `reset()` executes `TRUNCATE TABLE ... CASCADE` on all public tables (skips `_prisma_migrations`)
   - All custom type exports preserved for backward compatibility
 - `src/prisma/prisma.module.ts` — comment-only update
-- `.github/workflows/ci.yml` — added Postgres 16 service (matched from `test.yml`)
+- `.github/workflows/test.yml` — added Postgres 16 service (matched from `test.yml`)
 
 #### Behavioral Fixes
 - `src/escrow/buyer-dispute.service.ts` — `openDispute()` now explicitly calls `escrowRepository.updateState(escrowId, 'DISPUTED')` after creating a dispute (in-memory fake auto-transitioned escrow as side-effect; real DB does not)
 - `test/integration/vendor-analytics.integration-spec.ts` — removed `(prisma as any).escrows.set(...)`; now passes `createdAt` directly to `prisma.escrow.create()`
-- `src/prisma/prisma.service.spec.ts`, `test/unit/prisma.service.spec.ts`, `test/unit/prisma-schema-parity.spec.ts`, `src/prisma/escrow-event-logging.spec.ts` — updated for real PrismaClient API
+- `src/prisma/prisma.service.spec.ts`, `test/unit/prisma-schema-parity.spec.ts`, `src/prisma/escrow-event-logging.spec.ts` — updated for real PrismaClient API
 
 #### Known Behavioral Changes
 - `prisma.escrow.findMany()` no longer auto-filters CANCELLED records (remove CANCELLED-hiding behavior). All records are returned unless a `state` filter is provided.
@@ -45,10 +45,9 @@ All 24 integration test suites (182 tests) passing after:
 - `src/escrow/buyer-dispute.service.ts` — explicit escrow state transition
 - `src/prisma/prisma.service.spec.ts` — updated for real DB
 - `src/prisma/escrow-event-logging.spec.ts` — updated for real DB
-- `test/unit/prisma.service.spec.ts` — updated for real DB
 - `test/unit/prisma-schema-parity.spec.ts` — updated for real DB
 - `test/integration/vendor-analytics.integration-spec.ts` — removed direct store access
-- `.github/workflows/ci.yml` — added Postgres service
+- `.github/workflows/test.yml` — added Postgres service
 
 ## Jest Config
 - `jest-integration.json`: `testTimeout: 60000`

@@ -35,6 +35,9 @@ export class ReadinessDetailsDto {
 
   @ApiPropertyOptional({ type: () => ReadinessComponentHealthDto })
   horizon?: ReadinessComponentHealthDto;
+
+  @ApiPropertyOptional({ type: () => ReadinessComponentHealthDto })
+  soroban?: ReadinessComponentHealthDto;
 }
 
 /**
@@ -47,6 +50,12 @@ export class ReadinessDetailsDto {
  * is reported accurately on the `redis` field but does NOT flip the
  * overall `status` to 'down', matching the graceful-fallback behaviour
  * documented in issue #31.
+ *
+ * The Soroban RPC is required (#841). Every contract call is submitted
+ * through the `rpc.Server` built from `SOROBAN_RPC_URL`, so a down RPC
+ * means no escrow can be funded, released or delivered on-chain. It was
+ * previously unchecked, which let the probe report `ok` while every
+ * contract call failed.
  */
 export class ReadinessResponseDto {
   @ApiProperty({
@@ -78,6 +87,14 @@ export class ReadinessResponseDto {
     example: 'ok',
   })
   redis!: OptionalComponentStatus;
+
+  @ApiProperty({
+    description:
+      'Soroban RPC status. Every contract call goes through this endpoint, so "down" means escrow funding, release and delivery cannot be submitted — it is a required component and does change overall status.',
+    enum: ['ok', 'down'],
+    example: 'ok',
+  })
+  soroban!: ComponentStatus;
 
   @ApiProperty({
     description: 'Timestamp the response was generated.',

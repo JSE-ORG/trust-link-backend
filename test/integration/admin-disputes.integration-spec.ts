@@ -133,7 +133,9 @@ describe('GET /admin/disputes filters integration (issue #53)', () => {
     const header = Buffer.from(
       JSON.stringify({ alg: 'HS256', typ: 'JWT' }),
     ).toString('base64url');
-    const body = Buffer.from(JSON.stringify(payload)).toString('base64url');
+    const body = Buffer.from(
+      JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600, ...payload }),
+    ).toString('base64url');
     const signature = createHmac('sha256', jwtSecret)
       .update(`${header}.${body}`)
       .digest('base64url');
@@ -194,6 +196,19 @@ describe('GET /admin/disputes filters integration (issue #53)', () => {
     expect(body.total).toBe(3);
     expect(body.page).toBe(1);
     expect(body.limit).toBe(2);
+  });
+
+  it.each([
+    ['/admin/disputes?page=abc', 'non-numeric dispute page'],
+    ['/admin/disputes?limit=101', 'out-of-range dispute limit'],
+    ['/admin/disputes?status=BOGUS', 'unknown dispute status'],
+    ['/admin/audit-log?page=abc', 'non-numeric audit-log page'],
+    ['/admin/audit-log?limit=0', 'out-of-range audit-log limit'],
+  ])('rejects %s with 400 (%s)', async (path) => {
+    await request(httpServer())
+      .get(path)
+      .set('Authorization', `Bearer ${adminJwt()}`)
+      .expect(400);
   });
 
   it('returns 403 for non-admin users', async () => {

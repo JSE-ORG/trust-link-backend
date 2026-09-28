@@ -56,7 +56,9 @@ describe('Admin DLQ Operations (issue #297)', () => {
     const header = Buffer.from(
       JSON.stringify({ alg: 'HS256', typ: 'JWT' }),
     ).toString('base64url');
-    const body = Buffer.from(JSON.stringify(payload)).toString('base64url');
+    const body = Buffer.from(
+      JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600, ...payload }),
+    ).toString('base64url');
     const signature = createHmac('sha256', jwtSecret)
       .update(`${header}.${body}`)
       .digest('base64url');
@@ -148,6 +150,17 @@ describe('Admin DLQ Operations (issue #297)', () => {
 
       expect(res.body.data).toHaveLength(1);
       expect(res.body.data[0].operation).toBe('submitAutoRelease');
+    });
+
+    it.each([
+      ['/admin/dlq?page=abc', 'non-numeric page'],
+      ['/admin/dlq?limit=101', 'out-of-range limit'],
+      ['/admin/dlq?status=BOGUS', 'unknown status'],
+    ])('rejects %s with 400 (%s)', async (path) => {
+      await request(httpServer())
+        .get(path)
+        .set('Authorization', `Bearer ${adminJwt()}`)
+        .expect(400);
     });
   });
 

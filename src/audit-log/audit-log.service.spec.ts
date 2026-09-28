@@ -1,15 +1,22 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { AuditLogService } from './audit-log.service';
+import { AuditLogRepository } from './audit-log.repository';
 import { PrismaService } from '../prisma/prisma.service';
 
 describe('AuditLogService (Issues #816 & #817)', () => {
   let service: AuditLogService;
+  // Issue #846: the service calls the repository, not PrismaService.
   let prisma: {
     auditLog: {
       create: jest.Mock;
       findMany: jest.Mock;
       count: jest.Mock;
     };
+  };
+  let repo: {
+    append: jest.Mock;
+    findPage: jest.Mock;
+    count: jest.Mock;
   };
 
   beforeEach(async () => {
@@ -21,10 +28,31 @@ describe('AuditLogService (Issues #816 & #817)', () => {
       },
     };
 
+    // The repository mock forwards to the Prisma-shaped mock so the
+    // expectations below stay exactly as they were.
+    repo = {
+      append: jest
+        .fn()
+        .mockImplementation(async ({ details, ...rest }) =>
+          prisma.auditLog.create({
+            data: { details: details ?? {}, ...rest },
+          }),
+        ),
+      findPage: jest
+        .fn()
+        .mockImplementation(async (options: { skip: number; take: number }) =>
+          prisma.auditLog.findMany({
+            ...options,
+            orderBy: { occurredAt: 'desc' },
+          }),
+        ),
+      count: jest.fn().mockImplementation(() => prisma.auditLog.count()),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AuditLogService,
-        { provide: PrismaService, useValue: prisma },
+        { provide: AuditLogRepository, useValue: repo },
       ],
     }).compile();
 
@@ -43,6 +71,28 @@ describe('AuditLogService (Issues #816 & #817)', () => {
       expect(untypedService.remove).toBeUndefined();
       expect(untypedService.clear).toBeUndefined();
       expect(untypedService.truncate).toBeUndefined();
+    });
+
+    it('returns a detached array and entries from findAll', async () => {
+      const storedEntry = {
+        id: 'audit-1',
+        action: 'DISPUTE_RESOLVED',
+        adminAddress: 'GADMIN123',
+        entityType: 'escrow',
+        entityId: 'escrow-1',
+        details: { resolution: 'RELEASE' },
+        occurredAt: new Date('2026-01-01T00:00:00.000Z'),
+      };
+      prisma.auditLog.findMany.mockResolvedValue([storedEntry] as never);
+      prisma.auditLog.count.mockResolvedValue(1);
+
+      const result = await service.findAll();
+      result.data[0].action = 'MUTATED';
+      result.data.splice(0, 1);
+
+      expect(storedEntry.action).toBe('DISPUTE_RESOLVED');
+      expect(storedEntry.id).toBe('audit-1');
+      expect(result.data).toHaveLength(0);
     });
   });
 
@@ -255,7 +305,9 @@ describe('AuditLogService (Issues #816 & #817)', () => {
       } as unknown as PrismaService;
 
       // Instance 1 creates a record
-      const instance1 = new AuditLogService(sharedPrisma);
+      const instance1 = new AuditLogService(
+        new AuditLogRepository(sharedPrisma),
+      );
       await instance1.append({
         action: 'VENDOR_SUSPENDED',
         adminAddress: 'GADMIN123',
@@ -265,7 +317,9 @@ describe('AuditLogService (Issues #816 & #817)', () => {
       });
 
       // Instance 2 (representing a restart or a different replica) reads the record
-      const instance2 = new AuditLogService(sharedPrisma);
+      const instance2 = new AuditLogService(
+        new AuditLogRepository(sharedPrisma),
+      );
       const res = await instance2.findAll();
 
       expect(res.total).toBe(1);

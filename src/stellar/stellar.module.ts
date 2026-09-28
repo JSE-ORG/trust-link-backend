@@ -5,14 +5,17 @@ import { STELLAR_SERVER } from './stellar.tokens';
 import { EventReplayService } from './event-replay.service';
 import { BlockchainListenerService } from './blockchain-listener.service';
 import { CursorService } from './cursor.service';
+import { CursorRepository } from './cursor.repository';
 import { SorobanPollerService } from './soroban-poller.service';
 import { HorizonService } from './horizon.service';
+import { SorobanHealthService } from './soroban-health.service';
 import { WebhooksModule } from '../webhooks/webhooks.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { EscrowModule } from '../escrow/escrow.module';
 import { ConfigModule } from '../config/config.module';
 import { ConfigService } from '../config/config.service';
 import { DlqModule } from '../dlq/dlq.module';
+import { resolveStellarServerRpcUrl } from './stellar-endpoint-resolver';
 
 @Module({
   imports: [
@@ -29,16 +32,16 @@ import { DlqModule } from '../dlq/dlq.module';
     EventReplayService,
     BlockchainListenerService,
     CursorService,
+    CursorRepository,
     SorobanPollerService,
     HorizonService,
+    // #841 — Checks the RPC server below, so the readiness probe reports the
+    // same endpoint every contract call is submitted through.
+    SorobanHealthService,
     {
       provide: STELLAR_SERVER,
       useFactory: (config: ConfigService) => {
-        const rpcUrl =
-          config.get('SOROBAN_RPC_URL') ||
-          (config.get('STELLAR_NETWORK') === 'MAINNET'
-            ? 'https://mainnet.stellar.validationcloud.io/v1/soroban/rpc'
-            : 'https://soroban-testnet.stellar.org');
+        const rpcUrl = resolveStellarServerRpcUrl(config);
         return new rpc.Server(rpcUrl);
       },
       inject: [ConfigService],
@@ -49,6 +52,7 @@ import { DlqModule } from '../dlq/dlq.module';
     BlockchainListenerService,
     CursorService,
     HorizonService,
+    SorobanHealthService,
     STELLAR_SERVER,
   ],
 })

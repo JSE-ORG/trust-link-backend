@@ -9,8 +9,7 @@ import { DisputeRepository } from '../dispute/dispute.repository';
 import { EscrowRepository } from '../escrow/escrow.repository';
 import { ContractService } from '../stellar/contract.service';
 import { ConfigService } from '../config/config.service';
-
-const EVERY_5_MINUTES = 5 * 60 * 1000;
+import { FIVE_MINUTES_MS } from '../common/constants/time.constants';
 
 /**
  * States an escrow can no longer move out of. Mirrors the set in
@@ -27,6 +26,23 @@ const TERMINAL_STATES = new Set<string>([
 export class AutoReleaseWorker implements OnModuleInit, OnApplicationShutdown {
   private readonly logger = new Logger(AutoReleaseWorker.name);
   private timer: NodeJS.Timeout | null = null;
+
+  /**
+   * #840 — True while a run is in progress.
+   *
+   * `setInterval` fires every 5 minutes regardless of whether the previous
+   * run finished, and a run submits one on-chain transaction per eligible
+   * escrow, so a run that takes longer than the interval overlaps the next
+   * one. Overlapping runs both read the same eligible snapshot and both walk
+   * it; `markAutoReleaseSubmitting` stops a double *submission* per escrow, but
+   * the second run still issues every eligibility query and dispute lookup
+   * against the database for a set of escrows the first run is already
+   * handling, and its summary log then reports those escrows as its own work.
+   *
+   * The claim is what makes correctness safe; this flag stops the wasted
+   * duplicate cycle. `SorobanPollerService.poll()` guards the same way.
+   */
+  private running = false;
 
   constructor(
     private readonly escrowRepository: EscrowRepository,
@@ -78,7 +94,7 @@ export class AutoReleaseWorker implements OnModuleInit, OnApplicationShutdown {
 
     this.timer = setInterval(() => {
       void this.run();
-    }, EVERY_5_MINUTES);
+    }, FIVE_MINUTES_MS);
   }
 
   onApplicationShutdown(): void {
@@ -89,12 +105,27 @@ export class AutoReleaseWorker implements OnModuleInit, OnApplicationShutdown {
   }
 
   async run(referenceTime = new Date()): Promise<void> {
-    return this.traced('worker.auto_release.run', {}, () =>
-      this.runInternal(referenceTime),
-    );
+    // #840 — Skip a tick that arrives while the previous run is still going,
+    // rather than starting a second overlapping cycle.
+    if (this.running) {
+      this.logger.warn(
+        'AutoReleaseWorker: previous run is still in progress — skipping this tick',
+      );
+      return;
+    }
+    this.running = true;
+
+    try {
+      await this.runCycle(referenceTime);
+    } finally {
+      // Cleared even when the cycle throws, or the worker would refuse every
+      // subsequent tick and silently stop releasing escrows for the lifetime
+      // of the process.
+      this.running = false;
+    }
   }
 
-  private async runInternal(referenceTime: Date): Promise<void> {
+  private async runCycle(referenceTime: Date): Promise<void> {
     let eligible: Awaited<
       ReturnType<typeof this.escrowRepository.findAutoReleaseEligible>
     > = [];

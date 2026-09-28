@@ -1,6 +1,6 @@
-import './common/bigint-json';
+import './sentry.instrument';
 import './tracing/tracing.bootstrap';
-import * as Sentry from '@sentry/nestjs';
+import './common/bigint-json';
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import compression from 'compression';
@@ -14,6 +14,10 @@ import { SanitizationPipe } from './common/pipes/sanitization.pipe';
 import { SentryInterceptor } from './common/interceptors/sentry.interceptor';
 import { buildCspConnectSrc } from './common/security/csp.config';
 import { CORS_ALLOWED_HEADERS } from './common/security/cors.config';
+import {
+  ONE_YEAR_SECONDS,
+  SECONDS_PER_DAY,
+} from './common/constants/time.constants';
 
 const bootstrapLogger = new JsonLoggerService('Bootstrap');
 
@@ -29,18 +33,6 @@ async function bootstrap(): Promise<void> {
   const configService = app.get(ConfigService);
 
   const sentryDsn = configService.get<string | undefined>('SENTRY_DSN');
-  if (sentryDsn) {
-    Sentry.init({
-      dsn: sentryDsn,
-      release: configService.get<string | undefined>('GIT_SHA'),
-      environment:
-        configService.get<string | undefined>('NODE_ENV') ?? 'development',
-      tracesSampleRate:
-        configService.get<string | undefined>('NODE_ENV') === 'production'
-          ? 0.2
-          : 1.0,
-    });
-  }
   const connectSrc = buildCspConnectSrc({
     stellarNetwork: configService.get('STELLAR_NETWORK'),
     stellarHorizonUrl: configService.get<string | undefined>(
@@ -109,7 +101,7 @@ async function bootstrap(): Promise<void> {
       // HSTS is configured through helmet so it can be turned off outside
       // production rather than being set unconditionally in middleware.
       strictTransportSecurity: isProduction
-        ? { maxAge: 31536000, includeSubDomains: true }
+        ? { maxAge: ONE_YEAR_SECONDS, includeSubDomains: true }
         : false,
     }),
   );
@@ -135,7 +127,7 @@ async function bootstrap(): Promise<void> {
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
       allowedHeaders: CORS_ALLOWED_HEADERS,
       credentials: true,
-      maxAge: 86400,
+      maxAge: SECONDS_PER_DAY,
     });
   } else {
     if (isProduction) {

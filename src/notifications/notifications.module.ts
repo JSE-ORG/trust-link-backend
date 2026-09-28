@@ -5,7 +5,10 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { ConfigModule } from '../config/config.module';
 import { ConfigService } from '../config/config.service';
 import { NotificationsService } from './notifications.service';
+import { NotificationRetryQueueService } from './notification-retry-queue.service';
+import { NotificationRepository } from './notification.repository';
 import { SENDGRID_CLIENT, TWILIO_CLIENT } from './notifications.tokens';
+import { VendorModule } from '../vendor/vendor.module';
 
 const logger = new Logger('NotificationsModule');
 
@@ -45,9 +48,13 @@ export function createTwilioClient(config: ConfigService) {
 }
 
 @Module({
-  imports: [PrismaModule, ConfigModule],
+  imports: [PrismaModule, ConfigModule, VendorModule],
   providers: [
     NotificationsService,
+    // Issue #845: both the dispatch paths and the retry workers write
+    // notification rows through this repository (R-DB-02).
+    NotificationRepository,
+    NotificationRetryQueueService,
     {
       provide: SENDGRID_CLIENT,
       inject: [ConfigService],

@@ -453,6 +453,8 @@ export class ContractService {
       return result.hash;
     }
 
+    const contractId = this.getContractId();
+
     const secret = this.config?.get<string>('SYSTEM_SIGNER_SECRET');
     let signerKeypair: Keypair | null = null;
     if (secret) {
@@ -478,7 +480,6 @@ export class ContractService {
     // Step 1: Fetch source account
     const account = await this.fetchAccount(sourcePublic);
 
-    const contractId = this.getContractId();
     let contract: Contract;
     try {
       contract = new Contract(contractId);

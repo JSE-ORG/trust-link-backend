@@ -37,7 +37,7 @@ The system covers:
 
 | Requirement | Specification | Enforcement |
 |---|---|---|
-| R-TS-01 | Node.js 20.x LTS | CI must use `node-version: '20'` |
+| R-TS-01 | Node.js 22.x LTS | CI must use `node-version-file: '.nvmrc'` |
 | R-TS-02 | TypeScript 5.7+ with `strict: true` | `tsconfig.json` must enforce strict mode |
 | R-TS-03 | ES2023 target | `tsconfig.json` target must be ES2023 |
 | R-TS-04 | Module system: NodeNext | `tsconfig.json` module must be NodeNext |
@@ -86,7 +86,7 @@ The system covers:
 | R-OB-02 | Request correlation ID on every request | RequestIdMiddleware must inject and propagate X-Request-ID |
 | R-OB-03 | OpenTelemetry distributed tracing | Span must be created for each request handler |
 | R-OB-04 | Sentry error tracking (optional) | SENTRY_DSN enables Sentry; app must work without it |
-| R-OB-05 | Health check at GET /health | Must report db, horizon, redis status with 200/503 |
+| R-OB-05 | Health check at GET /health | Must report db, horizon, soroban, redis status with 200/503 |
 
 ---
 
@@ -206,8 +206,12 @@ R-API-07: String inputs must pass through SanitizationPipe (HTML stripping, cont
 
 | Method | Path | Auth | Rate Limit |
 |---|---|---|---|
+| GET | `/` | None | 100/min |
 | GET | `/health` | None | — |
-| GET | `/version` | None | — |
+| GET | `/health/live` | None | 60/min |
+| GET | `/health/ready` | None | 60/min |
+| GET | `/version` | None | 100/min |
+| GET | `/auth` | None | 10/min |
 | POST | `/auth/challenge` | None | 10/min |
 | POST | `/auth` | None | 10/min |
 | POST | `/auth/refresh` | None | 10/min |
@@ -238,9 +242,15 @@ R-API-07: String inputs must pass through SanitizationPipe (HTML stripping, cont
 | GET | `/admin/queues` | JWT+Admin | 60/min |
 | GET | `/admin/audit-log` | JWT+Admin | 60/min |
 | PATCH | `/admin/credentials/logistics` | JWT+Admin | 60/min |
-| GET | `/admin/dlq` | JWT+Admin | 60/min |
-| POST | `/admin/dlq/:id/replay` | JWT+Admin | 60/min |
-| POST | `/admin/dlq/:id/abandon` | JWT+Admin | 60/min |
+| GET | `/admin/dlq` | JWT+Admin | 20/min |
+| GET | `/admin/dlq/:id` | JWT+Admin | 30/min |
+| POST | `/admin/dlq/:id/replay` | JWT+Admin | 5/min |
+| POST | `/admin/dlq/:id/abandon` | JWT+Admin | 5/min |
+| GET | `/stress-test/active` | JWT+Admin | 30/min |
+| GET | `/stress-test/active/{id}` | JWT+Admin | 30/min |
+| POST | `/stress-test` | JWT+Admin | 10/min |
+| GET | `/vendor/account-details` | JWT | 60/min |
+| PATCH | `/vendor/account-details` | JWT | 60/min |
 
 ---
 
@@ -294,11 +304,13 @@ R-TST-01: Every service method must have at least one unit test.
 R-TST-02: Every controller endpoint must have at least one integration test.
 R-TST-03: Every critical user flow must have an E2E test.
 R-TST-04: Coverage of application source (`src/`, excluding spec files
-and `main.ts`) must meet separate floors for lines (70%), branches (64%),
-and functions (65%), enforced by `scripts/check_coverage.js`. Coverage is
-measured over application source only. Do not widen `collectCoverageFrom` to
-include specs, scripts or config, which inflates the denominator and makes the
-gate meaningless.
+and `main.ts`) must meet separate floors for lines (95%), branches (82%),
+and functions (90%), enforced by `scripts/check_coverage.js`. The floors were
+raised from 70% / 64% / 65% because the suite measures 97.01% / 84.96% /
+92.71% — a gate that far below the real figure cannot catch a regression
+(#850). Coverage is measured over application source only. Do not widen
+`collectCoverageFrom` to include specs, scripts or config, which inflates the
+denominator and makes the gate meaningless.
 R-TST-05: PRs that reduce coverage by more than 2% must be rejected.
 
 ### 7.2 Test Types

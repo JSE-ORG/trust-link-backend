@@ -25,15 +25,15 @@ import { DlqService } from './dlq.service';
 import {
   FailedTransactionRecord,
   PaginatedFailedTransactions,
-  type FailedTransactionStatus,
-  type ListFailedTransactionsQuery,
 } from './dlq.types';
 import { ContractService } from '../stellar/contract.service';
 import {
   AutoReleaseSourceNotConfiguredError,
   ConfigService,
 } from '../config/config.service';
+import { EscrowRepository } from '../escrow/escrow.repository';
 import { PrismaService } from '../prisma/prisma.service';
+import { ListFailedTransactionsQueryDto } from './dto/list-failed-transactions-query.dto';
 
 /**
  * Admin endpoints for reviewing and re-executing failed Stellar contract
@@ -49,7 +49,7 @@ export class DlqController {
     private readonly dlq: DlqService,
     private readonly contract: ContractService,
     private readonly config: ConfigService,
-    private readonly prisma: PrismaService,
+    private readonly escrows: EscrowRepository,
   ) {}
 
   /**
@@ -123,21 +123,9 @@ export class DlqController {
     required: false,
     example: '9d9e2e16-0c78-4a84-9c8c-0f3a5eb2d4e3',
   })
-  @Throttle({ auth: { limit: 20, ttl: THROTTLE_WINDOW_MS } })
+  @Throttle({ default: { limit: 20, ttl: THROTTLE_WINDOW_MS } })
   @Get()
-  list(
-    @Query('status') status?: FailedTransactionStatus,
-    @Query('operation') operation?: string,
-    @Query('escrowId') escrowId?: string,
-    @Query('page') page?: string,
-    @Query('limit') limit?: string,
-  ) {
-    const query: ListFailedTransactionsQuery = {};
-    if (status) query.status = status;
-    if (operation) query.operation = operation;
-    if (escrowId) query.escrowId = escrowId;
-    if (page) query.page = parseInt(page, 10);
-    if (limit) query.limit = parseInt(limit, 10);
+  list(@Query() query: ListFailedTransactionsQueryDto) {
     return this.dlq.list(query);
   }
 
@@ -154,7 +142,7 @@ export class DlqController {
     description: 'Failed transaction record not found.',
   })
   @ApiParam({ name: 'id', example: 'abc123-def4-5678-90ab-cdef12345678' })
-  @Throttle({ auth: { limit: 30, ttl: THROTTLE_WINDOW_MS } })
+  @Throttle({ default: { limit: 30, ttl: THROTTLE_WINDOW_MS } })
   @Get(':id')
   detail(@Param('id') id: string) {
     return this.dlq.get(id);
@@ -178,7 +166,7 @@ export class DlqController {
     description: 'Failed transaction record not found.',
   })
   @ApiParam({ name: 'id', example: 'abc123-def4-5678-90ab-cdef12345678' })
-  @Throttle({ auth: { limit: 5, ttl: THROTTLE_WINDOW_MS } })
+  @Throttle({ default: { limit: 5, ttl: THROTTLE_WINDOW_MS } })
   @Post(':id/replay')
   async replay(@Param('id') id: string) {
     const record = await this.dlq.get(id);
@@ -187,18 +175,19 @@ export class DlqController {
         // `auto_release(env, escrow_id: u64)` takes the contract's own id.
         // The DLQ record carries the backend UUID, so it has to be translated
         // before replay; without a mapping there is no valid call to make.
-        const escrow = await this.prisma.escrow.findUnique({
-          where: { id: r.escrowId },
-          select: { contractEscrowId: true },
-        });
-        if (!escrow?.contractEscrowId) {
+        // Issue #844: the lookup goes through EscrowRepository so the
+        // controller never reaches for PrismaService itself.
+        const contractEscrowId = await this.escrows.findContractEscrowId(
+          r.escrowId,
+        );
+        if (contractEscrowId === null) {
           throw new ConflictException(
             `Escrow "${r.escrowId}" has no contractEscrowId, so auto-release ` +
               `cannot be replayed on-chain.`,
           );
         }
         return this.contract.submitAutoRelease(
-          escrow.contractEscrowId,
+          contractEscrowId,
           this.requireAutoReleaseSource(),
         );
       }
@@ -224,7 +213,7 @@ export class DlqController {
     description: 'Failed transaction record not found.',
   })
   @ApiParam({ name: 'id', example: 'abc123-def4-5678-90ab-cdef12345678' })
-  @Throttle({ auth: { limit: 5, ttl: THROTTLE_WINDOW_MS } })
+  @Throttle({ default: { limit: 5, ttl: THROTTLE_WINDOW_MS } })
   @Post(':id/abandon')
   abandon(@Param('id') id: string) {
     return this.dlq.abandon(id);

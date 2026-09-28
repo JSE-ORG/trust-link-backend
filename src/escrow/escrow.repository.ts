@@ -7,6 +7,7 @@ import {
   PrismaService,
   toEscrowRecord,
 } from '../prisma/prisma.service';
+import { MILLISECONDS_PER_HOUR } from '../common/constants/time.constants';
 import { CreateEscrowDto } from './dto/create-escrow.dto';
 import {
   AUTO_RELEASE_WINDOW_HOURS,
@@ -203,6 +204,24 @@ export class EscrowRepository {
    * unique, so at most one row can match. Returns null when the on-chain escrow
    * has not been mapped to a backend row yet.
    */
+  /**
+   * Returns the on-chain `contractEscrowId` for a backend escrow, or null
+   * when the row does not exist or was never submitted on-chain.
+   *
+   * Callers that need to invoke the contract (e.g. the DLQ replay path,
+   * issue #844) only ever want the u64 the contract minted — not the whole
+   * row — so the lookup selects just that column.
+   */
+  async findContractEscrowId(
+    id: string,
+  ): Promise<bigint | null> {
+    const row = await this.prisma.escrow.findUnique({
+      where: { id },
+      select: { contractEscrowId: true },
+    });
+    return row?.contractEscrowId ?? null;
+  }
+
   async findIdByContractEscrowId(
     contractEscrowId: bigint,
   ): Promise<string | null> {
@@ -331,7 +350,8 @@ export class EscrowRepository {
     referenceTime = new Date(),
   ): Promise<AutoReleaseEligibleResult> {
     const cutoff = new Date(
-      referenceTime.getTime() - AUTO_RELEASE_WINDOW_HOURS * 60 * 60 * 1000,
+      referenceTime.getTime() -
+        AUTO_RELEASE_WINDOW_HOURS * MILLISECONDS_PER_HOUR,
     );
     return this.prisma.escrow
       .findMany({

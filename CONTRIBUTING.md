@@ -62,7 +62,7 @@ Before contributing, read **[SPECIFICATION.md](SPECIFICATION.md)** — it is the
 
 Key requirements from the SRD:
 - **No `any` types** — strict TypeScript required
-- **Tests required** for all new code — line coverage of `src/` must not drop below **70%**, enforced by `scripts/check_coverage.js`
+- **Tests required** for all new code — coverage of `src/` must stay at or above **95% lines / 82% branches / 90% functions**, enforced by `scripts/check_coverage.js` (issue #850 raised these floors from 70% / 64% / 65%)
 - **Security first** — JWT signature verification, input sanitization, PII encryption
 - **CI must pass** — lint, test, integration tests and migrations are required checks. Dependency auditing runs weekly in `security-audit.yml` and does not block merges
 - **Conventional commits** — `type(scope): description`
@@ -311,7 +311,7 @@ git rebase upstream/dev
 |---|---|---|
 | Feature | `feat/description` | `feat/gigl-logistics-provider` |
 | Bug fix | `fix/description` | `fix/auto-release-duplicate-sign` |
-| Tests | `test/description` | `test/dispute-service-integration` |
+| Tests | `test/description` | `test/tracking-poll-worker-specs` |
 | Docs | `docs/description` | `docs/add-swagger-to-dispute-dto` |
 | Refactor | `refactor/description` | `refactor/extract-escrow-repository` |
 | Chore | `chore/description` | `chore/upgrade-prisma-5.x` |
@@ -562,7 +562,7 @@ describe("EscrowService", () => {
 
 **Integration tests** (`test/integration/`) — Test a full module with a real test database (in-memory or Docker). Use `@nestjs/testing` with a real Prisma client pointing to a test DB.
 
-**E2E tests** (`test/e2e/`) — Test full HTTP request-response cycles using `supertest`. The full NestJS app is bootstrapped against a test DB.
+**E2E tests** (`test/*.e2e-spec.ts`) — Test full HTTP request-response cycles using `supertest`. The full NestJS app is bootstrapped against a test DB.
 
 ### Coverage Expectations
 

@@ -302,7 +302,9 @@ describe('GlobalExceptionFilter (issue #727) — uncovered branches', () => {
 
   describe('HttpException — isDevelopment() detail disclosure', () => {
     it('includes details on the HttpException path in development', () => {
-      const filter = new GlobalExceptionFilter(buildConfigService('development'));
+      const filter = new GlobalExceptionFilter(
+        buildConfigService('development'),
+      );
       // HttpException with an object response so details can be spread
       const exception = new HttpException(
         { message: 'oops', extra: 'dev-only' },
@@ -314,7 +316,9 @@ describe('GlobalExceptionFilter (issue #727) — uncovered branches', () => {
     });
 
     it('omits details on the HttpException path in production', () => {
-      const filter = new GlobalExceptionFilter(buildConfigService('production'));
+      const filter = new GlobalExceptionFilter(
+        buildConfigService('production'),
+      );
       const exception = new HttpException(
         { message: 'oops', extra: 'should-be-hidden' },
         HttpStatus.BAD_REQUEST,
@@ -333,7 +337,10 @@ describe('GlobalExceptionFilter (issue #727) — uncovered branches', () => {
       // Pass a string response so exceptionBody.message is undefined —
       // the filter reaches `exceptionBody.message || exception.message`
       // and must use exception.message.
-      const exception = new HttpException('Fallback message', HttpStatus.BAD_REQUEST);
+      const exception = new HttpException(
+        'Fallback message',
+        HttpStatus.BAD_REQUEST,
+      );
       filter.catch(exception, host);
       const body = res.body as StandardErrorResponse;
       // When the response is a plain string the filter uses it directly,
@@ -349,9 +356,7 @@ describe('GlobalExceptionFilter (issue #727) — uncovered branches', () => {
       );
       filter.catch(exception, host);
       const body = res.body as StandardErrorResponse;
-      const msg = Array.isArray(body.message)
-        ? body.message[0]
-        : body.message;
+      const msg = Array.isArray(body.message) ? body.message[0] : body.message;
       expect(msg).toBe('Body message');
     });
   });
@@ -380,7 +385,9 @@ describe('GlobalExceptionFilter (issue #727) — uncovered branches', () => {
     });
 
     it('includes details on the ValidationError path in development', () => {
-      const filter = new GlobalExceptionFilter(buildConfigService('development'));
+      const filter = new GlobalExceptionFilter(
+        buildConfigService('development'),
+      );
       const err = Object.assign(new Error('validation failed'), {
         name: 'ValidationError',
         details: { field: 'email', issue: 'invalid format' },
@@ -392,7 +399,9 @@ describe('GlobalExceptionFilter (issue #727) — uncovered branches', () => {
     });
 
     it('omits details on the ValidationError path in production', () => {
-      const filter = new GlobalExceptionFilter(buildConfigService('production'));
+      const filter = new GlobalExceptionFilter(
+        buildConfigService('production'),
+      );
       const err = Object.assign(new Error('validation failed'), {
         name: 'ValidationError',
         details: { field: 'email' },
@@ -407,7 +416,9 @@ describe('GlobalExceptionFilter (issue #727) — uncovered branches', () => {
 
   describe('Prisma default branch', () => {
     it('exposes code and message in development', () => {
-      const filter = new GlobalExceptionFilter(buildConfigService('development'));
+      const filter = new GlobalExceptionFilter(
+        buildConfigService('development'),
+      );
       const err = { code: 'P9000', message: 'deadlock detected' };
       filter.catch(err, host);
       const body = res.body as StandardErrorResponse;
@@ -415,11 +426,15 @@ describe('GlobalExceptionFilter (issue #727) — uncovered branches', () => {
       expect(body.error).toBe('DatabaseError');
       expect(body.details).toBeDefined();
       expect((body.details as Record<string, unknown>).code).toBe('P9000');
-      expect((body.details as Record<string, unknown>).message).toBe('deadlock detected');
+      expect((body.details as Record<string, unknown>).message).toBe(
+        'deadlock detected',
+      );
     });
 
     it('omits details in production', () => {
-      const filter = new GlobalExceptionFilter(buildConfigService('production'));
+      const filter = new GlobalExceptionFilter(
+        buildConfigService('production'),
+      );
       const err = { code: 'P9000', message: 'deadlock detected' };
       filter.catch(err, host);
       const body = res.body as StandardErrorResponse;
@@ -427,12 +442,16 @@ describe('GlobalExceptionFilter (issue #727) — uncovered branches', () => {
     });
 
     it('falls back to "Database error" string when exception.message is absent', () => {
-      const filter = new GlobalExceptionFilter(buildConfigService('development'));
+      const filter = new GlobalExceptionFilter(
+        buildConfigService('development'),
+      );
       // No message property — exercises the `?? 'Database error'` branch
       const err = { code: 'P9000' };
       filter.catch(err, host);
       const body = res.body as StandardErrorResponse;
-      expect((body.details as Record<string, unknown>).message).toBe('Database error');
+      expect((body.details as Record<string, unknown>).message).toBe(
+        'Database error',
+      );
     });
   });
 });

@@ -1,9 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export type FailedTransactionStatus =
-  | 'PENDING_REVIEW'
-  | 'REPLAYED'
-  | 'ABANDONED';
+  'PENDING_REVIEW' | 'REPLAYED' | 'ABANDONED';
 
 /**
  * Captured failure of a Stellar contract submission queued for admin review or
@@ -36,13 +34,15 @@ export class FailedTransactionRecord {
   escrowId!: string | null;
 
   @ApiProperty({
-    description: 'Error message captured during contract execution or submission.',
+    description:
+      'Error message captured during contract execution or submission.',
     example: 'Transaction simulation failed with error code -3',
   })
   errorMessage!: string;
 
   @ApiPropertyOptional({
-    description: 'Raw ledger/contract diagnostic feedback captured from Horizon/Soroban.',
+    description:
+      'Raw ledger/contract diagnostic feedback captured from Horizon/Soroban.',
     nullable: true,
     additionalProperties: true,
     example: { opResultCodes: ['op_success'], diagnosticEvents: [] },
@@ -50,7 +50,8 @@ export class FailedTransactionRecord {
   ledgerFeedback!: Record<string, unknown> | null;
 
   @ApiProperty({
-    description: 'Number of replay/execution attempts made for this transaction.',
+    description:
+      'Number of replay/execution attempts made for this transaction.',
     example: 1,
   })
   attempts!: number;
@@ -79,7 +80,8 @@ export class FailedTransactionRecord {
   updatedAt!: Date;
 
   @ApiPropertyOptional({
-    description: 'ISO-8601 timestamp when this failure was reviewed by an admin.',
+    description:
+      'ISO-8601 timestamp when this failure was reviewed by an admin.',
     nullable: true,
     type: String,
     format: 'date-time',
@@ -88,7 +90,8 @@ export class FailedTransactionRecord {
   reviewedAt!: Date | null;
 
   @ApiPropertyOptional({
-    description: 'ISO-8601 timestamp when this transaction was successfully replayed.',
+    description:
+      'ISO-8601 timestamp when this transaction was successfully replayed.',
     nullable: true,
     type: String,
     format: 'date-time',
@@ -97,7 +100,8 @@ export class FailedTransactionRecord {
   replayedAt!: Date | null;
 
   @ApiPropertyOptional({
-    description: 'Stellar transaction hash of the successful replay, if replayed.',
+    description:
+      'Stellar transaction hash of the successful replay, if replayed.',
     nullable: true,
     example: null,
   })

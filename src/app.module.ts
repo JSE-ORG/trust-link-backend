@@ -1,7 +1,12 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
-import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import {
+  ThrottlerGuard,
+  ThrottlerModule,
+  type ThrottlerModuleOptions,
+} from '@nestjs/throttler';
+import { ThrottlerStorageRedisService } from '@nest-lab/throttler-storage-redis';
 import { AdminStatsModule } from './admin/stats/admin-stats.module';
 import { DisputeModule as AdminDisputeModule } from './admin/dispute/dispute.module';
 import { QueueDashboardModule } from './admin/queues/queue-dashboard.module';
@@ -31,9 +36,36 @@ import { StressTestModule } from './stress-test/stress-test.module';
 import { DlqModule } from './dlq/dlq.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { WorkersModule } from './workers/workers.module';
+import { SentryModule } from '@sentry/nestjs/setup';
+
+export type AppThrottlerOptions = Exclude<
+  ThrottlerModuleOptions,
+  Array<unknown>
+>;
+
+export function buildThrottlerOptions(
+  config: ConfigService,
+): AppThrottlerOptions {
+  const redisUrl = config.get<string>('REDIS_URL');
+  const options: AppThrottlerOptions = {
+    throttlers: [
+      {
+        ttl: config.get<number>('PUBLIC_WINDOW') ?? 60000,
+        limit: config.get<number>('PUBLIC_LIMIT') ?? 60,
+      },
+    ],
+  };
+
+  if (redisUrl) {
+    options.storage = new ThrottlerStorageRedisService(redisUrl);
+  }
+
+  return options;
+}
 
 @Module({
   imports: [
+    SentryModule.forRoot(),
     // Core infrastructure
     ConfigModule,
     TracingModule,
@@ -68,12 +100,7 @@ import { WorkersModule } from './workers/workers.module';
     ThrottlerModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
-      useFactory: (config: ConfigService) => [
-        {
-          ttl: config.get<number>('PUBLIC_WINDOW') ?? 60000,
-          limit: config.get<number>('PUBLIC_LIMIT') ?? 60,
-        },
-      ],
+      useFactory: buildThrottlerOptions,
     }),
   ],
   controllers: [AppController],

@@ -9,7 +9,7 @@ import {
   encryptCredential,
   decryptCredential,
 } from '../common/sanitization/credential-encryption.util';
-import { PrismaService } from '../prisma/prisma.service';
+import { ProviderCredentialRepository } from './provider-credential.repository';
 import { ConfigService } from '../config/config.service';
 
 /** Key used to identify the logistics provider's row in `ProviderCredential`. */
@@ -37,7 +37,9 @@ export class LogisticsService implements OnModuleInit {
   private apiKey: string | null = null;
 
   constructor(
-    @Optional() @Inject(PrismaService) private readonly prisma?: PrismaService,
+    @Optional()
+    @Inject(ProviderCredentialRepository)
+    private readonly providerCredentialRepository?: ProviderCredentialRepository,
     @Optional()
     @Inject(ConfigService)
     private readonly configService?: ConfigService,
@@ -59,11 +61,11 @@ export class LogisticsService implements OnModuleInit {
    * the fallback for a first boot with nothing stored yet.
    */
   private async loadPersistedApiKey(): Promise<void> {
-    if (this.prisma) {
+    if (this.providerCredentialRepository) {
       try {
-        const record = await this.prisma.providerCredential.findUnique({
-          where: { provider: LOGISTICS_CREDENTIAL_PROVIDER },
-        });
+        const record = await this.providerCredentialRepository.findByProvider(
+          LOGISTICS_CREDENTIAL_PROVIDER,
+        );
         if (record) {
           this.apiKey = record.encryptedKey;
           return;
@@ -123,15 +125,11 @@ export class LogisticsService implements OnModuleInit {
     const encryptedKey = encryptCredential(key, encryptionKey);
     this.apiKey = encryptedKey;
 
-    if (this.prisma) {
-      await this.prisma.providerCredential.upsert({
-        where: { provider: LOGISTICS_CREDENTIAL_PROVIDER },
-        update: { encryptedKey },
-        create: {
-          provider: LOGISTICS_CREDENTIAL_PROVIDER,
-          encryptedKey,
-        },
-      });
+    if (this.providerCredentialRepository) {
+      await this.providerCredentialRepository.upsert(
+        LOGISTICS_CREDENTIAL_PROVIDER,
+        encryptedKey,
+      );
     }
   }
 

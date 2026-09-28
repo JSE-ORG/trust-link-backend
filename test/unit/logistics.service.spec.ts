@@ -2,7 +2,7 @@ import axios from 'axios';
 import { Test } from '@nestjs/testing';
 import { LogisticsService } from '../../src/logistics/logistics.service';
 import { LogisticsModule } from '../../src/logistics/logistics.module';
-import type { PrismaService } from '../../src/prisma/prisma.service';
+import type { ProviderCredentialRepository } from '../../src/logistics/provider-credential.repository';
 import { ConfigService } from '../../src/config/config.service';
 import { GiglLogisticsService } from '../../src/logistics/gigl/gigl-logistics.service';
 import {
@@ -89,45 +89,31 @@ describe('LogisticsService & LogisticsModule (issue #479)', () => {
   });
 
   describe('Rotation and persistence (issues #498, #499)', () => {
-    /** Minimal in-memory stand-in for the ProviderCredential Prisma model. */
-    function createFakePrisma() {
+    /** Minimal in-memory stand-in for the provider credential repository. */
+    function createFakeRepository() {
       const store = new Map<
         string,
         { provider: string; encryptedKey: string }
       >();
       return {
-        providerCredential: {
-          findUnique: jest.fn(
-            async ({ where: { provider } }: { where: { provider: string } }) =>
-              store.get(provider) ?? null,
-          ),
-          upsert: jest.fn(
-            async ({
-              where: { provider },
-              update,
-              create,
-            }: {
-              where: { provider: string };
-              update: { provider: string; encryptedKey: string };
-              create: { provider: string; encryptedKey: string };
-            }) => {
-              const existing = store.get(provider);
-              const record = existing
-                ? { ...existing, ...update }
-                : { ...create };
-              store.set(provider, record);
-              return record;
-            },
-          ),
-        },
+        findByProvider: jest.fn(
+          async (provider: string) => store.get(provider) ?? null,
+        ),
+        upsert: jest.fn(async (provider: string, encryptedKey: string) => {
+          const existing = store.get(provider);
+          const record = existing
+            ? { ...existing, encryptedKey }
+            : { provider, encryptedKey };
+          store.set(provider, record);
+        }),
         __store: store,
       };
     }
 
     it('rotates to the submitted key on first set (nothing previously stored)', async () => {
-      const prisma = createFakePrisma();
+      const repository = createFakeRepository();
       const svc = new LogisticsService(
-        prisma as unknown as PrismaService,
+        repository as unknown as ProviderCredentialRepository,
         encryptionKeyConfig,
       );
 
@@ -135,13 +121,13 @@ describe('LogisticsService & LogisticsModule (issue #479)', () => {
       await svc.rotateApiKey('first-key');
 
       expect(svc.getApiKey()).toBe('first-key');
-      expect(prisma.providerCredential.upsert).toHaveBeenCalled();
+      expect(repository.upsert).toHaveBeenCalled();
     });
 
     it('rotates to the submitted key when a key already exists, and the stored value actually changes', async () => {
-      const prisma = createFakePrisma();
+      const repository = createFakeRepository();
       const svc = new LogisticsService(
-        prisma as unknown as PrismaService,
+        repository as unknown as ProviderCredentialRepository,
         encryptionKeyConfig,
       );
 
@@ -158,15 +144,15 @@ describe('LogisticsService & LogisticsModule (issue #479)', () => {
     });
 
     it('persists the rotated key so a freshly constructed service instance loads it (issue #499)', async () => {
-      const prisma = createFakePrisma();
+      const repository = createFakeRepository();
       const svc1 = new LogisticsService(
-        prisma as unknown as PrismaService,
+        repository as unknown as ProviderCredentialRepository,
         encryptionKeyConfig,
       );
       await svc1.rotateApiKey('rotated-secret');
 
       const svc2 = new LogisticsService(
-        prisma as unknown as PrismaService,
+        repository as unknown as ProviderCredentialRepository,
         encryptionKeyConfig,
       );
       await svc2.onModuleInit();
@@ -175,13 +161,13 @@ describe('LogisticsService & LogisticsModule (issue #479)', () => {
     });
 
     it('falls back to the LOGISTICS_API_KEY environment variable when nothing is persisted', async () => {
-      const prisma = createFakePrisma();
+      const repository = createFakeRepository();
       const originalToken = process.env.LOGISTICS_API_KEY;
       process.env.LOGISTICS_API_KEY = 'env-fallback-token';
 
       try {
         const svc = new LogisticsService(
-          prisma as unknown as PrismaService,
+          repository as unknown as ProviderCredentialRepository,
           encryptionKeyConfig,
         );
         await svc.onModuleInit();
@@ -196,19 +182,19 @@ describe('LogisticsService & LogisticsModule (issue #479)', () => {
     });
 
     it('prefers the persisted key over the environment variable', async () => {
-      const prisma = createFakePrisma();
+      const repository = createFakeRepository();
       const originalToken = process.env.LOGISTICS_API_KEY;
       process.env.LOGISTICS_API_KEY = 'env-fallback-token';
 
       try {
         const svc1 = new LogisticsService(
-          prisma as unknown as PrismaService,
+          repository as unknown as ProviderCredentialRepository,
           encryptionKeyConfig,
         );
         await svc1.rotateApiKey('rotated-secret');
 
         const svc2 = new LogisticsService(
-          prisma as unknown as PrismaService,
+          repository as unknown as ProviderCredentialRepository,
           encryptionKeyConfig,
         );
         await svc2.onModuleInit();

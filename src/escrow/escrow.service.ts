@@ -9,6 +9,7 @@ import {
   Optional,
 } from '@nestjs/common';
 import { NotificationsService } from '../notifications/notifications.service';
+import { ConfigService } from '../config/config.service';
 import { EscrowRecord } from '../prisma/prisma.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { LogisticsService } from '../logistics/logistics.service';
@@ -18,12 +19,17 @@ import { EscrowResponseDto } from './dto/escrow-response.dto';
 import { EscrowSummaryDto } from './dto/escrow-summary.dto';
 import { CreateEscrowDto } from './dto/create-escrow.dto';
 import { EvidenceUploadResponseDto } from './dto/evidence-upload.dto';
+import { EVIDENCE_FILE_EXTENSIONS } from './dto/evidence-upload-query.dto';
 import { S3PresignService } from '../common/services/s3-presign.service';
 import { EscrowRepository } from './escrow.repository';
 import { UpdateBuyerContactDto } from './dto/update-buyer-contact.dto';
 import { encryptContact } from '../common/sanitization/contact-encryption.util';
 import { TracingService } from '../tracing/tracing.service';
 import { EventsResult } from './escrow.types';
+import {
+  ONE_HOUR_SECONDS,
+  SECONDS_PER_DAY,
+} from '../common/constants/time.constants';
 
 export type EscrowWithPaymentUrl = EscrowRecord & {
   paymentUrl: string;
@@ -72,6 +78,8 @@ export class EscrowService {
     private readonly cacheService?: CacheService,
     @Optional()
     private readonly prisma?: PrismaService,
+    @Optional()
+    private readonly configService?: ConfigService,
   ) {}
 
   /**
@@ -305,8 +313,7 @@ export class EscrowService {
     const result = await this.createEscrow(dto, vendorAddress);
 
     if (this.cacheService) {
-      // Cache for 24 hours (86400 seconds)
-      await this.cacheService.set(cacheKey, result, 86400);
+      await this.cacheService.set(cacheKey, result, SECONDS_PER_DAY);
     }
 
     return result;
@@ -546,7 +553,9 @@ export class EscrowService {
   }
 
   private buildPaymentUrl(id: string): string {
-    return `https://trust-link.local/pay/${id}`;
+    const frontendUrl =
+      this.configService?.get('FRONTEND_URL') ?? 'http://localhost:3000';
+    return `${frontendUrl.replace(/\/+$/, '')}/pay/${encodeURIComponent(id)}`;
   }
 
   /**
@@ -577,13 +586,22 @@ export class EscrowService {
     callerAddress: string,
     fileName: string,
   ): EvidenceUploadResponseDto {
-    const ext = fileName.includes('.') ? fileName.split('.').pop() : 'bin';
+    // The query DTO already restricts the extension; this keeps the object key
+    // safe for any other caller.
+    const candidate = fileName.includes('.')
+      ? fileName.slice(fileName.lastIndexOf('.') + 1).toLowerCase()
+      : '';
+    const ext = (EVIDENCE_FILE_EXTENSIONS as readonly string[]).includes(
+      candidate,
+    )
+      ? candidate
+      : 'bin';
     const uuid = crypto.randomUUID();
     const storagePath = `evidence/${callerAddress}/`;
     const objectKey = `${storagePath}${uuid}.${ext}`;
     const publicUrl = `https://storage.trustlink.io/${objectKey}`;
     const presigned = this.s3PresignService.presign(publicUrl);
-    const expiresInSeconds = 3600;
+    const expiresInSeconds = ONE_HOUR_SECONDS;
 
     return {
       uploadUrl: presigned,

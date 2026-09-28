@@ -53,7 +53,7 @@ export class VendorProfileController {
   })
   @ApiResponse({ status: 400, description: 'Invalid profile data.' })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
-  @Throttle({ auth: { limit: 10, ttl: THROTTLE_WINDOW_MS } })
+  @Throttle({ default: { limit: 10, ttl: THROTTLE_WINDOW_MS } })
   @Post()
   @HttpCode(HttpStatus.CREATED)
   create(@Body() dto: CreateVendorProfileDto, @CurrentUser() user: AuthUser) {
@@ -77,7 +77,7 @@ export class VendorProfileController {
   })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   @ApiResponse({ status: 404, description: 'Profile not found.' })
-  @Throttle({ auth: { limit: 20, ttl: THROTTLE_WINDOW_MS } })
+  @Throttle({ default: { limit: 20, ttl: THROTTLE_WINDOW_MS } })
   @Get()
   get(@CurrentUser() user: AuthUser) {
     return this.vendorProfileService.getProfile(user.address);
@@ -102,7 +102,7 @@ export class VendorProfileController {
   })
   @ApiResponse({ status: 400, description: 'Invalid profile data.' })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
-  @Throttle({ auth: { limit: 10, ttl: THROTTLE_WINDOW_MS } })
+  @Throttle({ default: { limit: 10, ttl: THROTTLE_WINDOW_MS } })
   @Put()
   @HttpCode(HttpStatus.OK)
   upsert(@Body() dto: CreateVendorProfileDto, @CurrentUser() user: AuthUser) {
@@ -127,7 +127,7 @@ export class VendorProfileController {
   })
   @ApiResponse({ status: 400, description: 'Invalid update payload.' })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
-  @Throttle({ auth: { limit: 10, ttl: THROTTLE_WINDOW_MS } })
+  @Throttle({ default: { limit: 10, ttl: THROTTLE_WINDOW_MS } })
   @Patch()
   update(@Body() dto: UpdateVendorProfileDto, @CurrentUser() user: AuthUser) {
     return this.vendorProfileService.updateProfile(user.address, dto);
@@ -148,7 +148,7 @@ export class VendorProfileController {
     type: NotificationPreferencesResponseDto,
   })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
-  @Throttle({ auth: { limit: 20, ttl: THROTTLE_WINDOW_MS } })
+  @Throttle({ default: { limit: 20, ttl: THROTTLE_WINDOW_MS } })
   @Get('notifications')
   getNotifications(@CurrentUser() user: AuthUser) {
     return this.vendorProfileService.getNotificationPreferences(user.address);
@@ -172,7 +172,7 @@ export class VendorProfileController {
   })
   @ApiResponse({ status: 400, description: 'Invalid preferences payload.' })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
-  @Throttle({ auth: { limit: 10, ttl: THROTTLE_WINDOW_MS } })
+  @Throttle({ default: { limit: 10, ttl: THROTTLE_WINDOW_MS } })
   @Patch('notifications')
   @HttpCode(HttpStatus.OK)
   updateNotifications(

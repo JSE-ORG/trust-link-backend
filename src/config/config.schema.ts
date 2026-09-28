@@ -17,7 +17,7 @@ import { Keypair } from '@stellar/stellar-sdk';
  * malformed strings, and checksum failures. Same template-overrides as
  * `stellarSecretKey` so callers see the full reason on `error.message`.
  */
-export const stellarPublicKey = Joi.string()
+const stellarPublicKey = Joi.string()
   .custom((value: string, helpers) => {
     if (!value.startsWith('G')) {
       return helpers.error('any.invalid', {
@@ -108,9 +108,35 @@ const sorobanRpcUrl = Joi.string()
   }, 'Soroban RPC URL / STELLAR_NETWORK agreement');
 
 /** Exported so tests can validate environment shapes without booting Nest. */
+/**
+ * #839 — Validator for a SendGrid dynamic template id.
+ *
+ * Dynamic template ids are the literal string `d-` followed by 32 lowercase
+ * hex characters. Validating the shape here means a truncated or legacy
+ * template id is reported when the process boots, instead of producing a
+ * rejected API call on every notification for the lifetime of the deployment.
+ */
+const sendGridTemplateId = Joi.string()
+  .pattern(/^d-[0-9a-f]{32}$/)
+  .messages({
+    'string.pattern.base':
+      'Config validation error: {{#label}} must be a SendGrid dynamic template id ' +
+      '(the letter "d", a hyphen, then 32 hexadecimal characters)',
+  });
+
 export const configValidationSchema = Joi.object({
   PORT: Joi.number().default(3000),
   API_BASE_URL: Joi.string().uri().default('http://localhost:3000'),
+  FRONTEND_URL: Joi.string()
+    .uri()
+    .when('NODE_ENV', {
+      is: 'production',
+      then: Joi.required().messages({
+        'any.required':
+          'Config validation error: FRONTEND_URL is required in production',
+      }),
+      otherwise: Joi.string().uri().default('http://localhost:3000'),
+    }),
   DATABASE_URL: Joi.string().required(),
   CONTACT_ENCRYPTION_KEY: Joi.string()
     .hex()
@@ -185,8 +211,49 @@ export const configValidationSchema = Joi.object({
     .valid('development', 'production', 'test')
     .default('development'),
   SENDGRID_API_KEY: Joi.string().optional(),
+  // #839 — SendGrid rejects any send that omits `from`, and the previous
+  // dispatchEmail() never set one, so every email failed once a real key was
+  // configured. Required whenever a key is set: enabling email without a
+  // sender is a misconfiguration that must fail at boot, not on first send.
+  SENDGRID_FROM_EMAIL: Joi.when('SENDGRID_API_KEY', {
+    is: Joi.string().min(1).required(),
+    then: Joi.string()
+      .email()
+      .required()
+      .messages({
+        'any.required':
+          'Config validation error: SENDGRID_FROM_EMAIL is required when SENDGRID_API_KEY is set',
+        'string.email':
+          'Config validation error: SENDGRID_FROM_EMAIL must be a valid sender email address',
+      }),
+    otherwise: Joi.string().email().optional(),
+  }),
+  // #839 — One dynamic template id per notification type. SendGrid dynamic
+  // template ids are `d-` followed by 32 hex characters; the old code invented
+  // `trustlink-<type>` at send time, which no account has, so the request was
+  // rejected. Pattern-validated so a malformed id fails at boot.
+  SENDGRID_TEMPLATE_FUNDED: sendGridTemplateId,
+  SENDGRID_TEMPLATE_SHIPPED: sendGridTemplateId,
+  SENDGRID_TEMPLATE_DELIVERED: sendGridTemplateId,
+  SENDGRID_TEMPLATE_DISPUTED: sendGridTemplateId,
+  SENDGRID_TEMPLATE_COMPLETED: sendGridTemplateId,
+  SENDGRID_TEMPLATE_REFUNDED: sendGridTemplateId,
   TWILIO_ACCOUNT_SID: Joi.string().optional(),
   TWILIO_AUTH_TOKEN: Joi.string().optional(),
+  TWILIO_FROM_NUMBER: Joi.string()
+    .pattern(/^\+[1-9]\d{7,14}$/)
+    .when('TWILIO_ACCOUNT_SID', {
+      is: Joi.exist(),
+      then: Joi.required().messages({
+        'any.required':
+          'Config validation error: TWILIO_FROM_NUMBER is required when TWILIO_ACCOUNT_SID is set',
+      }),
+      otherwise: Joi.optional(),
+    })
+    .messages({
+      'string.pattern.base':
+        'Config validation error: TWILIO_FROM_NUMBER must be an E.164 phone number',
+    }),
   STELLAR_NETWORK: Joi.string().valid('TESTNET', 'MAINNET').default('TESTNET'),
   ALLOWED_ORIGINS: Joi.string().optional(),
   CSP_CONNECT_SRC: Joi.string().optional(),

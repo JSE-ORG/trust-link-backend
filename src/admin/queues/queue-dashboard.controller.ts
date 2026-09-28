@@ -53,7 +53,7 @@ export class QueueDashboardController {
   })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   @ApiResponse({ status: 403, description: 'Admin access required.' })
-  @Throttle({ auth: { limit: 20, ttl: 60000 } })
+  @Throttle({ default: { limit: 20, ttl: 60000 } })
   @Get()
   getDashboard(): Promise<QueuesDashboardDto> {
     return this.dashboardService.getDashboard();

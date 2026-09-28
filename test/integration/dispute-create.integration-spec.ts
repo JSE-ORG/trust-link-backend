@@ -1,6 +1,7 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
+import { getStorageToken, ThrottlerStorage } from '@nestjs/throttler';
 import { AppModule } from '../../src/app.module';
 import { EscrowRepository } from '../../src/escrow/escrow.repository';
 import { PrismaService } from '../../src/prisma/prisma.service';
@@ -11,6 +12,12 @@ describe('POST /escrow/:id/dispute integration (issue #51)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let escrowRepository: EscrowRepository;
+  // The dispute route allows 5 requests a minute and every test here shares
+  // one app, so hit counters are cleared between tests.
+  let throttlerStorage: ThrottlerStorage & {
+    _storage?: Map<string, unknown>;
+    timeoutIds?: Map<string, NodeJS.Timeout[]>;
+  };
 
   const vendorAddress =
     'GB3LCRCZEETCBYV4PEIPV2PD2R3AJMC6S2OOBMV5MA6WCOKEMN3XA3K3';
@@ -32,9 +39,13 @@ describe('POST /escrow/:id/dispute integration (issue #51)', () => {
     await app.init();
     prisma = app.get(PrismaService);
     escrowRepository = app.get(EscrowRepository);
+    throttlerStorage = app.get(getStorageToken());
   });
 
   beforeEach(async () => {
+    throttlerStorage.timeoutIds?.forEach((ids) => ids.forEach(clearTimeout));
+    throttlerStorage.timeoutIds?.clear();
+    throttlerStorage._storage?.clear();
     await prisma.reset();
     // Escrow.vendorAddress is a foreign key onto VendorProfile.address, so
     // the parent row must exist before any escrow referencing it (#475).
@@ -99,6 +110,33 @@ describe('POST /escrow/:id/dispute integration (issue #51)', () => {
       })
       .expect(409);
   });
+
+  it.each(['CANCELLED', 'COMPLETED', 'REFUNDED'] as const)(
+    'returns 409 and leaves the escrow alone when it is %s',
+    async (state) => {
+      await prisma.escrow.update({
+        where: { id: escrowUuid },
+        data: { state },
+      });
+
+      await request(app.getHttpServer())
+        .post(`/escrow/${escrowUuid}/dispute`)
+        .set('Authorization', bearer(buyerAddress))
+        .send({
+          reason: 'ITEM_NOT_RECEIVED',
+          description: 'The package has not arrived after 3 weeks of waiting',
+        })
+        .expect(409);
+
+      const escrow = await prisma.escrow.findUnique({
+        where: { id: escrowUuid },
+      });
+      expect(escrow!.state).toBe(state);
+      expect(
+        await prisma.dispute.count({ where: { escrowId: escrowUuid } }),
+      ).toBe(0);
+    },
+  );
 
   it('returns 400 for invalid dispute reason', async () => {
     await request(app.getHttpServer())

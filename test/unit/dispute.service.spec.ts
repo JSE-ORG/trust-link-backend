@@ -16,6 +16,7 @@ import { DisputeController } from '../../src/admin/dispute/dispute.controller';
 import { JwtGuard } from '../../src/auth/guards/jwt.guard';
 import { ConfigService } from '../../src/config/config.service';
 import { AuditLogService } from '../../src/audit-log/audit-log.service';
+import { bearer } from '../auth-helper';
 
 // ── shared fixture ────────────────────────────────────────────────────────
 
@@ -310,6 +311,13 @@ describe('PATCH /admin/dispute/:id/resolve (admin guard)', () => {
   const mockConfigService = {
     get: jest.fn().mockReturnValue('admin-address'),
   };
+  // The mocked ConfigService answers every key, SEP10_JWT_SECRET included,
+  // with 'admin-address', so tokens are signed with that value.
+  const VENDOR_AUTH = bearer('vendor-address', { secret: 'admin-address' });
+  const ADMIN_AUTH = bearer('admin-address', {
+    role: 'admin',
+    secret: 'admin-address',
+  });
 
   beforeEach(async () => {
     disputeService = {
@@ -352,10 +360,7 @@ describe('PATCH /admin/dispute/:id/resolve (admin guard)', () => {
   it('returns 403 for a vendor-role JWT', async () => {
     await request(app.getHttpServer())
       .patch('/admin/dispute/escrow-1/resolve')
-      .set(
-        'Authorization',
-        'Bearer eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiJ2ZW5kb3ItYWRkcmVzcyIsInJvbGUiOiJ2ZW5kb3IifQ.tZDbS0v2ze8t-x6hZsE1Q1hP0odlamTWSFZlwjPNwXk',
-      )
+      .set('Authorization', VENDOR_AUTH)
       .send({ resolution: 'RELEASE' })
       .expect(403);
   });
@@ -363,10 +368,7 @@ describe('PATCH /admin/dispute/:id/resolve (admin guard)', () => {
   it('returns 200 for an admin-role JWT', async () => {
     const res = await request(app.getHttpServer())
       .patch('/admin/dispute/escrow-1/resolve')
-      .set(
-        'Authorization',
-        'Bearer eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiJhZG1pbi1hZGRyZXNzIiwicm9sZSI6ImFkbWluIn0.Q4EeLZuB3V0utXclLNM02bCZ_WyNHFaZukHcMTjHa6o',
-      )
+      .set('Authorization', ADMIN_AUTH)
       .send({ resolution: 'RELEASE' })
       .expect(200);
 
@@ -380,10 +382,7 @@ describe('PATCH /admin/dispute/:id/resolve (admin guard)', () => {
 
     await request(app.getHttpServer())
       .patch('/admin/dispute/escrow-1/resolve')
-      .set(
-        'Authorization',
-        'Bearer eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiJhZG1pbi1hZGRyZXNzIiwicm9sZSI6ImFkbWluIn0.Q4EeLZuB3V0utXclLNM02bCZ_WyNHFaZukHcMTjHa6o',
-      )
+      .set('Authorization', ADMIN_AUTH)
       .send({ resolution: 'RELEASE' })
       .expect(409);
   });
@@ -394,10 +393,7 @@ describe('PATCH /admin/dispute/:id/resolve (admin guard)', () => {
 
     await request(app.getHttpServer())
       .patch('/admin/dispute/escrow-1/resolve')
-      .set(
-        'Authorization',
-        'Bearer eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.eyJzdWIiOiJ2ZW5kb3ItYWRkcmVzcyIsInJvbGUiOiJ2ZW5kb3IifQ.tZDbS0v2ze8t-x6hZsE1Q1hP0odlamTWSFZlwjPNwXk',
-      )
+      .set('Authorization', VENDOR_AUTH)
       .send({ resolution: 'RELEASE' })
       .expect(403);
 

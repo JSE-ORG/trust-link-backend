@@ -76,7 +76,7 @@ describe('OptionalJwtGuard', () => {
 
   describe('canActivate', () => {
     it('should return true and attach user when valid JWT is provided', () => {
-      const payload = { sub: TEST_USER_ADDRESS };
+      const payload = { sub: TEST_USER_ADDRESS, exp: 9_999_999_999 };
       const token = createMockJwt(payload);
       const { context, mockRequest } = createMockExecutionContext(
         `Bearer ${token}`,
@@ -89,7 +89,11 @@ describe('OptionalJwtGuard', () => {
     });
 
     it('should return true and attach user with role when valid JWT with role is provided', () => {
-      const payload = { sub: TEST_USER_ADDRESS, role: 'vendor' };
+      const payload = {
+        sub: TEST_USER_ADDRESS,
+        role: 'vendor',
+        exp: 9_999_999_999,
+      };
       const token = createMockJwt(payload);
       const { context, mockRequest } = createMockExecutionContext(
         `Bearer ${token}`,

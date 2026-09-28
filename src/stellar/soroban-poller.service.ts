@@ -13,6 +13,7 @@ import {
 import { CursorService } from './cursor.service';
 import { EscrowService } from '../escrow/escrow.service';
 import { DlqService } from '../dlq/dlq.service';
+import { STELLAR_RPC_URLS } from './stellar-endpoints';
 
 /**
  * Issue #4 — Polls Soroban RPC for contract events and drives EscrowService.syncStateFromChain.
@@ -33,8 +34,6 @@ import { DlqService } from '../dlq/dlq.service';
  * SOROBAN_RPC_URL is unset. Production deployments must configure the URL
  * explicitly — config validation enforces this at startup.
  */
-const DEFAULT_TESTNET_RPC_URL = 'https://soroban-testnet.stellar.org';
-
 /**
  * How many ledgers behind the current one a fresh deployment starts polling
  * from. Soroban RPC nodes retain only a short window of events (~24h), so
@@ -639,12 +638,12 @@ export class SorobanPollerService implements OnModuleInit, OnModuleDestroy {
     }
 
     if (stellarNetwork === 'MAINNET') {
-      return 'https://mainnet.stellar.validationcloud.io/v1/soroban/rpc';
+      return STELLAR_RPC_URLS.MAINNET;
     }
 
     this.logger.warn(
-      `SorobanPollerService: SOROBAN_RPC_URL not set — defaulting to public testnet RPC ${DEFAULT_TESTNET_RPC_URL}`,
+      `SorobanPollerService: SOROBAN_RPC_URL not set — defaulting to public testnet RPC ${STELLAR_RPC_URLS.TESTNET}`,
     );
-    return DEFAULT_TESTNET_RPC_URL;
+    return STELLAR_RPC_URLS.TESTNET;
   }
 }

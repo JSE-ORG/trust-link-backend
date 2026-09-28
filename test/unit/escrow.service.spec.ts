@@ -16,11 +16,13 @@ import { ContractService } from '../../src/stellar/contract.service';
 import { LogisticsService } from '../../src/logistics/logistics.service';
 import { CacheService } from '../../src/cache/cache.service';
 import { PrismaService } from '../../src/prisma/prisma.service';
+import { ConfigService } from '../../src/config/config.service';
 
 describe('EscrowService.handleShipment (issue #16)', () => {
   let service: EscrowService;
   let repository: jest.Mocked<EscrowRepository>;
   let notifications: jest.Mocked<NotificationsService>;
+  let configService: { get: jest.Mock };
 
   const fundedEscrow: EscrowRecord = {
     id: 'escrow-1',
@@ -54,6 +56,11 @@ describe('EscrowService.handleShipment (issue #16)', () => {
       notifyFunded: jest.fn(),
       notifyShipped: jest.fn(),
     } as unknown as jest.Mocked<NotificationsService>;
+    configService = {
+      get: jest.fn((key: string) =>
+        key === 'FRONTEND_URL' ? 'https://pay.example.com/' : undefined,
+      ),
+    };
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -63,6 +70,7 @@ describe('EscrowService.handleShipment (issue #16)', () => {
         { provide: NotificationsService, useValue: notifications },
         { provide: S3PresignService, useValue: {} },
         { provide: ContractService, useValue: {} },
+        { provide: ConfigService, useValue: configService },
       ],
     }).compile();
 
@@ -121,44 +129,54 @@ describe('EscrowService.handleShipment (issue #16)', () => {
     ).rejects.toThrow(NotFoundException);
   });
 
-  it('creates a new escrow and returns a payment URL', async () => {
-    const createDto = {
-      itemName: 'Leather bag',
-      itemRef: 'bag-123',
-      amount: 125,
-      currency: 'USDC',
-      buyerAddress: 'buyer-address',
-    };
-    const createdEscrow: EscrowRecord = {
-      ...fundedEscrow,
-      id: 'escrow-2',
-      contractEscrowId: 7n,
-      state: 'CREATED',
-    };
-    repository.findByVendorAndItem.mockResolvedValue(null);
-    repository.create.mockResolvedValue(createdEscrow);
-    notifications.notifyFunded.mockResolvedValue();
-
-    await expect(
-      service.createEscrow(createDto, 'vendor-address'),
-    ).resolves.toEqual(
-      expect.objectContaining({
+  it.each([
+    ['https://pay.example.com', 'https://pay.example.com/pay/escrow-2'],
+    ['https://pay.example.com/', 'https://pay.example.com/pay/escrow-2'],
+  ])(
+    'builds a payment URL from FRONTEND_URL (%s)',
+    async (frontendUrl, paymentUrl) => {
+      configService.get.mockReturnValue(frontendUrl);
+      const createDto = {
+        itemName: 'Leather bag',
+        itemRef: 'bag-123',
+        amount: 125,
+        currency: 'USDC',
+        buyerAddress: 'buyer-address',
+      };
+      const createdEscrow: EscrowRecord = {
+        ...fundedEscrow,
         id: 'escrow-2',
         contractEscrowId: 7n,
-        paymentUrl: 'https://trust-link.local/pay/escrow-2',
-      }),
-    );
-    expect(repository.create).toHaveBeenCalledWith(createDto, 'vendor-address');
-    // Issue #550: #496 removed the notifyFunded call from createEscrow — an
-    // escrow is CREATED, not FUNDED, at creation time. This is a negative
-    // assertion (not just a deleted one) so the premature notification can't
-    // silently come back. The corresponding positive-path coverage — that
-    // notifyFunded *is* called once the escrow actually transitions to
-    // FUNDED via the on-chain sync handler — already exists in
-    // src/escrow/escrow.service.sync-state.spec.ts
-    // ("EscrowFunded > transitions CREATED → FUNDED and sends notification").
-    expect(notifications.notifyFunded).not.toHaveBeenCalled();
-  });
+        state: 'CREATED',
+      };
+      repository.findByVendorAndItem.mockResolvedValue(null);
+      repository.create.mockResolvedValue(createdEscrow);
+      notifications.notifyFunded.mockResolvedValue();
+
+      await expect(
+        service.createEscrow(createDto, 'vendor-address'),
+      ).resolves.toEqual(
+        expect.objectContaining({
+          id: 'escrow-2',
+          contractEscrowId: 7n,
+          paymentUrl,
+        }),
+      );
+      expect(repository.create).toHaveBeenCalledWith(
+        createDto,
+        'vendor-address',
+      );
+      // Issue #550: #496 removed the notifyFunded call from createEscrow — an
+      // escrow is CREATED, not FUNDED, at creation time. This is a negative
+      // assertion (not just a deleted one) so the premature notification can't
+      // silently come back. The corresponding positive-path coverage — that
+      // notifyFunded *is* called once the escrow actually transitions to
+      // FUNDED via the on-chain sync handler — already exists in
+      // src/escrow/escrow.service.sync-state.spec.ts
+      // ("EscrowFunded > transitions CREATED → FUNDED and sends notification").
+      expect(notifications.notifyFunded).not.toHaveBeenCalled();
+    },
+  );
 
   it('throws ConflictException for duplicate escrow references', async () => {
     const createDto = {
@@ -561,6 +579,19 @@ describe('EscrowService: tracking, idempotency, evidence upload, and vendor list
       );
 
       expect(result.publicUrl).toMatch(/\.bin$/);
+    });
+
+    it('never writes a path segment from the filename into the object key', () => {
+      s3Presign.presign.mockReturnValue('https://signed-url');
+
+      const result = service.generateEvidenceUploadUrl(
+        'buyer-1',
+        'a.jpg/../../x',
+      );
+
+      expect(result.publicUrl).toMatch(
+        /^[^?]*\/evidence\/buyer-1\/[0-9a-f-]+\.bin$/,
+      );
     });
   });
 

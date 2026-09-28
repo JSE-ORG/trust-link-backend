@@ -1,13 +1,20 @@
-import { TracingService } from '../tracing/tracing.service';
-import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
-import * as crypto from 'crypto';
 import {
-  EscrowRecord,
-  NotificationType,
-  PrismaService,
-} from '../prisma/prisma.service';
+  Inject,
+  Injectable,
+  Logger,
+  OnModuleInit,
+  Optional,
+} from '@nestjs/common';
+import * as crypto from 'crypto';
+import { EscrowRecord, NotificationType } from '../prisma/prisma.service';
+import { ConfigService } from '../config/config.service';
+import {
+  CreateNotificationInput,
+  NotificationRepository,
+} from './notification.repository';
 import { SENDGRID_CLIENT, TWILIO_CLIENT } from './notifications.tokens';
 import { decryptContact } from '../common/sanitization/contact-encryption.util';
+import { VendorProfileRepository } from '../vendor/vendor-profile.repository';
 
 interface SendGridClient {
   send(message: Record<string, unknown>): Promise<unknown>;
@@ -28,44 +35,131 @@ const noopTwilio: TwilioClient = {
 
 const MAX_ATTEMPTS = 3;
 
+type NotificationWriter =
+  | NotificationRepository
+  | {
+      notification?: {
+        create(args: { data: CreateNotificationInput }): Promise<unknown>;
+      };
+    };
+
+/**
+ * #839 — Every notification type the service can emit, paired with the config
+ * key holding its SendGrid dynamic template id.
+ *
+ * The dispatch path used to synthesise ``trustlink-<type>`` and send that as
+ * the template id. No SendGrid account has a template with that name, so every
+ * request was rejected; the ids are now read from configuration. Keeping the
+ * type→key mapping in one place lets the boot check and the send path agree,
+ * and makes a newly added type a compile error rather than a silent failure.
+ */
+const TEMPLATE_ID_CONFIG_KEYS: Record<
+  NotificationType,
+  | 'SENDGRID_TEMPLATE_FUNDED'
+  | 'SENDGRID_TEMPLATE_SHIPPED'
+  | 'SENDGRID_TEMPLATE_DELIVERED'
+  | 'SENDGRID_TEMPLATE_DISPUTED'
+  | 'SENDGRID_TEMPLATE_COMPLETED'
+  | 'SENDGRID_TEMPLATE_REFUNDED'
+> = {
+  FUNDED: 'SENDGRID_TEMPLATE_FUNDED',
+  SHIPPED: 'SENDGRID_TEMPLATE_SHIPPED',
+  DELIVERED: 'SENDGRID_TEMPLATE_DELIVERED',
+  DISPUTED: 'SENDGRID_TEMPLATE_DISPUTED',
+  COMPLETED: 'SENDGRID_TEMPLATE_COMPLETED',
+  REFUNDED: 'SENDGRID_TEMPLATE_REFUNDED',
+};
+
 @Injectable()
-export class NotificationsService {
+export class NotificationsService implements OnModuleInit {
   private readonly logger = new Logger(NotificationsService.name);
 
   constructor(
-    private readonly prisma: PrismaService,
+    // Issue #845: notification writes go through the repository (R-DB-02).
+    private readonly notifications: NotificationWriter,
     @Optional()
     @Inject(SENDGRID_CLIENT)
     private readonly sendGrid: SendGridClient = noopSendGrid,
     @Optional()
     @Inject(TWILIO_CLIENT)
     private readonly twilio: TwilioClient = noopTwilio,
+    // #839 — Email configuration is now read from config rather than assumed.
+    // @Optional so a caller that constructs the service directly (several
+    // specs do) still gets the no-op clients and a clear warning instead of a
+    // Nest resolution failure.
     @Optional()
-    private readonly tracing?: TracingService,
+    private readonly config?: ConfigService,
+    @Optional()
+    private readonly configService?: ConfigService,
+    @Optional()
+    private readonly vendorProfiles?: VendorProfileRepository,
   ) {}
 
   /**
-   * Runs `fn` inside a notification span.
+   * #839 — Reports an unusable email configuration at boot.
    *
-   * Spans record the notification type and channel so a slow or failing
-   * dispatch can be traced. Recipient addresses, message bodies and contact
-   * details are never recorded as attributes. Tracing is optional, so a
-   * service built without it still dispatches normally.
+   * A missing sender or a missing template id used to surface as a rejected
+   * SendGrid call on the first notification of each type, and then on every
+   * notification thereafter, with nothing in the logs tying the failure back to
+   * configuration. Both are now configuration problems, so both are reported
+   * once during startup:
+   *
+   *  - no `SENDGRID_FROM_EMAIL` while a key is set — SendGrid rejects the send
+   *  - no template id for a type — that type can never be delivered
+   *
+   * Only warns. Email is optional infrastructure (the no-op client already
+   * covers an unconfigured deployment), so a missing key must not block boot
+   * the way an invalid key would.
    */
-  private traced<T>(
-    name: string,
-    attributes: Record<string, string | number | boolean>,
-    fn: () => T | Promise<T>,
-  ): Promise<T> {
-    if (!this.tracing) {
-      return Promise.resolve(fn());
+  onModuleInit(): void {
+    if (!this.config || !this.config.get('SENDGRID_API_KEY')) {
+      return;
     }
-    return this.tracing.withSpan(name, { attributes }, fn);
+
+    const fromEmail = this.config.get('SENDGRID_FROM_EMAIL');
+    if (!fromEmail) {
+      this.logger.error(
+        'SENDGRID_FROM_EMAIL is not set while SENDGRID_API_KEY is — SendGrid ' +
+          'rejects every send without a sender, so no email will be delivered. ' +
+          'Set SENDGRID_FROM_EMAIL to a verified sender address.',
+      );
+    }
+
+    const missing = (
+      Object.keys(TEMPLATE_ID_CONFIG_KEYS) as NotificationType[]
+    ).filter((type) => !this.templateIdFor(type));
+
+    if (missing.length > 0) {
+      this.logger.error(
+        `No SendGrid template id configured for notification type(s): ${missing.join(', ')}. ` +
+          `Set ${missing
+            .map((type) => TEMPLATE_ID_CONFIG_KEYS[type])
+            .join(', ')}. These notifications cannot be sent until configured.`,
+      );
+    }
   }
 
   /**
-   * Notifies the vendor (at `escrow.vendorAddress`) that the escrow has been
-   * funded.
+   * Reads the configured SendGrid dynamic template id for a notification type.
+   *
+   * Returns `null` rather than a fabricated fallback: a made-up id is exactly
+   * the failure this replaces, and the caller must be able to tell "not
+   * configured" apart from "configured".
+   */
+  private templateIdFor(type: NotificationType): string | null {
+    if (!this.config) {
+      return null;
+    }
+    const value = this.config.get<string>(TEMPLATE_ID_CONFIG_KEYS[type]);
+    if (typeof value !== 'string') {
+      return null;
+    }
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+
+  /**
+   * Notifies the vendor that the escrow has been funded.
    *
    * Sends over email **and** SMS to the same address, each with its own
    * 3-attempt exponential-backoff retry, then writes one `Notification` row
@@ -75,7 +169,7 @@ export class NotificationsService {
    * recorded; it does not reject on a provider failure.
    */
   notifyFunded(escrow: EscrowRecord): Promise<void> {
-    return this.dispatch('FUNDED', escrow, escrow.vendorAddress);
+    return this.dispatchToVendor('FUNDED', escrow);
   }
 
   /**
@@ -96,8 +190,7 @@ export class NotificationsService {
   }
 
   /**
-   * Notifies the vendor (at `escrow.vendorAddress`) that a dispute has been
-   * opened against this escrow.
+   * Notifies the vendor that a dispute has been opened against this escrow.
    *
    * Same delivery model as {@link notifyFunded}: email + SMS to the vendor
    * address, per-channel retry, one audit `Notification` row per channel,
@@ -106,7 +199,7 @@ export class NotificationsService {
    * half and is a separate call.
    */
   notifyDisputed(escrow: EscrowRecord): Promise<void> {
-    return this.dispatch('DISPUTED', escrow, escrow.vendorAddress);
+    return this.dispatchToVendor('DISPUTED', escrow);
   }
 
   /**
@@ -195,6 +288,46 @@ export class NotificationsService {
   }
 
   /**
+   * Resolves the vendor's real contact channels from VendorProfile. A missing
+   * email or phone skips only that channel, and no vendor notification falls
+   * back to the Stellar address because providers cannot deliver to it.
+   */
+  private async dispatchToVendor(
+    type: NotificationType,
+    escrow: EscrowRecord,
+  ): Promise<void> {
+    if (!this.vendorProfiles) {
+      this.logger.warn(
+        `VendorProfileRepository unavailable; falling back to legacy vendor address dispatch for escrow ${escrow.id}`,
+      );
+      await this.dispatch(type, escrow, escrow.vendorAddress);
+      return;
+    }
+
+    const profile = await this.vendorProfiles?.findByAddress(
+      escrow.vendorAddress,
+    );
+    const email = profile?.email?.trim() || null;
+    const phone = profile?.phone?.trim() || null;
+
+    if (email) {
+      await this.dispatchEmail(type, escrow, email);
+    } else {
+      this.logger.warn(
+        `No vendor email for escrow ${escrow.id} vendor ${escrow.vendorAddress}; skipping ${type} email`,
+      );
+    }
+
+    if (phone) {
+      await this.dispatchSms(type, escrow, phone);
+    } else {
+      this.logger.warn(
+        `No vendor phone for escrow ${escrow.id} vendor ${escrow.vendorAddress}; skipping ${type} SMS`,
+      );
+    }
+  }
+
+  /**
    * Attempts to decrypt a stored contact value.
    * Returns the plaintext on success, null on any failure.
    */
@@ -250,6 +383,55 @@ export class NotificationsService {
     );
   }
 
+  /**
+   * #839 — Records the audit row for an email that was never attempted, and
+   * logs why.
+   *
+   * The row is still written so the notification is auditable: a
+   * configuration gap shows up as one unsent EMAIL record with a reason in the
+   * log, rather than as three failed provider attempts and no indication that
+   * the payload was never deliverable in the first place.
+   *
+   * `attemptCount` stays 0 because no provider call was made.
+   */
+  private async recordUndeliverableEmail(
+    type: NotificationType,
+    escrow: EscrowRecord,
+    recipientAddress: string,
+    reason: string,
+  ): Promise<void> {
+    this.logger.error(
+      `Cannot send ${type} email to ${recipientAddress}: ${reason}`,
+    );
+    await this.createNotification({
+      escrowId: escrow.id,
+      type,
+      channel: 'EMAIL',
+      recipientAddress,
+      message: `${type}: ${escrow.itemName}`,
+      providerMessageId: null,
+      attemptCount: 0,
+      lastResponseCode: null,
+    });
+  }
+
+  private async createNotification(
+    data: CreateNotificationInput,
+  ): Promise<unknown> {
+    if (
+      'create' in this.notifications &&
+      typeof this.notifications.create === 'function'
+    ) {
+      return this.notifications.create(data);
+    }
+
+    const legacyPrisma = this.notifications as Exclude<
+      NotificationWriter,
+      NotificationRepository
+    >;
+    return legacyPrisma.notification?.create({ data }) ?? Promise.resolve();
+  }
+
   private async dispatchEmail(
     type: NotificationType,
     escrow: EscrowRecord,
@@ -260,6 +442,42 @@ export class NotificationsService {
     let attemptCount = 0;
     let lastResponseCode: number | null = null;
 
+    // #839 — Resolve the sender and the template id BEFORE the retry loop.
+    //
+    // Neither is a transient fault, so retrying cannot help: the previous code
+    // sent no `from` at all and invented `trustlink-<type>` as the template id,
+    // and burned three attempts plus ~3s of backoff on every notification to
+    // reach the same rejected request. With a real API key configured, every
+    // email failed. Failing fast here also keeps the audit row honest — the
+    // notification is recorded as not sent, with the reason, rather than as
+    // three failed attempts against a payload that was never deliverable.
+    const fromEmail = this.config?.get<string>('SENDGRID_FROM_EMAIL');
+    const templateId = this.templateIdFor(type);
+    const unconfigured = this.sendGrid === noopSendGrid;
+
+    if (!unconfigured) {
+      if (!fromEmail) {
+        await this.recordUndeliverableEmail(
+          type,
+          escrow,
+          recipientAddress,
+          `SENDGRID_FROM_EMAIL is not configured [Request-ID: ${requestId}]`,
+        );
+        return;
+      }
+
+      if (!templateId) {
+        await this.recordUndeliverableEmail(
+          type,
+          escrow,
+          recipientAddress,
+          `no SendGrid template id configured (expected ` +
+            `${TEMPLATE_ID_CONFIG_KEYS[type]}) [Request-ID: ${requestId}]`,
+        );
+        return;
+      }
+    }
+
     while (attemptCount < MAX_ATTEMPTS) {
       attemptCount++;
       try {
@@ -268,7 +486,12 @@ export class NotificationsService {
         );
         const response = await this.sendGrid.send({
           to: recipientAddress,
-          templateId: `trustlink-${type.toLowerCase()}`,
+          // #839 — SendGrid requires a verified sender, and rejects the whole
+          // request when `from` is absent. Previously omitted entirely.
+          from: fromEmail,
+          // #839 — The configured dynamic template id for this type, not a
+          // synthesised `trustlink-<type>` name that exists in no account.
+          templateId: templateId ?? '',
           dynamicTemplateData: {
             escrowId: escrow.id,
             itemName: escrow.itemName,
@@ -297,17 +520,15 @@ export class NotificationsService {
       }
     }
 
-    await this.prisma.notification.create({
-      data: {
-        escrowId: escrow.id,
-        type,
-        channel: 'EMAIL',
-        recipientAddress,
-        message: `${type}: ${escrow.itemName}`,
-        providerMessageId,
-        attemptCount,
-        lastResponseCode,
-      },
+    await this.createNotification({
+      escrowId: escrow.id,
+      type,
+      channel: 'EMAIL',
+      recipientAddress,
+      message: `${type}: ${escrow.itemName}`,
+      providerMessageId,
+      attemptCount,
+      lastResponseCode,
     });
   }
 
@@ -330,6 +551,9 @@ export class NotificationsService {
         const response = await this.twilio.messages.create({
           to: recipientAddress,
           body: `${type}: ${escrow.itemName}`,
+          ...(this.configService?.get('TWILIO_FROM_NUMBER')
+            ? { from: this.configService.get('TWILIO_FROM_NUMBER') }
+            : {}),
         });
         providerMessageId = response.sid ?? null;
         break;
@@ -352,17 +576,15 @@ export class NotificationsService {
       }
     }
 
-    await this.prisma.notification.create({
-      data: {
-        escrowId: escrow.id,
-        type,
-        channel: 'SMS',
-        recipientAddress,
-        message: `${type}: ${escrow.itemName}`,
-        providerMessageId,
-        attemptCount,
-        lastResponseCode,
-      },
+    await this.createNotification({
+      escrowId: escrow.id,
+      type,
+      channel: 'SMS',
+      recipientAddress,
+      message: `${type}: ${escrow.itemName}`,
+      providerMessageId,
+      attemptCount,
+      lastResponseCode,
     });
   }
 

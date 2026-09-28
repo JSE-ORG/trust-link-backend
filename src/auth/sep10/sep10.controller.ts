@@ -16,6 +16,7 @@ import {
 import { IsString, MinLength } from 'class-validator';
 import { Throttle } from '@nestjs/throttler';
 import { IsStellarAddress } from '../../common/validators/stellar-address.validator';
+import { AUTH_CHALLENGE_THROTTLE } from '../../common/security/throttle.config';
 import { Sep10Service } from './sep10.service';
 
 export class ChallengeRequestDto {
@@ -67,7 +68,8 @@ export class ChallengeWithNetworkResponseDto {
   transaction!: string;
 
   @ApiProperty({
-    description: 'Stellar network passphrase the challenge was constructed for.',
+    description:
+      'Stellar network passphrase the challenge was constructed for.',
     example: 'Test SDF Network ; September 2015',
   })
   network_passphrase!: string;
@@ -75,7 +77,8 @@ export class ChallengeWithNetworkResponseDto {
 
 export class AuthTokenResponseDto {
   @ApiProperty({
-    description: 'JWT access token used in Authorization Bearer header for authenticated requests.',
+    description:
+      'JWT access token used in Authorization Bearer header for authenticated requests.',
     example:
       'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJHQUlHWkhIV0szUkVaUVBMUVg1RE5GUllEVVBGR0c2Vlk0UFNXU0w1M04yT1kzWjNIM0NFNVRNSyIsImlhdCI6MTc0MDUwMDAwMCwiZXhwIjoxNzQwNTAwOTAwfQ.fake_signature_placeholder',
   })
@@ -90,7 +93,7 @@ export class AuthTokenResponseDto {
 }
 
 @ApiTags('Auth')
-@Throttle({ auth: { ttl: 60000, limit: 10 } })
+@Throttle({ default: AUTH_CHALLENGE_THROTTLE })
 @Controller('auth')
 export class Sep10Controller {
   constructor(private readonly sep10Service: Sep10Service) {}
