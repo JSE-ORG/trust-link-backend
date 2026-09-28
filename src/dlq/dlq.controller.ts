@@ -32,7 +32,6 @@ import {
   ConfigService,
 } from '../config/config.service';
 import { EscrowRepository } from '../escrow/escrow.repository';
-import { PrismaService } from '../prisma/prisma.service';
 import { ListFailedTransactionsQueryDto } from './dto/list-failed-transactions-query.dto';
 
 /**

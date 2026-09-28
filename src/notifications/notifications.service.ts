@@ -76,6 +76,7 @@ export class NotificationsService implements OnModuleInit {
 
   constructor(
     // Issue #845: notification writes go through the repository (R-DB-02).
+    @Inject(NotificationRepository)
     private readonly notifications: NotificationWriter,
     @Optional()
     @Inject(SENDGRID_CLIENT)

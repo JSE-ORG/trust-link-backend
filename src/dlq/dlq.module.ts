@@ -18,7 +18,7 @@ import { FailedTransactionRepository } from './failed-transaction.repository';
     PrismaModule,
     // Issue #844: the controller resolves the on-chain escrow id through
     // EscrowRepository rather than PrismaService.
-    EscrowModule,
+    forwardRef(() => EscrowModule),
   ],
   controllers: [DlqController],
   providers: [DlqService, FailedTransactionRepository],

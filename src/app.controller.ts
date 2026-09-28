@@ -65,7 +65,11 @@ export class AppController {
   ) {}
 
   @ApiOperation({ summary: 'Root endpoint — welcome message' })
-  @ApiResponse({ status: 200, description: 'Service welcome message.' })
+  @ApiResponse({
+    status: 200,
+    description: 'Service welcome message.',
+    type: String,
+  })
   @Throttle({ default: { limit: 100, ttl: THROTTLE_WINDOW_MS } })
   @Get()
   getHello(): string {
@@ -180,7 +184,11 @@ export class AppController {
     description: 'Internal server error.',
     type: ErrorResponseDto,
   })
-  @ApiResponse({ status: 200, description: 'All components healthy.' })
+  @ApiResponse({
+    status: 200,
+    description: 'All components healthy.',
+    type: ReadinessResponseDto,
+  })
   @ApiResponse({ status: 503, description: 'One or more components are down.' })
   @SkipThrottle() // Health checks should never be throttled.
   @Get('health')
