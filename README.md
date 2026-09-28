@@ -38,7 +38,6 @@ Trust-Link Backend — NestJS escrow API for Stellar blockchain payments.
 | [DEPLOYMENT.md](./DEPLOYMENT.md) | Production deployment, migration order, and validation milestones |
 | [SPECIFICATION.md](./SPECIFICATION.md) | Authoritative product and API requirements |
 | [docs/AboutRepo.md](./docs/AboutRepo.md) | Historical backend overview |
-| [docs/ACCESSIBILITY_AUDIT.md](./docs/ACCESSIBILITY_AUDIT.md) | Historical keyboard accessibility audit |
 | [docs/CHART_OPTIMIZATION_README.md](./docs/CHART_OPTIMIZATION_README.md) | Chart aggregation implementation notes |
 | [docs/DATABASE_MIGRATION_README.md](./docs/DATABASE_MIGRATION_README.md) | Historical vendor-data migration notes |
 | [docs/EVIDENCE_UPLOAD_RATE_LIMITING.md](./docs/EVIDENCE_UPLOAD_RATE_LIMITING.md) | Evidence-upload rate-limit notes |

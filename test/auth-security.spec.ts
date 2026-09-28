@@ -84,22 +84,6 @@ describe('Auth Security Tests (Refresh, Nonce, Rate Limiting)', () => {
     // Replay prevention: challenge stores a nonce in the DB
   });
 
-  it('should detect and prevent nonce reuse (Replay Prevention)', () => {
-    // Tests that an already used nonce throws an UnauthorizedException
-  });
-
-  it('should enforce nonce expiration', () => {
-    // Tests that expired nonces are rejected
-  });
-
-  it('should rotate refresh tokens and issue new ones', () => {
-    // Test refresh token rotation
-  });
-
-  it('should detect refresh token reuse and revoke the family', () => {
-    // Test that using a revoked token revokes all tokens for the user
-  });
-
   it('rejects forged JWTs with invalid HMAC-SHA256 signatures', () => {
     const token = signJwt({ sub: 'GVENDOR_ADDRESS', role: 'admin' }, 'wrong');
     request.headers.authorization = `Bearer ${token}`;
