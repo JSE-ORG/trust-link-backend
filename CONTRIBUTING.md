@@ -311,7 +311,7 @@ git rebase upstream/dev
 |---|---|---|
 | Feature | `feat/description` | `feat/gigl-logistics-provider` |
 | Bug fix | `fix/description` | `fix/auto-release-duplicate-sign` |
-| Tests | `test/description` | `test/dispute-service-integration` |
+| Tests | `test/description` | `test/tracking-poll-worker-specs` |
 | Docs | `docs/description` | `docs/add-swagger-to-dispute-dto` |
 | Refactor | `refactor/description` | `refactor/extract-escrow-repository` |
 | Chore | `chore/description` | `chore/upgrade-prisma-5.x` |
@@ -562,7 +562,7 @@ describe("EscrowService", () => {
 
 **Integration tests** (`test/integration/`) — Test a full module with a real test database (in-memory or Docker). Use `@nestjs/testing` with a real Prisma client pointing to a test DB.
 
-**E2E tests** (`test/e2e/`) — Test full HTTP request-response cycles using `supertest`. The full NestJS app is bootstrapped against a test DB.
+**E2E tests** (`test/*.e2e-spec.ts`) — Test full HTTP request-response cycles using `supertest`. The full NestJS app is bootstrapped against a test DB.
 
 ### Coverage Expectations
 

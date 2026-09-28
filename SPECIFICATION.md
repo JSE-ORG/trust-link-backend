@@ -37,7 +37,7 @@ The system covers:
 
 | Requirement | Specification | Enforcement |
 |---|---|---|
-| R-TS-01 | Node.js 20.x LTS | CI must use `node-version: '20'` |
+| R-TS-01 | Node.js 22.x LTS | CI must use `node-version-file: '.nvmrc'` |
 | R-TS-02 | TypeScript 5.7+ with `strict: true` | `tsconfig.json` must enforce strict mode |
 | R-TS-03 | ES2023 target | `tsconfig.json` target must be ES2023 |
 | R-TS-04 | Module system: NodeNext | `tsconfig.json` module must be NodeNext |

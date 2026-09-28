@@ -4,8 +4,8 @@ import { CursorRepository } from './cursor.repository';
 /**
  * Issue #306 – Database-backed cursor persistence for the blockchain listener.
  *
- * Replaces the file-based cursor (data/stellar_cursor.txt) with Prisma-backed
- * storage so the cursor survives container restarts and deployments.
+ * Replaces the old file-based cursor with Prisma-backed storage so the cursor
+ * survives container restarts and deployments.
  */
 @Injectable()
 export class CursorService {
