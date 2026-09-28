@@ -8,6 +8,7 @@ import { NotificationsService } from './notifications.service';
 import { NotificationRetryQueueService } from './notification-retry-queue.service';
 import { NotificationRepository } from './notification.repository';
 import { SENDGRID_CLIENT, TWILIO_CLIENT } from './notifications.tokens';
+import { VendorModule } from '../vendor/vendor.module';
 
 const logger = new Logger('NotificationsModule');
 
@@ -47,7 +48,7 @@ export function createTwilioClient(config: ConfigService) {
 }
 
 @Module({
-  imports: [PrismaModule, ConfigModule],
+  imports: [PrismaModule, ConfigModule, VendorModule],
   providers: [
     NotificationsService,
     // Issue #845: both the dispatch paths and the retry workers write

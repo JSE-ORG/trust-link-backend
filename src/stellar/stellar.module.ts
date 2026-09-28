@@ -15,7 +15,7 @@ import { EscrowModule } from '../escrow/escrow.module';
 import { ConfigModule } from '../config/config.module';
 import { ConfigService } from '../config/config.service';
 import { DlqModule } from '../dlq/dlq.module';
-import { STELLAR_RPC_URLS } from './stellar-endpoints';
+import { resolveStellarServerRpcUrl } from './stellar-endpoint-resolver';
 
 @Module({
   imports: [
@@ -41,11 +41,7 @@ import { STELLAR_RPC_URLS } from './stellar-endpoints';
     {
       provide: STELLAR_SERVER,
       useFactory: (config: ConfigService) => {
-        const rpcUrl =
-          config.get('SOROBAN_RPC_URL') ||
-          (config.get('STELLAR_NETWORK') === 'MAINNET'
-            ? STELLAR_RPC_URLS.MAINNET
-            : STELLAR_RPC_URLS.TESTNET);
+        const rpcUrl = resolveStellarServerRpcUrl(config);
         return new rpc.Server(rpcUrl);
       },
       inject: [ConfigService],

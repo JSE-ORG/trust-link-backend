@@ -38,6 +38,7 @@
         "benchmark:chart": "ts-node scripts/benchmark-chart-aggregation.ts"
     },
     "dependencies": {
+        "@nest-lab/throttler-storage-redis": "^1.2.0",
         "@nestjs/axios": "^4.0.0",
         "@nestjs/common": "^11.0.1",
         "@nestjs/config": "^4.0.0",
