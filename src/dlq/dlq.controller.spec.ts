@@ -81,6 +81,7 @@ describe('DlqController', () => {
       controller: moduleRef.get(DlqController),
       dlq,
       contract,
+      config,
     };
   };
 
@@ -126,6 +127,25 @@ describe('DlqController', () => {
       expect(err).toBeInstanceOf(ServiceUnavailableException);
       expect(err.getStatus()).toBe(503);
       expect(err.getResponse()).toMatchObject({ message: expect.any(String) });
+    });
+
+    it('rethrows unrelated errors from the source-address configuration check', async () => {
+      const { controller, dlq, config } = await buildController(
+        'GAUTORELEASESOURCEADDRESS0000000000000000000000000000',
+      );
+      const originalError = new Error('configuration lookup failed');
+      config.requireAutoReleaseSourceAddress.mockImplementation(() => {
+        throw originalError;
+      });
+      dlq.get.mockResolvedValue(autoReleaseRecord);
+      dlq.replay.mockImplementation(async (_id, replay) => {
+        await replay(autoReleaseRecord);
+        return autoReleaseRecord;
+      });
+
+      await expect(controller.replay(autoReleaseRecord.id)).rejects.toBe(
+        originalError,
+      );
     });
   });
 
