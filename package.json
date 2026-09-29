@@ -36,7 +36,7 @@
         "stress:test": "ts-node scripts/stress-test-runner.ts",
         "stress:test:config": "ts-node scripts/stress-test-runner.ts",
         "benchmark:chart": "ts-node scripts/benchmark-chart-aggregation.ts",
-        "prepare": "node scripts/install-hooks.js"
+        "prepare": "node -e \"try { require.resolve('./scripts/install-hooks.js') } catch { process.exit(0) } require('./scripts/install-hooks.js')\""
     },
     "dependencies": {
         "@nest-lab/throttler-storage-redis": "^1.2.0",
