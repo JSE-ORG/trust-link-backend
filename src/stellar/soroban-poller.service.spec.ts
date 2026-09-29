@@ -1,3 +1,4 @@
+import { createTracingMock } from '../../test/unit/tracing-mock';
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '../config/config.service';
 import { BlockchainListenerService } from './blockchain-listener.service';
@@ -89,6 +90,7 @@ function makeService(
     mocks.cursorService as unknown as CursorService,
     mocks.escrowService as unknown as EscrowService,
     mocks.dlqService as unknown as DlqService,
+    createTracingMock().service,
   );
   return { service, mocks };
 }

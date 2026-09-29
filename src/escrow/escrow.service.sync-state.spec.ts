@@ -6,6 +6,7 @@
  * without a database or network.
  */
 
+import { createTracingMock } from '../../test/unit/tracing-mock';
 import { EscrowService, SorobanChainEvent } from './escrow.service';
 import { EscrowRepository } from './escrow.repository';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -85,6 +86,7 @@ describe('EscrowService.syncStateFromChain', () => {
     } as unknown as jest.Mocked<PrismaService>;
 
     service = new EscrowService(
+      createTracingMock().service,
       repo,
       notifications,
       {} as S3PresignService,
@@ -310,6 +312,7 @@ describe('EscrowService.syncStateFromChain', () => {
       repo.updateState.mockResolvedValue(disputed);
 
       const noPrismaService = new EscrowService(
+        createTracingMock().service,
         repo,
         notifications,
         {} as S3PresignService,
@@ -393,6 +396,7 @@ describe('EscrowService.syncStateFromChain', () => {
       repo.markCompleted.mockResolvedValue(completed);
 
       const noPrismaService = new EscrowService(
+        createTracingMock().service,
         repo,
         notifications,
         {} as S3PresignService,

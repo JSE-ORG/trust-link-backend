@@ -1,6 +1,7 @@
 import { NotFoundException } from '@nestjs/common';
 import { VendorAccountDetailsRepository } from './vendor-account-details.repository';
 import { VendorAccountDetailsService } from './vendor-account-details.service';
+import { createTracingMock } from '../../test/unit/tracing-mock';
 
 describe('VendorAccountDetailsService', () => {
   const details = { id: 'details-1', vendorAddress: 'vendor-1' };
@@ -8,7 +9,10 @@ describe('VendorAccountDetailsService', () => {
     findByVendorAddress: jest.fn(),
     upsert: jest.fn(),
   } as unknown as jest.Mocked<VendorAccountDetailsRepository>;
-  const service = new VendorAccountDetailsService(repository);
+  const service = new VendorAccountDetailsService(
+    repository,
+    createTracingMock().service,
+  );
 
   beforeEach(() => jest.clearAllMocks());
 

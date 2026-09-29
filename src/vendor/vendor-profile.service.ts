@@ -13,10 +13,37 @@ import { UpdateVendorProfileDto } from './dto/update-vendor-profile.dto';
 import { UpdateNotificationPreferencesDto } from './dto/update-notification-preferences.dto';
 import { NotificationPreferencesResponseDto } from './dto/notification-preferences-response.dto';
 import { VendorProfileRepository } from './vendor-profile.repository';
+import { TracingService } from '../tracing/tracing.service';
 
 @Injectable()
 export class VendorProfileService {
-  constructor(private readonly repository: VendorProfileRepository) {}
+  constructor(
+    private readonly repository: VendorProfileRepository,
+    private readonly tracing: TracingService,
+  ) {}
+
+  /**
+   * Runs `fn` inside a span named for the vendor operation.
+   *
+   * The vendor address is recorded as an attribute because it is the natural
+   * key for these operations; nothing else from the request body is recorded,
+   * so no profile or contact data reaches the trace.
+   */
+  private traced<T>(
+    operation: string,
+    address: string,
+    fn: () => T | Promise<T>,
+  ): Promise<T> {
+    return this.tracing.withSpan(
+      `vendor.${operation}`,
+      {
+        attributes: {
+          'trustlink.vendor.address': address,
+        },
+      },
+      fn,
+    );
+  }
 
   /**
    * Creates the vendor profile for `address`, failing with
@@ -30,11 +57,13 @@ export class VendorProfileService {
     address: string,
     dto: CreateVendorProfileDto,
   ): Promise<VendorProfileRecord> {
-    const existing = await this.repository.findByAddress(address);
-    if (existing) {
-      throw new ConflictException('Vendor profile already exists');
-    }
-    return this.repository.create(address, dto);
+    return this.traced('profile.create', address, async () => {
+      const existing = await this.repository.findByAddress(address);
+      if (existing) {
+        throw new ConflictException('Vendor profile already exists');
+      }
+      return this.repository.create(address, dto);
+    });
   }
 
   /**
@@ -51,7 +80,9 @@ export class VendorProfileService {
     address: string,
     dto: CreateVendorProfileDto,
   ): Promise<VendorProfileRecord> {
-    return this.repository.upsert(address, dto);
+    return this.traced('profile.upsert', address, () =>
+      this.repository.upsert(address, dto),
+    );
   }
 
   /**
@@ -60,11 +91,13 @@ export class VendorProfileService {
    * missing profile is always an error here.
    */
   async getProfile(address: string): Promise<VendorProfileRecord> {
-    const profile = await this.repository.findByAddress(address);
-    if (!profile) {
-      throw new NotFoundException('Vendor profile not found');
-    }
-    return profile;
+    return this.traced('profile.get', address, async () => {
+      const profile = await this.repository.findByAddress(address);
+      if (!profile) {
+        throw new NotFoundException('Vendor profile not found');
+      }
+      return profile;
+    });
   }
 
   /**
@@ -81,18 +114,20 @@ export class VendorProfileService {
     address: string,
     dto: UpdateVendorProfileDto,
   ): Promise<VendorProfileRecord> {
-    const keys = Object.keys(dto).filter(
-      (k) => (dto as Record<string, unknown>)[k] !== undefined,
-    );
-    if (keys.length === 0) {
-      throw new BadRequestException('No update fields provided');
-    }
+    return this.traced('profile.update', address, async () => {
+      const keys = Object.keys(dto).filter(
+        (k) => (dto as Record<string, unknown>)[k] !== undefined,
+      );
+      if (keys.length === 0) {
+        throw new BadRequestException('No update fields provided');
+      }
 
-    const existing = await this.repository.findByAddress(address);
-    if (!existing) {
-      throw new NotFoundException('Vendor profile not found');
-    }
-    return this.repository.update(address, dto);
+      const existing = await this.repository.findByAddress(address);
+      if (!existing) {
+        throw new NotFoundException('Vendor profile not found');
+      }
+      return this.repository.update(address, dto);
+    });
   }
 
   /**
@@ -109,21 +144,23 @@ export class VendorProfileService {
     address: string,
     dto: UpdateNotificationPreferencesDto,
   ): Promise<{ trackingSettings: VendorTrackingSettingsRecord }> {
-    const keys = Object.keys(dto).filter(
-      (k) => (dto as Record<string, unknown>)[k] !== undefined,
-    );
-    if (keys.length === 0) {
-      throw new BadRequestException(
-        'No notification preference fields provided',
+    return this.traced('profile.notify_prefs.update', address, async () => {
+      const keys = Object.keys(dto).filter(
+        (k) => (dto as Record<string, unknown>)[k] !== undefined,
       );
-    }
+      if (keys.length === 0) {
+        throw new BadRequestException(
+          'No notification preference fields provided',
+        );
+      }
 
-    const existing = await this.repository.findByAddress(address);
-    if (!existing) {
-      throw new NotFoundException('Vendor profile not found');
-    }
+      const existing = await this.repository.findByAddress(address);
+      if (!existing) {
+        throw new NotFoundException('Vendor profile not found');
+      }
 
-    return this.repository.updateNotificationPreferences(address, dto);
+      return this.repository.updateNotificationPreferences(address, dto);
+    });
   }
 
   /**
@@ -139,6 +176,8 @@ export class VendorProfileService {
   async getNotificationPreferences(
     address: string,
   ): Promise<NotificationPreferencesResponseDto> {
-    return this.repository.findNotificationPreferences(address);
+    return this.traced('profile.notify_prefs.get', address, () =>
+      this.repository.findNotificationPreferences(address),
+    );
   }
 }

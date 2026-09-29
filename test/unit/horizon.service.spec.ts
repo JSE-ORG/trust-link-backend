@@ -7,6 +7,7 @@
  * Suite 3 (issue #562): Verifies checkHealth(), folded in from AppController's
  * previously ad-hoc, untestable checkHorizon.
  */
+import { createTracingMock } from './tracing-mock';
 import { Logger } from '@nestjs/common';
 import axios from 'axios';
 import {
@@ -28,7 +29,10 @@ function makeConfigService(
 }
 
 function makeService(values: Record<string, unknown> = {}): HorizonService {
-  return new HorizonService(makeConfigService(values));
+  return new HorizonService(
+    makeConfigService(values),
+    createTracingMock().service,
+  );
 }
 
 // ── Suite 1: URL configuration (issue #291) ───────────────────────────────────

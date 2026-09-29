@@ -19,6 +19,10 @@ export class CursorService {
    * been stored yet (first run).
    */
   async get(): Promise<string | undefined> {
+    return this.traced('stellar.cursor.get', {}, () => this.getInternal());
+  }
+
+  private async getInternal(): Promise<string | undefined> {
     try {
       const record = await this.cursorRepository.findById(
         CursorService.CURSOR_KEY,
@@ -39,6 +43,12 @@ export class CursorService {
    * position after a restart.
    */
   async set(cursorValue: string): Promise<void> {
+    return this.traced('stellar.cursor.set', {}, () =>
+      this.setInternal(cursorValue),
+    );
+  }
+
+  private async setInternal(cursorValue: string): Promise<void> {
     try {
       await this.cursorRepository.upsert(CursorService.CURSOR_KEY, cursorValue);
     } catch (err) {

@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { scValToNative, xdr } from '@stellar/stellar-sdk';
+import { TracingService } from '../tracing/tracing.service';
 
 /**
  * Issue #49 – Parsing of raw Soroban contract events emitted by the network.
@@ -46,6 +47,23 @@ export interface ParsedSorobanEvent {
 export class BlockchainListenerService {
   private readonly logger = new Logger(BlockchainListenerService.name);
 
+  constructor(private readonly tracing: TracingService) {}
+
+  /**
+   * Runs `fn` inside a Stellar span.
+   *
+   * Spans here carry identifiers such as the contract escrow id, the network,
+   * and the contract function. Signing secrets, secret keys and full
+   * transaction envelopes are never recorded as attributes.
+   */
+  private traced<T>(
+    name: string,
+    attributes: Record<string, string | number | boolean>,
+    fn: () => T | Promise<T>,
+  ): Promise<T> {
+    return this.tracing.withSpan(name, { attributes }, fn);
+  }
+
   /**
    * Decode one `ScVal` (supplied as base64 XDR or an `xdr.ScVal`) to a native
    * JS value. Returns `null` when the buffer cannot be decoded.
@@ -62,7 +80,20 @@ export class BlockchainListenerService {
    * @returns the parsed event, or `null` if the event is unknown/corrupted.
    *          Never throws — callers can safely map over a batch.
    */
-  parseEvent(
+  async parseEvent(
+    raw: RawSorobanEvent | null | undefined,
+  ): Promise<ParsedSorobanEvent | null> {
+    return this.traced(
+      'stellar.event.parse',
+      {
+        'trustlink.stellar.event_type': raw?.type ?? 'unknown',
+        'trustlink.stellar.event_present': raw !== null && raw !== undefined,
+      },
+      () => this.parseEventInternal(raw),
+    );
+  }
+
+  private parseEventInternal(
     raw: RawSorobanEvent | null | undefined,
   ): ParsedSorobanEvent | null {
     if (!raw || typeof raw !== 'object') {
@@ -109,14 +140,24 @@ export class BlockchainListenerService {
    * array contains only the events that decoded cleanly — corrupt entries are
    * silently filtered so a bad event cannot abort processing of the good ones.
    */
-  parseEvents(
+  async parseEvents(
     rawEvents: Array<RawSorobanEvent | null | undefined>,
-  ): ParsedSorobanEvent[] {
+  ): Promise<ParsedSorobanEvent[]> {
+    return this.traced(
+      'stellar.event.parse_batch',
+      { 'trustlink.stellar.event_count': Array.isArray(rawEvents) ? rawEvents.length : 0 },
+      () => this.parseEventsInternal(rawEvents),
+    );
+  }
+
+  private async parseEventsInternal(
+    rawEvents: Array<RawSorobanEvent | null | undefined>,
+  ): Promise<ParsedSorobanEvent[]> {
     if (!Array.isArray(rawEvents)) return [];
     const parsed: ParsedSorobanEvent[] = [];
     for (const raw of rawEvents) {
       try {
-        const event = this.parseEvent(raw);
+        const event = await this.parseEvent(raw);
         if (event) parsed.push(event);
       } catch (err) {
         this.logger.error(

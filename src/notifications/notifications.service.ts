@@ -353,8 +353,33 @@ export class NotificationsService implements OnModuleInit {
     escrow: EscrowRecord,
     recipientAddress: string,
   ): Promise<void> {
-    await this.dispatchEmail(type, escrow, recipientAddress);
-    await this.dispatchSms(type, escrow, recipientAddress);
+    return this.traced(
+      'notification.dispatch',
+      {
+        'trustlink.notification.type': type,
+        'trustlink.escrow.id': escrow.id,
+      },
+      async () => {
+        await this.traced(
+          'notification.dispatch.email',
+          {
+            'trustlink.notification.type': type,
+            'trustlink.notification.channel': 'email',
+            'trustlink.escrow.id': escrow.id,
+          },
+          () => this.dispatchEmail(type, escrow, recipientAddress),
+        );
+        await this.traced(
+          'notification.dispatch.sms',
+          {
+            'trustlink.notification.type': type,
+            'trustlink.notification.channel': 'sms',
+            'trustlink.escrow.id': escrow.id,
+          },
+          () => this.dispatchSms(type, escrow, recipientAddress),
+        );
+      },
+    );
   }
 
   /**

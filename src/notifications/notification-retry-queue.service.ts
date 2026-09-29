@@ -29,6 +29,7 @@ import {
   OnModuleInit,
   Optional,
 } from '@nestjs/common';
+import { TracingService } from '../tracing/tracing.service';
 import * as crypto from 'crypto';
 import type { ConnectionOptions } from 'bullmq';
 
@@ -127,6 +128,7 @@ export class NotificationRetryQueueService
     // in-process runner still works without a database.
     @Optional() private readonly notifications?: NotificationRepository,
     @Optional() private readonly configService?: ConfigService,
+    @Optional() private readonly tracing?: TracingService,
   ) {
     if (options?.backoff) this.options.backoff = options.backoff;
     this.options.deadLetterSink = options?.deadLetterSink;
@@ -157,7 +159,39 @@ export class NotificationRetryQueueService
    * the job is added to the BullMQ queue; otherwise it runs through
    * the in-process retry runner.
    */
+  /**
+   * Runs `fn` inside a notification retry span.
+   *
+   * Records the notification type, channel and attempt number so a retry
+   * storm is visible in traces. Message payloads are never recorded. Tracing
+   * is optional, so a queue built without it still retries normally.
+   */
+  private traced<T>(
+    name: string,
+    attributes: Record<string, string | number | boolean>,
+    fn: () => T | Promise<T>,
+  ): Promise<T> {
+    if (!this.tracing) {
+      return Promise.resolve(fn());
+    }
+    return this.tracing.withSpan(name, { attributes }, fn);
+  }
+
   async enqueue(job: NotificationRetryJobData): Promise<void> {
+    return this.traced(
+      'notification.retry.enqueue',
+      {
+        'trustlink.notification.type': job.type,
+        'trustlink.notification.channel': job.channel,
+        'trustlink.notification.request_id': job.requestId ?? 'generated',
+        'trustlink.notification.queued': this.bullQueue !== undefined,
+        'trustlink.notification.max_attempts': this.options.backoff.attempts,
+      },
+      () => this.enqueueInternal(job),
+    );
+  }
+
+  private async enqueueInternal(job: NotificationRetryJobData): Promise<void> {
     const enriched: NotificationRetryJobData = {
       ...job,
       requestId: job.requestId ?? crypto.randomUUID(),
@@ -182,6 +216,21 @@ export class NotificationRetryQueueService
    * backoff. Used in test + dev environments without Redis.
    */
   private async processInProcess(job: NotificationRetryJobData): Promise<void> {
+    return this.traced(
+      'notification.retry.attempt',
+      {
+        'trustlink.notification.type': job.type,
+        'trustlink.notification.channel': job.channel,
+        'trustlink.notification.request_id': job.requestId ?? 'unknown',
+        'trustlink.notification.max_attempts': this.options.backoff.attempts,
+      },
+      () => this.processInProcessInternal(job),
+    );
+  }
+
+  private async processInProcessInternal(
+    job: NotificationRetryJobData,
+  ): Promise<void> {
     const dispatcher = this.dispatchers[job.channel];
     if (!dispatcher) {
       this.logger.warn(

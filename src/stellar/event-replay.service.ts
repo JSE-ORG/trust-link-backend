@@ -14,10 +14,32 @@ export class EventReplayService implements OnModuleInit {
     private readonly config: ConfigService,
     private readonly webhookService: StellarWebhookService,
     private readonly cursorService: CursorService,
+    private readonly tracing: TracingService,
   ) {}
+
+  /**
+   * Runs `fn` inside a Stellar span.
+   *
+   * Spans here carry identifiers such as the contract escrow id, the network,
+   * and the contract function. Signing secrets, secret keys and full
+   * transaction envelopes are never recorded as attributes.
+   */
+  private traced<T>(
+    name: string,
+    attributes: Record<string, string | number | boolean>,
+    fn: () => T | Promise<T>,
+  ): Promise<T> {
+    return this.tracing.withSpan(name, { attributes }, fn);
+  }
 
   /** Replays recent Horizon operations from the persisted cursor on startup. */
   async onModuleInit(): Promise<void> {
+    return this.traced('stellar.event_replay.init', {}, () =>
+      this.onModuleInitInternal(),
+    );
+  }
+
+  private async onModuleInitInternal(): Promise<void> {
     try {
       const network = this.config.get('STELLAR_NETWORK') || 'TESTNET';
       const horizon =

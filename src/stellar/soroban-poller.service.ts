@@ -5,6 +5,7 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import { ConfigService } from '../config/config.service';
+import { TracingService } from '../tracing/tracing.service';
 import {
   BlockchainListenerService,
   RawSorobanEvent,
@@ -143,12 +144,28 @@ export class SorobanPollerService implements OnModuleInit, OnModuleDestroy {
     private readonly cursorService: CursorService,
     private readonly escrowService: EscrowService,
     private readonly dlqService: DlqService,
+    private readonly tracing: TracingService,
   ) {
     this.rpcUrl = this.resolveRpcUrl();
     this.contractId = this.config.get('CONTRACT_ID') ?? '';
     this.pollIntervalMs = this.config.get('SOROBAN_POLL_INTERVAL_MS');
     this.rpcTimeoutMs = this.config.get('SOROBAN_RPC_TIMEOUT_MS');
     this.enabled = this.config.get('SOROBAN_POLLER_ENABLED') !== false;
+  }
+
+  /**
+   * Runs `fn` inside a Soroban polling span.
+   *
+   * A polling run is the parent span, and each event handled within it becomes
+   * a child span, so a single tick and the per-escrow work it performed stay
+   * grouped in one trace.
+   */
+  private traced<T>(
+    name: string,
+    attributes: Record<string, string | number | boolean>,
+    fn: () => T | Promise<T>,
+  ): Promise<T> {
+    return this.tracing.withSpan(name, { attributes }, fn);
   }
 
   onModuleInit(): void {
@@ -194,6 +211,23 @@ export class SorobanPollerService implements OnModuleInit, OnModuleDestroy {
     if (this.polling) return; // skip if previous tick is still running
     this.polling = true;
 
+    return this.traced(
+      'stellar.soroban.poll',
+      {
+        'trustlink.stellar.network': this.networkLabel(),
+        'trustlink.stellar.contract_id': this.contractId,
+      },
+      () => this.pollInternal(),
+    );
+  }
+
+  private networkLabel(): string {
+    return this.config.get('STELLAR_NETWORK') === 'MAINNET'
+      ? 'MAINNET'
+      : 'TESTNET';
+  }
+
+  private async pollInternal(): Promise<void> {
     try {
       let cursor = await this.cursorService.get();
       if (!cursor) {
@@ -429,6 +463,19 @@ export class SorobanPollerService implements OnModuleInit, OnModuleDestroy {
    *      (returns normally) so the cursor can move on.
    */
   private async processEvent(raw: SorobanRpcEvent): Promise<void> {
+    return this.traced(
+      'stellar.soroban.process_event',
+      {
+        'trustlink.stellar.event_type': raw.type,
+        'trustlink.stellar.ledger': raw.ledger,
+        'trustlink.stellar.tx_cursor': raw.pagingToken,
+        'trustlink.stellar.network': this.networkLabel(),
+      },
+      () => this.processEventInternal(raw),
+    );
+  }
+
+  private async processEventInternal(raw: SorobanRpcEvent): Promise<void> {
     const rpcEvent: RawSorobanEvent = {
       contractId: raw.contractId,
       type: raw.type,
@@ -437,7 +484,7 @@ export class SorobanPollerService implements OnModuleInit, OnModuleDestroy {
       value: raw.value,
     };
 
-    const parsed = this.blockchainListener.parseEvent(rpcEvent);
+    const parsed = await this.blockchainListener.parseEvent(rpcEvent);
     if (!parsed) {
       await this.deadLetter(raw, null, 'event payload could not be parsed');
       return;

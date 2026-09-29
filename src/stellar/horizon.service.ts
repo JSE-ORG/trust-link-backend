@@ -24,11 +24,29 @@ export class HorizonService {
   readonly horizonUrl: string;
   private readonly pollIntervalMs = 100;
 
-  constructor(private readonly config: ConfigService) {
+  constructor(
+    private readonly config: ConfigService,
+    private readonly tracing: TracingService,
+  ) {
     const configured = this.config.get('STELLAR_HORIZON_URL');
     const network = this.config.get('STELLAR_NETWORK');
     this.horizonUrl =
       configured || STELLAR_HORIZON_URLS[network] || DEFAULT_HORIZON_URL;
+  }
+
+  /**
+   * Runs `fn` inside a Stellar span.
+   *
+   * Spans here carry identifiers such as the contract escrow id, the network,
+   * and the contract function. Signing secrets, secret keys and full
+   * transaction envelopes are never recorded as attributes.
+   */
+  private traced<T>(
+    name: string,
+    attributes: Record<string, string | number | boolean>,
+    fn: () => T | Promise<T>,
+  ): Promise<T> {
+    return this.tracing.withSpan(name, { attributes }, fn);
   }
 
   /**
@@ -52,7 +70,21 @@ export class HorizonService {
    * Horizon root. Folded in from AppController's ad-hoc checkHorizon
    * (issue #562) so the check is unit-testable in isolation.
    */
+  private networkLabel(): string {
+    return this.config.get('STELLAR_NETWORK') === 'MAINNET'
+      ? 'MAINNET'
+      : 'TESTNET';
+  }
+
   async checkHealth(): Promise<HorizonHealth> {
+    return this.traced(
+      'stellar.horizon.health',
+      { 'trustlink.stellar.network': this.networkLabel() },
+      () => this.checkHealthInternal(),
+    );
+  }
+
+  private async checkHealthInternal(): Promise<HorizonHealth> {
     const controller = new AbortController();
     const timeout = setTimeout(
       () => controller.abort(),
@@ -95,6 +127,27 @@ export class HorizonService {
     transactionHash: string,
     targetConfirmations = 3,
     timeoutMs = 10000,
+  ): Promise<{ confirmed: boolean; confirmations: number; hash: string }> {
+    return this.traced(
+      'stellar.horizon.confirm',
+      {
+        'trustlink.stellar.tx_hash': transactionHash,
+        'trustlink.stellar.network': this.networkLabel(),
+        'trustlink.stellar.target_confirmations': targetConfirmations,
+      },
+      () =>
+        this.pollConfirmationInternal(
+          transactionHash,
+          targetConfirmations,
+          timeoutMs,
+        ),
+    );
+  }
+
+  private async pollConfirmationInternal(
+    transactionHash: string,
+    targetConfirmations: number,
+    timeoutMs: number,
   ): Promise<{ confirmed: boolean; confirmations: number; hash: string }> {
     const start = Date.now();
 

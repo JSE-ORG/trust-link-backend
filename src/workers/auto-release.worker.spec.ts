@@ -109,6 +109,7 @@ describe('AutoReleaseWorker', () => {
       disputeRepository,
       contractService,
       configService,
+      createTracingMock().service,
     );
   });
 

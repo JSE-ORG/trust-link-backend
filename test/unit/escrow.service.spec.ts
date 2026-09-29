@@ -4,6 +4,8 @@ import {
   NotFoundException,
   ConflictException,
 } from '@nestjs/common';
+import { TracingService } from '../../src/tracing/tracing.service';
+import { createTracingMock } from './tracing-mock';
 import { Test } from '@nestjs/testing';
 import { NotificationsService } from '../../src/notifications/notifications.service';
 import { EscrowRecord } from '../../src/prisma/prisma.service';
@@ -63,6 +65,7 @@ describe('EscrowService.handleShipment (issue #16)', () => {
     const moduleRef = await Test.createTestingModule({
       providers: [
         EscrowService,
+        { provide: TracingService, useValue: createTracingMock().service },
         { provide: EscrowRepository, useValue: repository },
         { provide: NotificationsService, useValue: notifications },
         { provide: S3PresignService, useValue: {} },
@@ -418,6 +421,7 @@ describe('EscrowService: tracking, idempotency, evidence upload, and vendor list
         { provide: LogisticsService, useValue: logistics },
         { provide: CacheService, useValue: cache },
         { provide: PrismaService, useValue: undefined },
+        { provide: TracingService, useValue: createTracingMock().service },
       ],
     }).compile();
 
@@ -492,6 +496,7 @@ describe('EscrowService: tracking, idempotency, evidence upload, and vendor list
       const moduleRef = await Test.createTestingModule({
         providers: [
           EscrowService,
+          { provide: TracingService, useValue: createTracingMock().service },
           { provide: EscrowRepository, useValue: repository },
           { provide: NotificationsService, useValue: {} },
           { provide: S3PresignService, useValue: s3Presign },
@@ -551,10 +556,13 @@ describe('EscrowService: tracking, idempotency, evidence upload, and vendor list
   });
 
   describe('generateEvidenceUploadUrl', () => {
-    it('derives the object key extension from the filename', () => {
+    it('derives the object key extension from the filename', async () => {
       s3Presign.presign.mockReturnValue('https://signed-url');
 
-      const result = service.generateEvidenceUploadUrl('buyer-1', 'photo.png');
+      const result = await service.generateEvidenceUploadUrl(
+        'buyer-1',
+        'photo.png',
+      );
 
       expect(result.uploadUrl).toBe('https://signed-url');
       expect(result.storagePath).toBe('evidence/buyer-1/');
@@ -562,10 +570,13 @@ describe('EscrowService: tracking, idempotency, evidence upload, and vendor list
       expect(result.fileName).toBe('photo.png');
     });
 
-    it('falls back to a "bin" extension for a filename with no dot', () => {
+    it('falls back to a "bin" extension for a filename with no dot', async () => {
       s3Presign.presign.mockReturnValue('https://signed-url');
 
-      const result = service.generateEvidenceUploadUrl('buyer-1', 'noext');
+      const result = await service.generateEvidenceUploadUrl(
+        'buyer-1',
+        'noext',
+      );
 
       expect(result.publicUrl).toMatch(/\.bin$/);
     });
