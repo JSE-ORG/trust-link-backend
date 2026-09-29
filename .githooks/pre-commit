@@ -1,0 +1,14 @@
+#!/bin/sh
+#
+# Pre-commit hook: runs `eslint --fix` over the staged TypeScript files so
+# Prettier/ESLint violations never reach a commit.
+#
+# Installed by `npm ci` / `npm install` through the `prepare` lifecycle script
+# (scripts/install-hooks.js), which points Git's `core.hooksPath` here.
+#
+# Hooks only run on a local `git commit`, so CI is unaffected by this file.
+set -e
+
+repo_root=$(git rev-parse --show-toplevel)
+
+exec node "$repo_root/scripts/lint-staged.js"
