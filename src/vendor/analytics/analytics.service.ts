@@ -260,12 +260,7 @@ export class AnalyticsService {
     });
 
     // Active states: CREATED, FUNDED, SHIPPED, DELIVERED
-    const activeStates = new Set([
-      'CREATED',
-      'FUNDED',
-      'SHIPPED',
-      'DELIVERED',
-    ]);
+    const activeStates = new Set(['CREATED', 'FUNDED', 'SHIPPED', 'DELIVERED']);
 
     // Decimal accumulators, not floats. The running totals stay exact for the
     // whole loop and are converted to `number` once, at the end, for the
@@ -286,7 +281,9 @@ export class AnalyticsService {
         _count?: number | { _all?: number };
         _sum?: { amount?: Prisma.Decimal | null } | null;
       };
-      const count = Number(typeof _count === 'object' ? _count?._all : _count ?? 0);
+      const count = Number(
+        typeof _count === 'object' ? _count?._all : (_count ?? 0),
+      );
       const sum = _sum?.amount ?? null;
 
       totalTransactions += count;

@@ -23,7 +23,8 @@ import { TEN_MINUTES_MS } from '../common/constants/time.constants';
  * The admin address `record_delivery` must be called with: the contract does
  * `require_auth()` on the caller and rejects anyone who is not the admin.
  */
-const ADMIN_ADDRESS = 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5';
+const ADMIN_ADDRESS =
+  'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5';
 
 // ── Fixture factory ──────────────────────────────────────────────────────────
 
@@ -203,9 +204,7 @@ describe('TrackingPollWorker', () => {
         status: 'DELIVERED',
         events: [],
       });
-      const warnSpy = jest
-        .spyOn(Logger.prototype, 'warn')
-        .mockImplementation();
+      const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
 
       await h.worker.run();
 
@@ -462,9 +461,7 @@ describe('TrackingPollWorker', () => {
       h.escrowRepository.findShippedWithTracking.mockResolvedValue([
         makeEscrow(),
       ]);
-      h.logisticsService.getStatus.mockRejectedValue(
-        new Error('carrier down'),
-      );
+      h.logisticsService.getStatus.mockRejectedValue(new Error('carrier down'));
 
       await expect(h.worker.run()).resolves.toBeUndefined();
       expect(h.escrowRepository.claimDelivery).not.toHaveBeenCalled();
@@ -475,9 +472,7 @@ describe('TrackingPollWorker', () => {
       h.escrowRepository.findShippedWithTracking.mockResolvedValue([
         makeEscrow(),
       ]);
-      h.logisticsService.getStatus.mockRejectedValue(
-        new Error('carrier down'),
-      );
+      h.logisticsService.getStatus.mockRejectedValue(new Error('carrier down'));
       const loggerError = jest
         .spyOn(loggerOf(h.worker), 'error')
         .mockImplementation(() => undefined);
@@ -492,9 +487,7 @@ describe('TrackingPollWorker', () => {
       h.escrowRepository.findShippedWithTracking.mockResolvedValue([
         makeEscrow({ id: 'escrow-bad', trackingId: 'TRK-BAD' }),
       ]);
-      h.logisticsService.getStatus.mockRejectedValue(
-        new Error('carrier down'),
-      );
+      h.logisticsService.getStatus.mockRejectedValue(new Error('carrier down'));
       const loggerError = jest
         .spyOn(loggerOf(h.worker), 'error')
         .mockImplementation(() => undefined);
@@ -744,9 +737,7 @@ describe('TrackingPollWorker reentrancy guard (#840)', () => {
   it('clears the flag when a per-escrow failure throws out of the loop', async () => {
     // A throwing logistics call is caught per-escrow, so the cycle still
     // completes; the flag must be released.
-    h.logisticsService.getStatus.mockRejectedValue(
-      new Error('logistics down'),
-    );
+    h.logisticsService.getStatus.mockRejectedValue(new Error('logistics down'));
     h.escrowRepository.findShippedWithTracking.mockResolvedValue([
       makeEscrow(),
     ]);

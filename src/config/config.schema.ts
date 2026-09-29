@@ -217,15 +217,12 @@ export const configValidationSchema = Joi.object({
   // sender is a misconfiguration that must fail at boot, not on first send.
   SENDGRID_FROM_EMAIL: Joi.when('SENDGRID_API_KEY', {
     is: Joi.string().min(1).required(),
-    then: Joi.string()
-      .email()
-      .required()
-      .messages({
-        'any.required':
-          'Config validation error: SENDGRID_FROM_EMAIL is required when SENDGRID_API_KEY is set',
-        'string.email':
-          'Config validation error: SENDGRID_FROM_EMAIL must be a valid sender email address',
-      }),
+    then: Joi.string().email().required().messages({
+      'any.required':
+        'Config validation error: SENDGRID_FROM_EMAIL is required when SENDGRID_API_KEY is set',
+      'string.email':
+        'Config validation error: SENDGRID_FROM_EMAIL must be a valid sender email address',
+    }),
     otherwise: Joi.string().email().optional(),
   }),
   // #839 — One dynamic template id per notification type. SendGrid dynamic

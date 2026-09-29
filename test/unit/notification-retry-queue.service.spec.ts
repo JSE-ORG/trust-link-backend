@@ -84,29 +84,39 @@ function makeRepositoryMock(
     markSent?: jest.Mock;
     markAttemptFailed?: jest.Mock;
     markFailed?: jest.Mock;
+    update?: jest.Mock;
   } = {},
 ) {
-  const update = jest.fn().mockResolvedValue(undefined);
+  const update = overrides.update ?? jest.fn().mockResolvedValue(undefined);
 
   const markSent =
     overrides.markSent ??
     jest.fn((id: string, retryCount: number) => {
-      update({ where: { id }, data: { status: 'SENT', sentAt: new Date(), retryCount } });
-      return Promise.resolve(undefined);
+      return Promise.resolve(
+        update({
+          where: { id },
+          data: { status: 'SENT', sentAt: new Date(), retryCount },
+        }),
+      ).then(() => undefined);
     });
 
   const markAttemptFailed =
     overrides.markAttemptFailed ??
     jest.fn((id: string, retryCount: number, lastError: string) => {
-      update({ where: { id }, data: { retryCount, failedAt: new Date(), lastError } });
-      return Promise.resolve(undefined);
+      return Promise.resolve(
+        update({
+          where: { id },
+          data: { retryCount, failedAt: new Date(), lastError },
+        }),
+      ).then(() => undefined);
     });
 
   const markFailed =
     overrides.markFailed ??
     jest.fn((id: string) => {
-      update({ where: { id }, data: { status: 'FAILED' } });
-      return Promise.resolve(undefined);
+      return Promise.resolve(
+        update({ where: { id }, data: { status: 'FAILED' } }),
+      ).then(() => undefined);
     });
 
   return { notification: { update }, markSent, markAttemptFailed, markFailed };
@@ -266,7 +276,7 @@ describe('NotificationRetryQueueService (in-process fallback) (#73)', () => {
     const update = jest.fn().mockResolvedValue(undefined);
     const { service, dlq } = setup({
       dispatcher: { dispatch },
-      notifications: makeRepositoryMock({ update })
+      notifications: makeRepositoryMock({ update }),
     });
 
     await service.enqueue(makeJob({ notificationId: 'notif-1' }));
@@ -311,7 +321,7 @@ describe('NotificationRetryQueueService (in-process fallback) (#73)', () => {
     const update = jest.fn().mockRejectedValue(new Error('db down'));
     const { service, dlq } = setup({
       dispatcher: { dispatch },
-      notifications: makeRepositoryMock({ update })
+      notifications: makeRepositoryMock({ update }),
     });
 
     await service.enqueue(makeJob({ notificationId: 'notif-2' }));
@@ -919,7 +929,9 @@ describe('NotificationRetryQueueService — retry-path persistence guards (#725)
 
       it('handles prisma error on success path gracefully', async () => {
         const prisma = makeRepositoryMock({
-          markSent: jest.fn().mockRejectedValue(new Error('db connection lost')),
+          markSent: jest
+            .fn()
+            .mockRejectedValue(new Error('db connection lost')),
         });
         const dispatch = jest.fn().mockResolvedValue(undefined);
         const service = new NotificationRetryQueueService(

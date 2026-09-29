@@ -23,7 +23,9 @@ import {
 export class DlqService {
   private readonly logger = new Logger(DlqService.name);
 
-  constructor(private readonly failedTransactions: FailedTransactionRepository) {}
+  constructor(
+    private readonly failedTransactions: FailedTransactionRepository,
+  ) {}
 
   /**
    * Records a failed Stellar contract submission as a new

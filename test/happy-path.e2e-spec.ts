@@ -82,6 +82,19 @@ describe('Happy-Path E2E — full escrow lifecycle (issue #56)', () => {
 
     await prisma.reset();
 
+    // Vendor notifications go to the profile's email and phone, so the
+    // vendor needs both for the FUNDED rows asserted below (#872).
+    await prisma.vendorProfile.upsert({
+      where: { address: VENDOR_ADDRESS },
+      create: {
+        address: VENDOR_ADDRESS,
+        businessName: 'Happy Path Vendor',
+        email: 'vendor@example.com',
+        phone: '+2348012345679',
+      },
+      update: {},
+    });
+
     // Stub out every ContractService method that hits the real Stellar network.
     jest
       .spyOn(contractService, 'getEscrowState')

@@ -86,7 +86,9 @@ describe('SorobanHealthService (#841)', () => {
     });
 
     it('reports down when getHealth never resolves, without hanging', async () => {
-      const server = { getHealth: jest.fn().mockReturnValue(new Promise(() => {})) };
+      const server = {
+        getHealth: jest.fn().mockReturnValue(new Promise(() => {})),
+      };
       const service = new SorobanHealthService(server);
       jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
 

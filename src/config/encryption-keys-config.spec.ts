@@ -22,6 +22,7 @@ const BASE_PROD_ENV = {
   SOROBAN_RPC_URL: 'https://soroban-testnet.stellar.org',
   CONTACT_ENCRYPTION_KEY: VALID_KEY_64,
   CREDENTIAL_ENCRYPTION_KEY: VALID_KEY_64,
+  FRONTEND_URL: 'https://app.trustlink.example.com',
 };
 
 describe('Encryption Keys Config Validation (#564)', () => {

@@ -212,9 +212,7 @@ export class EscrowRepository {
    * issue #844) only ever want the u64 the contract minted — not the whole
    * row — so the lookup selects just that column.
    */
-  async findContractEscrowId(
-    id: string,
-  ): Promise<bigint | null> {
+  async findContractEscrowId(id: string): Promise<bigint | null> {
     const row = await this.prisma.escrow.findUnique({
       where: { id },
       select: { contractEscrowId: true },

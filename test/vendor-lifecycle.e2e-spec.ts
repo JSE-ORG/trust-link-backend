@@ -12,7 +12,6 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { bearer } from './auth-helper';
-import { ensureVendors } from './prisma-helpers';
 
 describe('Vendor lifecycle (e2e) (issue #801)', () => {
   let app: INestApplication;
@@ -33,10 +32,8 @@ describe('Vendor lifecycle (e2e) (issue #801)', () => {
     await app.init();
     prisma = app.get(PrismaService);
     await prisma.reset();
-    // Escrow.vendorAddress (and the vendor settings/details tables) are
-    // foreign keys onto VendorProfile.address, so the parent row must exist
-    // before any row referencing it can be written (#475).
-    await ensureVendors(prisma, VENDOR);
+    // The vendor profile is created through the API in step 1, and every row
+    // that references it (#475) is written after that.
   });
 
   afterAll(async () => {

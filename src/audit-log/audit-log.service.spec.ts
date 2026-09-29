@@ -29,23 +29,24 @@ describe('AuditLogService (Issues #816 & #817)', () => {
     };
 
     // The repository mock forwards to the Prisma-shaped mock so the
-    // expectations below stay exactly as they were.
+    // expectations below stay exactly as they were. findPage copies each row,
+    // as the real repository does when it maps records to entries.
     repo = {
-      append: jest
-        .fn()
-        .mockImplementation(async ({ details, ...rest }) =>
-          prisma.auditLog.create({
-            data: { details: details ?? {}, ...rest },
-          }),
-        ),
+      append: jest.fn().mockImplementation(async ({ details, ...rest }) =>
+        prisma.auditLog.create({
+          data: { details: details ?? {}, ...rest },
+        }),
+      ),
       findPage: jest
         .fn()
-        .mockImplementation(async (options: { skip: number; take: number }) =>
-          prisma.auditLog.findMany({
-            ...options,
-            orderBy: { occurredAt: 'desc' },
-          }),
-        ),
+        .mockImplementation(async (options: { skip: number; take: number }) => {
+          const rows: Record<string, unknown>[] =
+            await prisma.auditLog.findMany({
+              ...options,
+              orderBy: { occurredAt: 'desc' },
+            });
+          return rows.map((row) => ({ ...row }));
+        }),
       count: jest.fn().mockImplementation(() => prisma.auditLog.count()),
     };
 

@@ -89,16 +89,10 @@ export class SorobanHealthService {
       // race: the underlying request is abandoned, not cancelled, but the
       // probe stops waiting on it.
       const timeout = new Promise<'timeout'>((resolve) => {
-        timer = setTimeout(
-          () => resolve('timeout'),
-          SOROBAN_HEALTH_TIMEOUT_MS,
-        );
+        timer = setTimeout(() => resolve('timeout'), SOROBAN_HEALTH_TIMEOUT_MS);
       });
 
-      const response = await Promise.race([
-        this.server.getHealth(),
-        timeout,
-      ]);
+      const response = await Promise.race([this.server.getHealth(), timeout]);
 
       if (response === 'timeout') {
         const error = `Soroban RPC did not respond within ${SOROBAN_HEALTH_TIMEOUT_MS}ms`;

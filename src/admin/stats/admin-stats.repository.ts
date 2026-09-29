@@ -50,7 +50,7 @@ export class AdminStatsRepository {
 
     return {
       totalVolume: Number(aggregation._sum?.amount ?? 0),
-      stateGroups: stateGroups as EscrowStateGroup[],
+      stateGroups: stateGroups,
       uniqueVendors: vendorGroups.length,
       uniqueBuyers: buyerGroups.length,
     };

@@ -818,7 +818,7 @@ describe('ConfigModule — Stellar Key Validation', () => {
  * rather than as a rejected API call on every notification.
  */
 describe('SendGrid email configuration (#839)', () => {
-  const FROM_EMAIL = 'notifications@example.test';
+  const FROM_EMAIL = 'notifications@example.com';
   const VALID_TEMPLATE = 'd-1234567890abcdef1234567890abcdef';
 
   const ALL_TEMPLATE_KEYS = [
@@ -925,7 +925,9 @@ describe('SendGrid email configuration (#839)', () => {
 
   it('rejects a template id missing the d- prefix', () => {
     const { error } = configValidationSchema.validate(
-      envWithEmail({ SENDGRID_TEMPLATE_SHIPPED: '1234567890abcdef1234567890abcdef' }),
+      envWithEmail({
+        SENDGRID_TEMPLATE_SHIPPED: '1234567890abcdef1234567890abcdef',
+      }),
       VALIDATE_OPTIONS,
     );
 
