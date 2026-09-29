@@ -33,6 +33,7 @@ const PRODUCTION_ENV: Record<string, string> = {
   SENTRY_DSN: 'https://key@org.ingest.sentry.io/123',
   CONTACT_ENCRYPTION_KEY: 'a'.repeat(64),
   CREDENTIAL_ENCRYPTION_KEY: 'a'.repeat(64),
+  FRONTEND_URL: 'https://app.trustlink.example.com',
 };
 
 function validate(env: Record<string, string>) {

@@ -89,7 +89,11 @@ describe('POST /auth/refresh (issue #799)', () => {
             return (
               (where.tokenHash
                 ? mockRefreshTokens.get(where.tokenHash)
-                : undefined) ?? null
+                : undefined) ??
+              Array.from(mockRefreshTokens.values()).find(
+                (entry) => entry.id === where.id,
+              ) ??
+              null
             );
           },
         ),

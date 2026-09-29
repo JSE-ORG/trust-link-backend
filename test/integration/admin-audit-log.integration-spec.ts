@@ -19,7 +19,12 @@ import { PrismaService } from '../../src/prisma/prisma.service';
 type TestServer = Parameters<typeof request>[0];
 type AuditLogResponseBody = {
   total: number;
-  data: Array<{ action: string; adminAddress: string; entityType: string }>;
+  data: Array<{
+    action: string;
+    adminAddress: string;
+    entityType: string;
+    entityId: string;
+  }>;
   page: number;
   limit: number;
 };

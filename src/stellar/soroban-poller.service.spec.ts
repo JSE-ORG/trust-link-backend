@@ -467,9 +467,9 @@ describe('SorobanPollerService', () => {
 
         await service.poll();
 
-        expect(mocks.escrowService.findIdByContractEscrowId).toHaveBeenCalledWith(
-          expected,
-        );
+        expect(
+          mocks.escrowService.findIdByContractEscrowId,
+        ).toHaveBeenCalledWith(expected);
         expect(mocks.escrowService.syncStateFromChain).toHaveBeenCalledWith(
           expect.objectContaining({
             eventType: 'EscrowFunded',

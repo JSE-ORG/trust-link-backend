@@ -91,8 +91,6 @@ export class NotificationsService implements OnModuleInit {
     @Optional()
     private readonly config?: ConfigService,
     @Optional()
-    private readonly configService?: ConfigService,
-    @Optional()
     private readonly vendorProfiles?: VendorProfileRepository,
   ) {}
 
@@ -527,8 +525,8 @@ export class NotificationsService implements OnModuleInit {
         const response = await this.twilio.messages.create({
           to: recipientAddress,
           body: `${type}: ${escrow.itemName}`,
-          ...(this.configService?.get('TWILIO_FROM_NUMBER')
-            ? { from: this.configService.get('TWILIO_FROM_NUMBER') }
+          ...(this.config?.get('TWILIO_FROM_NUMBER')
+            ? { from: this.config.get('TWILIO_FROM_NUMBER') }
             : {}),
         });
         providerMessageId = response.sid ?? null;

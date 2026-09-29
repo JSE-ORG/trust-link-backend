@@ -82,7 +82,11 @@ describe('NotificationRepository', () => {
 
   describe('markSent()', () => {
     it('marks the row SENT with sentAt and the retry count', async () => {
-      const created = await repo.create({ ...base, escrowId, channel: 'EMAIL' });
+      const created = await repo.create({
+        ...base,
+        escrowId,
+        channel: 'EMAIL',
+      });
 
       const updated = await repo.markSent(created.id, 0);
       expect(updated.status).toBe('SENT');
@@ -97,7 +101,11 @@ describe('NotificationRepository', () => {
     });
 
     it('records how many retries the delivery took', async () => {
-      const created = await repo.create({ ...base, escrowId, channel: 'EMAIL' });
+      const created = await repo.create({
+        ...base,
+        escrowId,
+        channel: 'EMAIL',
+      });
 
       const updated = await repo.markSent(created.id, 2);
 
@@ -120,7 +128,11 @@ describe('NotificationRepository', () => {
 
   describe('markFailed()', () => {
     it('marks the row terminally FAILED', async () => {
-      const created = await repo.create({ ...base, escrowId, channel: 'EMAIL' });
+      const created = await repo.create({
+        ...base,
+        escrowId,
+        channel: 'EMAIL',
+      });
 
       const updated = await repo.markFailed(created.id);
 

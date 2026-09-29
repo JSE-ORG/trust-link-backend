@@ -14,6 +14,7 @@
 import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { NonceCleanupService } from '../../src/auth/sep10/nonce-cleanup.service';
+import { NonceRepository } from '../../src/auth/sep10/nonce.repository';
 import { PrismaService } from '../../src/prisma/prisma.service';
 
 describe('Nonce cleanup integration (issue #274, #501)', () => {
@@ -27,6 +28,7 @@ describe('Nonce cleanup integration (issue #274, #501)', () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       providers: [
         NonceCleanupService,
+        NonceRepository,
         { provide: PrismaService, useValue: prisma },
       ],
     }).compile();

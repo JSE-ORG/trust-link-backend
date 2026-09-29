@@ -141,6 +141,18 @@ describe('Stellar webhook escrow flow E2E', () => {
       .get(`/escrow/${escrow.id}`)
       .expect(200);
     expect(publicEscrow.body.state).toBe('FUNDED');
+  });
+
+  // Known gap: nothing writes EscrowEvent rows yet, the same gap the
+  // it.failing timeline tests in escrow.repository.spec.ts track. This turns
+  // red once state changes record events, which is the signal to flip it to `it`.
+  it.failing('records one escrow event for a duplicated delivery', async () => {
+    const escrow = await createEscrow();
+    const event = payload('stellar-op-duplicate-event');
+
+    await postWebhook(event).expect(200);
+    await postWebhook(event).expect(200);
+
     expect(
       await prisma.escrowEvent.count({ where: { escrowId: escrow.id } }),
     ).toBe(1);

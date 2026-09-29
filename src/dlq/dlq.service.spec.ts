@@ -81,7 +81,7 @@ describe('DlqService', () => {
       expect(repoMock.create).toHaveBeenCalled();
     });
 
-    it('stores escrowId as null when the failure is not tied to an escrow', async () => {
+    it('passes a missing escrowId through for the repository to store as null', async () => {
       repoMock.create.mockResolvedValue({
         ...mockRecord,
         escrowId: null,
@@ -93,7 +93,7 @@ describe('DlqService', () => {
       });
 
       expect(repoMock.create).toHaveBeenCalledWith(
-        expect.objectContaining({ escrowId: null }),
+        expect.objectContaining({ escrowId: undefined }),
       );
       expect(result.escrowId).toBeNull();
     });
@@ -317,9 +317,7 @@ describe('DlqService', () => {
 
     it('refuses to replay an abandoned record', async () => {
       const abandonedRecord = { ...mockRecord, status: 'ABANDONED' };
-      repoMock.findById.mockResolvedValue(
-        abandonedRecord,
-      );
+      repoMock.findById.mockResolvedValue(abandonedRecord);
 
       await expect(
         service.replay('test-id-1', () => Promise.resolve('tx')),

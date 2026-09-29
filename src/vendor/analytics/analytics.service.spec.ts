@@ -942,9 +942,8 @@ describe('AnalyticsService.getTransactionStats aggregation (#843)', () => {
     await seed('REFUNDED', 80, 8);
     await seed('CANCELLED', 90, 9);
 
-    const { stats, channels, lastUpdated } = await service.getTransactionStats(
-      VENDOR,
-    );
+    const { stats, channels, lastUpdated } =
+      await service.getTransactionStats(VENDOR);
 
     expect(stats.totalTransactions).toBe(9);
     expect(stats.totalVolume).toBe(450);
@@ -1027,7 +1026,9 @@ describe('AnalyticsService.getTransactionStats aggregation (#843)', () => {
 
     expect(stats.totalVolume).toBe(90071992.54740994);
     // Documents the behaviour this replaces.
-    expect(90071992.54740993 + 0.00000001).not.toBe(90071992.54740994);
+    expect(Number('90071992.54740993') + 0.00000001).not.toBe(
+      90071992.54740994,
+    );
   });
 
   it('averages in decimal rather than dividing a rounded float total', async () => {
@@ -1063,7 +1064,7 @@ describe('AnalyticsService.getTransactionStats aggregation (#843)', () => {
     expect(stats.completionRate).toBe(0);
   });
 
-  it('does not include another vendor\'s escrows', async () => {
+  it("does not include another vendor's escrows", async () => {
     await ensureVendors(prisma, '0xOtherVendor');
     await seed('FUNDED', 100, 1);
     await prisma.escrow.create({

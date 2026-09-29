@@ -59,7 +59,10 @@ export class AuditLogRepository {
   }
 
   /** Returns audit records newest first, for one page of the admin view. */
-  async findPage(options: { skip: number; take: number }): Promise<AuditLogEntry[]> {
+  async findPage(options: {
+    skip: number;
+    take: number;
+  }): Promise<AuditLogEntry[]> {
     const records = await this.prisma.auditLog.findMany({
       skip: options.skip,
       take: options.take,
