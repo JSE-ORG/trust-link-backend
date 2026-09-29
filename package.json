@@ -35,7 +35,8 @@
         "docker:run": "docker run -p 3000:3000 trustlink-backend",
         "stress:test": "ts-node scripts/stress-test-runner.ts",
         "stress:test:config": "ts-node scripts/stress-test-runner.ts",
-        "benchmark:chart": "ts-node scripts/benchmark-chart-aggregation.ts"
+        "benchmark:chart": "ts-node scripts/benchmark-chart-aggregation.ts",
+        "prepare": "node scripts/install-hooks.js"
     },
     "dependencies": {
         "@nest-lab/throttler-storage-redis": "^1.2.0",

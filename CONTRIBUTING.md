@@ -338,6 +338,7 @@ changes a consumer-facing behavior or fixes a security issue.
 ### General
 
 - TypeScript strict mode is enabled — `any` types will be flagged in review
+- A pre-commit hook runs `eslint --fix` on your staged `.ts` files — `npm ci` installs it, so you rarely need to think about formatting before committing
 - Run `npm run lint` before committing — ESLint with NestJS rules must pass clean
 - Run `npm run format` to apply Prettier — don't submit unformatted code
 - Prefer `async/await` over raw `.then()` chains
