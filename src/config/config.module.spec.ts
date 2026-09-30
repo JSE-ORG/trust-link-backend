@@ -770,6 +770,57 @@ describe('ConfigModule — Stellar Key Validation', () => {
     });
   });
 
+  describe('EVIDENCE_STORAGE_BASE_URL — evidence public URLs', () => {
+    it('accepts a configured storage URI', () => {
+      const { error, value } = configValidationSchema.validate(
+        {
+          ...VALID_ENV,
+          EVIDENCE_STORAGE_BASE_URL: 'https://storage.example.com/',
+        },
+        VALIDATE_OPTIONS,
+      );
+
+      expect(error).toBeUndefined();
+      expect(value.EVIDENCE_STORAGE_BASE_URL).toBe(
+        'https://storage.example.com/',
+      );
+    });
+
+    it('defaults to localhost outside production', () => {
+      const { error, value } = configValidationSchema.validate(
+        { ...VALID_ENV, EVIDENCE_STORAGE_BASE_URL: undefined },
+        VALIDATE_OPTIONS,
+      );
+
+      expect(error).toBeUndefined();
+      expect(value.EVIDENCE_STORAGE_BASE_URL).toBe('http://localhost:9000');
+    });
+
+    it('requires EVIDENCE_STORAGE_BASE_URL in production', () => {
+      const { error } = configValidationSchema.validate(
+        {
+          ...VALID_ENV,
+          NODE_ENV: 'production',
+          EVIDENCE_STORAGE_BASE_URL: undefined,
+        },
+        VALIDATE_OPTIONS,
+      );
+
+      expect(error?.message).toContain(
+        'EVIDENCE_STORAGE_BASE_URL is required in production',
+      );
+    });
+
+    it('rejects an invalid storage URI', () => {
+      const { error } = configValidationSchema.validate(
+        { ...VALID_ENV, EVIDENCE_STORAGE_BASE_URL: 'not-a-url' },
+        VALIDATE_OPTIONS,
+      );
+
+      expect(error?.message).toContain('EVIDENCE_STORAGE_BASE_URL');
+    });
+  });
+
   describe('TWILIO_FROM_NUMBER — SMS sender (#838)', () => {
     it('requires a valid E.164 sender when a Twilio account is configured', () => {
       const { error, value } = configValidationSchema.validate(

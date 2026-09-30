@@ -23,6 +23,8 @@ export interface Config {
   PORT: number;
   DATABASE_URL: string;
   FRONTEND_URL: string;
+  /** Public base URL evidence objects are served from. */
+  EVIDENCE_STORAGE_BASE_URL: string;
   CONTACT_ENCRYPTION_KEY?: string;
   CREDENTIAL_ENCRYPTION_KEY?: string;
   DB_POOL_CONNECTION_LIMIT?: number;
@@ -99,6 +101,7 @@ export class ConfigService {
       PORT: this.get('PORT'),
       DATABASE_URL: this.get('DATABASE_URL'),
       FRONTEND_URL: this.get('FRONTEND_URL'),
+      EVIDENCE_STORAGE_BASE_URL: this.get('EVIDENCE_STORAGE_BASE_URL'),
       CONTACT_ENCRYPTION_KEY: this.nestConfigService.get(
         'CONTACT_ENCRYPTION_KEY',
         { infer: true },
