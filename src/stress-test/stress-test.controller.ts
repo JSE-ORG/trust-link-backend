@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
+import { THROTTLE_WINDOW_MS } from '../common/security/throttle.config';
 import { JwtGuard } from '../auth/guards/jwt.guard';
 import { AdminGuard } from '../admin/guards/admin.guard';
 import { StressTestService } from './stress-test.service';
@@ -34,7 +35,7 @@ export class StressTestController {
     status: 400,
     description: 'Invalid stress test configuration.',
   })
-  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  @Throttle({ default: { limit: 10, ttl: THROTTLE_WINDOW_MS } })
   @Post()
   async runStressTest(
     @Body() config: StressTestConfigDto,
@@ -51,7 +52,7 @@ export class StressTestController {
   })
   @ApiResponse({ status: 404, description: 'Stress test not found.' })
   @ApiParam({ name: 'testId', example: 'stress-test-2026-07-29' })
-  @Throttle({ default: { limit: 30, ttl: 60000 } })
+  @Throttle({ default: { limit: 30, ttl: THROTTLE_WINDOW_MS } })
   @Get('active/:testId')
   getActiveTest(@Param('testId') testId: string): StressTestResult | undefined {
     return this.stressTestService.getActiveTest(testId);
@@ -63,7 +64,7 @@ export class StressTestController {
     description: 'Active stress tests returned.',
     type: [StressTestResultDto],
   })
-  @Throttle({ default: { limit: 30, ttl: 60000 } })
+  @Throttle({ default: { limit: 30, ttl: THROTTLE_WINDOW_MS } })
   @Get('active')
   getAllActiveTests(): StressTestResult[] {
     return this.stressTestService.getAllActiveTests();

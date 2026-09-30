@@ -25,7 +25,7 @@ const toPositiveInt = (raw: string | undefined, fallback: number): number => {
 /**
  * The rolling window every route-level `@Throttle()` counts requests over,
  * in **milliseconds** (60_000 = one minute). Defined once here instead of
- * repeating `ttl: 60000` inline at every decorator (#667): each site only
+ * repeating the literal window inline at every decorator (#667): each site only
  * varies its `limit`, so changing the window used to mean editing ~30 call
  * sites and hoping none were missed. Per-route limits are unchanged.
  */

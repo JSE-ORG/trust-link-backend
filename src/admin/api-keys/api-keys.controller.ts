@@ -13,6 +13,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
+import { THROTTLE_WINDOW_MS } from '../../common/security/throttle.config';
 import { JwtGuard } from '../../auth/guards/jwt.guard';
 import { AdminGuard } from '../guards/admin.guard';
 import { LogisticsService } from '../../logistics/logistics.service';
@@ -37,7 +38,7 @@ export class ApiKeysController {
   @ApiResponse({ status: 400, description: 'Invalid key payload.' })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   @ApiResponse({ status: 403, description: 'Admin access required.' })
-  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  @Throttle({ default: { limit: 5, ttl: THROTTLE_WINDOW_MS } })
   @Patch('logistics')
   @HttpCode(HttpStatus.OK)
   async rotateLogisticsKey(@Body() dto: RotateApiKeyDto) {

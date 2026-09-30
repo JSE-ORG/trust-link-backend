@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
+import { THROTTLE_WINDOW_MS } from '../common/security/throttle.config';
 import type { Request } from 'express';
 import { StellarWebhookDto } from './dto/stellar-webhook.dto';
 import { StellarWebhookResponseDto } from './dto/stellar-webhook-response.dto';
@@ -42,7 +43,7 @@ export class StellarWebhookController {
     status: 400,
     description: 'Invalid payload or missing HMAC signature.',
   })
-  @Throttle({ default: { limit: 60, ttl: 60000 } })
+  @Throttle({ default: { limit: 60, ttl: THROTTLE_WINDOW_MS } })
   @Post('stellar')
   @HttpCode(HttpStatus.OK)
   async handleStellarWebhook(
