@@ -23,6 +23,7 @@ const BASE_PROD_ENV = {
   CONTACT_ENCRYPTION_KEY: VALID_KEY_64,
   CREDENTIAL_ENCRYPTION_KEY: VALID_KEY_64,
   FRONTEND_URL: 'https://app.trustlink.example.com',
+  EVIDENCE_STORAGE_BASE_URL: 'https://storage.trustlink.example.com',
 };
 
 describe('Encryption Keys Config Validation (#564)', () => {

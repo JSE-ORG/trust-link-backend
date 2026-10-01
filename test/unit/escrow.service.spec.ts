@@ -370,6 +370,7 @@ describe('EscrowService: tracking, idempotency, evidence upload, and vendor list
   let s3Presign: jest.Mocked<S3PresignService>;
   let logistics: jest.Mocked<LogisticsService>;
   let cache: jest.Mocked<CacheService>;
+  let configService: { get: jest.Mock };
 
   const shippedEscrow: EscrowRecord = {
     id: 'escrow-shipped',
@@ -410,6 +411,7 @@ describe('EscrowService: tracking, idempotency, evidence upload, and vendor list
       set: jest.fn(),
       del: jest.fn(),
     } as unknown as jest.Mocked<CacheService>;
+    configService = { get: jest.fn().mockReturnValue(undefined) };
 
     const moduleRef = await Test.createTestingModule({
       providers: [
@@ -422,6 +424,7 @@ describe('EscrowService: tracking, idempotency, evidence upload, and vendor list
         { provide: CacheService, useValue: cache },
         { provide: PrismaService, useValue: undefined },
         { provide: TracingService, useValue: createTracingMock().service },
+        { provide: ConfigService, useValue: configService },
       ],
     }).compile();
 
@@ -580,6 +583,29 @@ describe('EscrowService: tracking, idempotency, evidence upload, and vendor list
 
       expect(result.publicUrl).toMatch(/\.bin$/);
     });
+
+    it.each([
+      ['https://evidence.example.com'],
+      ['https://evidence.example.com/'],
+    ])(
+      'builds the public URL from EVIDENCE_STORAGE_BASE_URL (%s)',
+      async (baseUrl) => {
+        configService.get.mockImplementation((key: string) =>
+          key === 'EVIDENCE_STORAGE_BASE_URL' ? baseUrl : undefined,
+        );
+        s3Presign.presign.mockReturnValue('https://signed-url');
+
+        const result = await service.generateEvidenceUploadUrl(
+          'buyer-1',
+          'photo.png',
+        );
+
+        expect(result.publicUrl).toMatch(
+          /^https:\/\/evidence\.example\.com\/evidence\/buyer-1\/[0-9a-f-]+\.png$/,
+        );
+        expect(s3Presign.presign).toHaveBeenCalledWith(result.publicUrl);
+      },
+    );
 
     it('never writes a path segment from the filename into the object key', () => {
       s3Presign.presign.mockReturnValue('https://signed-url');

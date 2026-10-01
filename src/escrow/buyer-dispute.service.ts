@@ -2,6 +2,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '../config/config.service';
@@ -29,6 +30,8 @@ const DISPUTABLE_STATES = new Set<string>(['FUNDED', 'SHIPPED', 'DELIVERED']);
 
 @Injectable()
 export class BuyerDisputeService {
+  private readonly logger = new Logger(BuyerDisputeService.name);
+
   constructor(
     private readonly escrowRepository: EscrowRepository,
     private readonly disputeRepository: DisputeRepository,
@@ -126,10 +129,22 @@ export class BuyerDisputeService {
     // a subsequent findById sees the fresh state.
     await this.escrowRepository.updateState(escrowId, 'DISPUTED');
 
-    await Promise.all([
-      this.notificationsService.notifyDisputed(escrow),
-      this.notificationsService.notifyDisputedAdmin(escrow, adminAddress),
-    ]);
+    // Delivery retries email and SMS with backoff, so it can take seconds
+    // when a provider is down; the response must not wait for it.
+    this.notificationsService.notifyDisputed(escrow).catch((error) => {
+      this.logger.error(
+        `Failed to send disputed notification for escrow ${escrow.id}`,
+        error,
+      );
+    });
+    this.notificationsService
+      .notifyDisputedAdmin(escrow, adminAddress)
+      .catch((error) => {
+        this.logger.error(
+          `Failed to send admin disputed notification for escrow ${escrow.id}`,
+          error,
+        );
+      });
 
     return this.toResponse(dispute);
   }

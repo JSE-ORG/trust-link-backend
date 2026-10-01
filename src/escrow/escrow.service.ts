@@ -558,6 +558,13 @@ export class EscrowService {
     return `${frontendUrl.replace(/\/+$/, '')}/pay/${encodeURIComponent(id)}`;
   }
 
+  private buildEvidencePublicUrl(objectKey: string): string {
+    const baseUrl =
+      this.configService?.get('EVIDENCE_STORAGE_BASE_URL') ??
+      'http://localhost:9000';
+    return `${baseUrl.replace(/\/+$/, '')}/${objectKey}`;
+  }
+
   /**
    * Builds a pre-signed upload URL for a piece of evidence, scoped to the
    * caller's address.
@@ -599,7 +606,7 @@ export class EscrowService {
     const uuid = crypto.randomUUID();
     const storagePath = `evidence/${callerAddress}/`;
     const objectKey = `${storagePath}${uuid}.${ext}`;
-    const publicUrl = `https://storage.trustlink.io/${objectKey}`;
+    const publicUrl = this.buildEvidencePublicUrl(objectKey);
     const presigned = this.s3PresignService.presign(publicUrl);
     const expiresInSeconds = ONE_HOUR_SECONDS;
 

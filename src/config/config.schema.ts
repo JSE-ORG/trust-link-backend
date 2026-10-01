@@ -137,6 +137,19 @@ export const configValidationSchema = Joi.object({
       }),
       otherwise: Joi.string().uri().default('http://localhost:3000'),
     }),
+  // Public host that evidence object keys are served from. Previously a
+  // literal (https://storage.trustlink.io) in EscrowService, so every
+  // environment returned the same host whether or not it existed there.
+  EVIDENCE_STORAGE_BASE_URL: Joi.string()
+    .uri()
+    .when('NODE_ENV', {
+      is: 'production',
+      then: Joi.required().messages({
+        'any.required':
+          'Config validation error: EVIDENCE_STORAGE_BASE_URL is required in production',
+      }),
+      otherwise: Joi.string().uri().default('http://localhost:9000'),
+    }),
   DATABASE_URL: Joi.string().required(),
   CONTACT_ENCRYPTION_KEY: Joi.string()
     .hex()

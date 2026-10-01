@@ -34,6 +34,7 @@ const PRODUCTION_ENV: Record<string, string> = {
   CONTACT_ENCRYPTION_KEY: 'a'.repeat(64),
   CREDENTIAL_ENCRYPTION_KEY: 'a'.repeat(64),
   FRONTEND_URL: 'https://app.trustlink.example.com',
+  EVIDENCE_STORAGE_BASE_URL: 'https://storage.trustlink.example.com',
 };
 
 function validate(env: Record<string, string>) {

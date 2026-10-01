@@ -329,7 +329,14 @@ export class StellarWebhookService {
         escrow.id,
         'FUNDED',
       );
-      await this.notificationsService.notifyFunded(updatedEscrow);
+      // Not awaited: delivery retries with backoff and must not hold up the
+      // webhook response.
+      this.notificationsService.notifyFunded(updatedEscrow).catch((error) => {
+        this.logger.error(
+          `Failed to send funded notification for escrow ${updatedEscrow.id}`,
+          error,
+        );
+      });
 
       this.logger.log(
         JSON.stringify({

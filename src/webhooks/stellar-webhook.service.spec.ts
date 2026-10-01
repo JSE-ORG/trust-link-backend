@@ -325,6 +325,45 @@ describe('StellarWebhookService – handlePayment (issue #396)', () => {
   // =========================================================================
   // Additional edge-case: missing dto.to throws BadRequestException
   // =========================================================================
+  // =========================================================================
+  // Notification delivery must not hold up the webhook response
+  // =========================================================================
+  it('does not wait on notifyFunded delivery', async () => {
+    const escrow = makeEscrow({ state: 'CREATED' });
+    escrowRepository.findByVendor.mockResolvedValue([escrow]);
+    escrowRepository.updateState.mockResolvedValue({
+      ...escrow,
+      state: 'FUNDED',
+    });
+    notificationsService.notifyFunded.mockReturnValue(new Promise(() => {}));
+
+    await expect(runPayment(makePaymentDto())).resolves.toBeUndefined();
+
+    expect(notificationsService.notifyFunded).toHaveBeenCalledTimes(1);
+  });
+
+  it('logs a failed notifyFunded without failing the webhook', async () => {
+    const escrow = makeEscrow({ state: 'CREATED' });
+    escrowRepository.findByVendor.mockResolvedValue([escrow]);
+    escrowRepository.updateState.mockResolvedValue({
+      ...escrow,
+      state: 'FUNDED',
+    });
+    const error = new Error('provider down');
+    notificationsService.notifyFunded.mockRejectedValue(error);
+    const loggerErrorSpy = jest
+      .spyOn(service['logger'], 'error')
+      .mockImplementation(() => undefined);
+
+    await expect(runPayment(makePaymentDto())).resolves.toBeUndefined();
+    await new Promise(process.nextTick);
+
+    expect(loggerErrorSpy).toHaveBeenCalledWith(
+      `Failed to send funded notification for escrow ${escrow.id}`,
+      error,
+    );
+  });
+
   it('throws BadRequestException when dto.to is missing', async () => {
     const dto = makePaymentDto({ to: undefined });
     await expect(runPayment(dto)).rejects.toThrow(BadRequestException);

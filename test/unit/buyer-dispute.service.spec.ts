@@ -7,6 +7,8 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { BuyerDisputeService } from '../../src/escrow/buyer-dispute.service';
 import { EscrowRepository } from '../../src/escrow/escrow.repository';
 import { DisputeRepository } from '../../src/dispute/dispute.repository';
+import { TracingService } from '../../src/tracing/tracing.service';
+import { createTracingMock } from './tracing-mock';
 import { NotificationsService } from '../../src/notifications/notifications.service';
 import { S3PresignService } from '../../src/common/services/s3-presign.service';
 import { ConfigService } from '../../src/config/config.service';
@@ -73,6 +75,7 @@ describe('BuyerDisputeService.openDispute (issue #41)', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         BuyerDisputeService,
+        { provide: TracingService, useValue: createTracingMock().service },
         {
           provide: EscrowRepository,
           useValue: {
@@ -160,6 +163,43 @@ describe('BuyerDisputeService.openDispute (issue #41)', () => {
       expect(notificationsService.notifyDisputedAdmin).toHaveBeenCalledWith(
         shippedEscrow,
         ADMIN,
+      );
+    });
+
+    it('does not wait on notification delivery', async () => {
+      escrowRepository.findById.mockResolvedValue(shippedEscrow);
+      disputeRepository.create.mockResolvedValue(createdDispute);
+      const never = new Promise<void>(() => {});
+      notificationsService.notifyDisputed.mockReturnValue(never);
+      notificationsService.notifyDisputedAdmin.mockReturnValue(never);
+
+      await expect(
+        service.openDispute('escrow-abc', BUYER, openDisputeDto),
+      ).resolves.toEqual(expect.objectContaining({ id: 'dispute-xyz' }));
+    });
+
+    it('logs a failed notification without failing the request', async () => {
+      escrowRepository.findById.mockResolvedValue(shippedEscrow);
+      disputeRepository.create.mockResolvedValue(createdDispute);
+      const error = new Error('provider down');
+      notificationsService.notifyDisputed.mockRejectedValue(error);
+      notificationsService.notifyDisputedAdmin.mockRejectedValue(error);
+      const loggerErrorSpy = jest
+        .spyOn(service['logger'], 'error')
+        .mockImplementation(() => undefined);
+
+      await expect(
+        service.openDispute('escrow-abc', BUYER, openDisputeDto),
+      ).resolves.toEqual(expect.objectContaining({ id: 'dispute-xyz' }));
+      await new Promise(process.nextTick);
+
+      expect(loggerErrorSpy).toHaveBeenCalledWith(
+        'Failed to send disputed notification for escrow escrow-abc',
+        error,
+      );
+      expect(loggerErrorSpy).toHaveBeenCalledWith(
+        'Failed to send admin disputed notification for escrow escrow-abc',
+        error,
       );
     });
 
