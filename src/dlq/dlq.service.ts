@@ -1,4 +1,9 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import {
   FailedTransactionFilter,
   FailedTransactionRepository,
@@ -107,8 +112,11 @@ export class DlqService {
   async replay(id: string, replay: ReplayFn): Promise<FailedTransactionRecord> {
     const record = await this.requireRecord(id);
     if (record.status !== 'PENDING_REVIEW') {
-      throw new Error(`Failed transaction ${id} is not pending review`);
+      throw new ConflictException(
+        `Failed transaction ${id} is not pending review (status: ${record.status})`,
+      );
     }
+
 
     let txHash: string;
     try {
@@ -148,6 +156,7 @@ export class DlqService {
     await this.requireRecord(id);
     return this.failedTransactions.markAbandoned(id);
   }
+
 
   /**
    * Stamps `reviewedAt` without changing `status` — an operator has looked
