@@ -429,6 +429,22 @@ describe('TrackingPollWorker', () => {
       expect(h.contractService.recordDelivery).not.toHaveBeenCalled();
     });
 
+    it('only polls shipments returned by repository query (#945)', async () => {
+      // Vendors with enableTracking = false are filtered by findShippedWithTracking in-query
+      h.escrowRepository.findShippedWithTracking.mockResolvedValue([
+        makeEscrow({ id: 'escrow-enabled', trackingId: 'TRK-ENABLED' }),
+      ]);
+      h.logisticsService.getStatus.mockResolvedValue({
+        status: 'IN_TRANSIT',
+        events: [],
+      });
+
+      await h.worker.run();
+
+      expect(h.logisticsService.getStatus).toHaveBeenCalledTimes(1);
+      expect(h.logisticsService.getStatus).toHaveBeenCalledWith('TRK-ENABLED');
+    });
+
     it('isolates a failed item so healthy shipments are still processed', async () => {
       h.escrowRepository.findShippedWithTracking.mockResolvedValue([
         makeEscrow({ id: 'escrow-fail', trackingId: 'TRK-FAIL' }),

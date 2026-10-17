@@ -26,6 +26,7 @@ import { S3PresignService } from '../common/services/s3-presign.service';
 import { EscrowRepository } from './escrow.repository';
 import { UpdateBuyerContactDto } from './dto/update-buyer-contact.dto';
 import { encryptContact } from '../common/sanitization/contact-encryption.util';
+import { VENDOR_PROFILE_PLACEHOLDER_DESCRIPTION } from '../vendor/vendor-profile.constants';
 import { TracingService } from '../tracing/tracing.service';
 import { EventsResult } from './escrow.types';
 import {
@@ -265,7 +266,11 @@ export class EscrowService {
     if (!this.prisma) return;
     await this.prisma.vendorProfile.upsert({
       where: { address: vendorAddress },
-      create: { address: vendorAddress, businessName: vendorAddress },
+      create: {
+        address: vendorAddress,
+        businessName: vendorAddress,
+        description: VENDOR_PROFILE_PLACEHOLDER_DESCRIPTION,
+      },
       update: {},
     });
   }
