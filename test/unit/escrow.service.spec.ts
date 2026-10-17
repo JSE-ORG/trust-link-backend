@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   NotFoundException,
   ConflictException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { TracingService } from '../../src/tracing/tracing.service';
 import { createTracingMock } from './tracing-mock';
@@ -309,6 +310,25 @@ describe('EscrowService.handleShipment (issue #16)', () => {
       await expect(
         service.updateBuyerContact(escrow.id, { email: 'x@x.com' }),
       ).rejects.toThrow(ConflictException);
+    });
+
+    it('updateBuyerContact throws ServiceUnavailableException when encryption is not configured', async () => {
+      const originalKey = process.env.CONTACT_ENCRYPTION_KEY;
+      delete process.env.CONTACT_ENCRYPTION_KEY;
+      try {
+        const escrow = { ...fundedEscrow, state: 'FUNDED' } as EscrowRecord;
+        repository.findById.mockResolvedValue(escrow);
+
+        await expect(
+          service.updateBuyerContact(escrow.id, { email: 'x@x.com' }),
+        ).rejects.toThrow(ServiceUnavailableException);
+      } finally {
+        if (originalKey !== undefined) {
+          process.env.CONTACT_ENCRYPTION_KEY = originalKey;
+        } else {
+          delete process.env.CONTACT_ENCRYPTION_KEY;
+        }
+      }
     });
 
     it('getEscrowForViewer sets isBuyer and isVendor flags and omits viewer when no caller', async () => {

@@ -4,6 +4,7 @@ import { AnalyticsController } from './analytics.controller';
 import { AnalyticsService } from './analytics.service';
 import type { AuthUser } from '../../auth/auth-user';
 import type { AnalyticsStatsResponse } from './analytics-stats.dto';
+import { ChartQueryDto } from './chart-query.dto';
 
 type AnalyticsServiceMock = jest.Mocked<
   Pick<AnalyticsService, 'getTransactionStats' | 'getDailyVolumeChart'>
@@ -41,7 +42,7 @@ describe('AnalyticsController', () => {
 
     it('getDailyVolumeChart throws UnauthorizedException, not a 500', async () => {
       await expect(
-        controller.getDailyVolumeChart(undefined, undefined, undefined),
+        controller.getDailyVolumeChart(undefined, undefined),
       ).rejects.toThrow(UnauthorizedException);
       expect(service.getDailyVolumeChart).not.toHaveBeenCalled();
     });
@@ -88,8 +89,17 @@ describe('AnalyticsController', () => {
       service.getDailyVolumeChart.mockResolvedValue(chartResponse);
     });
 
-    it('applies default params when no query params provided', async () => {
-      await controller.getDailyVolumeChart(undefined, undefined, mockUser);
+    it('applies default params when query is undefined or empty', async () => {
+      await controller.getDailyVolumeChart(undefined, mockUser);
+
+      expect(service.getDailyVolumeChart).toHaveBeenCalledWith(
+        'GVENDOR123',
+        30,
+        'UTC',
+      );
+
+      const emptyQuery = new ChartQueryDto();
+      await controller.getDailyVolumeChart(emptyQuery, mockUser);
 
       expect(service.getDailyVolumeChart).toHaveBeenCalledWith(
         'GVENDOR123',
@@ -99,7 +109,8 @@ describe('AnalyticsController', () => {
     });
 
     it('passes custom days param through', async () => {
-      await controller.getDailyVolumeChart('7', undefined, mockUser);
+      const query = Object.assign(new ChartQueryDto(), { days: 7 });
+      await controller.getDailyVolumeChart(query, mockUser);
 
       expect(service.getDailyVolumeChart).toHaveBeenCalledWith(
         'GVENDOR123',
@@ -109,75 +120,25 @@ describe('AnalyticsController', () => {
     });
 
     it('passes custom timezone param through', async () => {
-      await controller.getDailyVolumeChart(
-        undefined,
-        'America/New_York',
-        mockUser,
-      );
+      const query = Object.assign(new ChartQueryDto(), {
+        timezone: 'America/New_York',
+      });
+      await controller.getDailyVolumeChart(query, mockUser);
 
       expect(service.getDailyVolumeChart).toHaveBeenCalledWith(
         'GVENDOR123',
         30,
         'America/New_York',
-      );
-    });
-
-    it('falls back to 30 days for invalid days param', async () => {
-      await controller.getDailyVolumeChart('abc', undefined, mockUser);
-      expect(service.getDailyVolumeChart).toHaveBeenCalledWith(
-        'GVENDOR123',
-        30,
-        'UTC',
-      );
-    });
-
-    it('falls back to 30 days for negative days', async () => {
-      await controller.getDailyVolumeChart('-5', undefined, mockUser);
-      expect(service.getDailyVolumeChart).toHaveBeenCalledWith(
-        'GVENDOR123',
-        30,
-        'UTC',
-      );
-    });
-
-    it('falls back to 30 days for days > 365', async () => {
-      await controller.getDailyVolumeChart('999', undefined, mockUser);
-      expect(service.getDailyVolumeChart).toHaveBeenCalledWith(
-        'GVENDOR123',
-        30,
-        'UTC',
-      );
-    });
-
-    it('falls back to 30 days for zero', async () => {
-      await controller.getDailyVolumeChart('0', undefined, mockUser);
-      expect(service.getDailyVolumeChart).toHaveBeenCalledWith(
-        'GVENDOR123',
-        30,
-        'UTC',
-      );
-    });
-
-    it('accepts max valid days (365)', async () => {
-      await controller.getDailyVolumeChart('365', undefined, mockUser);
-      expect(service.getDailyVolumeChart).toHaveBeenCalledWith(
-        'GVENDOR123',
-        365,
-        'UTC',
-      );
-    });
-
-    it('falls back to 30 for 366', async () => {
-      await controller.getDailyVolumeChart('366', undefined, mockUser);
-      expect(service.getDailyVolumeChart).toHaveBeenCalledWith(
-        'GVENDOR123',
-        30,
-        'UTC',
       );
     });
 
     it('passes both custom days and timezone', async () => {
-      await controller.getDailyVolumeChart('14', 'Europe/London', mockUser);
+      const query = Object.assign(new ChartQueryDto(), {
+        days: 14,
+        timezone: 'Europe/London',
+      });
+      await controller.getDailyVolumeChart(query, mockUser);
+
       expect(service.getDailyVolumeChart).toHaveBeenCalledWith(
         'GVENDOR123',
         14,

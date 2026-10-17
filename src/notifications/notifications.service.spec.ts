@@ -101,6 +101,12 @@ describe('NotificationsService', () => {
       where: { address: escrow.vendorAddress },
       data: { email: VENDOR_EMAIL, phone: VENDOR_PHONE },
     });
+    await prisma.vendorTrackingSettings.create({
+      data: {
+        vendorAddress: escrow.vendorAddress,
+        notificationChannels: ['EMAIL', 'SMS'],
+      },
+    });
     escrow = toEscrowRecord(
       await prisma.escrow.create({
         data: {
@@ -307,6 +313,68 @@ describe('NotificationsService', () => {
         expect.stringContaining('No vendor phone'),
       );
     });
+  });
+
+  describe('vendor notification channel preferences (#944)', () => {
+    it('sends only EMAIL when vendor preferences specify EMAIL only', async () => {
+      await prisma.vendorTrackingSettings.update({
+        where: { vendorAddress: escrow.vendorAddress },
+        data: { notificationChannels: ['EMAIL'] },
+      });
+
+      await service.notifyFunded(escrow);
+
+      expect(sendGrid.send).toHaveBeenCalledWith(
+        expect.objectContaining({ to: VENDOR_EMAIL }),
+      );
+      expect(twilio.messages.create).not.toHaveBeenCalled();
+    });
+
+    it('sends only SMS when vendor preferences specify SMS only', async () => {
+      await prisma.vendorTrackingSettings.update({
+        where: { vendorAddress: escrow.vendorAddress },
+        data: { notificationChannels: ['SMS'] },
+      });
+
+      await service.notifyFunded(escrow);
+
+      expect(sendGrid.send).not.toHaveBeenCalled();
+      expect(twilio.messages.create).toHaveBeenCalledWith(
+        expect.objectContaining({ to: VENDOR_PHONE }),
+      );
+    });
+
+    it('sends both EMAIL and SMS when vendor preferences specify both', async () => {
+      await prisma.vendorTrackingSettings.update({
+        where: { vendorAddress: escrow.vendorAddress },
+        data: { notificationChannels: ['EMAIL', 'SMS'] },
+      });
+
+      await service.notifyFunded(escrow);
+
+      expect(sendGrid.send).toHaveBeenCalledWith(
+        expect.objectContaining({ to: VENDOR_EMAIL }),
+      );
+      expect(twilio.messages.create).toHaveBeenCalledWith(
+        expect.objectContaining({ to: VENDOR_PHONE }),
+      );
+    });
+
+    it('defaults to EMAIL only when no settings row exists', async () => {
+      await prisma.vendorTrackingSettings.deleteMany({
+        where: { vendorAddress: escrow.vendorAddress },
+      });
+
+      await service.notifyFunded(escrow);
+
+      expect(sendGrid.send).toHaveBeenCalledWith(
+        expect.objectContaining({ to: VENDOR_EMAIL }),
+      );
+      expect(twilio.messages.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('unconfigured email provider behaviour (#839)', () => {
 
     it('is a no-op (noop provider) when SendGrid is not configured', async () => {
       const serviceNoSendgrid = new NotificationsService(
