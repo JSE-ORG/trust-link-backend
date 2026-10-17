@@ -1009,8 +1009,8 @@ export class EscrowService {
 
     switch (eventType) {
       case 'EscrowFunded': {
-        if (escrow.state === 'FUNDED' || TERMINAL_STATES.has(escrow.state)) {
-          return { skipped: true, reason: 'already_funded_or_terminal' };
+        if (escrow.state === 'FUNDED' || escrow.state === 'SHIPPED' || TERMINAL_STATES.has(escrow.state)) {
+          return { skipped: true, reason: 'already_funded_shipped_or_terminal' };
         }
         const funded = await this.escrowRepository.updateState(
           escrowId,
@@ -1077,6 +1077,9 @@ export class EscrowService {
       }
 
       case 'DisputeResolved': {
+        if (TERMINAL_STATES.has(escrow.state)) {
+          return { skipped: true, reason: 'terminal_state' };
+        }
         if (this.prisma) {
           const dispute = await this.prisma.dispute.findFirst({
             where: { escrowId },
@@ -1091,6 +1094,22 @@ export class EscrowService {
             });
           }
         }
+        const isRefund =
+          event.reason?.toLowerCase().includes('refund') ||
+          (event as any).resolution === 'refund' ||
+          (event as any).outcome === 'refund' ||
+          (event as any).winner === 'buyer';
+
+        if (isRefund) {
+          const cancelled = await this.escrowRepository.markCancelled(escrowId);
+          this.notificationsService
+            .notifyCancelled(cancelled)
+            .catch((err) =>
+              this.logger.error('notifyCancelled(dispute refund) failed', err),
+            );
+          return { skipped: false };
+        }
+
         const resolved = await this.escrowRepository.markCompleted(escrowId);
         this.notificationsService
           .notifyCompleted(resolved)

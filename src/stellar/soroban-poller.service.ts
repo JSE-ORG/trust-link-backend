@@ -546,7 +546,11 @@ export class SorobanPollerService implements OnModuleInit, OnModuleDestroy {
         eventType,
         escrowId,
         trackingId:
-          typeof data?.trackingId === 'string' ? data.trackingId : undefined,
+          typeof data?.tracking_id === 'string'
+            ? data.tracking_id
+            : typeof data?.trackingId === 'string'
+              ? data.trackingId
+              : undefined,
         txHash: typeof data?.txHash === 'string' ? data.txHash : undefined,
         reason: typeof data?.reason === 'string' ? data.reason : undefined,
       });
