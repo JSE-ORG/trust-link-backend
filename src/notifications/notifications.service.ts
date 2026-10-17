@@ -524,6 +524,13 @@ export class NotificationsService implements OnModuleInit {
         break;
       } catch (error) {
         lastResponseCode = this.extractResponseCode(error);
+        if (!this.isRetryableProviderError(lastResponseCode)) {
+          this.logger.error(
+            `SendGrid ${type} notification failed with non-retryable status ${lastResponseCode} [Request-ID: ${requestId}]`,
+            error instanceof Error ? error : new Error(String(error)),
+          );
+          break;
+        }
         if (attemptCount < MAX_ATTEMPTS) {
           const delayMs = 1000 * Math.pow(2, attemptCount - 1);
           this.logger.warn(
@@ -580,6 +587,13 @@ export class NotificationsService implements OnModuleInit {
         break;
       } catch (error) {
         lastResponseCode = this.extractResponseCode(error);
+        if (!this.isRetryableProviderError(lastResponseCode)) {
+          this.logger.error(
+            `Twilio ${type} notification failed with non-retryable status ${lastResponseCode} [Request-ID: ${requestId}]`,
+            error instanceof Error ? error : new Error(String(error)),
+          );
+          break;
+        }
         if (attemptCount < MAX_ATTEMPTS) {
           const delayMs = 1000 * Math.pow(2, attemptCount - 1);
           this.logger.warn(
@@ -612,6 +626,21 @@ export class NotificationsService implements OnModuleInit {
   /** Resolves after `ms` milliseconds. Extracted for test spying. */
   protected sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  /**
+   * Returns false for non-retryable 4xx client errors (e.g. 400 Bad Request,
+   * 401, 403, 404, 422). 408 (Request Timeout) and 429 (Too Many Requests)
+   * are retryable, as are 5xx server errors and network faults (null status).
+   */
+  private isRetryableProviderError(statusCode: number | null): boolean {
+    if (statusCode === null || statusCode === 408 || statusCode === 429) {
+      return true;
+    }
+    if (statusCode >= 400 && statusCode < 500) {
+      return false;
+    }
+    return true;
   }
 
   private extractProviderId(response: unknown): string | null {

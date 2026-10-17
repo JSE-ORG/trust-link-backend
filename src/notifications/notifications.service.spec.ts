@@ -422,6 +422,84 @@ describe('NotificationsService', () => {
       await expect(service.notifyFunded(escrow)).resolves.toBeUndefined();
       expect(Logger.prototype.error).toHaveBeenCalledTimes(2);
     });
+
+    it('does not retry non-retryable 4xx errors (e.g. 400 Bad Request) and fails after 1 attempt (#947)', async () => {
+      const badRequestError = Object.assign(new Error('bad request'), {
+        status: 400,
+      });
+      sendGrid.send.mockRejectedValue(badRequestError);
+      twilio.messages.create.mockRejectedValue(badRequestError);
+
+      await service.notifyFunded(escrow);
+
+      expect(sendGrid.send).toHaveBeenCalledTimes(1);
+      expect(twilio.messages.create).toHaveBeenCalledTimes(1);
+
+      const records = await prisma.notification.findMany();
+      expect(records).toHaveLength(2);
+      for (const r of records) {
+        expect(r.attemptCount).toBe(1);
+        expect(r.lastResponseCode).toBe(400);
+      }
+    });
+
+    it('retries 5xx server errors up to 3 times (#947)', async () => {
+      const serverError = Object.assign(new Error('service unavailable'), {
+        status: 503,
+      });
+      sendGrid.send.mockRejectedValue(serverError);
+      twilio.messages.create.mockRejectedValue(serverError);
+
+      await service.notifyFunded(escrow);
+
+      expect(sendGrid.send).toHaveBeenCalledTimes(3);
+      expect(twilio.messages.create).toHaveBeenCalledTimes(3);
+
+      const records = await prisma.notification.findMany();
+      expect(records).toHaveLength(2);
+      for (const r of records) {
+        expect(r.attemptCount).toBe(3);
+        expect(r.lastResponseCode).toBe(503);
+      }
+    });
+
+    it('retries retryable 4xx errors (408 and 429) up to 3 times (#947)', async () => {
+      const rateLimitError = Object.assign(new Error('rate limited'), {
+        status: 429,
+      });
+      sendGrid.send.mockRejectedValue(rateLimitError);
+      twilio.messages.create.mockRejectedValue(rateLimitError);
+
+      await service.notifyFunded(escrow);
+
+      expect(sendGrid.send).toHaveBeenCalledTimes(3);
+      expect(twilio.messages.create).toHaveBeenCalledTimes(3);
+
+      const records = await prisma.notification.findMany();
+      expect(records).toHaveLength(2);
+      for (const r of records) {
+        expect(r.attemptCount).toBe(3);
+        expect(r.lastResponseCode).toBe(429);
+      }
+    });
+
+    it('retries network errors with null status up to 3 times (#947)', async () => {
+      const networkError = new Error('network timeout');
+      sendGrid.send.mockRejectedValue(networkError);
+      twilio.messages.create.mockRejectedValue(networkError);
+
+      await service.notifyFunded(escrow);
+
+      expect(sendGrid.send).toHaveBeenCalledTimes(3);
+      expect(twilio.messages.create).toHaveBeenCalledTimes(3);
+
+      const records = await prisma.notification.findMany();
+      expect(records).toHaveLength(2);
+      for (const r of records) {
+        expect(r.attemptCount).toBe(3);
+        expect(r.lastResponseCode).toBeNull();
+      }
+    });
   });
 
   describe('response-code logging (#18, #288)', () => {
