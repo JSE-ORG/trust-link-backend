@@ -3,6 +3,7 @@ import {
   Logger,
   OnApplicationShutdown,
   OnModuleInit,
+  Optional,
 } from '@nestjs/common';
 import { TracingService } from '../tracing/tracing.service';
 import { EscrowRepository } from '../escrow/escrow.repository';
@@ -10,6 +11,7 @@ import { LogisticsService } from '../logistics/logistics.service';
 import { ContractService } from '../stellar/contract.service';
 import { ConfigService } from '../config/config.service';
 import { TEN_MINUTES_MS } from '../common/constants/time.constants';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class TrackingPollWorker implements OnModuleInit, OnApplicationShutdown {
@@ -39,6 +41,8 @@ export class TrackingPollWorker implements OnModuleInit, OnApplicationShutdown {
     private readonly contractService: ContractService,
     private readonly configService: ConfigService,
     private readonly tracing: TracingService,
+    @Optional()
+    private readonly notificationsService?: NotificationsService,
   ) {}
 
   /**
@@ -206,7 +210,24 @@ export class TrackingPollWorker implements OnModuleInit, OnApplicationShutdown {
           escrow.contractEscrowId,
           this.requireAdminAddress(),
         );
-        await this.escrowRepository.markDelivered(escrow.id, new Date());
+        const updated = await this.escrowRepository.markDelivered(
+          escrow.id,
+          new Date(),
+        );
+        if (this.notificationsService) {
+          try {
+            await this.notificationsService.notifyDelivered(updated);
+          } catch (error) {
+            this.logger.error(
+              JSON.stringify({
+                msg: 'tracking_poll.notification_failed',
+                escrowId: escrow.id,
+                error: error instanceof Error ? error.message : String(error),
+              }),
+              error instanceof Error ? error.stack : undefined,
+            );
+          }
+        }
       } catch (error) {
         // Release the claim so the next poll cycle can retry.
         await this.escrowRepository.clearDeliveryClaim(escrow.id);
