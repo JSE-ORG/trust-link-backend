@@ -1009,3 +1009,40 @@ describe('SendGrid email configuration (#839)', () => {
     expect(error?.message).toContain('SENDGRID_TEMPLATE_COMPLETED');
   });
 });
+
+describe('ConfigModule (#946) — ADMIN_NOTIFICATION_EMAIL validation', () => {
+  it('accepts a valid ADMIN_NOTIFICATION_EMAIL', () => {
+    const { error } = configValidationSchema.validate(
+      {
+        ...VALID_ENV,
+        ADMIN_NOTIFICATION_EMAIL: 'admin@trustlink.org',
+      },
+      VALIDATE_OPTIONS,
+    );
+
+    expect(error).toBeUndefined();
+  });
+
+  it('accepts an unset ADMIN_NOTIFICATION_EMAIL (optional)', () => {
+    const env = { ...VALID_ENV };
+    delete (env as any).ADMIN_NOTIFICATION_EMAIL;
+
+    const { error } = configValidationSchema.validate(env, VALIDATE_OPTIONS);
+
+    expect(error).toBeUndefined();
+  });
+
+  it('rejects an invalid email format for ADMIN_NOTIFICATION_EMAIL', () => {
+    const { error } = configValidationSchema.validate(
+      {
+        ...VALID_ENV,
+        ADMIN_NOTIFICATION_EMAIL: 'not-an-email',
+      },
+      VALIDATE_OPTIONS,
+    );
+
+    expect(error).toBeDefined();
+    expect(error?.message).toContain('ADMIN_NOTIFICATION_EMAIL');
+  });
+});
+

@@ -224,20 +224,24 @@ export class NotificationsService implements OnModuleInit {
   }
 
   /**
-   * Notifies an operator (`adminAddress`) that a dispute needs attention.
+   * Notifies an operator that a dispute needs attention (issue #946).
    *
-   * Identical mechanics to {@link notifyDisputed} but addressed to the
-   * caller-supplied admin address rather than the vendor, and it still
-   * writes `type: 'DISPUTED'` rows — the channel/recipient on the row is
-   * what distinguishes an admin alert from the vendor alert. The caller is
-   * responsible for passing a real configured admin address; this method
-   * does not read `ADMIN_ADDRESS` itself.
+   * Dispatches to the configured ADMIN_NOTIFICATION_EMAIL if set.
+   * If unset, skips with a warning so no provider is invoked with an
+   * invalid address and no failed notification rows are written.
    */
-  notifyDisputedAdmin(
+  async notifyDisputedAdmin(
     escrow: EscrowRecord,
-    adminAddress: string,
+    adminAddress?: string,
   ): Promise<void> {
-    return this.dispatch('DISPUTED', escrow, adminAddress);
+    const adminEmail = this.config?.get<string>('ADMIN_NOTIFICATION_EMAIL');
+    if (!adminEmail) {
+      this.logger.warn(
+        `ADMIN_NOTIFICATION_EMAIL is not configured — skipping admin dispute notification for escrow ${escrow.id}`,
+      );
+      return;
+    }
+    return this.dispatchEmail('DISPUTED', escrow, adminEmail);
   }
 
   /**
@@ -265,8 +269,8 @@ export class NotificationsService implements OnModuleInit {
    * Resolution order:
    *  1. Decrypt buyerContactEmail  → send email to that address
    *  2. Decrypt buyerContactPhone  → send SMS to that number
-   *  3. Neither stored             → fall back to buyerAddress (Stellar key)
-   *     so the notification record is still written, even if undeliverable.
+   *  3. Neither stored             → record notification as undeliverable without
+   *     calling a provider (issue #946).
    *
    * Decryption failures are caught and logged rather than thrown — a bad
    * ciphertext should not block state transitions that triggered the notify.
@@ -299,14 +303,27 @@ export class NotificationsService implements OnModuleInit {
     }
 
     if (!resolvedEmail && !resolvedPhone) {
-      // No contact info stored yet — fall back to Stellar address so the
-      // notification row is still written for audit purposes.
+      // No contact info stored yet — record as undeliverable without calling a provider (issue #946)
       this.logger.warn(
-        `No buyer contact info for escrow ${escrow.id} — falling back to Stellar address`,
+        `No buyer contact info for escrow ${escrow.id} — recording notification as undeliverable without calling a provider`,
       );
-      await this.dispatch(type, escrow, escrow.buyerAddress);
+      await this.recordUndeliverable(
+        type,
+        escrow,
+        'EMAIL',
+        escrow.buyerAddress,
+        'no buyer contact details available',
+      );
+      await this.recordUndeliverable(
+        type,
+        escrow,
+        'SMS',
+        escrow.buyerAddress,
+        'no buyer contact details available',
+      );
     }
   }
+
 
   /**
    * Resolves the vendor's real contact channels from VendorProfile. A missing
@@ -405,6 +422,33 @@ export class NotificationsService implements OnModuleInit {
   }
 
   /**
+   * Records the audit row for a notification that was never attempted (issue #946),
+   * such as when recipient is an undeliverable Stellar public key or buyer contact details are missing.
+   * `attemptCount` stays 0 because no provider call was made.
+   */
+  private async recordUndeliverable(
+    type: NotificationType,
+    escrow: EscrowRecord,
+    channel: 'EMAIL' | 'SMS',
+    recipientAddress: string,
+    reason: string,
+  ): Promise<void> {
+    this.logger.warn(
+      `Cannot send ${type} ${channel} to ${recipientAddress}: ${reason}`,
+    );
+    await this.createNotification({
+      escrowId: escrow.id,
+      type,
+      channel,
+      recipientAddress,
+      message: `${type}: ${escrow.itemName}`,
+      providerMessageId: null,
+      attemptCount: 0,
+      lastResponseCode: null,
+    });
+  }
+
+  /**
    * #839 — Records the audit row for an email that was never attempted, and
    * logs why.
    *
@@ -462,6 +506,18 @@ export class NotificationsService implements OnModuleInit {
     let providerMessageId: string | null = null;
     let attemptCount = 0;
     let lastResponseCode: number | null = null;
+
+    if (recipientAddress.startsWith('G')) {
+      await this.recordUndeliverable(
+        type,
+        escrow,
+        'EMAIL',
+        recipientAddress,
+        `recipient address is a Stellar public key, not an email address [Request-ID: ${requestId}]`,
+      );
+      return;
+    }
+
 
     // #839 — Resolve the sender and the template id BEFORE the retry loop.
     //
@@ -562,6 +618,18 @@ export class NotificationsService implements OnModuleInit {
     let providerMessageId: string | null = null;
     let attemptCount = 0;
     let lastResponseCode: number | null = null;
+
+    if (recipientAddress.startsWith('G')) {
+      await this.recordUndeliverable(
+        type,
+        escrow,
+        'SMS',
+        recipientAddress,
+        `recipient address is a Stellar public key, not a phone number [Request-ID: ${requestId}]`,
+      );
+      return;
+    }
+
 
     while (attemptCount < MAX_ATTEMPTS) {
       attemptCount++;

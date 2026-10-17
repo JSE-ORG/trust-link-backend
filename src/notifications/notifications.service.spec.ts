@@ -11,6 +11,7 @@ import {
 import { NotificationRepository } from './notification.repository';
 import { ensureVendors } from '../../test/prisma-helpers';
 import { VendorProfileRepository } from '../vendor/vendor-profile.repository';
+import * as contactEncryption from '../common/sanitization/contact-encryption.util';
 
 /** A syntactically valid SendGrid dynamic template id (d- + 32 hex). */
 function templateId(seed: string): string {
@@ -183,11 +184,19 @@ describe('NotificationsService', () => {
     });
 
     it('dispatches SMS via Twilio and records providerMessageId', async () => {
-      await service.notifyShipped(escrow);
+      const buyerPhone = '+15551234567';
+      jest
+        .spyOn(contactEncryption, 'decryptContact')
+        .mockReturnValue(buyerPhone);
+      const escrowWithPhone = {
+        ...escrow,
+        buyerContactPhone: 'enc-phone',
+      };
+      await service.notifyShipped(escrowWithPhone);
 
       expect(twilio.messages.create).toHaveBeenCalledTimes(1);
       expect(twilio.messages.create).toHaveBeenCalledWith(
-        expect.objectContaining({ to: escrow.buyerAddress }),
+        expect.objectContaining({ to: buyerPhone }),
       );
 
       const notifications = await prisma.notification.findMany();
@@ -196,6 +205,7 @@ describe('NotificationsService', () => {
       expect(smsRecord!.type).toBe('SHIPPED');
       expect(smsRecord!.providerMessageId).toBe('SM123');
     });
+
 
     it('creates a notification record for each dispatch', async () => {
       await service.notifyFunded(escrow);
@@ -469,8 +479,6 @@ describe('NotificationsService', () => {
 
 // ── Issue #726 — channel selection + provider error parsing ──────────────────
 
-import * as contactEncryption from '../common/sanitization/contact-encryption.util';
-
 describe('NotificationsService (#726) — channel selection', () => {
   // Uses an in-memory prisma stub — no Postgres required.
   // The stub captures notification.create calls so we can inspect which
@@ -597,12 +605,15 @@ describe('NotificationsService (#726) — channel selection', () => {
 
     await service.notifyShipped(escrow);
 
-    // dispatch() sends both EMAIL and SMS to the Stellar address
+    // Records EMAIL and SMS as undeliverable without calling providers (issue #946)
     expect(created.length).toBeGreaterThanOrEqual(1);
     for (const n of created) {
       expect(n.recipientAddress).toBe('GBUYER_NO_CONTACT');
+      expect(n.attemptCount).toBe(0);
+      expect(n.providerMessageId).toBeNull();
     }
   });
+
 });
 
 describe('NotificationsService (#726) — extractResponseCode shapes', () => {
@@ -1014,3 +1025,155 @@ describe('NotificationsService SendGrid sender and template ids (#839)', () => {
     expect(() => svc.onModuleInit()).not.toThrow();
   });
 });
+
+describe('NotificationsService (#946) — stop sending to Stellar addresses', () => {
+  const stubEscrow: EscrowRecord = {
+    id: 'escrow-946',
+    contractEscrowId: null,
+    itemName: 'Widget',
+    itemRef: 'ref-946',
+    amount: 100,
+    currency: 'USDC',
+    buyerAddress: 'GBUYER946_STELLAR_KEY_LONGER_THAN_50_CHARS_TEST',
+    vendorAddress: 'GVENDOR946_STELLAR_KEY_LONGER_THAN_50_CHARS_TEST',
+    state: 'DISPUTED',
+    trackingId: null,
+    shippedAt: null,
+    deliveredAt: null,
+    deliveryRecordedAt: null,
+    autoReleaseSubmittedAt: null,
+    autoReleaseTxHash: null,
+    disputeId: null,
+    cancelledAt: null,
+    createdAt: new Date('2026-01-01T00:00:00.000Z'),
+    updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+  };
+
+  function makeRepo(created: Array<Record<string, unknown>>) {
+    return {
+      create: jest.fn((data: unknown) => {
+        created.push(data as Record<string, unknown>);
+        return Promise.resolve(data);
+      }),
+    } as unknown as NotificationRepository;
+  }
+
+  it('notifies admin via SendGrid when ADMIN_NOTIFICATION_EMAIL is configured', async () => {
+    const created: Array<Record<string, unknown>> = [];
+    const sendGrid = { send: jest.fn().mockResolvedValue([{ headers: {} }]) };
+    const twilio = { messages: { create: jest.fn() } };
+    const config = emailConfig({
+      ...EMAIL_CONFIG,
+      ADMIN_NOTIFICATION_EMAIL: 'admin@trustlink.org',
+    });
+
+    const svc = new NotificationsService(
+      makeRepo(created),
+      sendGrid as unknown as any,
+      twilio as unknown as any,
+      config,
+    );
+
+    await svc.notifyDisputedAdmin(
+      stubEscrow,
+      'GADMIN_STELLAR_KEY_SHOULD_NOT_BE_SENT',
+    );
+
+    expect(sendGrid.send).toHaveBeenCalledTimes(1);
+    expect(sendGrid.send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: 'admin@trustlink.org',
+      }),
+    );
+    expect(sendGrid.send).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: expect.stringMatching(/^G/),
+      }),
+    );
+    expect(twilio.messages.create).not.toHaveBeenCalled();
+  });
+
+  it('skips admin notification with a warning when ADMIN_NOTIFICATION_EMAIL is unset', async () => {
+    const created: Array<Record<string, unknown>> = [];
+    const sendGrid = { send: jest.fn() };
+    const twilio = { messages: { create: jest.fn() } };
+    const config = emailConfig({
+      ...EMAIL_CONFIG,
+      ADMIN_NOTIFICATION_EMAIL: undefined,
+    });
+
+    const svc = new NotificationsService(
+      makeRepo(created),
+      sendGrid as unknown as any,
+      twilio as unknown as any,
+      config,
+    );
+
+    await svc.notifyDisputedAdmin(
+      stubEscrow,
+      'GADMIN_STELLAR_KEY_SHOULD_NOT_BE_SENT',
+    );
+
+    expect(sendGrid.send).not.toHaveBeenCalled();
+    expect(twilio.messages.create).not.toHaveBeenCalled();
+    expect(created).toHaveLength(0);
+  });
+
+  it('records buyer notification as undeliverable without calling providers when contact info is missing', async () => {
+    const created: Array<Record<string, unknown>> = [];
+    const sendGrid = { send: jest.fn() };
+    const twilio = { messages: { create: jest.fn() } };
+    const config = emailConfig(EMAIL_CONFIG);
+
+    const svc = new NotificationsService(
+      makeRepo(created),
+      sendGrid as unknown as any,
+      twilio as unknown as any,
+      config,
+    );
+
+    await svc.notifyCompleted(stubEscrow);
+
+    expect(sendGrid.send).not.toHaveBeenCalled();
+    expect(twilio.messages.create).not.toHaveBeenCalled();
+
+    expect(created.length).toBeGreaterThanOrEqual(1);
+    for (const row of created) {
+      expect(row.recipientAddress).toBe(stubEscrow.buyerAddress);
+      expect(row.attemptCount).toBe(0);
+      expect(row.providerMessageId).toBeNull();
+    }
+  });
+
+  it('neither SendGrid nor Twilio is called when a recipient address starts with G', async () => {
+    const created: Array<Record<string, unknown>> = [];
+    const sendGrid = { send: jest.fn() };
+    const twilio = { messages: { create: jest.fn() } };
+    const config = emailConfig(EMAIL_CONFIG);
+
+    const svc = new NotificationsService(
+      makeRepo(created),
+      sendGrid as unknown as any,
+      twilio as unknown as any,
+      config,
+    );
+
+    await (svc as any).dispatchEmail(
+      'SHIPPED',
+      stubEscrow,
+      'GSTELLARPUBLICKEYEXAMPLE',
+    );
+    await (svc as any).dispatchSms(
+      'SHIPPED',
+      stubEscrow,
+      'GSTELLARPUBLICKEYEXAMPLE',
+    );
+
+    expect(sendGrid.send).not.toHaveBeenCalled();
+    expect(twilio.messages.create).not.toHaveBeenCalled();
+    expect(created).toHaveLength(2);
+    expect(created[0].attemptCount).toBe(0);
+    expect(created[1].attemptCount).toBe(0);
+  });
+});
+

@@ -213,6 +213,12 @@ export const configValidationSchema = Joi.object({
     'any.required': 'Config validation error: CONTRACT_ID is required',
   }),
   ADMIN_ADDRESS: stellarPublicKey.required(),
+  // Optional email address for admin dispute notifications (issue #946).
+  // If unset, admin dispute alerts are skipped with a warning.
+  ADMIN_NOTIFICATION_EMAIL: Joi.string().email().optional().messages({
+    'string.email':
+      'Config validation error: ADMIN_NOTIFICATION_EMAIL must be a valid email address',
+  }),
   AUTO_RELEASE_SOURCE_ADDRESS: Joi.string()
     .pattern(/^G[A-Z2-7]{55}$/)
     .optional()
