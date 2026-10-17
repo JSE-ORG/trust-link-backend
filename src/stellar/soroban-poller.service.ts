@@ -84,6 +84,8 @@ interface GetEventsResponse {
  */
 const EVENT_TYPE_OVERRIDES: Readonly<Record<string, string>> = {
   EscrowReleased: 'AutoReleased',
+  EscrowCanceled: 'EscrowCancelled',
+  EscrowCancelled: 'EscrowCancelled',
 };
 
 /**
@@ -229,14 +231,14 @@ export class SorobanPollerService implements OnModuleInit, OnModuleDestroy {
 
   private async pollInternal(): Promise<void> {
     try {
-      let cursor = await this.cursorService.get();
+      let cursor = await this.cursorService.get(CursorService.SOROBAN_POLLER_KEY);
       if (!cursor) {
         const startLedger = await this.resolveStartLedger();
         cursor = `${LEDGER_CURSOR_PREFIX}${startLedger}`;
         // Persist before the first fetch so a restart resumes from this
         // ledger instead of computing a new starting point and skipping the
         // gap.
-        await this.cursorService.set(cursor);
+        await this.cursorService.set(cursor, CursorService.SOROBAN_POLLER_KEY);
         this.logger.log(
           `SorobanPollerService: no cursor stored — starting from ledger ${startLedger}`,
         );
@@ -244,6 +246,12 @@ export class SorobanPollerService implements OnModuleInit, OnModuleDestroy {
       const rawEvents = await this.fetchEvents(cursor);
 
       if (rawEvents.length === 0) {
+        // Issue #917: Advance cursor even when contract is quiet so startLedger stays fresh
+        const latestLedger = await this.getLatestLedger().catch(() => null);
+        if (latestLedger && cursor.startsWith(LEDGER_CURSOR_PREFIX)) {
+          const newStartLedger = Math.max(1, latestLedger - START_LEDGER_MARGIN);
+          await this.cursorService.set(`${LEDGER_CURSOR_PREFIX}${newStartLedger}`, CursorService.SOROBAN_POLLER_KEY);
+        }
         return;
       }
 
@@ -257,15 +265,6 @@ export class SorobanPollerService implements OnModuleInit, OnModuleDestroy {
         try {
           await this.processEvent(raw);
         } catch (err) {
-          // Issue #554: stop advancing the cursor at the first event that
-          // couldn't be applied. The batch is fetched in ledger order and
-          // syncStateFromChain's own switch cases assume prior transitions
-          // already landed (e.g. EscrowShipped assumes EscrowFunded already
-          // happened) — continuing past a failure and applying later events
-          // out of order risks a worse, harder-to-detect state-machine bug
-          // than the at-least-once redelivery this trades for. The next
-          // poll cycle re-fetches from the same (unmoved) cursor and
-          // retries this exact event first.
           this.logger.error(
             `SorobanPollerService: stopping batch at event "${raw.id}" — will retry next poll cycle`,
             err instanceof Error ? err.stack : String(err),
@@ -276,7 +275,7 @@ export class SorobanPollerService implements OnModuleInit, OnModuleDestroy {
       }
 
       if (lastPagingToken) {
-        await this.cursorService.set(lastPagingToken);
+        await this.cursorService.set(lastPagingToken, CursorService.SOROBAN_POLLER_KEY);
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

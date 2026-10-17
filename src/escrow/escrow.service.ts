@@ -1048,6 +1048,18 @@ export class EscrowService {
         return { skipped: false };
       }
 
+      case 'EscrowCancelled':
+      case 'EscrowCanceled': {
+        if (escrow.state === 'CANCELLED' || TERMINAL_STATES.has(escrow.state)) {
+          return { skipped: true, reason: 'already_cancelled_or_terminal' };
+        }
+        const cancelled = await this.escrowRepository.markCancelled(escrowId);
+        this.notificationsService
+          .notifyCancelled(cancelled)
+          .catch((err) => this.logger.error('notifyCancelled failed', err));
+        return { skipped: false };
+      }
+
       case 'DisputeRaised': {
         if (escrow.state === 'DISPUTED') {
           return { skipped: true, reason: 'already_disputed' };
@@ -1107,7 +1119,7 @@ export class EscrowService {
         if (TERMINAL_STATES.has(escrow.state)) {
           return { skipped: true, reason: 'terminal_state' };
         }
-        const txHash = event.txHash ?? '';
+        const txHash = event.txHash || escrow.autoReleaseTxHash || '';
         const released = await this.escrowRepository.markAutoReleased(
           escrowId,
           txHash,

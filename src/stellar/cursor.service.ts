@@ -11,7 +11,8 @@ import { TracingService } from '../tracing/tracing.service';
 @Injectable()
 export class CursorService {
   private readonly logger = new Logger(CursorService.name);
-  private static readonly CURSOR_KEY = 'stellar-listener';
+  public static readonly DEFAULT_KEY = 'stellar-listener';
+  public static readonly SOROBAN_POLLER_KEY = 'soroban-poller';
 
   constructor(
     private readonly cursorRepository: CursorRepository,
@@ -37,15 +38,13 @@ export class CursorService {
    * Read the persisted cursor value. Returns `undefined` when no cursor has
    * been stored yet (first run).
    */
-  async get(): Promise<string | undefined> {
-    return this.traced('stellar.cursor.get', {}, () => this.getInternal());
+  async get(key: string = CursorService.DEFAULT_KEY): Promise<string | undefined> {
+    return this.traced('stellar.cursor.get', {}, () => this.getInternal(key));
   }
 
-  private async getInternal(): Promise<string | undefined> {
+  private async getInternal(key: string): Promise<string | undefined> {
     try {
-      const record = await this.cursorRepository.findById(
-        CursorService.CURSOR_KEY,
-      );
+      const record = await this.cursorRepository.findById(key);
       return record?.cursorValue ?? undefined;
     } catch (err) {
       this.logger.warn(
@@ -61,15 +60,15 @@ export class CursorService {
    * batch processing so the listener can resume from the last processed
    * position after a restart.
    */
-  async set(cursorValue: string): Promise<void> {
+  async set(cursorValue: string, key: string = CursorService.DEFAULT_KEY): Promise<void> {
     return this.traced('stellar.cursor.set', {}, () =>
-      this.setInternal(cursorValue),
+      this.setInternal(cursorValue, key),
     );
   }
 
-  private async setInternal(cursorValue: string): Promise<void> {
+  private async setInternal(cursorValue: string, key: string): Promise<void> {
     try {
-      await this.cursorRepository.upsert(CursorService.CURSOR_KEY, cursorValue);
+      await this.cursorRepository.upsert(key, cursorValue);
     } catch (err) {
       this.logger.warn(
         'Failed to persist cursor to DB: ' +
