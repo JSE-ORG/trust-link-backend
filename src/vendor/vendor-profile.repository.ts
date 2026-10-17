@@ -9,6 +9,7 @@ import { CreateVendorProfileDto } from './dto/create-vendor-profile.dto';
 import { UpdateVendorProfileDto } from './dto/update-vendor-profile.dto';
 import { UpdateNotificationPreferencesDto } from './dto/update-notification-preferences.dto';
 import { NotificationPreferencesResponseDto } from './dto/notification-preferences-response.dto';
+import { DEFAULT_NOTIFICATION_CHANNELS } from './vendor.constants';
 
 @Injectable()
 export class VendorProfileRepository {
@@ -82,7 +83,8 @@ export class VendorProfileRepository {
         notifyOnDelivery: dto.notifyOnDelivery ?? true,
         notifyOnDelay: dto.notifyOnDelay ?? true,
         notifyOnException: dto.notifyOnException ?? true,
-        notificationChannels: dto.notificationChannels ?? ['EMAIL'],
+        notificationChannels:
+          dto.notificationChannels ?? [...DEFAULT_NOTIFICATION_CHANNELS],
         webhookUrl: dto.webhookUrl ?? null,
         webhookSecret: dto.webhookSecret ?? null,
       },
@@ -125,7 +127,8 @@ export class VendorProfileRepository {
       notifyOnDelivery: settings?.notifyOnDelivery ?? true,
       notifyOnDelay: settings?.notifyOnDelay ?? true,
       notifyOnException: settings?.notifyOnException ?? true,
-      notificationChannels: settings?.notificationChannels ?? ['EMAIL'],
+      notificationChannels:
+        settings?.notificationChannels ?? [...DEFAULT_NOTIFICATION_CHANNELS],
       webhookUrl: settings?.webhookUrl ?? null,
       enableTracking: settings?.enableTracking ?? true,
       delayThresholdHours: settings?.delayThresholdHours ?? 24,
