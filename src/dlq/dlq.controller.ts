@@ -215,6 +215,10 @@ export class DlqController {
     status: 404,
     description: 'Failed transaction record not found.',
   })
+  @ApiResponse({
+    status: 409,
+    description: 'Failed transaction record is not in pending review status.',
+  })
   @ApiParam({ name: 'id', example: 'abc123-def4-5678-90ab-cdef12345678' })
   @Throttle({ default: { limit: 5, ttl: THROTTLE_WINDOW_MS } })
   @Post(':id/abandon')

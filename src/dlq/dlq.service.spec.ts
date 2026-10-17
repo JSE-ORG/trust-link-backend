@@ -217,7 +217,7 @@ describe('DlqService', () => {
   });
 
   describe('abandon', () => {
-    it('should mark record as ABANDONED', async () => {
+    it('should mark record as ABANDONED when status is PENDING_REVIEW', async () => {
       repoMock.findById.mockResolvedValue(mockRecord);
       repoMock.markAbandoned.mockResolvedValue({
         ...mockRecord,
@@ -227,6 +227,28 @@ describe('DlqService', () => {
       const result = await service.abandon('test-id-1');
       expect(result.status).toBe('ABANDONED');
       expect(repoMock.markAbandoned).toHaveBeenCalledWith('test-id-1');
+    });
+
+    it('refuses to abandon a REPLAYED record and throws ConflictException', async () => {
+      const replayedRecord = { ...mockRecord, status: 'REPLAYED' };
+      repoMock.findById.mockResolvedValue(replayedRecord);
+
+      await expect(service.abandon('test-id-1')).rejects.toThrow(
+        ConflictException,
+      );
+      await expect(service.abandon('test-id-1')).rejects.toThrow(/REPLAYED/);
+      expect(repoMock.markAbandoned).not.toHaveBeenCalled();
+    });
+
+    it('refuses to abandon an already ABANDONED record and throws ConflictException', async () => {
+      const abandonedRecord = { ...mockRecord, status: 'ABANDONED' };
+      repoMock.findById.mockResolvedValue(abandonedRecord);
+
+      await expect(service.abandon('test-id-1')).rejects.toThrow(
+        ConflictException,
+      );
+      await expect(service.abandon('test-id-1')).rejects.toThrow(/ABANDONED/);
+      expect(repoMock.markAbandoned).not.toHaveBeenCalled();
     });
   });
 
