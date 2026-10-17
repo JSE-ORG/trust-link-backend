@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { AnalyticsService } from './analytics.service';
+import { AnalyticsRepository } from './analytics.repository';
 import { EscrowState, PrismaService } from '../../prisma/prisma.service';
 import { ensureVendors } from '../../../test/prisma-helpers';
 import { DailyVolumeDataDto } from './analytics.dto';
@@ -12,12 +13,14 @@ describe('AnalyticsService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AnalyticsService,
+        AnalyticsRepository,
         {
           provide: PrismaService,
           useValue: new PrismaService(),
         },
       ],
     }).compile();
+
 
     service = module.get<AnalyticsService>(AnalyticsService);
     prisma = module.get<PrismaService>(PrismaService);
@@ -526,7 +529,7 @@ describe('AnalyticsService', () => {
       expect(result.stats.averageTransactionValue).toBe(130);
     });
 
-    it('returns channel metrics as false when no tracking settings exist', async () => {
+    it('defaults email=true and sms=false when vendor has no settings row', async () => {
       await prisma.escrow.create({
         data: {
           vendorAddress: '0xVendorNoSettings',
@@ -541,7 +544,7 @@ describe('AnalyticsService', () => {
 
       const result = await service.getTransactionStats('0xVendorNoSettings');
 
-      expect(result.channels.email.notificationsEnabled).toBe(false);
+      expect(result.channels.email.notificationsEnabled).toBe(true);
       expect(result.channels.sms.notificationsEnabled).toBe(false);
     });
 
@@ -866,8 +869,10 @@ describe('AnalyticsService.getTransactionStats aggregation (#843)', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AnalyticsService,
+        AnalyticsRepository,
         { provide: PrismaService, useValue: new PrismaService() },
       ],
+
     }).compile();
 
     service = module.get<AnalyticsService>(AnalyticsService);
