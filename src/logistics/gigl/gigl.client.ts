@@ -7,8 +7,8 @@ import { GiglTrackingResponse } from './gigl.types';
 export interface GiglClientOptions {
   /** Base URL of the GIGL API, e.g. "https://api.gigl.com/v1" */
   baseUrl: string;
-  /** Bearer token / API key issued by GIGL. */
-  apiToken: string;
+  /** Function that returns the current Bearer token / API key. */
+  getApiToken: () => string | null;
   /** Request timeout in milliseconds (default: 10 000). */
   timeoutMs?: number;
 }
@@ -100,13 +100,14 @@ function isValidGiglResponse(data: unknown): data is GiglTrackingResponse {
  */
 export class GiglClient {
   private readonly http: AxiosInstance;
+  private readonly getApiToken: () => string | null;
 
   constructor(options: GiglClientOptions) {
+    this.getApiToken = options.getApiToken;
     this.http = axios.create({
       baseURL: options.baseUrl,
       timeout: options.timeoutMs ?? 10_000,
       headers: {
-        Authorization: `Bearer ${options.apiToken}`,
         'Content-Type': 'application/json',
       },
     });
@@ -122,9 +123,19 @@ export class GiglClient {
    *   the expected tracking-payload schema
    */
   async fetchTracking(trackingNumber: string): Promise<GiglTrackingResponse> {
+    const apiToken = this.getApiToken();
+    if (!apiToken) {
+      throw new GiglUnauthorizedError(trackingNumber);
+    }
+
     try {
       const response = await this.http.get<GiglTrackingResponse>(
         `/tracking/${encodeURIComponent(trackingNumber)}`,
+        {
+          headers: {
+            Authorization: `Bearer ${apiToken}`,
+          },
+        },
       );
       if (!isValidGiglResponse(response.data)) {
         throw new GiglInvalidResponseError(

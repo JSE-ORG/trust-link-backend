@@ -62,17 +62,19 @@ export class AuditLogRepository {
   async findPage(options: {
     skip: number;
     take: number;
+    where?: Record<string, unknown>;
   }): Promise<AuditLogEntry[]> {
     const records = await this.prisma.auditLog.findMany({
       skip: options.skip,
       take: options.take,
+      where: options.where,
       orderBy: { occurredAt: 'desc' },
     });
     return records.map(toAuditLogEntry);
   }
 
-  /** Counts every recorded action, for the page count alongside a page. */
-  count(): Promise<number> {
-    return this.prisma.auditLog.count();
+  /** Counts recorded actions matching the filter, for the page count alongside a page. */
+  count(where?: Record<string, unknown>): Promise<number> {
+    return this.prisma.auditLog.count({ where });
   }
 }

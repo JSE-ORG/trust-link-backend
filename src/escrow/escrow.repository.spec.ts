@@ -567,6 +567,49 @@ describe('EscrowRepository', () => {
           ]),
         );
       });
+
+      it('excludes escrows when the vendor has tracking disabled (#945)', async () => {
+        const vendor = 'vendor-tracking-disabled';
+        await prisma.vendorProfile.create({
+          data: {
+            address: vendor,
+            businessName: 'No Tracking Vendor',
+            trackingSettings: {
+              create: {
+                enableTracking: false,
+              },
+            },
+          },
+        });
+
+        const escrow = await repo.create(
+          { ...makeDto(), itemRef: 'ref-tracking-disabled' },
+          vendor,
+        );
+        await repo.markShipped(escrow.id, 'TRACK-DISABLED');
+
+        const rows = await repo.findShippedWithTracking();
+        expect(rows.map((r) => r.id)).not.toContain(escrow.id);
+      });
+
+      it('includes escrows when the vendor has no tracking settings row (defaults to true) (#945)', async () => {
+        const vendor = 'vendor-no-settings';
+        await prisma.vendorProfile.create({
+          data: {
+            address: vendor,
+            businessName: 'No Settings Vendor',
+          },
+        });
+
+        const escrow = await repo.create(
+          { ...makeDto(), itemRef: 'ref-no-settings' },
+          vendor,
+        );
+        await repo.markShipped(escrow.id, 'TRACK-DEFAULT');
+
+        const rows = await repo.findShippedWithTracking();
+        expect(rows.map((r) => r.id)).toContain(escrow.id);
+      });
     });
 
     it('claims auto-release once and allows it to be cleared for a retry', async () => {

@@ -7,6 +7,7 @@ import {
   Injectable,
   InternalServerErrorException,
   NotFoundException,
+  ServiceUnavailableException,
   Logger,
   Optional,
 } from '@nestjs/common';
@@ -26,6 +27,11 @@ import { S3PresignService } from '../common/services/s3-presign.service';
 import { EscrowRepository } from './escrow.repository';
 import { UpdateBuyerContactDto } from './dto/update-buyer-contact.dto';
 import { encryptContact } from '../common/sanitization/contact-encryption.util';
+import { VENDOR_PROFILE_PLACEHOLDER_DESCRIPTION } from '../vendor/vendor-profile.constants';
+import {
+  encryptContact,
+  isContactEncryptionConfigured,
+} from '../common/sanitization/contact-encryption.util';
 import { TracingService } from '../tracing/tracing.service';
 import { EventsResult } from './escrow.types';
 import {
@@ -265,7 +271,11 @@ export class EscrowService {
     if (!this.prisma) return;
     await this.prisma.vendorProfile.upsert({
       where: { address: vendorAddress },
-      create: { address: vendorAddress, businessName: vendorAddress },
+      create: {
+        address: vendorAddress,
+        businessName: vendorAddress,
+        description: VENDOR_PROFILE_PLACEHOLDER_DESCRIPTION,
+      },
       update: {},
     });
   }
@@ -924,6 +934,12 @@ export class EscrowService {
     if (TERMINAL_STATES.has(escrow.state)) {
       throw new ConflictException(
         `Cannot update buyer contact for an escrow in ${escrow.state} state.`,
+      );
+    }
+
+    if (!isContactEncryptionConfigured()) {
+      throw new ServiceUnavailableException(
+        'Buyer contact encryption is not configured.',
       );
     }
 

@@ -6,6 +6,7 @@ import {
   Param,
   Post,
   Query,
+  Req,
   ServiceUnavailableException,
   UseGuards,
 } from '@nestjs/common';
@@ -33,6 +34,7 @@ import {
 } from '../config/config.service';
 import { EscrowRepository } from '../escrow/escrow.repository';
 import { ListFailedTransactionsQueryDto } from './dto/list-failed-transactions-query.dto';
+import { AuditLogService } from '../audit-log/audit-log.service';
 
 /**
  * Admin endpoints for reviewing and re-executing failed Stellar contract
@@ -49,6 +51,7 @@ export class DlqController {
     private readonly contract: ContractService,
     private readonly config: ConfigService,
     private readonly escrows: EscrowRepository,
+    private readonly auditLog: AuditLogService,
   ) {}
 
   /**
@@ -151,6 +154,8 @@ export class DlqController {
    * Re-execute the original operation. Today the only auto-retryable operation
    * is auto-release; other operations are flagged and must be replayed by
    * hand. Either way the record is updated on the outcome.
+   * 
+   * Issue #953: Successful replays are logged to the audit trail.
    */
   @ApiOperation({ summary: 'Replay a failed on-chain transaction attempt' })
   @ApiResponse({
@@ -167,9 +172,9 @@ export class DlqController {
   @ApiParam({ name: 'id', example: 'abc123-def4-5678-90ab-cdef12345678' })
   @Throttle({ default: { limit: 5, ttl: THROTTLE_WINDOW_MS } })
   @Post(':id/replay')
-  async replay(@Param('id') id: string) {
+  async replay(@Param('id') id: string, @Req() req: any) {
     const record = await this.dlq.get(id);
-    return this.dlq.replay(record.id, async (r) => {
+    const result = await this.dlq.replay(record.id, async (r) => {
       if (r.operation === 'submitAutoRelease' && r.escrowId) {
         // `auto_release(env, escrow_id: u64)` takes the contract's own id.
         // The DLQ record carries the backend UUID, so it has to be translated
@@ -194,6 +199,21 @@ export class DlqController {
         `Operation "${r.operation}" cannot be replayed automatically; replay manually.`,
       );
     });
+
+    // Issue #953: Audit successful replay
+    const adminAddress = req.user?.walletAddress || 'unknown';
+    await this.auditLog.append({
+      action: 'DLQ_REPLAYED',
+      adminAddress,
+      entityType: 'failed_transaction',
+      entityId: id,
+      details: {
+        txHash: result.lastReplayTxHash,
+        operation: result.operation,
+      },
+    });
+
+    return result;
   }
 
   @ApiOperation({
@@ -214,7 +234,21 @@ export class DlqController {
   @ApiParam({ name: 'id', example: 'abc123-def4-5678-90ab-cdef12345678' })
   @Throttle({ default: { limit: 5, ttl: THROTTLE_WINDOW_MS } })
   @Post(':id/abandon')
-  abandon(@Param('id') id: string) {
-    return this.dlq.abandon(id);
+  async abandon(@Param('id') id: string, @Req() req: any) {
+    const result = await this.dlq.abandon(id);
+
+    // Issue #953: Audit abandon action
+    const adminAddress = req.user?.walletAddress || 'unknown';
+    await this.auditLog.append({
+      action: 'DLQ_ABANDONED',
+      adminAddress,
+      entityType: 'failed_transaction',
+      entityId: id,
+      details: {
+        operation: result.operation,
+      },
+    });
+
+    return result;
   }
 }

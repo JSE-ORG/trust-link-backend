@@ -14,6 +14,7 @@ import { UpdateNotificationPreferencesDto } from './dto/update-notification-pref
 import { NotificationPreferencesResponseDto } from './dto/notification-preferences-response.dto';
 import { VendorProfileRepository } from './vendor-profile.repository';
 import { TracingService } from '../tracing/tracing.service';
+import { VENDOR_PROFILE_PLACEHOLDER_DESCRIPTION } from './vendor-profile.constants';
 
 @Injectable()
 export class VendorProfileService {
@@ -60,6 +61,9 @@ export class VendorProfileService {
     return this.traced('profile.create', address, async () => {
       const existing = await this.repository.findByAddress(address);
       if (existing) {
+        if (existing.description === VENDOR_PROFILE_PLACEHOLDER_DESCRIPTION) {
+          return this.repository.upsert(address, dto);
+        }
         throw new ConflictException('Vendor profile already exists');
       }
       return this.repository.create(address, dto);
@@ -95,6 +99,12 @@ export class VendorProfileService {
       const profile = await this.repository.findByAddress(address);
       if (!profile) {
         throw new NotFoundException('Vendor profile not found');
+      }
+      if (profile.description === VENDOR_PROFILE_PLACEHOLDER_DESCRIPTION) {
+        return {
+          ...profile,
+          description: null,
+        };
       }
       return profile;
     });

@@ -316,17 +316,30 @@ export class EscrowRepository {
   }
 
   /**
-   * Returns all SHIPPED escrows that have a non-null trackingId,
-   * used by the tracking poll worker to check for delivery updates.
+   * Returns all SHIPPED escrows that have a non-null trackingId and belong to
+   * vendors with tracking enabled (or with no settings row, defaulting to true),
+   * used by the tracking poll worker to check for delivery updates (#945).
    */
   findShippedWithTracking(): Promise<EscrowRecord[]> {
     // Both predicates are in the `where` so Postgres can use the whole
     // `@@index([state, trackingId])` — previously the `trackingId` half ran
     // as a JS `.filter` after every SHIPPED row had already been loaded and
     // transferred (#669). `not: null` (never `not: undefined`) is what emits
-    // `IS NOT NULL`.
+    // `IS NOT NULL`. Vendor tracking settings are filtered in-query (#945).
     return this.prisma.escrow
-      .findMany({ where: { state: 'SHIPPED', trackingId: { not: null } } })
+      .findMany({
+        where: {
+          state: 'SHIPPED',
+          trackingId: { not: null },
+          vendor: {
+            NOT: {
+              trackingSettings: {
+                enableTracking: false,
+              },
+            },
+          },
+        },
+      })
       .then((escrows) => escrows.map(toEscrowRecord));
   }
 

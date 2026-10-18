@@ -1,5 +1,15 @@
 import { PartialType } from '@nestjs/swagger';
 import { CreateVendorProfileDto } from './create-vendor-profile.dto';
+import {
+  IsEmail,
+  IsOptional,
+  IsString,
+  Matches,
+  MaxLength,
+  MinLength,
+} from 'class-validator';
+import { Transform } from 'class-transformer';
+import { ApiPropertyOptional } from '@nestjs/swagger';
 
 /**
  * Request body for partially updating an existing vendor profile. All
@@ -10,3 +20,36 @@ export class UpdateVendorProfileDto extends PartialType(
   CreateVendorProfileDto,
 ) {}
 
+  @ApiPropertyOptional({
+    description: 'Updated contact email address for the vendor.',
+    format: 'email',
+    example: 'sales@acme-electronics.com',
+  })
+  @IsOptional()
+  @IsEmail({}, { message: 'Must be a valid email address' })
+  email?: string;
+
+  @ApiPropertyOptional({
+    description: 'Updated contact phone number for the vendor in E.164 format.',
+    maxLength: 20,
+    example: '+14155550142',
+  })
+  @IsOptional()
+  @IsString()
+  @Matches(/^\+[1-9]\d{6,14}$/, {
+    message: 'phone must be a valid E.164 number (e.g. +2348012345678)',
+  })
+  @MaxLength(20, { message: 'Phone must not exceed 20 characters' })
+  phone?: string;
+
+  @ApiPropertyOptional({
+    description: 'Updated short description of the vendor.',
+    maxLength: 500,
+    example:
+      'Authorized reseller of consumer electronics and camera equipment.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500, { message: 'Description must not exceed 500 characters' })
+  description?: string;
+}

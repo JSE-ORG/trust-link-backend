@@ -32,7 +32,7 @@ describe('Vendor profile CRUD (issue #292, issue #643)', () => {
   const validProfile = {
     businessName: 'Acme Goods',
     email: 'contact@acme.example',
-    phone: '+1-555-0100',
+    phone: '+15555550100',
     description: 'Quality vintage goods',
   };
 
@@ -82,7 +82,7 @@ describe('Vendor profile CRUD (issue #292, issue #643)', () => {
           address: VENDOR,
           businessName: 'Acme Goods',
           email: 'contact@acme.example',
-          phone: '+1-555-0100',
+          phone: '+15555550100',
         }),
       );
     });
@@ -103,6 +103,30 @@ describe('Vendor profile CRUD (issue #292, issue #643)', () => {
         .expect(400);
     });
 
+    it('returns 400 for an invalid phone number (#938)', async () => {
+      await request(app.getHttpServer())
+        .post('/vendor/profile')
+        .set('Authorization', AUTH)
+        .send({ businessName: 'Bad Phone Co', phone: '0801 234 5678' })
+        .expect(400);
+
+      await request(app.getHttpServer())
+        .post('/vendor/profile')
+        .set('Authorization', AUTH)
+        .send({ businessName: 'Bad Phone Co', phone: 'not-a-phone' })
+        .expect(400);
+    });
+
+    it('accepts a valid E.164 phone number (#938)', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/vendor/profile')
+        .set('Authorization', AUTH)
+        .send({ businessName: 'E164 Co', phone: '+2348012345678' })
+        .expect(201);
+
+      expect(res.body.phone).toBe('+2348012345678');
+    });
+
     it('returns 409 when the same vendor address creates a second profile', async () => {
       await request(app.getHttpServer())
         .post('/vendor/profile')
@@ -114,6 +138,36 @@ describe('Vendor profile CRUD (issue #292, issue #643)', () => {
         .post('/vendor/profile')
         .set('Authorization', AUTH)
         .send({ businessName: 'Dupe', email: 'dupe@example.com' })
+        .expect(409);
+    });
+
+    it('allows a vendor who created an escrow first to complete their profile with POST (#937)', async () => {
+      // 1. Placeholder created when vendor creates an escrow first
+      await prisma.vendorProfile.create({
+        data: {
+          address: VENDOR,
+          businessName: VENDOR,
+          description: '[placeholder]',
+        },
+      });
+
+      // 2. POST /vendor/profile succeeds with 201
+      const res = await request(app.getHttpServer())
+        .post('/vendor/profile')
+        .set('Authorization', AUTH)
+        .send(validProfile)
+        .expect(201);
+
+      expect(res.body.businessName).toBe(validProfile.businessName);
+      expect(res.body.email).toBe(validProfile.email);
+      expect(res.body.phone).toBe(validProfile.phone);
+      expect(res.body.description).toBe(validProfile.description);
+
+      // 3. Subsequent POST returns 409
+      await request(app.getHttpServer())
+        .post('/vendor/profile')
+        .set('Authorization', AUTH)
+        .send(validProfile)
         .expect(409);
     });
 
@@ -233,6 +287,36 @@ describe('Vendor profile CRUD (issue #292, issue #643)', () => {
         .set('Authorization', AUTH)
         .send({ businessName: 'Ghost' })
         .expect(404);
+    });
+
+    it('returns 400 when updating with an invalid phone number (#938)', async () => {
+      await request(app.getHttpServer())
+        .post('/vendor/profile')
+        .set('Authorization', AUTH)
+        .send(validProfile)
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .patch('/vendor/profile')
+        .set('Authorization', AUTH)
+        .send({ phone: '0801 234 5678' })
+        .expect(400);
+    });
+
+    it('updates phone when given a valid E.164 number (#938)', async () => {
+      await request(app.getHttpServer())
+        .post('/vendor/profile')
+        .set('Authorization', AUTH)
+        .send(validProfile)
+        .expect(201);
+
+      const res = await request(app.getHttpServer())
+        .patch('/vendor/profile')
+        .set('Authorization', AUTH)
+        .send({ phone: '+2348099998888' })
+        .expect(200);
+
+      expect(res.body.phone).toBe('+2348099998888');
     });
   });
 

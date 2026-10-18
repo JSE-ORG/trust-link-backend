@@ -6,6 +6,9 @@ import {
   Min,
   Max,
   IsBoolean,
+  IsIn,
+  Matches,
+  ArrayMaxSize,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -24,19 +27,23 @@ export class VirtualProfile {
   @ApiProperty({
     description: 'Target number of requests per second for this profile.',
     minimum: 1,
+    maximum: 1000,
     example: 50,
   })
   @IsNumber()
   @Min(1)
+  @Max(1000)
   requestsPerSecond!: number;
 
   @ApiProperty({
     description: 'Duration of the load profile in seconds.',
     minimum: 1,
+    maximum: 3600,
     example: 60,
   })
   @IsNumber()
   @Min(1)
+  @Max(3600)
   duration!: number;
 
   @ApiProperty({
@@ -44,6 +51,9 @@ export class VirtualProfile {
     example: '/api/escrows',
   })
   @IsString()
+  @Matches(/^\/[^@]*$/, {
+    message: 'endpoint must start with / and contain no @, scheme or host',
+  })
   endpoint!: string;
 
   @ApiPropertyOptional({
@@ -52,7 +62,7 @@ export class VirtualProfile {
     example: 'GET',
   })
   @IsOptional()
-  @IsString()
+  @IsIn(['GET', 'POST', 'PUT', 'DELETE', 'PATCH'])
   method?: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
 
   @ApiPropertyOptional({
@@ -107,8 +117,10 @@ export class StressTestConfigDto {
   @ApiProperty({
     description: 'One or more load profiles to run as part of the test.',
     type: [VirtualProfile],
+    maxItems: 10,
   })
   @IsArray()
+  @ArrayMaxSize(10)
   profiles!: VirtualProfile[];
 
   @ApiPropertyOptional({
