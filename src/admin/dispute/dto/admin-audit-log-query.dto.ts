@@ -1,6 +1,6 @@
 import { Type } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsInt, IsOptional, Max, Min } from 'class-validator';
+import { IsInt, IsOptional, Max, Min, IsString, IsDateString } from 'class-validator';
 
 export class AdminAuditLogQueryDto {
   @ApiPropertyOptional({ minimum: 1, maximum: 1_000_000, default: 1 })
@@ -18,4 +18,34 @@ export class AdminAuditLogQueryDto {
   @Min(1)
   @Max(100)
   limit?: number;
+
+  @ApiPropertyOptional({ description: 'Filter by action type' })
+  @IsOptional()
+  @IsString()
+  action?: string;
+
+  @ApiPropertyOptional({ description: 'Filter by entity type' })
+  @IsOptional()
+  @IsString()
+  entityType?: string;
+
+  @ApiPropertyOptional({ description: 'Filter by entity ID' })
+  @IsOptional()
+  @IsString()
+  entityId?: string;
+
+  @ApiPropertyOptional({ description: 'Filter by admin address' })
+  @IsOptional()
+  @IsString()
+  adminAddress?: string;
+
+  @ApiPropertyOptional({ description: 'Filter by date from (ISO 8601)' })
+  @IsOptional()
+  @IsDateString()
+  from?: string;
+
+  @ApiPropertyOptional({ description: 'Filter by date to (ISO 8601)' })
+  @IsOptional()
+  @IsDateString()
+  to?: string;
 }

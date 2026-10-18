@@ -22,6 +22,7 @@ import { JwtGuard } from '../../auth/guards/jwt.guard';
 import { AnalyticsService } from './analytics.service';
 import { ChartDataResponse } from './analytics.dto';
 import { AnalyticsStatsResponse } from './analytics-stats.dto';
+import { ChartQueryDto } from './chart-query.dto';
 
 @ApiTags('Vendor')
 @ApiBearerAuth()
@@ -98,6 +99,7 @@ export class AnalyticsController {
     description: 'Daily volume chart data returned.',
     type: ChartDataResponse,
   })
+  @ApiResponse({ status: 400, description: 'Bad request.' })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   @ApiResponse({ status: 403, description: 'Forbidden.' })
   @ApiResponse({ status: 429, description: 'Too many requests.' })
@@ -106,27 +108,15 @@ export class AnalyticsController {
   @Get('chart')
   @HttpCode(HttpStatus.OK)
   async getDailyVolumeChart(
-    @Query('days') daysParam?: string,
-    @Query('timezone') timezoneParam?: string,
+    @Query() query?: ChartQueryDto,
     @CurrentUser() user?: AuthUser,
   ): Promise<ChartDataResponse> {
     if (!user) {
       throw new UnauthorizedException();
     }
 
-    let days = 30;
-    let timezone = 'UTC';
-
-    if (daysParam) {
-      const parsed = parseInt(daysParam, 10);
-      if (!isNaN(parsed) && parsed > 0 && parsed <= 365) {
-        days = parsed;
-      }
-    }
-
-    if (timezoneParam) {
-      timezone = timezoneParam;
-    }
+    const days = query?.days ?? 30;
+    const timezone = query?.timezone ?? 'UTC';
 
     return this.analyticsService.getDailyVolumeChart(
       user.address,

@@ -332,6 +332,11 @@ export class EscrowController {
     description: 'Internal server error.',
     type: ErrorResponseDto,
   })
+  @ApiResponse({
+    status: 503,
+    description: 'Buyer contact encryption is not configured.',
+    type: ErrorResponseDto,
+  })
   @Patch(':id/buyer-contact')
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { limit: 10, ttl: THROTTLE_WINDOW_MS } })

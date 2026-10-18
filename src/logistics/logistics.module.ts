@@ -14,13 +14,16 @@ import { ProviderCredentialRepository } from './provider-credential.repository';
       provide: GiglClient,
       useFactory: (config: ConfigService) => {
         const baseUrl = config.get<string>('LOGISTICS_API_BASE_URL');
-        const apiToken = config.get<string>('LOGISTICS_API_KEY');
+        const envApiToken = config.get<string>('LOGISTICS_API_KEY');
 
-        if (!baseUrl || !apiToken) {
+        if (!baseUrl) {
           return null;
         }
 
-        return new GiglClient({ baseUrl, apiToken });
+        return new GiglClient({
+          baseUrl,
+          getApiToken: () => envApiToken || null,
+        });
       },
       inject: [ConfigService],
     },

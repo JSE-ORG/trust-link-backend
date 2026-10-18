@@ -16,6 +16,7 @@ import { UpdateVendorProfileDto } from '../../src/vendor/dto/update-vendor-profi
 import { UpdateNotificationPreferencesDto } from '../../src/vendor/dto/update-notification-preferences.dto';
 import { TracingService } from '../../src/tracing/tracing.service';
 import { createTracingMock } from './tracing-mock';
+import { VENDOR_PROFILE_PLACEHOLDER_DESCRIPTION } from '../../src/vendor/vendor-profile.constants';
 
 // ── fixture factory ────────────────────────────────────────────────────────
 
@@ -47,7 +48,7 @@ function makeProfile(
 const createDto: CreateVendorProfileDto = {
   businessName: 'Acme Ltd',
   email: 'acme@example.com',
-  phone: '+1-555-0100',
+  phone: '+15555550100',
   description: 'Electronics reseller',
 };
 
@@ -139,6 +140,27 @@ describe('VendorProfileService (issue #287)', () => {
       expect(repository.create).not.toHaveBeenCalled();
     });
 
+    it('completes registration via upsert when the existing profile is a placeholder (#937)', async () => {
+      const placeholder = makeProfile({
+        businessName: VENDOR_ADDRESS,
+        description: VENDOR_PROFILE_PLACEHOLDER_DESCRIPTION,
+      });
+      const completed = makeProfile({
+        businessName: createDto.businessName,
+        email: createDto.email,
+        phone: createDto.phone,
+        description: createDto.description,
+      });
+      repository.findByAddress.mockResolvedValue(placeholder);
+      repository.upsert.mockResolvedValue(completed);
+
+      const result = await service.createProfile(VENDOR_ADDRESS, createDto);
+
+      expect(repository.findByAddress).toHaveBeenCalledWith(VENDOR_ADDRESS);
+      expect(repository.upsert).toHaveBeenCalledWith(VENDOR_ADDRESS, createDto);
+      expect(result).toEqual(completed);
+    });
+
     it('propagates repository errors', async () => {
       repository.findByAddress.mockResolvedValue(null);
       repository.create.mockRejectedValue(new Error('DB unavailable'));
@@ -159,6 +181,17 @@ describe('VendorProfileService (issue #287)', () => {
       const result = await service.getProfile(VENDOR_ADDRESS);
       expect(result).toEqual(profile);
       expect(repository.findByAddress).toHaveBeenCalledWith(VENDOR_ADDRESS);
+    });
+
+    it('masks placeholder description when returning a profile (#937)', async () => {
+      const placeholder = makeProfile({
+        businessName: VENDOR_ADDRESS,
+        description: VENDOR_PROFILE_PLACEHOLDER_DESCRIPTION,
+      });
+      repository.findByAddress.mockResolvedValue(placeholder);
+
+      const result = await service.getProfile(VENDOR_ADDRESS);
+      expect(result.description).toBeNull();
     });
 
     it('throws NotFoundException when no profile exists for the address', async () => {

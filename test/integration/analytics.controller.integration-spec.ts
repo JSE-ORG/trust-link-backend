@@ -157,5 +157,36 @@ describe('Analytics controller endpoints (issue #641)', () => {
         .get('/vendor/analytics/chart')
         .expect(401);
     });
+
+    it('returns 400 for invalid days query parameter (#941)', async () => {
+      await request(app.getHttpServer())
+        .get('/vendor/analytics/chart?days=0')
+        .set('Authorization', AUTH_A)
+        .expect(400);
+
+      await request(app.getHttpServer())
+        .get('/vendor/analytics/chart?days=366')
+        .set('Authorization', AUTH_A)
+        .expect(400);
+
+      await request(app.getHttpServer())
+        .get('/vendor/analytics/chart?days=abc')
+        .set('Authorization', AUTH_A)
+        .expect(400);
+    });
+
+    it('returns 400 for invalid timezone query parameter (#941)', async () => {
+      await request(app.getHttpServer())
+        .get('/vendor/analytics/chart?timezone=Invalid/Timezone')
+        .set('Authorization', AUTH_A)
+        .expect(400);
+    });
+
+    it('accepts valid custom days and timezone (#941)', async () => {
+      await request(app.getHttpServer())
+        .get('/vendor/analytics/chart?days=14&timezone=America/New_York')
+        .set('Authorization', AUTH_A)
+        .expect(200);
+    });
   });
 });

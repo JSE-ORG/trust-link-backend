@@ -325,26 +325,40 @@ export class NotificationsService implements OnModuleInit {
       return;
     }
 
-    const profile = await this.vendorProfiles?.findByAddress(
-      escrow.vendorAddress,
-    );
+    const [profile, prefs] = await Promise.all([
+      this.vendorProfiles.findByAddress(escrow.vendorAddress),
+      this.vendorProfiles
+        .findNotificationPreferences(escrow.vendorAddress)
+        .catch((err) => {
+          this.logger.warn(
+            `Failed to load notification preferences for vendor ${escrow.vendorAddress}; defaulting to EMAIL: ${err instanceof Error ? err.message : String(err)}`,
+          );
+          return null;
+        }),
+    ]);
+
+    const channels = prefs?.notificationChannels ?? ['EMAIL'];
     const email = profile?.email?.trim() || null;
     const phone = profile?.phone?.trim() || null;
 
-    if (email) {
-      await this.dispatchEmail(type, escrow, email);
-    } else {
-      this.logger.warn(
-        `No vendor email for escrow ${escrow.id} vendor ${escrow.vendorAddress}; skipping ${type} email`,
-      );
+    if (channels.includes('EMAIL')) {
+      if (email) {
+        await this.dispatchEmail(type, escrow, email);
+      } else {
+        this.logger.warn(
+          `No vendor email for escrow ${escrow.id} vendor ${escrow.vendorAddress}; skipping ${type} email`,
+        );
+      }
     }
 
-    if (phone) {
-      await this.dispatchSms(type, escrow, phone);
-    } else {
-      this.logger.warn(
-        `No vendor phone for escrow ${escrow.id} vendor ${escrow.vendorAddress}; skipping ${type} SMS`,
-      );
+    if (channels.includes('SMS')) {
+      if (phone) {
+        await this.dispatchSms(type, escrow, phone);
+      } else {
+        this.logger.warn(
+          `No vendor phone for escrow ${escrow.id} vendor ${escrow.vendorAddress}; skipping ${type} SMS`,
+        );
+      }
     }
   }
 

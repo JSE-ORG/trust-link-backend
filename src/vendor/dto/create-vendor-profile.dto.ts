@@ -2,6 +2,7 @@ import {
   IsEmail,
   IsOptional,
   IsString,
+  Matches,
   MaxLength,
   MinLength,
 } from 'class-validator';
@@ -36,12 +37,15 @@ export class CreateVendorProfileDto {
   email?: string;
 
   @ApiPropertyOptional({
-    description: 'Contact phone number for the vendor.',
+    description: 'Contact phone number for the vendor in E.164 format.',
     maxLength: 20,
-    example: '+1-415-555-0142',
+    example: '+14155550142',
   })
   @IsOptional()
   @IsString()
+  @Matches(/^\+[1-9]\d{6,14}$/, {
+    message: 'phone must be a valid E.164 number (e.g. +2348012345678)',
+  })
   @MaxLength(20, { message: 'Phone must not exceed 20 characters' })
   phone?: string;
 
