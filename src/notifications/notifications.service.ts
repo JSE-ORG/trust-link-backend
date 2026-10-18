@@ -16,6 +16,7 @@ import {
 import { SENDGRID_CLIENT, TWILIO_CLIENT } from './notifications.tokens';
 import { decryptContact } from '../common/sanitization/contact-encryption.util';
 import { VendorProfileRepository } from '../vendor/vendor-profile.repository';
+import { DEFAULT_NOTIFICATION_CHANNELS } from '../vendor/vendor.constants';
 
 interface SendGridClient {
   send(message: Record<string, unknown>): Promise<unknown>;
@@ -335,10 +336,18 @@ export class NotificationsService implements OnModuleInit {
     escrow: EscrowRecord,
   ): Promise<void> {
     if (!this.vendorProfiles) {
+      // Never hand a Stellar `G…` address to SendGrid/Twilio (#946). Record
+      // undeliverable rows instead of the old legacy address dispatch.
       this.logger.warn(
-        `VendorProfileRepository unavailable; falling back to legacy vendor address dispatch for escrow ${escrow.id}`,
+        `VendorProfileRepository unavailable; recording ${type} as undeliverable for escrow ${escrow.id}`,
       );
-      await this.dispatch(type, escrow, escrow.vendorAddress);
+      await this.recordUndeliverable(
+        type,
+        escrow,
+        'EMAIL',
+        escrow.vendorAddress,
+        'vendor profile repository unavailable; cannot resolve a deliverable email',
+      );
       return;
     }
 
@@ -354,7 +363,8 @@ export class NotificationsService implements OnModuleInit {
         }),
     ]);
 
-    const channels = prefs?.notificationChannels ?? ['EMAIL'];
+    const channels =
+      prefs?.notificationChannels ?? [...DEFAULT_NOTIFICATION_CHANNELS];
     const email = profile?.email?.trim() || null;
     const phone = profile?.phone?.trim() || null;
 

@@ -1321,5 +1321,33 @@ describe('NotificationsService (#946) — stop sending to Stellar addresses', ()
     expect(created[0].attemptCount).toBe(0);
     expect(created[1].attemptCount).toBe(0);
   });
+
+  it('does not call providers with a Stellar vendor address when VendorProfileRepository is unavailable (#946)', async () => {
+    const created: Array<Record<string, unknown>> = [];
+    const sendGrid = { send: jest.fn() };
+    const twilio = { messages: { create: jest.fn() } };
+    const config = emailConfig(EMAIL_CONFIG);
+
+    // No VendorProfileRepository argument → legacy path used to dispatch to G…
+    const svc = new NotificationsService(
+      makeRepo(created),
+      sendGrid as unknown as any,
+      twilio as unknown as any,
+      config,
+    );
+
+    await svc.notifyDisputed({
+      ...stubEscrow,
+      vendorAddress: 'GDUMMYSTELLARVENDORADDRESSFORTESTXXXXXXXXXXXXXXXXXXXX',
+    });
+
+    expect(sendGrid.send).not.toHaveBeenCalled();
+    expect(twilio.messages.create).not.toHaveBeenCalled();
+    expect(created.length).toBeGreaterThanOrEqual(1);
+    for (const row of created) {
+      expect(row.attemptCount).toBe(0);
+      expect(row.providerMessageId).toBeNull();
+    }
+  });
 });
 
