@@ -1,4 +1,13 @@
-import { IsArray, IsOptional, IsString, MaxLength } from 'class-validator';
+import {
+  ArrayMaxSize,
+  IsArray,
+  IsISO31661Alpha2,
+  IsOptional,
+  IsString,
+  IsTimeZone,
+  IsUrl,
+  MaxLength,
+} from 'class-validator';
 import { Transform } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -56,6 +65,7 @@ export class UpdateVendorAccountDetailsDto {
   })
   @IsOptional()
   @IsArray()
+  @ArrayMaxSize(20)
   @IsString({ each: true })
   paymentMethods?: string[];
 
@@ -89,7 +99,7 @@ export class UpdateVendorAccountDetailsDto {
   @ApiPropertyOptional({ description: 'Billing country code (ISO 3166-1).' })
   @IsOptional()
   @IsString()
-  @MaxLength(2)
+  @IsISO31661Alpha2()
   billingCountry?: string;
 
   @ApiPropertyOptional({ description: 'Billing postal / ZIP code.' })
@@ -119,7 +129,7 @@ export class UpdateVendorAccountDetailsDto {
   @ApiPropertyOptional({ description: 'Shipping country code (ISO 3166-1).' })
   @IsOptional()
   @IsString()
-  @MaxLength(2)
+  @IsISO31661Alpha2()
   shippingCountry?: string;
 
   @ApiPropertyOptional({ description: 'Shipping postal / ZIP code.' })
@@ -134,6 +144,7 @@ export class UpdateVendorAccountDetailsDto {
   })
   @IsOptional()
   @IsString()
+  @IsUrl()
   @MaxLength(500)
   websiteUrl?: string;
 
@@ -143,7 +154,8 @@ export class UpdateVendorAccountDetailsDto {
   })
   @IsOptional()
   @IsArray()
-  @IsString({ each: true })
+  @ArrayMaxSize(20)
+  @IsUrl({}, { each: true })
   socialMediaLinks?: string[];
 
   @ApiPropertyOptional({
@@ -161,6 +173,7 @@ export class UpdateVendorAccountDetailsDto {
   })
   @IsOptional()
   @IsString()
+  @IsTimeZone()
   @MaxLength(50)
   timezone?: string;
 

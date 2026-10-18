@@ -1,7 +1,9 @@
 import {
   encryptContact,
   decryptContact,
+  isContactEncryptionConfigured,
 } from '../../src/common/sanitization/contact-encryption.util';
+import { ServiceUnavailableException } from '@nestjs/common';
 
 describe('contact-encryption.util', () => {
   const GOOD_KEY = 'a'.repeat(64); // 32 bytes hex
@@ -90,14 +92,17 @@ describe('contact-encryption.util', () => {
     );
   });
 
-  it('missing CONTACT_ENCRYPTION_KEY throws a clear error', () => {
+  it('missing CONTACT_ENCRYPTION_KEY throws ServiceUnavailableException', () => {
     delete process.env.CONTACT_ENCRYPTION_KEY;
-    expect(() => encryptContact('x')).toThrow(/CONTACT_ENCRYPTION_KEY/);
-    expect(() => decryptContact('00:11:22')).toThrow(/CONTACT_ENCRYPTION_KEY/);
+    expect(isContactEncryptionConfigured()).toBe(false);
+    expect(() => encryptContact('x')).toThrow(ServiceUnavailableException);
+    expect(() => decryptContact('00:11:22')).toThrow(ServiceUnavailableException);
   });
 
-  it('invalid CONTACT_ENCRYPTION_KEY length throws a clear error', () => {
+  it('invalid CONTACT_ENCRYPTION_KEY length throws ServiceUnavailableException', () => {
     process.env.CONTACT_ENCRYPTION_KEY = 'deadbeef'; // too short
+    expect(isContactEncryptionConfigured()).toBe(false);
+    expect(() => encryptContact('x')).toThrow(ServiceUnavailableException);
     expect(() => encryptContact('x')).toThrow(
       /must be exactly 64 hex characters/,
     );
