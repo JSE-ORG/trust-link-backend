@@ -35,4 +35,14 @@ export class StellarWebhookRepository {
       where: { operationId },
     });
   }
+
+  /**
+   * Deletes processed webhook event rows older than `before` (issue #962).
+   * The `@@index([processedAt])` on the model makes this a cheap index scan.
+   */
+  async pruneOlderThan(before: Date) {
+    return this.prisma.processedWebhookEvent.deleteMany({
+      where: { processedAt: { lt: before } },
+    });
+  }
 }

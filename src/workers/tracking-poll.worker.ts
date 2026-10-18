@@ -13,6 +13,11 @@ import { ConfigService } from '../config/config.service';
 import { TEN_MINUTES_MS } from '../common/constants/time.constants';
 import { NotificationsService } from '../notifications/notifications.service';
 
+/** Max escrows the tracking poll evaluates in a single cycle. */
+const TRACKING_POLL_BATCH_SIZE = 50;
+/** Max concurrent carrier calls within a single tracking poll cycle. */
+const TRACKING_POLL_CONCURRENCY = 5;
+
 @Injectable()
 export class TrackingPollWorker implements OnModuleInit, OnApplicationShutdown {
   private readonly logger = new Logger(TrackingPollWorker.name);
@@ -119,35 +124,23 @@ export class TrackingPollWorker implements OnModuleInit, OnApplicationShutdown {
 
   private async runCycle(): Promise<void> {
     try {
-      const shipments = await this.escrowRepository.findShippedWithTracking();
+      // #960 — The repository excludes unmapped escrows (no contractEscrowId)
+      // in-query and caps the result set, so no carrier call is wasted and the
+      // cycle is bounded per tick.
+      const shipments = await this.escrowRepository.findShippedWithTracking(
+        TRACKING_POLL_BATCH_SIZE,
+      );
 
-      for (const escrow of shipments) {
-        if (!escrow.trackingId) {
-          continue;
-        }
-
-        try {
-          await this.traced(
-            'worker.tracking_poll.escrow',
-            {
-              'trustlink.escrow.id': escrow.id,
-              'trustlink.escrow.vendor_address': escrow.vendorAddress,
-            },
-            () => this.processShipment(escrow),
-          );
-        } catch (error) {
-          this.logger.error(
-            JSON.stringify({
-              msg: 'tracking_poll.escrow_failed',
-              escrowId: escrow.id,
-              trackingId: escrow.trackingId,
-              eventType: 'tracking_poll',
-              error: error instanceof Error ? error.message : String(error),
-            }),
-            error instanceof Error ? error.stack : undefined,
-          );
-        }
-      }
+      await this.runWithConcurrency(shipments, TRACKING_POLL_CONCURRENCY, (escrow) =>
+        this.traced(
+          'worker.tracking_poll.escrow',
+          {
+            'trustlink.escrow.id': escrow.id,
+            'trustlink.escrow.vendor_address': escrow.vendorAddress,
+          },
+          () => this.processShipment(escrow),
+        ),
+      );
     } catch (error) {
       this.logger.error(
         JSON.stringify({
@@ -158,6 +151,29 @@ export class TrackingPollWorker implements OnModuleInit, OnApplicationShutdown {
         error instanceof Error ? error.stack : undefined,
       );
     }
+  }
+
+  /**
+   * Runs `worker` over `items` with at most `concurrency` in flight at once.
+   * Errors from individual items are caught and logged by the caller's
+   * traced wrapper, so one failed escrow never aborts the rest of the batch.
+   */
+  private async runWithConcurrency<T>(
+    items: T[],
+    concurrency: number,
+    worker: (item: T) => Promise<void>,
+  ): Promise<void> {
+    let index = 0;
+    const next = (): Promise<void | undefined> => {
+      if (index >= items.length) {
+        return undefined;
+      }
+      const item = items[index++];
+      return worker(item).then(() => next());
+    };
+    await Promise.all(
+      Array.from({ length: Math.min(concurrency, items.length) }).map(next),
+    );
   }
 
   /**
@@ -179,25 +195,11 @@ export class TrackingPollWorker implements OnModuleInit, OnApplicationShutdown {
         return;
       }
 
-      // Claim the escrow before any network call. This follows the same
-      // claim-and-release pattern as AutoReleaseWorker (#507): if the
-      // contract call fails, the claim is cleared so the next poll cycle
-      // retries. Without this, a failed recordDelivery leaves the escrow
-      // in DELIVERED state permanently out of sync with the chain.
-      // `record_delivery(env, caller: Address, escrow_id: u64)` addresses
-      // the escrow by the contract's own id, not this row's UUID. Without
-      // the mapping there is no call to make.
-      if (escrow.contractEscrowId === null) {
-        this.logger.warn(
-          JSON.stringify({
-            msg: 'tracking_poll.unmapped_escrow',
-            escrowId: escrow.id,
-            eventType: 'tracking_poll',
-          }),
-        );
-        return;
-      }
-
+      // #960 — The repository excludes unmapped escrows (no contractEscrowId)
+      // in-query, so every escrow reaching here has a mapping and a contract
+      // call can be made. The claim-and-release pattern follows
+      // AutoReleaseWorker (#507): if the contract call fails, the claim is
+      // cleared so the next poll cycle retries.
       const claimed = await this.escrowRepository.claimDelivery(escrow.id);
       if (!claimed) {
         return;
@@ -207,7 +209,7 @@ export class TrackingPollWorker implements OnModuleInit, OnApplicationShutdown {
         // The contract requires `caller` to be the admin and calls
         // require_auth() on it, so anything else is rejected outright.
         await this.contractService.recordDelivery(
-          escrow.contractEscrowId,
+          escrow.contractEscrowId!,
           this.requireAdminAddress(),
         );
         const updated = await this.escrowRepository.markDelivered(

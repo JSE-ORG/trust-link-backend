@@ -355,4 +355,7 @@ export const configValidationSchema = Joi.object({
   // margin behind the current ledger. Set this to replay from a known ledger
   // after an outage instead.
   SOROBAN_START_LEDGER: Joi.number().integer().min(1).optional(),
+  // Retention window (days) for processed webhook event ids. A daily job
+  // deletes `ProcessedWebhookEvent` rows older than this. Default: 30.
+  WEBHOOK_EVENT_RETENTION_DAYS: Joi.number().integer().min(1).default(30),
 });

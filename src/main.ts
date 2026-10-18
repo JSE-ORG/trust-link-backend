@@ -1,7 +1,7 @@
 import './sentry.instrument';
-import './tracing/tracing.bootstrap';
+import { shutdownTracing } from './tracing/tracing.bootstrap';
 import './common/bigint-json';
-import { NestFactory } from '@nestjs/core';
+import { NestFactory, INestApplication } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import compression from 'compression';
 import * as express from 'express';
@@ -21,7 +21,7 @@ import {
 
 const bootstrapLogger = new JsonLoggerService('Bootstrap');
 
-async function bootstrap(): Promise<void> {
+async function bootstrap(): Promise<INestApplication> {
   const app = await NestFactory.create(AppModule, {
     bufferLogs: true,
     bodyParser: false,
@@ -156,8 +156,6 @@ async function bootstrap(): Promise<void> {
   const document = createOpenApiDocument(app);
   setupOpenApiUi(app, document, isProduction);
 
-  app.enableShutdownHooks();
-
   const port = configService.get('PORT');
   await app.listen(port);
 
@@ -172,29 +170,62 @@ async function bootstrap(): Promise<void> {
     }),
     'Bootstrap',
   );
+
+  return app;
 }
 
-bootstrap().catch((err: unknown) => {
-  bootstrapLogger.error(
-    JSON.stringify({
-      msg: 'server.bootstrap.failed',
-      error: err instanceof Error ? err.message : String(err),
-    }),
-    err instanceof Error ? err.stack : undefined,
-  );
-  process.exit(1);
-});
+let app: INestApplication | null = null;
 
-process.on('SIGTERM', () => {
-  bootstrapLogger.log(
-    JSON.stringify({ msg: 'server.shutdown', signal: 'SIGTERM' }),
-  );
-  process.exit(0);
-});
+bootstrap()
+  .then((instance) => {
+    app = instance;
+  })
+  .catch((err: unknown) => {
+    bootstrapLogger.error(
+      JSON.stringify({
+        msg: 'server.bootstrap.failed',
+        error: err instanceof Error ? err.message : String(err),
+      }),
+      err instanceof Error ? err.stack : undefined,
+    );
+    process.exit(1);
+  });
 
-process.on('SIGINT', () => {
+/** How long to wait for `app.close()` before forcing exit. */
+const SHUTDOWN_TIMEOUT_MS = 10_000;
+
+async function shutdown(signal: string): Promise<void> {
   bootstrapLogger.log(
-    JSON.stringify({ msg: 'server.shutdown', signal: 'SIGINT' }),
+    JSON.stringify({ msg: 'server.shutdown', signal }),
+    'Bootstrap',
   );
+
+  if (app) {
+    try {
+      await Promise.race([
+        app.close(),
+        new Promise((_, reject) =>
+          setTimeout(
+            () => reject(new Error('graceful shutdown timed out')),
+            SHUTDOWN_TIMEOUT_MS,
+          ),
+        ),
+      ]);
+    } catch (err) {
+      bootstrapLogger.error(
+        JSON.stringify({
+          msg: 'server.shutdown.error',
+          error: err instanceof Error ? err.message : String(err),
+        }),
+        err instanceof Error ? err.stack : undefined,
+      );
+    }
+  }
+
+  await shutdownTracing();
   process.exit(0);
-});
+}
+
+process.on('SIGTERM', () => void shutdown('SIGTERM'));
+
+process.on('SIGINT', () => void shutdown('SIGINT'));

@@ -316,21 +316,25 @@ export class EscrowRepository {
   }
 
   /**
-   * Returns all SHIPPED escrows that have a non-null trackingId and belong to
-   * vendors with tracking enabled (or with no settings row, defaulting to true),
-   * used by the tracking poll worker to check for delivery updates (#945).
+   * Returns a capped page of SHIPPED escrows that have a non-null trackingId
+   * and a mapped `contractEscrowId`, belonging to vendors with tracking
+   * enabled (or with no settings row, defaulting to true). Unmapped escrows
+   * (no `contractEscrowId`) are excluded in-query so the tracking poll never
+   * wastes a carrier call on them (#960).
+   *
+   * Results are oldest-first so the batch is deterministic across cycles.
    */
-  findShippedWithTracking(): Promise<EscrowRecord[]> {
-    // Both predicates are in the `where` so Postgres can use the whole
-    // `@@index([state, trackingId])` — previously the `trackingId` half ran
-    // as a JS `.filter` after every SHIPPED row had already been loaded and
-    // transferred (#669). `not: null` (never `not: undefined`) is what emits
-    // `IS NOT NULL`. Vendor tracking settings are filtered in-query (#945).
+  findShippedWithTracking(limit = 50): Promise<EscrowRecord[]> {
+    // `contractEscrowId: { not: null }` excludes unmapped escrows before any
+    // carrier call, so a slow or missing contract mapping never costs a
+    // logistics request. `take` caps the batch per cycle. Both predicates are
+    // in the `where` so Postgres can use `@@index([state, trackingId])`.
     return this.prisma.escrow
       .findMany({
         where: {
           state: 'SHIPPED',
           trackingId: { not: null },
+          contractEscrowId: { not: null },
           vendor: {
             NOT: {
               trackingSettings: {
@@ -339,6 +343,8 @@ export class EscrowRepository {
             },
           },
         },
+        orderBy: { createdAt: 'asc' },
+        take: limit,
       })
       .then((escrows) => escrows.map(toEscrowRecord));
   }
