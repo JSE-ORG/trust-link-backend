@@ -103,6 +103,9 @@ export class DlqService {
    * Re-execute the original operation via `replay`. On success the record is
    * marked `REPLAYED` and the new tx hash is stored; on failure the attempts
    * counter is bumped and the record stays `PENDING_REVIEW` for further review.
+   * 
+   * Issue #952: Claims the record atomically before replay to prevent concurrent
+   * submissions to the chain. Returns 409 if another request claimed it first.
    */
   async replay(id: string, replay: ReplayFn): Promise<FailedTransactionRecord> {
     const record = await this.requireRecord(id);
@@ -110,10 +113,18 @@ export class DlqService {
       throw new Error(`Failed transaction ${id} is not pending review`);
     }
 
+    // Issue #952: Atomically claim the record before replaying
+    const claimed = await this.failedTransactions.claimForReplay(id);
+    if (!claimed) {
+      throw new Error(`Failed transaction ${id} is already being replayed or was replayed`);
+    }
+
     let txHash: string;
     try {
       txHash = await replay(record);
     } catch (err: unknown) {
+      // Release the claim and increment attempts on failure
+      await this.failedTransactions.releaseClaim(id);
       await this.failedTransactions.incrementAttempts(
         id,
         err instanceof Error ? err.message : String(err),
