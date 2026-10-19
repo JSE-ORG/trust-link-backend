@@ -12,12 +12,56 @@ import {
   ApiOperation,
   ApiResponse,
   ApiProperty,
+  ApiPropertyOptional,
 } from '@nestjs/swagger';
-import { IsString, MinLength } from 'class-validator';
+import { IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 import { Throttle } from '@nestjs/throttler';
 import { IsStellarAddress } from '../../common/validators/stellar-address.validator';
 import { AUTH_CHALLENGE_THROTTLE } from '../../common/security/throttle.config';
+import {
+  CHALLENGE_TIMEOUT_SECONDS,
+  MAX_CHALLENGE_TRANSACTION_LENGTH,
+  MAX_REFRESH_TOKEN_LENGTH,
+} from './sep10.constants';
 import { Sep10Service } from './sep10.service';
+
+/**
+ * Query string for the legacy `GET /auth` challenge route. `account` was
+ * previously read without validation, so a missing or malformed key reached
+ * the Stellar SDK and surfaced as a 500 (issue #935).
+ *
+ * The other SEP-10 challenge parameters are accepted so that standard wallets
+ * that send them are not rejected by `forbidNonWhitelisted`; they are not
+ * used when building the challenge.
+ */
+export class ChallengeQueryDto {
+  @ApiProperty({
+    description:
+      'Stellar public key (G...) of the wallet requesting a challenge.',
+    example: 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
+  })
+  @IsString()
+  @IsStellarAddress()
+  account!: string;
+
+  @ApiPropertyOptional({ description: 'SEP-10 memo (not used).' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  memo?: string;
+
+  @ApiPropertyOptional({ description: 'SEP-10 home domain (not used).' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  home_domain?: string;
+
+  @ApiPropertyOptional({ description: 'SEP-10 client domain (not used).' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  client_domain?: string;
+}
 
 export class ChallengeRequestDto {
   @ApiProperty({
@@ -38,6 +82,7 @@ export class VerifyChallengeDto {
   })
   @IsString()
   @MinLength(1)
+  @MaxLength(MAX_CHALLENGE_TRANSACTION_LENGTH)
   transaction!: string;
 }
 
@@ -49,6 +94,7 @@ export class RefreshTokenDto {
   })
   @IsString()
   @MinLength(1)
+  @MaxLength(MAX_REFRESH_TOKEN_LENGTH)
   refreshToken!: string;
 }
 
@@ -104,10 +150,18 @@ export class Sep10Controller {
     description: 'Challenge transaction XDR returned.',
     type: ChallengeResponseDto,
   })
-  @ApiResponse({ status: 400, description: 'Invalid Stellar public key.' })
+  @ApiResponse({
+    status: 400,
+    description: 'Missing or invalid Stellar public key.',
+  })
   @Get()
-  async challengeGet(@Query('account') account: string) {
-    return { transaction: await this.sep10Service.buildChallenge(account) };
+  async challengeGet(@Query() query: ChallengeQueryDto) {
+    return {
+      transaction: await this.sep10Service.buildChallenge(
+        query.account,
+        CHALLENGE_TIMEOUT_SECONDS,
+      ),
+    };
   }
 
   @ApiOperation({
@@ -123,7 +177,10 @@ export class Sep10Controller {
   @HttpCode(HttpStatus.OK)
   async challengePost(@Body() dto: ChallengeRequestDto) {
     return {
-      transaction: await this.sep10Service.buildChallenge(dto.publicKey, 900),
+      transaction: await this.sep10Service.buildChallenge(
+        dto.publicKey,
+        CHALLENGE_TIMEOUT_SECONDS,
+      ),
       network_passphrase: this.sep10Service.getNetworkPassphrase(),
     };
   }

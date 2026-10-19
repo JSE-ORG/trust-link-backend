@@ -4,6 +4,7 @@ import {
   NotFoundException,
   ConflictException,
   ServiceUnavailableException,
+  UnprocessableEntityException,
 } from '@nestjs/common';
 import { TracingService } from '../../src/tracing/tracing.service';
 import { createTracingMock } from './tracing-mock';
@@ -208,6 +209,24 @@ describe('EscrowService.handleShipment (issue #16)', () => {
     await expect(
       service.createEscrow(createDto, 'vendor-address'),
     ).rejects.toThrow(BadRequestException);
+    expect(repository.create).not.toHaveBeenCalled();
+  });
+
+  // issue #934
+  it('throws BadRequestException when the vendor is also the buyer', async () => {
+    const createDto = {
+      itemName: 'Leather bag',
+      itemRef: 'bag-123',
+      amount: 125,
+      currency: 'USDC',
+      buyerAddress: 'vendor-address',
+    };
+    repository.findByVendorAndItem.mockResolvedValue(null);
+
+    await expect(
+      service.createEscrow(createDto, 'vendor-address'),
+    ).rejects.toThrow(BadRequestException);
+    expect(repository.findByVendorAndItem).not.toHaveBeenCalled();
     expect(repository.create).not.toHaveBeenCalled();
   });
 
@@ -544,21 +563,20 @@ describe('EscrowService: tracking, idempotency, evidence upload, and vendor list
       buyerAddress: 'buyer-1',
     };
 
-    it('returns the cached result on a repeat call with the same idempotency key', async () => {
-      const cached = { ...shippedEscrow, paymentUrl: 'https://x/pay' };
-      cache.get.mockResolvedValue(cached);
-
-      const result = await service.createIdempotent(
-        'idem-key-1',
-        createDto,
-        'vendor-1',
+    /** Backs the cache mock with a Map so set() results are read back. */
+    function useInMemoryCache(): Map<string, unknown> {
+      const store = new Map<string, unknown>();
+      cache.get.mockImplementation((key: string) =>
+        Promise.resolve(store.get(key) ?? null),
       );
+      cache.set.mockImplementation((key: string, value: unknown) => {
+        store.set(key, value);
+        return Promise.resolve();
+      });
+      return store;
+    }
 
-      expect(result).toEqual(cached);
-      expect(repository.create).not.toHaveBeenCalled();
-    });
-
-    it('creates and caches the escrow on a first call for the idempotency key', async () => {
+    it('creates and caches the escrow with a request hash on a first call', async () => {
       cache.get.mockResolvedValue(null);
       repository.findByVendorAndItem.mockResolvedValue(null);
       repository.create.mockResolvedValue(shippedEscrow);
@@ -572,9 +590,74 @@ describe('EscrowService: tracking, idempotency, evidence upload, and vendor list
       expect(result).toMatchObject({ id: shippedEscrow.id });
       expect(cache.set).toHaveBeenCalledWith(
         'idempotency:vendor-1:idem-key-2',
-        expect.objectContaining({ id: shippedEscrow.id }),
+        {
+          requestHash: expect.stringMatching(/^[0-9a-f]{64}$/),
+          result: expect.objectContaining({ id: shippedEscrow.id }),
+        },
         86400,
       );
+    });
+
+    // issue #932
+    it('returns the cached escrow for the same key and the same body', async () => {
+      useInMemoryCache();
+      repository.findByVendorAndItem.mockResolvedValue(null);
+      repository.create.mockResolvedValue(shippedEscrow);
+
+      const first = await service.createIdempotent(
+        'idem-key-1',
+        createDto,
+        'vendor-1',
+      );
+      // Same fields in a different key order must hash the same.
+      const reordered = {
+        buyerAddress: createDto.buyerAddress,
+        currency: createDto.currency,
+        amount: createDto.amount,
+        itemRef: createDto.itemRef,
+        itemName: createDto.itemName,
+      };
+      const second = await service.createIdempotent(
+        'idem-key-1',
+        reordered,
+        'vendor-1',
+      );
+
+      expect(second).toEqual(first);
+      expect(repository.create).toHaveBeenCalledTimes(1);
+    });
+
+    it('rejects the same key with a different body with 422', async () => {
+      useInMemoryCache();
+      repository.findByVendorAndItem.mockResolvedValue(null);
+      repository.create.mockResolvedValue(shippedEscrow);
+
+      await service.createIdempotent('idem-key-3', createDto, 'vendor-1');
+
+      const attempt = service.createIdempotent(
+        'idem-key-3',
+        { ...createDto, itemRef: 'cam-2' },
+        'vendor-1',
+      );
+      await expect(attempt).rejects.toThrow(UnprocessableEntityException);
+      await expect(attempt).rejects.toMatchObject({ status: 422 });
+      expect(repository.create).toHaveBeenCalledTimes(1);
+    });
+
+    it('scopes the key per vendor, so another vendor may reuse it', async () => {
+      useInMemoryCache();
+      repository.findByVendorAndItem.mockResolvedValue(null);
+      repository.create.mockResolvedValue(shippedEscrow);
+
+      await service.createIdempotent('idem-key-4', createDto, 'vendor-1');
+      await expect(
+        service.createIdempotent(
+          'idem-key-4',
+          { ...createDto, itemRef: 'cam-2' },
+          'vendor-2',
+        ),
+      ).resolves.toMatchObject({ id: shippedEscrow.id });
+      expect(repository.create).toHaveBeenCalledTimes(2);
     });
   });
 

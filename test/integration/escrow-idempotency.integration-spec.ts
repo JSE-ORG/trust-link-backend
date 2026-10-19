@@ -122,6 +122,38 @@ describe('POST /escrow idempotency scoping (issue #397)', () => {
     expect(escrows).toHaveLength(1);
   });
 
+  // issue #932
+  it('rejects a reused key with a different body with 422', async () => {
+    const key = crypto.randomUUID();
+    const body = {
+      itemName: 'Original item',
+      itemRef: 'original-item',
+      amount: 42,
+      currency: 'USDC',
+      buyerAddress: BUYER,
+    };
+
+    await request(app.getHttpServer())
+      .post('/escrow')
+      .set('Authorization', bearer(VENDOR_A))
+      .set('Idempotency-Key', key)
+      .send(body)
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/escrow')
+      .set('Authorization', bearer(VENDOR_A))
+      .set('Idempotency-Key', key)
+      .send({ ...body, itemName: 'Other item', itemRef: 'other-item' })
+      .expect(422);
+
+    const escrows = await prisma.escrow.findMany({
+      where: { vendorAddress: VENDOR_A },
+    });
+    expect(escrows).toHaveLength(1);
+    expect(escrows[0].itemRef).toBe('original-item');
+  });
+
   it('rejects a non-UUID Idempotency-Key with 400', async () => {
     await request(app.getHttpServer())
       .post('/escrow')

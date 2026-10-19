@@ -12,6 +12,10 @@ import { Keypair, Networks, TransactionBuilder } from '@stellar/stellar-sdk';
 import request from 'supertest';
 import { Sep10Controller } from '../../src/auth/sep10/sep10.controller';
 import { Sep10Service } from '../../src/auth/sep10/sep10.service';
+import {
+  MAX_CHALLENGE_TRANSACTION_LENGTH,
+  MAX_REFRESH_TOKEN_LENGTH,
+} from '../../src/auth/sep10/sep10.constants';
 import { ConfigService } from '../../src/config/config.service';
 import { PrismaService } from '../../src/prisma/prisma.service';
 import { TEST_SIGNING_SECRET } from '../auth-helper';
@@ -241,5 +245,31 @@ describe('SEP-10 authentication (issue #23)', () => {
       .post('/auth')
       .send({ transaction: forgedXdr })
       .expect(401);
+  });
+
+  // issue #935: both of these used to reach the Stellar SDK and return 500.
+  it('GET /auth without an account returns 400', async () => {
+    await request(app.getHttpServer()).get('/auth').expect(400);
+  });
+
+  it('GET /auth with an invalid account returns 400', async () => {
+    await request(app.getHttpServer())
+      .get('/auth')
+      .query({ account: 'bogus' })
+      .expect(400);
+  });
+
+  it('POST /auth with an oversized transaction returns 400', async () => {
+    await request(app.getHttpServer())
+      .post('/auth')
+      .send({ transaction: 'A'.repeat(MAX_CHALLENGE_TRANSACTION_LENGTH + 1) })
+      .expect(400);
+  });
+
+  it('POST /auth/refresh with an oversized token returns 400', async () => {
+    await request(app.getHttpServer())
+      .post('/auth/refresh')
+      .send({ refreshToken: 'a'.repeat(MAX_REFRESH_TOKEN_LENGTH + 1) })
+      .expect(400);
   });
 });

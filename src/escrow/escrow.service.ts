@@ -8,6 +8,7 @@ import {
   InternalServerErrorException,
   NotFoundException,
   ServiceUnavailableException,
+  UnprocessableEntityException,
   Logger,
   Optional,
 } from '@nestjs/common';
@@ -65,6 +66,36 @@ const TERMINAL_STATES = new Set<string>([
   'REFUNDED',
   'CANCELLED',
 ]);
+
+/** Cached outcome of an idempotent create, keyed by vendor and key. */
+interface IdempotencyCacheEntry {
+  /** SHA-256 of the stable serialisation of the request body. */
+  requestHash: string;
+  result: EscrowWithPaymentUrl;
+}
+
+/**
+ * JSON with object keys sorted at every level, so two bodies with the same
+ * fields hash the same regardless of property order.
+ */
+function stableStringify(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableStringify(item)).join(',')}]`;
+  }
+  if (value !== null && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    const fields = Object.keys(record)
+      .filter((key) => record[key] !== undefined)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${stableStringify(record[key])}`);
+    return `{${fields.join(',')}}`;
+  }
+  return JSON.stringify(value) ?? 'null';
+}
+
+function hashRequestBody(dto: CreateEscrowDto): string {
+  return crypto.createHash('sha256').update(stableStringify(dto)).digest('hex');
+}
 
 export type SyncResult =
   { skipped: boolean; reason?: string } | { skipped: false };
@@ -234,6 +265,12 @@ export class EscrowService {
       throw new BadRequestException('Amount must be positive');
     }
 
+    if (dto.buyerAddress === vendorAddress) {
+      throw new BadRequestException(
+        'buyerAddress must be different from the vendor address',
+      );
+    }
+
     const existing = await this.escrowRepository.findByVendorAndItem(
       vendorAddress,
       dto.itemRef,
@@ -291,6 +328,14 @@ export class EscrowService {
    * configured every call falls through to a fresh `createEscrow`, leaving that
    * method's duplicate-item check as the only guard against double-creation.
    * The same validation and conflict errors as `createEscrow` apply.
+   *
+   * The cache entry also stores a hash of the request body (issue #932). A
+   * retry with the same key and body gets the cached escrow; reusing the key
+   * for a different body is rejected instead of silently returning the
+   * first escrow.
+   *
+   * @throws UnprocessableEntityException if the key was already used with a
+   *   different request body.
    */
   async createIdempotent(
     idempotencyKey: string,
@@ -313,18 +358,25 @@ export class EscrowService {
     vendorAddress: string,
   ): Promise<EscrowWithPaymentUrl> {
     const cacheKey = `idempotency:${vendorAddress}:${idempotencyKey}`;
+    const requestHash = hashRequestBody(dto);
     if (this.cacheService) {
       const cached =
-        await this.cacheService.get<EscrowWithPaymentUrl>(cacheKey);
+        await this.cacheService.get<IdempotencyCacheEntry>(cacheKey);
       if (cached) {
-        return cached;
+        if (cached.requestHash !== requestHash) {
+          throw new UnprocessableEntityException(
+            'Idempotency-Key has already been used with a different request body',
+          );
+        }
+        return cached.result;
       }
     }
 
     const result = await this.createEscrow(dto, vendorAddress);
 
     if (this.cacheService) {
-      await this.cacheService.set(cacheKey, result, SECONDS_PER_DAY);
+      const entry: IdempotencyCacheEntry = { requestHash, result };
+      await this.cacheService.set(cacheKey, entry, SECONDS_PER_DAY);
     }
 
     return result;
