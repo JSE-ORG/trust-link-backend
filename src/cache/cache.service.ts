@@ -30,7 +30,7 @@ export class CacheService implements OnModuleDestroy {
   private sweepTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(@Optional() configService?: ConfigService) {
-    const redisUrl = configService?.get('REDIS_URL') ?? process.env.REDIS_URL;
+    const redisUrl = configService?.get<string>('REDIS_URL');
     if (redisUrl) {
       this.client = new Redis(redisUrl, { lazyConnect: true });
       this.client.on('error', (err: Error) =>

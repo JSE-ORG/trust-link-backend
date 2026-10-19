@@ -219,13 +219,7 @@ export const configValidationSchema = Joi.object({
     'string.email':
       'Config validation error: ADMIN_NOTIFICATION_EMAIL must be a valid email address',
   }),
-  AUTO_RELEASE_SOURCE_ADDRESS: Joi.string()
-    .pattern(/^G[A-Z2-7]{55}$/)
-    .optional()
-    .messages({
-      'string.pattern.base':
-        'Config validation error: AUTO_RELEASE_SOURCE_ADDRESS must be a valid Stellar public key (starts with G)',
-    }),
+  AUTO_RELEASE_SOURCE_ADDRESS: stellarPublicKey.optional(),
   NODE_ENV: Joi.string()
     .valid('development', 'production', 'test')
     .default('development'),
@@ -304,6 +298,10 @@ export const configValidationSchema = Joi.object({
   EVIDENCE_UPLOAD_LIMIT: Joi.number().integer().min(1).default(10),
   EVIDENCE_UPLOAD_TTL: Joi.number().integer().min(1000).default(60000),
   REFRESH_TOKEN_TTL: Joi.number().integer().min(60).default(604800),
+  // Lifetime of the SEP-10 access (JWT) token, in seconds. Operators can
+  // shorten it below the 1-hour default for higher-security deployments.
+  // Must be a positive integer. Default: 3600 (1 hour).
+  ACCESS_TOKEN_TTL: Joi.number().integer().min(1).default(3600),
   LOGISTICS_API_BASE_URL: Joi.string().uri().optional(),
   LOGISTICS_API_KEY: Joi.string().optional(),
   STELLAR_HORIZON_URL: Joi.string().uri().optional(),
@@ -350,7 +348,17 @@ export const configValidationSchema = Joi.object({
     }),
   // Per-request timeout for Soroban RPC calls. Keep it below
   // SOROBAN_POLL_INTERVAL_MS so a hung request cannot span poll cycles.
-  SOROBAN_RPC_TIMEOUT_MS: Joi.number().integer().min(100).default(4000),
+  // Validated at startup: equal or greater values are rejected.
+  SOROBAN_RPC_TIMEOUT_MS: Joi.number()
+    .integer()
+    .min(100)
+    .default(4000)
+    .less(Joi.ref('SOROBAN_POLL_INTERVAL_MS'))
+    .messages({
+      'number.less':
+        'Config validation error: SOROBAN_RPC_TIMEOUT_MS must be less than ' +
+        'SOROBAN_POLL_INTERVAL_MS so a hung RPC request cannot span poll cycles',
+    }),
   // Optional replay point: with no stored cursor the poller starts a small
   // margin behind the current ledger. Set this to replay from a known ledger
   // after an outage instead.

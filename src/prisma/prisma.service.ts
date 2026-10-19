@@ -1,4 +1,5 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
+import { ConfigService } from '../config/config.service';
 import {
   Prisma,
   PrismaClient,
@@ -211,19 +212,23 @@ export class PrismaService extends PrismaClient {
   readonly effectiveDatabaseUrl?: string;
   private readonly logger = new Logger('PrismaService');
 
-  constructor(@Optional() readonly databaseUrl?: string) {
+  constructor(
+    @Optional() readonly databaseUrl?: string,
+    @Optional() private readonly configService?: ConfigService,
+  ) {
     const baseUrl =
       databaseUrl ||
       process.env.DATABASE_URL ||
       'postgresql://postgres:postgres@localhost:5432/trustlink_test';
 
+    const queryTimeoutMs =
+      configService?.get<number>('QUERY_TIMEOUT_MS') ??
+      parseInt(process.env.QUERY_TIMEOUT_MS ?? '30000', 10);
+
     let effectiveUrl: string;
     try {
       const url = new URL(baseUrl);
-      url.searchParams.set(
-        'statement_timeout',
-        process.env.QUERY_TIMEOUT_MS ?? '30000',
-      );
+      url.searchParams.set('statement_timeout', String(queryTimeoutMs));
       url.searchParams.set('connect_timeout', '10');
       effectiveUrl = url.toString();
     } catch {
@@ -237,10 +242,9 @@ export class PrismaService extends PrismaClient {
 
   async onModuleInit(): Promise<void> {
     await this.$connect();
-    const slowQueryThresholdMs = parseInt(
-      process.env.SLOW_QUERY_THRESHOLD_MS ?? '500',
-      10,
-    );
+    const slowQueryThresholdMs =
+      this.configService?.get<number>('SLOW_QUERY_THRESHOLD_MS') ??
+      parseInt(process.env.SLOW_QUERY_THRESHOLD_MS ?? '500', 10);
     // The base PrismaClient type does not carry the query-event log config
     // through the subclass, so narrow $on to the query-event signature here.
     // Prisma v7 exposes the client through a Proxy whose get trap returns

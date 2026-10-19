@@ -1046,3 +1046,97 @@ describe('ConfigModule (#946) — ADMIN_NOTIFICATION_EMAIL validation', () => {
   });
 });
 
+/**
+ * Issue #979 — AUTO_RELEASE_SOURCE_ADDRESS must pass the Stellar checksum check.
+ *
+ * The previous regex `^G[A-Z2-7]{55}$` accepted shape-valid but
+ * checksum-invalid keys. The fix uses the `stellarPublicKey` Joi helper which
+ * calls `Keypair.fromPublicKey` (same as ADMIN_ADDRESS).
+ */
+describe('AUTO_RELEASE_SOURCE_ADDRESS — Stellar checksum validation (#979)', () => {
+  it('accepts a genuine valid Stellar public key', () => {
+    const { error } = configValidationSchema.validate(
+      { ...VALID_ENV, AUTO_RELEASE_SOURCE_ADDRESS: VALID_PUBLIC_KEY },
+      VALIDATE_OPTIONS,
+    );
+    expect(error).toBeUndefined();
+  });
+
+  it('is optional — omitting it is not an error', () => {
+    const env = { ...VALID_ENV };
+    delete (env as Record<string, unknown>).AUTO_RELEASE_SOURCE_ADDRESS;
+    const { error } = configValidationSchema.validate(env, VALIDATE_OPTIONS);
+    expect(error).toBeUndefined();
+  });
+
+  it('rejects a shape-valid but checksum-invalid public key', () => {
+    const { error } = configValidationSchema.validate(
+      { ...VALID_ENV, AUTO_RELEASE_SOURCE_ADDRESS: CHECKSUM_INVALID_PUBLIC },
+      VALIDATE_OPTIONS,
+    );
+    expect(error).toBeDefined();
+    expect(error?.message).toContain('AUTO_RELEASE_SOURCE_ADDRESS');
+  });
+
+  it('rejects a secret key supplied where a public key is expected', () => {
+    const { error } = configValidationSchema.validate(
+      { ...VALID_ENV, AUTO_RELEASE_SOURCE_ADDRESS: VALID_SECRET_KEY },
+      VALIDATE_OPTIONS,
+    );
+    expect(error).toBeDefined();
+    expect(error?.message).toContain('AUTO_RELEASE_SOURCE_ADDRESS');
+  });
+
+  it('error message does not say "pattern" (no regex involved)', () => {
+    const { error } = configValidationSchema.validate(
+      { ...VALID_ENV, AUTO_RELEASE_SOURCE_ADDRESS: CHECKSUM_INVALID_PUBLIC },
+      VALIDATE_OPTIONS,
+    );
+    expect(error?.message).not.toContain('pattern');
+  });
+});
+
+/**
+ * Issue #976 — ACCESS_TOKEN_TTL must be a configurable env var.
+ *
+ * Previously the access-token lifetime was the hard-coded constant
+ * JWT_EXPIRY_SECONDS = 3600. The fix promotes it to a validated env var with
+ * a 3600 s default.
+ */
+describe('ACCESS_TOKEN_TTL — configurable JWT lifetime (#976)', () => {
+  it('defaults to 3600 when unset', () => {
+    const { error, value } = configValidationSchema.validate(
+      VALID_ENV,
+      VALIDATE_OPTIONS,
+    );
+    expect(error).toBeUndefined();
+    expect(value.ACCESS_TOKEN_TTL).toBe(3600);
+  });
+
+  it('accepts a custom positive integer', () => {
+    const { error, value } = configValidationSchema.validate(
+      { ...VALID_ENV, ACCESS_TOKEN_TTL: '1800' },
+      VALIDATE_OPTIONS,
+    );
+    expect(error).toBeUndefined();
+    expect(value.ACCESS_TOKEN_TTL).toBe(1800);
+  });
+
+  it('rejects zero', () => {
+    const { error } = configValidationSchema.validate(
+      { ...VALID_ENV, ACCESS_TOKEN_TTL: '0' },
+      VALIDATE_OPTIONS,
+    );
+    expect(error).toBeDefined();
+    expect(error?.message).toContain('ACCESS_TOKEN_TTL');
+  });
+
+  it('rejects a non-numeric value', () => {
+    const { error } = configValidationSchema.validate(
+      { ...VALID_ENV, ACCESS_TOKEN_TTL: 'one-hour' },
+      VALIDATE_OPTIONS,
+    );
+    expect(error).toBeDefined();
+    expect(error?.message).toContain('ACCESS_TOKEN_TTL');
+  });
+});
