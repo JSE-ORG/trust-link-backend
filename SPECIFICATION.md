@@ -204,6 +204,8 @@ R-API-07: String inputs must pass through SanitizationPipe (HTML stripping, cont
 
 ### 5.2 Route Map
 
+Limits are the `@Throttle` values in `src/**/*.controller.ts`, counted per client IP over a 60-second window. Routes without a `@Throttle` use the global default (`PUBLIC_LIMIT`, 60/min); `—` means the route is exempt via `@SkipThrottle`. The `/auth` limit is configurable with `AUTH_CHALLENGE_LIMIT` and the evidence-upload limit with `EVIDENCE_UPLOAD_LIMIT`.
+
 | Method | Path | Auth | Rate Limit |
 |---|---|---|---|
 | GET | `/` | None | 100/min |
@@ -215,39 +217,39 @@ R-API-07: String inputs must pass through SanitizationPipe (HTML stripping, cont
 | POST | `/auth/challenge` | None | 10/min |
 | POST | `/auth` | None | 10/min |
 | POST | `/auth/refresh` | None | 10/min |
-| POST | `/escrow` | JWT | 60/min |
+| POST | `/escrow` | JWT | 10/min |
 | GET | `/escrow/:id` | None | 60/min |
-| GET | `/escrow/:id/events` | None | 60/min |
+| GET | `/escrow/:id/events` | None | 100/min |
 | GET | `/escrow/:id/tracking` | None | 60/min |
-| PATCH | `/escrow/:id/buyer-contact` | None | 5/min |
-| PATCH | `/escrow/:id/ship` | JWT | 60/min |
-| PATCH | `/escrow/:id/cancel` | JWT | 60/min |
-| DELETE | `/escrow/:id` | JWT | 60/min |
-| POST | `/escrow/:id/dispute` | JWT | 60/min |
-| GET | `/escrow/:id/dispute` | JWT | 60/min |
+| PATCH | `/escrow/:id/buyer-contact` | None | 10/min |
+| PATCH | `/escrow/:id/ship` | JWT | 20/min |
+| PATCH | `/escrow/:id/cancel` | JWT | 10/min |
+| DELETE | `/escrow/:id` | JWT | 10/min |
+| POST | `/escrow/:id/dispute` | JWT | 5/min |
+| GET | `/escrow/:id/dispute` | JWT | 30/min |
 | POST | `/escrow/evidence-upload` | JWT | 10/min |
-| GET | `/vendor/escrows` | JWT | 60/min |
-| POST | `/vendor/profile` | JWT | 60/min |
-| GET | `/vendor/profile` | JWT | 60/min |
-| PUT | `/vendor/profile` | JWT | 60/min |
-| PATCH | `/vendor/profile` | JWT | 60/min |
-| GET | `/vendor/profile/notifications` | JWT | 60/min |
-| PATCH | `/vendor/profile/notifications` | JWT | 60/min |
-| GET | `/vendor/analytics` | JWT | 60/min |
-| GET | `/vendor/analytics/chart` | JWT | 60/min |
+| GET | `/vendor/escrows` | JWT | 20/min |
+| POST | `/vendor/profile` | JWT | 10/min |
+| GET | `/vendor/profile` | JWT | 20/min |
+| PUT | `/vendor/profile` | JWT | 10/min |
+| PATCH | `/vendor/profile` | JWT | 10/min |
+| GET | `/vendor/profile/notifications` | JWT | 20/min |
+| PATCH | `/vendor/profile/notifications` | JWT | 10/min |
+| GET | `/vendor/analytics` | JWT | 20/min |
+| GET | `/vendor/analytics/chart` | JWT | 20/min |
 | POST | `/webhooks/stellar` | HMAC | — |
-| GET | `/admin/stats` | JWT+Admin | 60/min |
-| GET | `/admin/disputes` | JWT+Admin | 60/min |
-| PATCH | `/admin/dispute/:id/resolve` | JWT+Admin | 60/min |
-| GET | `/admin/queues` | JWT+Admin | 60/min |
-| GET | `/admin/audit-log` | JWT+Admin | 60/min |
-| PATCH | `/admin/credentials/logistics` | JWT+Admin | 60/min |
+| GET | `/admin/stats` | JWT+Admin | 20/min |
+| GET | `/admin/disputes` | JWT+Admin | 20/min |
+| PATCH | `/admin/dispute/:id/resolve` | JWT+Admin | 10/min |
+| GET | `/admin/queues` | JWT+Admin | 20/min |
+| GET | `/admin/audit-log` | JWT+Admin | 20/min |
+| PATCH | `/admin/credentials/logistics` | JWT+Admin | 5/min |
 | GET | `/admin/dlq` | JWT+Admin | 20/min |
 | GET | `/admin/dlq/:id` | JWT+Admin | 30/min |
 | POST | `/admin/dlq/:id/replay` | JWT+Admin | 5/min |
 | POST | `/admin/dlq/:id/abandon` | JWT+Admin | 5/min |
 | GET | `/stress-test/active` | JWT+Admin | 30/min |
-| GET | `/stress-test/active/{id}` | JWT+Admin | 30/min |
+| GET | `/stress-test/active/:testId` | JWT+Admin | 30/min |
 | POST | `/stress-test` | JWT+Admin | 10/min |
 | GET | `/vendor/account-details` | JWT | 60/min |
 | PATCH | `/vendor/account-details` | JWT | 60/min |

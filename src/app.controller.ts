@@ -70,6 +70,16 @@ export class AppController {
     description: 'Service welcome message.',
     type: String,
   })
+  @ApiResponse({
+    status: 429,
+    description: 'Too many requests.',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 500,
+    description: 'Internal server error.',
+    type: ErrorResponseDto,
+  })
   @Throttle({ default: { limit: 100, ttl: THROTTLE_WINDOW_MS } })
   @Get()
   getHello(): string {
@@ -278,6 +288,16 @@ export class AppController {
   @ApiOkResponse({
     description: 'Version information returned.',
     type: VersionResponseDto,
+  })
+  @ApiResponse({
+    status: 429,
+    description: 'Too many requests.',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 500,
+    description: 'Internal server error.',
+    type: ErrorResponseDto,
   })
   @Throttle({ default: { limit: 100, ttl: THROTTLE_WINDOW_MS } })
   @Get('version')

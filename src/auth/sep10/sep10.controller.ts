@@ -18,6 +18,7 @@ import { Throttle } from '@nestjs/throttler';
 import { IsStellarAddress } from '../../common/validators/stellar-address.validator';
 import { AUTH_CHALLENGE_THROTTLE } from '../../common/security/throttle.config';
 import { Sep10Service } from './sep10.service';
+import { ErrorResponseDto } from '../../common/dto/error-response.dto';
 
 export class ChallengeRequestDto {
   @ApiProperty({
@@ -94,6 +95,17 @@ export class AuthTokenResponseDto {
 
 @ApiTags('Auth')
 @Throttle({ default: AUTH_CHALLENGE_THROTTLE })
+// Class-level, like the throttle: every /auth route can return these.
+@ApiResponse({
+  status: 429,
+  description: 'Too many requests.',
+  type: ErrorResponseDto,
+})
+@ApiResponse({
+  status: 500,
+  description: 'Internal server error.',
+  type: ErrorResponseDto,
+})
 @Controller('auth')
 export class Sep10Controller {
   constructor(private readonly sep10Service: Sep10Service) {}

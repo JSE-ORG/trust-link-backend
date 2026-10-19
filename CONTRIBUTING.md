@@ -463,7 +463,7 @@ npm run format
 npm run lint
 
 # Type check
-npm run type-check
+npm run typecheck
 
 # Tests
 npm run test

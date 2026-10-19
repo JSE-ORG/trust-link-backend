@@ -25,6 +25,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Escrow listings for vendors and buyers are cursor-paginated, return newest records first, and default to 20 records per page.
 - Creating an escrow requires an `Idempotency-Key`; keys must be UUIDs and are scoped to the authenticated vendor.
 - SEP-10 challenge signing now uses a configured key that remains stable across restarts and replicas.
+- **Breaking:** `FRONTEND_URL` and `EVIDENCE_STORAGE_BASE_URL` are required when `NODE_ENV=production`; the process fails config validation at boot if either is missing. Outside production they default to `http://localhost:3000` and `http://localhost:9000`.
+- **Breaking:** `SENDGRID_FROM_EMAIL` is required whenever `SENDGRID_API_KEY` is set, and must be a valid sender address.
+- **Breaking:** Email notifications use SendGrid dynamic templates configured per type through `SENDGRID_TEMPLATE_FUNDED`, `SENDGRID_TEMPLATE_SHIPPED`, `SENDGRID_TEMPLATE_DELIVERED`, `SENDGRID_TEMPLATE_DISPUTED`, `SENDGRID_TEMPLATE_COMPLETED`, and `SENDGRID_TEMPLATE_REFUNDED`. Each must be a `d-` id followed by 32 hex characters or boot fails; a type with no template id is recorded as undeliverable instead of sent.
+- **Breaking:** `TWILIO_FROM_NUMBER` is required whenever `TWILIO_ACCOUNT_SID` is set, and must be an E.164 phone number.
+- Rate-limit counters are stored in Redis when `REDIS_URL` is set, so limits are shared across replicas; without `REDIS_URL` they remain per-process and in-memory.
+- **Breaking:** Per-route `@Throttle` limits are now enforced instead of falling back to the global default. Many routes are stricter than before (for example `POST /escrow` is 10/min); clients exceeding a limit receive `429 Too Many Requests`. See the route map in `SPECIFICATION.md` §5.2.
+- **Breaking:** `@stellar/stellar-sdk` is upgraded to 17.1.0, which requires Node.js 22.12 or later.
 
 ### Fixed
 
