@@ -1,4 +1,4 @@
-import { ExecutionContext } from '@nestjs/common';
+import { ExecutionContext, HttpException, HttpStatus } from '@nestjs/common';
 import { of, throwError, lastValueFrom } from 'rxjs';
 import * as Sentry from '@sentry/nestjs';
 import { SentryInterceptor } from '../../src/common/interceptors/sentry.interceptor';
@@ -57,6 +57,42 @@ describe('SentryInterceptor', () => {
     expect(rejectedWith).toBe(originalError);
     expect(Sentry.captureException).toHaveBeenCalledTimes(1);
     expect(Sentry.captureException).toHaveBeenCalledWith(originalError);
+  });
+
+  it('does not report a 404 client error and still rethrows it', async () => {
+    const clientError = new HttpException('Not found', HttpStatus.NOT_FOUND);
+    const context = createMockContext();
+    const next = { handle: () => throwError(() => clientError) };
+
+    let rejectedWith: unknown;
+    try {
+      await lastValueFrom(interceptor.intercept(context, next));
+    } catch (e) {
+      rejectedWith = e;
+    }
+
+    expect(rejectedWith).toBe(clientError);
+    expect(Sentry.captureException).not.toHaveBeenCalled();
+  });
+
+  it('reports a 500 server error exactly once and rethrows it', async () => {
+    const serverError = new HttpException(
+      'Internal failure',
+      HttpStatus.INTERNAL_SERVER_ERROR,
+    );
+    const context = createMockContext();
+    const next = { handle: () => throwError(() => serverError) };
+
+    let rejectedWith: unknown;
+    try {
+      await lastValueFrom(interceptor.intercept(context, next));
+    } catch (e) {
+      rejectedWith = e;
+    }
+
+    expect(rejectedWith).toBe(serverError);
+    expect(Sentry.captureException).toHaveBeenCalledTimes(1);
+    expect(Sentry.captureException).toHaveBeenCalledWith(serverError);
   });
 
   it('does not swallow the error into a successful response (would turn a 4xx/5xx into a 200)', (done) => {

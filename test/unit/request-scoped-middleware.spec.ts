@@ -89,13 +89,7 @@ describe('RequestIdMiddleware', () => {
     );
   });
 
-  // Finding for #571: the middleware accepts *any* client-supplied
-  // x-request-id verbatim (only whitespace-trimmed, no format/length
-  // validation) and echoes it straight into every log line for the
-  // request. An attacker-controlled id containing e.g. newlines or log
-  // markup would flow unvalidated into logs — worth raising as its own
-  // issue rather than fixing here (out of scope for this ticket).
-  it('accepts an inbound id verbatim with no format validation (documented finding, not fixed here)', () => {
+  it('replaces an inbound id containing unsafe characters with a generated UUID', () => {
     const suspicious = 'id-with-\n-embedded-newline';
     const req = {
       headers: { [REQUEST_ID_HEADER]: suspicious },
@@ -104,7 +98,26 @@ describe('RequestIdMiddleware', () => {
 
     middleware.use(req, res, next);
 
-    expect(req.requestId).toBe(suspicious);
+    expect(req.requestId).not.toBe(suspicious);
+    expect(req.requestId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+    );
+    expect(res.setHeader).toHaveBeenCalledWith(
+      REQUEST_ID_HEADER,
+      req.requestId,
+    );
+  });
+
+  it('replaces an inbound id longer than 128 characters', () => {
+    const req = {
+      headers: { [REQUEST_ID_HEADER]: 'a'.repeat(129) },
+    } as unknown as Request;
+    const res = createMockResponse();
+
+    middleware.use(req, res, next);
+
+    expect(req.requestId).not.toBe('a'.repeat(129));
+    expect(req.requestId).toHaveLength(36);
   });
 
   it('picks the first value when the header arrives as an array', () => {

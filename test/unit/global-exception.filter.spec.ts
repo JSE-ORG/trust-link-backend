@@ -372,13 +372,21 @@ describe('GlobalExceptionFilter (issue #727) — uncovered branches', () => {
       expect(body.message).toBe('Validation failed');
     });
 
-    it('matches an error whose message contains "validation" and returns 400', () => {
+    it('returns 500 for an error whose message merely contains "validation"', () => {
       const filter = new GlobalExceptionFilter(buildConfigService('test'));
       const err = new Error('schema validation failed for field x');
       filter.catch(err, host);
       const body = res.body as StandardErrorResponse;
-      expect(body.statusCode).toBe(HttpStatus.BAD_REQUEST);
-      expect(body.error).toBe('ValidationError');
+      expect(body.statusCode).toBe(HttpStatus.INTERNAL_SERVER_ERROR);
+      expect(body.error).toBe('InternalServerError');
+    });
+
+    it('returns 500 for config or signature validation failures', () => {
+      const filter = new GlobalExceptionFilter(buildConfigService('test'));
+      filter.catch(new Error('Config validation error: missing key'), host);
+      const body = res.body as StandardErrorResponse;
+      expect(body.statusCode).toBe(HttpStatus.INTERNAL_SERVER_ERROR);
+      expect(body.error).toBe('InternalServerError');
     });
 
     it('includes details on the ValidationError path in development', () => {

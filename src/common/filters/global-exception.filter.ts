@@ -3,7 +3,6 @@ import type { ArgumentsHost, ExceptionFilter } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { ConfigService } from '../../config/config.service';
 import { StandardErrorResponse } from '../dto/error-response.dto';
-import { SentryExceptionCaptured } from '@sentry/nestjs';
 
 interface HttpExceptionResponseBody {
   message?: string | string[];
@@ -21,7 +20,6 @@ export class GlobalExceptionFilter implements ExceptionFilter {
 
   constructor(private readonly configService: ConfigService) {}
 
-  @SentryExceptionCaptured()
   catch(exception: unknown, host: ArgumentsHost): void {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
@@ -162,11 +160,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
   }
 
   private isValidationError(exception: unknown): boolean {
-    return (
-      exception instanceof Error &&
-      (exception.name === 'ValidationError' ||
-        exception.message.includes('validation'))
-    );
+    return exception instanceof Error && exception.name === 'ValidationError';
   }
 
   private logError(

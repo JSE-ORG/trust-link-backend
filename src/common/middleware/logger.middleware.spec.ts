@@ -194,4 +194,73 @@ describe('LoggerMiddleware', () => {
     const parsed = JSON.parse((stdoutSpy.mock.calls[0][0] as string).trim());
     expect(parsed.contentLength).toBe(0);
   });
+
+  describe('LOG_LEVEL filtering', () => {
+    let originalLogLevel: string | undefined;
+
+    beforeEach(() => {
+      originalLogLevel = process.env.LOG_LEVEL;
+    });
+
+    afterEach(() => {
+      if (originalLogLevel === undefined) {
+        delete process.env.LOG_LEVEL;
+      } else {
+        process.env.LOG_LEVEL = originalLogLevel;
+      }
+    });
+
+    it('suppresses a 200 line and keeps a 500 line when LOG_LEVEL=warn', () => {
+      process.env.LOG_LEVEL = 'warn';
+
+      const success = createMockReqRes({}, { statusCode: 200 });
+      middleware.use(success.req, success.res, success.next);
+      success.triggerFinish();
+
+      expect(stdoutSpy).not.toHaveBeenCalled();
+
+      const failure = createMockReqRes({}, { statusCode: 500 });
+      middleware.use(failure.req, failure.res, failure.next);
+      failure.triggerFinish();
+
+      expect(stdoutSpy).toHaveBeenCalledTimes(1);
+      const parsed = JSON.parse((stdoutSpy.mock.calls[0][0] as string).trim());
+      expect(parsed.level).toBe('error');
+      expect(parsed.statusCode).toBe(500);
+    });
+
+    it('does not log successful health probes at info', () => {
+      for (const url of [
+        '/health',
+        '/health/live',
+        '/health/ready',
+        '/health/ready?probe=1',
+      ]) {
+        const { req, res, next, triggerFinish } = createMockReqRes(
+          { originalUrl: url },
+          { statusCode: 200 },
+        );
+        middleware.use(req, res, next);
+        triggerFinish();
+      }
+
+      expect(stdoutSpy).not.toHaveBeenCalled();
+    });
+
+    it('logs successful health probes at debug when LOG_LEVEL=debug', () => {
+      process.env.LOG_LEVEL = 'debug';
+      const { req, res, next, triggerFinish } = createMockReqRes(
+        { originalUrl: '/health/live' },
+        { statusCode: 200 },
+      );
+
+      middleware.use(req, res, next);
+      triggerFinish();
+
+      expect(stdoutSpy).toHaveBeenCalledTimes(1);
+      const parsed = JSON.parse((stdoutSpy.mock.calls[0][0] as string).trim());
+      expect(parsed.level).toBe('debug');
+      expect(parsed.msg).toBe('GET /health/live 200');
+    });
+  });
 });
