@@ -206,7 +206,9 @@ export class ConfigService {
 
   /**
    * Returns the list of allowed CORS origins parsed from the ALLOWED_ORIGINS
-   * environment variable (comma-separated). Falls back to an empty array so
+   * environment variable (comma-separated). Trailing slashes are stripped so
+   * `https://app.example.com/` and `https://app.example.com` both match the
+   * browser's `Origin` header (issue #973). Falls back to an empty array so
    * that no origin is allowed when the variable is not set in production.
    */
   getAllowedOrigins(): string[] {
@@ -214,7 +216,7 @@ export class ConfigService {
     if (!raw) return [];
     return raw
       .split(',')
-      .map((o) => o.trim())
+      .map((o) => o.trim().replace(/\/+$/, ''))
       .filter(Boolean);
   }
 

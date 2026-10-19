@@ -208,8 +208,8 @@ R-API-07: String inputs must pass through SanitizationPipe (HTML stripping, cont
 |---|---|---|---|
 | GET | `/` | None | 100/min |
 | GET | `/health` | None | — |
-| GET | `/health/live` | None | 60/min |
-| GET | `/health/ready` | None | 60/min |
+| GET | `/health/live` | None | — |
+| GET | `/health/ready` | None | — |
 | GET | `/version` | None | 100/min |
 | GET | `/auth` | None | 10/min |
 | POST | `/auth/challenge` | None | 10/min |

@@ -14,4 +14,15 @@ export const CORS_ALLOWED_HEADERS = [
   'Accept',
   'Authorization',
   'Idempotency-Key',
+  'X-Request-ID',
 ];
+
+/**
+ * Response headers the API sets that a browser script is allowed to read.
+ *
+ * By default the CORS spec only exposes a small set of "safe" headers
+ * (Content-Type, Cache-Control, etc.). Any custom header the front-end needs
+ * to read — like the request-correlation id — must be listed here or the
+ * browser silently blocks access to it (issue #973).
+ */
+export const CORS_EXPOSED_HEADERS = ['X-Request-ID'];
