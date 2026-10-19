@@ -53,6 +53,8 @@ export class VendorProfileController {
   })
   @ApiResponse({ status: 400, description: 'Invalid profile data.' })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
+  @ApiResponse({ status: 429, description: 'Too many requests.' })
+  @ApiResponse({ status: 500, description: 'Internal server error.' })
   @Throttle({ default: { limit: 10, ttl: THROTTLE_WINDOW_MS } })
   @Post()
   @HttpCode(HttpStatus.CREATED)
@@ -77,6 +79,8 @@ export class VendorProfileController {
   })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   @ApiResponse({ status: 404, description: 'Profile not found.' })
+  @ApiResponse({ status: 429, description: 'Too many requests.' })
+  @ApiResponse({ status: 500, description: 'Internal server error.' })
   @Throttle({ default: { limit: 20, ttl: THROTTLE_WINDOW_MS } })
   @Get()
   get(@CurrentUser() user: AuthUser) {
@@ -102,6 +106,8 @@ export class VendorProfileController {
   })
   @ApiResponse({ status: 400, description: 'Invalid profile data.' })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
+  @ApiResponse({ status: 429, description: 'Too many requests.' })
+  @ApiResponse({ status: 500, description: 'Internal server error.' })
   @Throttle({ default: { limit: 10, ttl: THROTTLE_WINDOW_MS } })
   @Put()
   @HttpCode(HttpStatus.OK)
@@ -127,6 +133,8 @@ export class VendorProfileController {
   })
   @ApiResponse({ status: 400, description: 'Invalid update payload.' })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
+  @ApiResponse({ status: 429, description: 'Too many requests.' })
+  @ApiResponse({ status: 500, description: 'Internal server error.' })
   @Throttle({ default: { limit: 10, ttl: THROTTLE_WINDOW_MS } })
   @Patch()
   update(@Body() dto: UpdateVendorProfileDto, @CurrentUser() user: AuthUser) {
@@ -148,6 +156,8 @@ export class VendorProfileController {
     type: NotificationPreferencesResponseDto,
   })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
+  @ApiResponse({ status: 429, description: 'Too many requests.' })
+  @ApiResponse({ status: 500, description: 'Internal server error.' })
   @Throttle({ default: { limit: 20, ttl: THROTTLE_WINDOW_MS } })
   @Get('notifications')
   getNotifications(@CurrentUser() user: AuthUser) {
@@ -172,6 +182,8 @@ export class VendorProfileController {
   })
   @ApiResponse({ status: 400, description: 'Invalid preferences payload.' })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
+  @ApiResponse({ status: 429, description: 'Too many requests.' })
+  @ApiResponse({ status: 500, description: 'Internal server error.' })
   @Throttle({ default: { limit: 10, ttl: THROTTLE_WINDOW_MS } })
   @Patch('notifications')
   @HttpCode(HttpStatus.OK)

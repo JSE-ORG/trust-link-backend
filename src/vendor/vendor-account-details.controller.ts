@@ -34,6 +34,8 @@ export class VendorAccountDetailsController {
     type: VendorAccountDetailsResponseDto,
   })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
+  @ApiResponse({ status: 429, description: 'Too many requests.' })
+  @ApiResponse({ status: 500, description: 'Internal server error.' })
   @Get()
   async get(@CurrentUser() user: AuthUser) {
     const details = await this.service.getDetails(user.address);
@@ -59,6 +61,8 @@ export class VendorAccountDetailsController {
     type: VendorAccountDetailsResponseDto,
   })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
+  @ApiResponse({ status: 429, description: 'Too many requests.' })
+  @ApiResponse({ status: 500, description: 'Internal server error.' })
   @Patch()
   async update(
     @Body() dto: UpdateVendorAccountDetailsDto,

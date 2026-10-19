@@ -19,6 +19,41 @@ import {
   VendorEscrowsResult,
 } from './escrow.types';
 
+/** Escrow fields stored as `DateTime` that a JSON round trip turns into strings. */
+const ESCROW_DATE_FIELDS = [
+  'shippedAt',
+  'deliveredAt',
+  'deliveryRecordedAt',
+  'autoReleaseSubmittedAt',
+  'cancelledAt',
+  'createdAt',
+  'updatedAt',
+] as const;
+
+/**
+ * Restores the types a Redis round trip strips from a cached escrow (#1003).
+ *
+ * `CacheService` stores Redis values with `JSON.stringify`, so Date fields come
+ * back from `JSON.parse` as ISO strings and `contractEscrowId` comes back as a
+ * decimal string (see the BigInt.prototype.toJSON patch in
+ * `common/bigint-json.ts`). The in-memory fallback keeps the original objects,
+ * so on that path every field already has the right type and is left alone.
+ */
+export function reviveCachedEscrow(cached: EscrowRecord): EscrowRecord {
+  const record: EscrowRecord = { ...cached };
+  for (const field of ESCROW_DATE_FIELDS) {
+    const value = record[field] as unknown;
+    if (typeof value === 'string') {
+      record[field] = new Date(value);
+    }
+  }
+  const contractEscrowId = record.contractEscrowId as unknown;
+  if (typeof contractEscrowId === 'string') {
+    record.contractEscrowId = BigInt(contractEscrowId);
+  }
+  return record;
+}
+
 @Injectable()
 export class EscrowRepository {
   constructor(
@@ -78,11 +113,12 @@ export class EscrowRepository {
 
   /**
    * Returns a cached escrow by ID (60-second Redis TTL) or falls through
-   * to the database on a cache miss.
+   * to the database on a cache miss. Cached records are revived so callers
+   * get the same field types on a hit as on a miss.
    */
   async findById(id: string): Promise<EscrowRecord | null> {
     const cached = await this.cache?.get<EscrowRecord>(this.cacheKey(id));
-    if (cached) return cached;
+    if (cached) return reviveCachedEscrow(cached);
     const row = await this.prisma.escrow.findUnique({ where: { id } });
     if (!row) return null;
     const record = toEscrowRecord(row);

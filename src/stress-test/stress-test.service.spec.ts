@@ -929,7 +929,7 @@ describe('StressTestService (#729)', () => {
         }),
       );
 
-      const methods = ['PUT', 'DELETE', 'PATCH'];
+      const methods = ['PUT', 'DELETE', 'PATCH'] as const;
 
       for (const method of methods) {
         httpService.request.mockClear();
@@ -939,7 +939,7 @@ describe('StressTestService (#729)', () => {
           requestsPerSecond: 1,
           duration: 1,
           endpoint: '/test',
-          method: method as any,
+          method,
         };
 
         const config: StressTestConfigDto = {

@@ -38,6 +38,7 @@ export class VendorEscrowController {
     description: 'Paginated list of vendor escrows returned.',
     type: VendorEscrowsPaginatedResponseDto,
   })
+  @ApiResponse({ status: 400, description: 'Invalid query parameters.' })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   @ApiResponse({ status: 403, description: 'Forbidden.' })
   @ApiResponse({ status: 429, description: 'Too many requests.' })

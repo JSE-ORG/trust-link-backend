@@ -285,7 +285,7 @@ describe('AuditLogService (Issues #816 & #817)', () => {
         adminAddress: string;
         entityType: string;
         entityId: string;
-        details: any;
+        details: Record<string, unknown>;
         occurredAt: Date;
       }> = [];
 
