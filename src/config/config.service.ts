@@ -71,8 +71,6 @@ export interface Config {
   GIT_SHA?: string;
   EVIDENCE_UPLOAD_LIMIT?: number;
   EVIDENCE_UPLOAD_TTL?: number;
-  GIGL_API_BASE_URL?: string;
-  GIGL_API_TOKEN?: string;
   SOROBAN_RPC_URL?: string;
   /** Always present: the config schema applies a validated default of 5000. */
   SOROBAN_POLL_INTERVAL_MS: number;
@@ -169,12 +167,6 @@ export class ConfigService {
       ),
       LOG_LEVEL: this.nestConfigService.get('LOG_LEVEL', { infer: true }),
       API_BASE_URL: this.nestConfigService.get('API_BASE_URL', { infer: true }),
-      GIGL_API_BASE_URL: this.nestConfigService.get('GIGL_API_BASE_URL', {
-        infer: true,
-      }),
-      GIGL_API_TOKEN: this.nestConfigService.get('GIGL_API_TOKEN', {
-        infer: true,
-      }),
       SOROBAN_POLL_INTERVAL_MS: this.get('SOROBAN_POLL_INTERVAL_MS'),
       SOROBAN_RPC_TIMEOUT_MS: this.get('SOROBAN_RPC_TIMEOUT_MS'),
     };

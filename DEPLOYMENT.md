@@ -23,18 +23,28 @@ Set all required variables before running migrations or starting the service:
 - `PORT`
 - `DATABASE_URL`
 - `SEP10_JWT_SECRET`
+- `SYSTEM_SIGNER_SECRET` — Stellar secret key used for transaction signing
 - `ADMIN_ADDRESS`
 - `STELLAR_NETWORK`
-- `STELLAR_WEBHOOK_SECRET`
+- `STELLAR_WEBHOOK_SECRET` — required in production; validates inbound Stellar webhook payloads
 - `REDIS_URL`
 - `ALLOWED_ORIGINS`
 - `API_BASE_URL`
-- `SENDGRID_API_KEY`
-- `TWILIO_ACCOUNT_SID`
-- `TWILIO_AUTH_TOKEN`
+- `PRESIGN_SECRET` — signs evidence pre-signed URLs; must be stable across restarts and replicas
+- `CONTRACT_ID` — Soroban escrow contract ID
+- `FRONTEND_URL` — required in production
+- `EVIDENCE_STORAGE_BASE_URL` — public base URL evidence objects are served from
+- `CONTACT_ENCRYPTION_KEY` — 64-character hex string (32 bytes); required in production
+- `CREDENTIAL_ENCRYPTION_KEY` — 64-character hex string (32 bytes); required in production
+- `SOROBAN_RPC_URL` — required in production; no safe default RPC endpoint exists
+- `SENTRY_DSN` — required in production; error reporting endpoint URL
+- `SENDGRID_API_KEY` *(optional)* — enable email notifications
+- `SENDGRID_FROM_EMAIL` — **required when `SENDGRID_API_KEY` is set**; verified sender address
+- `TWILIO_ACCOUNT_SID` *(optional)* — enable SMS notifications
+- `TWILIO_AUTH_TOKEN` — required when `TWILIO_ACCOUNT_SID` is set
+- `TWILIO_FROM_NUMBER` — **required when `TWILIO_ACCOUNT_SID` is set**; E.164 format
 - `OTEL_ENABLED`
 - `OTEL_EXPORTER_OTLP_ENDPOINT`
-- `CREDENTIAL_ENCRYPTION_KEY` (64-character hex string for logistics API key encryption)
 
 Keep secrets in the deployment platform secret manager. Do not bake them into images, workflow files, or migration scripts.
 
@@ -53,14 +63,33 @@ The `docker-compose.yml` includes a production profile optimized for production 
 1. Create a `.env` file with production secrets:
    ```bash
    SEP10_JWT_SECRET=your-production-jwt-secret-at-least-32-chars
-   ADMIN_ADDRESS=your-admin-stellar-address
+   SYSTEM_SIGNER_SECRET=Sxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+   ADMIN_ADDRESS=Gxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
    POSTGRES_PASSWORD=your-secure-postgres-password
-   CREDENTIAL_ENCRYPTION_KEY=64-character-hex-string-for-encryption
+   PRESIGN_SECRET=your-cryptographically-random-presign-secret
+   CONTRACT_ID=your-soroban-contract-id
+   FRONTEND_URL=https://app.yourdomain.com
+   EVIDENCE_STORAGE_BASE_URL=https://storage.yourdomain.com
+   CONTACT_ENCRYPTION_KEY=64-character-hex-string-for-contact-encryption
+   CREDENTIAL_ENCRYPTION_KEY=64-character-hex-string-for-credential-encryption
+   STELLAR_NETWORK=MAINNET
+   STELLAR_WEBHOOK_SECRET=your-stellar-webhook-secret
+   SENTRY_DSN=https://xxxx@sentry.io/yyyy
+   SOROBAN_RPC_URL=https://your-soroban-rpc-endpoint
+   ALLOWED_ORIGINS=https://app.yourdomain.com
+   API_BASE_URL=https://api.yourdomain.com
    OTEL_ENABLED=false
    OTEL_EXPORTER_OTLP_ENDPOINT=
+   # Optional — enable email notifications
+   # SENDGRID_API_KEY=SG.xxxx
+   # SENDGRID_FROM_EMAIL=noreply@yourdomain.com
+   # Optional — enable SMS notifications
+   # TWILIO_ACCOUNT_SID=ACxxxx
+   # TWILIO_AUTH_TOKEN=xxxx
+   # TWILIO_FROM_NUMBER=+15550001234
    ```
 
-2. Ensure the `CREDENTIAL_ENCRYPTION_KEY` is exactly 64 hex characters (32 bytes). Generate one with:
+2. Generate 64-character hex keys for `CONTACT_ENCRYPTION_KEY` and `CREDENTIAL_ENCRYPTION_KEY` with:
    ```bash
    node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
    ```
