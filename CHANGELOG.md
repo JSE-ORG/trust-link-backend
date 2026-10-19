@@ -33,6 +33,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configured SendGrid and Twilio notification clients are now used when their credentials are available.
 - Auto-release processing continues with other eligible escrows when an individual submission fails.
 - `PATCH /admin/credentials/logistics` rotates and stores the logistics API key instead of failing with a 500 because the credential encryption key could not be read.
+- `POST /escrow` returns 422 when an `Idempotency-Key` is reused with a different request body, instead of returning the first escrow.
+- `POST /escrow` rejects amounts with more than 8 decimal places or too large for the `Decimal(18,8)` column with 400, instead of silently rounding or failing with a 500.
+- `POST /escrow` trims `itemRef`, limits it to 100 characters, and rejects escrows where the buyer is the calling vendor with 400.
+- `GET /auth` returns 400 for a missing or invalid `account` instead of a 500; `transaction` and `refreshToken` have maximum lengths, and `POST /auth/challenge` uses the same 5 minute challenge lifetime as `GET /auth`.
 
 ### Removed
 
