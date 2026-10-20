@@ -144,6 +144,24 @@ describe('EscrowService.syncStateFromChain', () => {
         reason: 'already_funded_or_terminal',
       });
     });
+
+    it.each(['SHIPPED', 'DELIVERED', 'DISPUTED'] as const)(
+      'skips when escrow has already advanced to %s so it never moves backwards (#1039)',
+      async (state) => {
+        repo.findById.mockResolvedValue(makeEscrow({ state }));
+
+        const result = await service.syncStateFromChain(
+          makeEvent('EscrowFunded'),
+        );
+
+        expect(result).toEqual({
+          skipped: true,
+          reason: 'already_funded_or_terminal',
+        });
+        expect(repo.updateState).not.toHaveBeenCalled();
+        expect(notifications.notifyFunded).not.toHaveBeenCalled();
+      },
+    );
   });
 
   // ── EscrowShipped ────────────────────────────────────────────────────────
@@ -192,6 +210,39 @@ describe('EscrowService.syncStateFromChain', () => {
         reason: 'already_shipped_or_terminal',
       });
       expect(repo.markShipped).not.toHaveBeenCalled();
+    });
+
+    it.each(['DELIVERED', 'DISPUTED'] as const)(
+      'skips when escrow has already advanced to %s so it never moves backwards (#1039)',
+      async (state) => {
+        repo.findById.mockResolvedValue(
+          makeEscrow({ state, trackingId: 'TRK-123' }),
+        );
+
+        const result = await service.syncStateFromChain(
+          makeEvent('EscrowShipped', { trackingId: 'TRK-123' }),
+        );
+
+        expect(result).toEqual({
+          skipped: true,
+          reason: 'already_shipped_or_terminal',
+        });
+        expect(repo.markShipped).not.toHaveBeenCalled();
+        expect(notifications.notifyShipped).not.toHaveBeenCalled();
+      },
+    );
+
+    it('transitions CREATED → SHIPPED on forward jump when EscrowFunded was missed (#1039)', async () => {
+      const shipped = makeEscrow({ state: 'SHIPPED', trackingId: 'TRK-123' });
+      repo.findById.mockResolvedValue(makeEscrow({ state: 'CREATED' }));
+      repo.markShipped.mockResolvedValue(shipped);
+
+      const result = await service.syncStateFromChain(
+        makeEvent('EscrowShipped', { trackingId: 'TRK-123' }),
+      );
+
+      expect(result).toEqual({ skipped: false });
+      expect(repo.markShipped).toHaveBeenCalledWith('escrow-1', 'TRK-123');
     });
 
     it("falls back to the escrow's existing trackingId when the event omits one", async () => {

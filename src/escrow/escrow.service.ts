@@ -1093,8 +1093,8 @@ export class EscrowService {
 
     switch (eventType) {
       case 'EscrowFunded': {
-        if (escrow.state === 'FUNDED' || escrow.state === 'SHIPPED' || TERMINAL_STATES.has(escrow.state)) {
-          return { skipped: true, reason: 'already_funded_shipped_or_terminal' };
+        if (escrow.state !== 'CREATED') {
+          return { skipped: true, reason: 'already_funded_or_terminal' };
         }
         const funded = await this.escrowRepository.updateState(
           escrowId,
@@ -1107,7 +1107,7 @@ export class EscrowService {
       }
 
       case 'EscrowShipped': {
-        if (escrow.state === 'SHIPPED' || TERMINAL_STATES.has(escrow.state)) {
+        if (escrow.state !== 'CREATED' && escrow.state !== 'FUNDED') {
           return { skipped: true, reason: 'already_shipped_or_terminal' };
         }
         const trackingId = event.trackingId ?? escrow.trackingId ?? '';
