@@ -62,6 +62,8 @@ describe('EscrowService.syncStateFromChain', () => {
       updateState: jest.fn(),
       markShipped: jest.fn(),
       markCompleted: jest.fn(),
+      markRefunded: jest.fn(),
+      markCancelled: jest.fn(),
       markAutoReleased: jest.fn(),
     } as unknown as jest.Mocked<EscrowRepository>;
 
@@ -334,7 +336,7 @@ describe('EscrowService.syncStateFromChain', () => {
   // ── DisputeResolved ──────────────────────────────────────────────────────
 
   describe('DisputeResolved', () => {
-    it('resolves dispute, completes escrow, and sends notification', async () => {
+    it('resolves dispute with RELEASE, completes escrow, and sends notification', async () => {
       const completed = makeEscrow({ state: 'COMPLETED' });
       repo.findById.mockResolvedValue(makeEscrow({ state: 'DISPUTED' }));
       repo.markCompleted.mockResolvedValue(completed);
@@ -343,7 +345,7 @@ describe('EscrowService.syncStateFromChain', () => {
         .mockResolvedValue({ id: 'dispute-1', status: 'OPEN' });
 
       const result = await service.syncStateFromChain(
-        makeEvent('DisputeResolved'),
+        makeEvent('DisputeResolved', { resolution: 'RELEASE' }),
       );
 
       expect(result).toEqual({ skipped: false });
@@ -358,8 +360,34 @@ describe('EscrowService.syncStateFromChain', () => {
       expect(notifications.notifyCompleted).toHaveBeenCalledWith(completed);
     });
 
+    it('resolves dispute with REFUND, marks escrow REFUNDED, and sends notifyRefunded (#1040)', async () => {
+      const refunded = makeEscrow({ state: 'REFUNDED' });
+      repo.findById.mockResolvedValue(makeEscrow({ state: 'DISPUTED' }));
+      repo.markRefunded.mockResolvedValue(refunded);
+      prisma.dispute.findFirst = jest
+        .fn()
+        .mockResolvedValue({ id: 'dispute-1', status: 'OPEN' });
+
+      const result = await service.syncStateFromChain(
+        makeEvent('DisputeResolved', { resolution: 'REFUND' }),
+      );
+
+      expect(result).toEqual({ skipped: false });
+      expect(prisma.dispute.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'dispute-1' },
+          data: expect.objectContaining({ status: 'RESOLVED' }),
+        }),
+      );
+      expect(repo.markRefunded).toHaveBeenCalledWith('escrow-1');
+      expect(repo.markCancelled).not.toHaveBeenCalled();
+      expect(repo.markCompleted).not.toHaveBeenCalled();
+      await Promise.resolve();
+      expect(notifications.notifyRefunded).toHaveBeenCalledWith(refunded);
+    });
+
     it('skips when dispute is already RESOLVED (idempotent)', async () => {
-      repo.findById.mockResolvedValue(makeEscrow({ state: 'COMPLETED' }));
+      repo.findById.mockResolvedValue(makeEscrow({ state: 'DISPUTED' }));
       prisma.dispute.findFirst = jest
         .fn()
         .mockResolvedValue({ id: 'dispute-1', status: 'RESOLVED' });
@@ -372,6 +400,21 @@ describe('EscrowService.syncStateFromChain', () => {
         skipped: true,
         reason: 'dispute_already_resolved',
       });
+      expect(repo.markCompleted).not.toHaveBeenCalled();
+    });
+
+    it('skips when escrow is already in a terminal state', async () => {
+      repo.findById.mockResolvedValue(makeEscrow({ state: 'COMPLETED' }));
+
+      const result = await service.syncStateFromChain(
+        makeEvent('DisputeResolved', { resolution: 'REFUND' }),
+      );
+
+      expect(result).toEqual({
+        skipped: true,
+        reason: 'terminal_state',
+      });
+      expect(repo.markRefunded).not.toHaveBeenCalled();
       expect(repo.markCompleted).not.toHaveBeenCalled();
     });
 
