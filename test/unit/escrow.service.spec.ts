@@ -1,23 +1,34 @@
-/* eslint-disable @typescript-eslint/unbound-method */
 import {
   BadRequestException,
   ForbiddenException,
   NotFoundException,
   ConflictException,
+  ServiceUnavailableException,
+  UnprocessableEntityException,
 } from '@nestjs/common';
+import { TracingService } from '../../src/tracing/tracing.service';
+import { createTracingMock } from './tracing-mock';
 import { Test } from '@nestjs/testing';
 import { NotificationsService } from '../../src/notifications/notifications.service';
 import { EscrowRecord } from '../../src/prisma/prisma.service';
 import { EscrowRepository } from '../../src/escrow/escrow.repository';
 import { EscrowService } from '../../src/escrow/escrow.service';
+import { S3PresignService } from '../../src/common/services/s3-presign.service';
+import { ContractService } from '../../src/stellar/contract.service';
+import { LogisticsService } from '../../src/logistics/logistics.service';
+import { CacheService } from '../../src/cache/cache.service';
+import { PrismaService } from '../../src/prisma/prisma.service';
+import { ConfigService } from '../../src/config/config.service';
 
 describe('EscrowService.handleShipment (issue #16)', () => {
   let service: EscrowService;
   let repository: jest.Mocked<EscrowRepository>;
   let notifications: jest.Mocked<NotificationsService>;
+  let configService: { get: jest.Mock };
 
   const fundedEscrow: EscrowRecord = {
     id: 'escrow-1',
+    contractEscrowId: 7n,
     itemName: 'Leather bag',
     itemRef: 'bag-123',
     amount: 125,
@@ -47,12 +58,21 @@ describe('EscrowService.handleShipment (issue #16)', () => {
       notifyFunded: jest.fn(),
       notifyShipped: jest.fn(),
     } as unknown as jest.Mocked<NotificationsService>;
+    configService = {
+      get: jest.fn((key: string) =>
+        key === 'FRONTEND_URL' ? 'https://pay.example.com/' : undefined,
+      ),
+    };
 
     const moduleRef = await Test.createTestingModule({
       providers: [
         EscrowService,
+        { provide: TracingService, useValue: createTracingMock().service },
         { provide: EscrowRepository, useValue: repository },
         { provide: NotificationsService, useValue: notifications },
+        { provide: S3PresignService, useValue: {} },
+        { provide: ContractService, useValue: {} },
+        { provide: ConfigService, useValue: configService },
       ],
     }).compile();
 
@@ -111,33 +131,54 @@ describe('EscrowService.handleShipment (issue #16)', () => {
     ).rejects.toThrow(NotFoundException);
   });
 
-  it('creates a new escrow and returns a payment URL', async () => {
-    const createDto = {
-      itemName: 'Leather bag',
-      itemRef: 'bag-123',
-      amount: 125,
-      currency: 'USDC',
-      buyerAddress: 'buyer-address',
-    };
-    const createdEscrow = {
-      ...fundedEscrow,
-      id: 'escrow-2',
-    };
-    repository.findByVendorAndItem.mockResolvedValue(null);
-    repository.create.mockResolvedValue(createdEscrow);
-    notifications.notifyFunded.mockResolvedValue();
-
-    await expect(
-      service.createEscrow(createDto as any, 'vendor-address'),
-    ).resolves.toEqual(
-      expect.objectContaining({
+  it.each([
+    ['https://pay.example.com', 'https://pay.example.com/pay/escrow-2'],
+    ['https://pay.example.com/', 'https://pay.example.com/pay/escrow-2'],
+  ])(
+    'builds a payment URL from FRONTEND_URL (%s)',
+    async (frontendUrl, paymentUrl) => {
+      configService.get.mockReturnValue(frontendUrl);
+      const createDto = {
+        itemName: 'Leather bag',
+        itemRef: 'bag-123',
+        amount: 125,
+        currency: 'USDC',
+        buyerAddress: 'buyer-address',
+      };
+      const createdEscrow: EscrowRecord = {
+        ...fundedEscrow,
         id: 'escrow-2',
-        paymentUrl: 'https://trust-link.local/pay/escrow-2',
-      }),
-    );
-    expect(repository.create).toHaveBeenCalledWith(createDto, 'vendor-address');
-    expect(notifications.notifyFunded).toHaveBeenCalledWith(createdEscrow);
-  });
+        contractEscrowId: 7n,
+        state: 'CREATED',
+      };
+      repository.findByVendorAndItem.mockResolvedValue(null);
+      repository.create.mockResolvedValue(createdEscrow);
+      notifications.notifyFunded.mockResolvedValue();
+
+      await expect(
+        service.createEscrow(createDto, 'vendor-address'),
+      ).resolves.toEqual(
+        expect.objectContaining({
+          id: 'escrow-2',
+          contractEscrowId: 7n,
+          paymentUrl,
+        }),
+      );
+      expect(repository.create).toHaveBeenCalledWith(
+        createDto,
+        'vendor-address',
+      );
+      // Issue #550: #496 removed the notifyFunded call from createEscrow — an
+      // escrow is CREATED, not FUNDED, at creation time. This is a negative
+      // assertion (not just a deleted one) so the premature notification can't
+      // silently come back. The corresponding positive-path coverage — that
+      // notifyFunded *is* called once the escrow actually transitions to
+      // FUNDED via the on-chain sync handler — already exists in
+      // src/escrow/escrow.service.sync-state.spec.ts
+      // ("EscrowFunded > transitions CREATED → FUNDED and sends notification").
+      expect(notifications.notifyFunded).not.toHaveBeenCalled();
+    },
+  );
 
   it('throws ConflictException for duplicate escrow references', async () => {
     const createDto = {
@@ -150,7 +191,7 @@ describe('EscrowService.handleShipment (issue #16)', () => {
     repository.findByVendorAndItem.mockResolvedValue(fundedEscrow);
 
     await expect(
-      service.createEscrow(createDto as any, 'vendor-address'),
+      service.createEscrow(createDto, 'vendor-address'),
     ).rejects.toThrow(ConflictException);
     expect(repository.create).not.toHaveBeenCalled();
   });
@@ -166,8 +207,567 @@ describe('EscrowService.handleShipment (issue #16)', () => {
     repository.findByVendorAndItem.mockResolvedValue(null);
 
     await expect(
-      service.createEscrow(createDto as any, 'vendor-address'),
+      service.createEscrow(createDto, 'vendor-address'),
     ).rejects.toThrow(BadRequestException);
     expect(repository.create).not.toHaveBeenCalled();
+  });
+
+  // issue #934
+  it('throws BadRequestException when the vendor is also the buyer', async () => {
+    const createDto = {
+      itemName: 'Leather bag',
+      itemRef: 'bag-123',
+      amount: 125,
+      currency: 'USDC',
+      buyerAddress: 'vendor-address',
+    };
+    repository.findByVendorAndItem.mockResolvedValue(null);
+
+    await expect(
+      service.createEscrow(createDto, 'vendor-address'),
+    ).rejects.toThrow(BadRequestException);
+    expect(repository.findByVendorAndItem).not.toHaveBeenCalled();
+    expect(repository.create).not.toHaveBeenCalled();
+  });
+
+  // Additional tests for cancellation, updateBuyerContact, and viewer projection
+  describe('additional EscrowService behaviors (issue #409)', () => {
+    it('cancelEscrow allows buyer, vendor, admin and rejects strangers', async () => {
+      const escrow = { ...fundedEscrow };
+      repository.findById.mockResolvedValue(escrow);
+      repository.markCancelled = jest
+        .fn()
+        .mockResolvedValue({ ...escrow, state: 'CANCELLED' });
+
+      // buyer allowed
+      await expect(
+        service.cancelEscrow(escrow.id, escrow.buyerAddress, false),
+      ).resolves.toHaveProperty('state', 'CANCELLED');
+
+      // vendor allowed
+      await expect(
+        service.cancelEscrow(escrow.id, escrow.vendorAddress, false),
+      ).resolves.toHaveProperty('state', 'CANCELLED');
+
+      // admin allowed
+      await expect(
+        service.cancelEscrow(escrow.id, 'some-rando', true),
+      ).resolves.toHaveProperty('state', 'CANCELLED');
+
+      // stranger rejected
+      repository.findById.mockResolvedValue(escrow);
+      await expect(
+        service.cancelEscrow(escrow.id, 'not-related', false),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('cancelEscrow rejects non-FUNDED terminal transitions with ConflictException', async () => {
+      const escrow = { ...fundedEscrow, state: 'COMPLETED' } as EscrowRecord;
+      repository.findById.mockResolvedValue(escrow);
+
+      await expect(
+        service.cancelEscrow(escrow.id, escrow.buyerAddress, false),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('cancelPendingEscrow authorizes buyer/vendor/admin and consults chain state', async () => {
+      const escrow = { ...fundedEscrow, state: 'CREATED' } as EscrowRecord;
+      repository.findById.mockResolvedValue(escrow);
+      const contractService = {
+        getEscrowState: jest.fn(),
+        cancelEscrowOnChain: jest.fn(),
+      } as unknown as ContractService;
+
+      // replace module service instance with one that has contract hooks
+      (
+        service as unknown as { contractService: ContractService }
+      ).contractService = contractService;
+      repository.markCancelled = jest
+        .fn()
+        .mockResolvedValue({ ...escrow, state: 'CANCELLED' });
+
+      // chain reports FUNDED: should call cancelEscrowOnChain then markCancelled
+      (contractService.getEscrowState as jest.Mock).mockResolvedValue({
+        exists: true,
+        state: 'FUNDED',
+      });
+      (contractService.cancelEscrowOnChain as jest.Mock).mockResolvedValue(
+        'tx-123',
+      );
+
+      await expect(
+        service.cancelPendingEscrow(escrow.id, escrow.vendorAddress, false),
+      ).resolves.toHaveProperty('state', 'CANCELLED');
+      // cancel_escrow(env, caller: Address, escrow_id: u64) addresses the
+      // escrow by the contract's own id and require_auth()s the caller.
+      expect(contractService.cancelEscrowOnChain).toHaveBeenCalledWith(
+        escrow.contractEscrowId,
+        escrow.vendorAddress,
+      );
+
+      // stranger rejected
+      repository.findById.mockResolvedValue(escrow);
+      await expect(
+        service.cancelPendingEscrow(escrow.id, 'not-related', false),
+      ).rejects.toThrow(ForbiddenException);
+
+      // chain reports non-CREATED non-FUNDED -> conflict
+      repository.findById.mockResolvedValue({ ...escrow, state: 'CREATED' });
+      (contractService.getEscrowState as jest.Mock).mockResolvedValue({
+        exists: true,
+        state: 'SHIPPED',
+      });
+      await expect(
+        service.cancelPendingEscrow(escrow.id, escrow.vendorAddress, false),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('updateBuyerContact rejects updates for terminal-state escrows', async () => {
+      const escrow = { ...fundedEscrow, state: 'COMPLETED' } as EscrowRecord;
+      repository.findById.mockResolvedValue(escrow);
+
+      await expect(
+        service.updateBuyerContact(escrow.id, { email: 'x@x.com' }),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('updateBuyerContact throws ServiceUnavailableException when encryption is not configured', async () => {
+      const originalKey = process.env.CONTACT_ENCRYPTION_KEY;
+      delete process.env.CONTACT_ENCRYPTION_KEY;
+      try {
+        const escrow = { ...fundedEscrow, state: 'FUNDED' } as EscrowRecord;
+        repository.findById.mockResolvedValue(escrow);
+
+        await expect(
+          service.updateBuyerContact(escrow.id, { email: 'x@x.com' }),
+        ).rejects.toThrow(ServiceUnavailableException);
+      } finally {
+        if (originalKey !== undefined) {
+          process.env.CONTACT_ENCRYPTION_KEY = originalKey;
+        } else {
+          delete process.env.CONTACT_ENCRYPTION_KEY;
+        }
+      }
+    });
+
+    it('getEscrowForViewer sets isBuyer and isVendor flags and omits viewer when no caller', async () => {
+      const escrow = {
+        ...fundedEscrow,
+        buyerContactEmail: 'a:b:c',
+        buyerContactPhone: 'd:e:f',
+      } as EscrowRecord;
+      repository.findById.mockResolvedValue(escrow);
+
+      const withBuyer = await service.getEscrowForViewer(
+        escrow.id,
+        escrow.buyerAddress,
+      );
+      expect(withBuyer.viewer).toEqual({ isBuyer: true, isVendor: false });
+
+      const withVendor = await service.getEscrowForViewer(
+        escrow.id,
+        escrow.vendorAddress,
+      );
+      expect(withVendor.viewer).toEqual({ isBuyer: false, isVendor: true });
+
+      const noViewer = await service.getEscrowForViewer(escrow.id);
+      expect(noViewer.viewer).toBeUndefined();
+    });
+
+    it('toPublicEscrow never exposes buyerContactEmail or buyerContactPhone', async () => {
+      const escrow = {
+        ...fundedEscrow,
+        buyerContactEmail: 'aa:bb:cc',
+        buyerContactPhone: 'dd:ee:ff',
+      } as EscrowRecord;
+      repository.findById.mockResolvedValue(escrow);
+
+      const pub = await service.getPublicEscrow(escrow.id);
+      const rawPub = pub as unknown as Record<string, unknown>;
+      expect(rawPub.buyerContactEmail).toBeUndefined();
+      expect(rawPub.buyerContactPhone).toBeUndefined();
+    });
+  });
+
+  it('findById does not report a repository outage as a 4xx client error (issue #930)', async () => {
+    repository.findById.mockRejectedValue(new Error('connection reset'));
+
+    await expect(service.findById(fundedEscrow.id)).rejects.not.toThrow(
+      BadRequestException,
+    );
+  });
+});
+
+// Issue #635: getTracking, createIdempotent, generateEvidenceUploadUrl, and
+// findVendorEscrows had no coverage at all — this file's main describe block
+// above wires @Optional() LogisticsService/CacheService/PrismaService as
+// `undefined` (matching how Nest resolves an omitted optional provider), so
+// they need their own module with those providers actually supplied.
+describe('EscrowService: tracking, idempotency, evidence upload, and vendor listing (issue #635)', () => {
+  let service: EscrowService;
+  let repository: jest.Mocked<EscrowRepository>;
+  let s3Presign: jest.Mocked<S3PresignService>;
+  let logistics: jest.Mocked<LogisticsService>;
+  let cache: jest.Mocked<CacheService>;
+  let configService: { get: jest.Mock };
+
+  const shippedEscrow: EscrowRecord = {
+    id: 'escrow-shipped',
+    contractEscrowId: 9n,
+    itemName: 'Camera',
+    itemRef: 'cam-1',
+    amount: 250,
+    currency: 'USDC',
+    buyerAddress: 'buyer-1',
+    vendorAddress: 'vendor-1',
+    state: 'SHIPPED',
+    trackingId: 'TRK-1',
+    shippedAt: new Date('2026-01-02T00:00:00.000Z'),
+    deliveredAt: null,
+    deliveryRecordedAt: null,
+    autoReleaseSubmittedAt: null,
+    autoReleaseTxHash: null,
+    disputeId: null,
+    createdAt: new Date('2026-01-01T00:00:00.000Z'),
+    updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+  };
+
+  beforeEach(async () => {
+    repository = {
+      findById: jest.fn(),
+      findByVendorAndItem: jest.fn(),
+      create: jest.fn(),
+      findVendorEscrows: jest.fn(),
+    } as unknown as jest.Mocked<EscrowRepository>;
+    s3Presign = {
+      presign: jest.fn(),
+    } as unknown as jest.Mocked<S3PresignService>;
+    logistics = {
+      getStatus: jest.fn(),
+    } as unknown as jest.Mocked<LogisticsService>;
+    cache = {
+      get: jest.fn(),
+      set: jest.fn(),
+      del: jest.fn(),
+    } as unknown as jest.Mocked<CacheService>;
+    configService = { get: jest.fn().mockReturnValue(undefined) };
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        EscrowService,
+        { provide: EscrowRepository, useValue: repository },
+        { provide: NotificationsService, useValue: {} },
+        { provide: S3PresignService, useValue: s3Presign },
+        { provide: ContractService, useValue: {} },
+        { provide: LogisticsService, useValue: logistics },
+        { provide: CacheService, useValue: cache },
+        { provide: PrismaService, useValue: undefined },
+        { provide: TracingService, useValue: createTracingMock().service },
+        { provide: ConfigService, useValue: configService },
+      ],
+    }).compile();
+
+    service = moduleRef.get(EscrowService);
+  });
+
+  describe('getTracking', () => {
+    it('throws NotFoundException when the escrow has no trackingId', async () => {
+      repository.findById.mockResolvedValue({
+        ...shippedEscrow,
+        trackingId: null,
+      });
+
+      await expect(service.getTracking(shippedEscrow.id)).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('returns a cached tracking result without calling the logistics service', async () => {
+      repository.findById.mockResolvedValue(shippedEscrow);
+      const cached = {
+        status: 'IN_TRANSIT',
+        events: [],
+      };
+      cache.get.mockResolvedValue(cached);
+
+      await expect(service.getTracking(shippedEscrow.id)).resolves.toEqual(
+        cached,
+      );
+      expect(logistics.getStatus).not.toHaveBeenCalled();
+    });
+
+    it('fetches, caches, and returns live tracking details on a cache miss', async () => {
+      repository.findById.mockResolvedValue(shippedEscrow);
+      cache.get.mockResolvedValue(null);
+      logistics.getStatus.mockResolvedValue({
+        status: 'DELIVERED',
+        carrier: 'DHL',
+        estimatedDelivery: new Date('2026-01-05T00:00:00.000Z'),
+        events: [
+          {
+            timestamp: new Date('2026-01-04T00:00:00.000Z'),
+            status: 'DELIVERED',
+            description: 'Package delivered',
+          },
+        ],
+      });
+
+      const result = await service.getTracking(shippedEscrow.id);
+      expect(result.status).toBe('DELIVERED');
+      expect(result.carrier).toBe('DHL');
+      expect(cache.set).toHaveBeenCalledWith(
+        `tracking:${shippedEscrow.trackingId}`,
+        expect.objectContaining({ status: 'DELIVERED' }),
+        60,
+      );
+    });
+
+    it('wraps a logistics service failure as NotFoundException', async () => {
+      repository.findById.mockResolvedValue(shippedEscrow);
+      cache.get.mockResolvedValue(null);
+      logistics.getStatus.mockRejectedValue(new Error('carrier API down'));
+
+      await expect(service.getTracking(shippedEscrow.id)).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+  });
+
+  describe('getTracking without a logistics service configured', () => {
+    it('throws NotFoundException even when a trackingId exists', async () => {
+      const moduleRef = await Test.createTestingModule({
+        providers: [
+          EscrowService,
+          { provide: TracingService, useValue: createTracingMock().service },
+          { provide: EscrowRepository, useValue: repository },
+          { provide: NotificationsService, useValue: {} },
+          { provide: S3PresignService, useValue: s3Presign },
+          { provide: ContractService, useValue: {} },
+        ],
+      }).compile();
+      const noLogisticsService = moduleRef.get(EscrowService);
+      repository.findById.mockResolvedValue(shippedEscrow);
+
+      await expect(
+        noLogisticsService.getTracking(shippedEscrow.id),
+      ).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('createIdempotent', () => {
+    const createDto = {
+      itemName: 'Camera',
+      itemRef: 'cam-1',
+      amount: 250,
+      currency: 'USDC',
+      buyerAddress: 'buyer-1',
+    };
+
+    /** Backs the cache mock with a Map so set() results are read back. */
+    function useInMemoryCache(): Map<string, unknown> {
+      const store = new Map<string, unknown>();
+      cache.get.mockImplementation((key: string) =>
+        Promise.resolve(store.get(key) ?? null),
+      );
+      cache.set.mockImplementation((key: string, value: unknown) => {
+        store.set(key, value);
+        return Promise.resolve();
+      });
+      return store;
+    }
+
+    it('creates and caches the escrow with a request hash on a first call', async () => {
+      cache.get.mockResolvedValue(null);
+      repository.findByVendorAndItem.mockResolvedValue(null);
+      repository.create.mockResolvedValue(shippedEscrow);
+
+      const result = await service.createIdempotent(
+        'idem-key-2',
+        createDto,
+        'vendor-1',
+      );
+
+      expect(result).toMatchObject({ id: shippedEscrow.id });
+      expect(cache.set).toHaveBeenCalledWith(
+        'idempotency:vendor-1:idem-key-2',
+        {
+          requestHash: expect.stringMatching(/^[0-9a-f]{64}$/),
+          result: expect.objectContaining({ id: shippedEscrow.id }),
+        },
+        86400,
+      );
+    });
+
+    // issue #932
+    it('returns the cached escrow for the same key and the same body', async () => {
+      useInMemoryCache();
+      repository.findByVendorAndItem.mockResolvedValue(null);
+      repository.create.mockResolvedValue(shippedEscrow);
+
+      const first = await service.createIdempotent(
+        'idem-key-1',
+        createDto,
+        'vendor-1',
+      );
+      // Same fields in a different key order must hash the same.
+      const reordered = {
+        buyerAddress: createDto.buyerAddress,
+        currency: createDto.currency,
+        amount: createDto.amount,
+        itemRef: createDto.itemRef,
+        itemName: createDto.itemName,
+      };
+      const second = await service.createIdempotent(
+        'idem-key-1',
+        reordered,
+        'vendor-1',
+      );
+
+      expect(second).toEqual(first);
+      expect(repository.create).toHaveBeenCalledTimes(1);
+    });
+
+    it('rejects the same key with a different body with 422', async () => {
+      useInMemoryCache();
+      repository.findByVendorAndItem.mockResolvedValue(null);
+      repository.create.mockResolvedValue(shippedEscrow);
+
+      await service.createIdempotent('idem-key-3', createDto, 'vendor-1');
+
+      const attempt = service.createIdempotent(
+        'idem-key-3',
+        { ...createDto, itemRef: 'cam-2' },
+        'vendor-1',
+      );
+      await expect(attempt).rejects.toThrow(UnprocessableEntityException);
+      await expect(attempt).rejects.toMatchObject({ status: 422 });
+      expect(repository.create).toHaveBeenCalledTimes(1);
+    });
+
+    it('scopes the key per vendor, so another vendor may reuse it', async () => {
+      useInMemoryCache();
+      repository.findByVendorAndItem.mockResolvedValue(null);
+      repository.create.mockResolvedValue(shippedEscrow);
+
+      await service.createIdempotent('idem-key-4', createDto, 'vendor-1');
+      await expect(
+        service.createIdempotent(
+          'idem-key-4',
+          { ...createDto, itemRef: 'cam-2' },
+          'vendor-2',
+        ),
+      ).resolves.toMatchObject({ id: shippedEscrow.id });
+      expect(repository.create).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('generateEvidenceUploadUrl', () => {
+    it('derives the object key extension from the filename', async () => {
+      s3Presign.presign.mockReturnValue('https://signed-url');
+
+      const result = await service.generateEvidenceUploadUrl(
+        'buyer-1',
+        'photo.png',
+      );
+
+      expect(result.uploadUrl).toBe('https://signed-url');
+      expect(result.storagePath).toBe('evidence/buyer-1/');
+      expect(result.publicUrl).toMatch(/\.png$/);
+      expect(result.fileName).toBe('photo.png');
+    });
+
+    it('falls back to a "bin" extension for a filename with no dot', async () => {
+      s3Presign.presign.mockReturnValue('https://signed-url');
+
+      const result = await service.generateEvidenceUploadUrl(
+        'buyer-1',
+        'noext',
+      );
+
+      expect(result.publicUrl).toMatch(/\.bin$/);
+    });
+
+    it.each([
+      ['https://evidence.example.com'],
+      ['https://evidence.example.com/'],
+    ])(
+      'builds the public URL from EVIDENCE_STORAGE_BASE_URL (%s)',
+      async (baseUrl) => {
+        configService.get.mockImplementation((key: string) =>
+          key === 'EVIDENCE_STORAGE_BASE_URL' ? baseUrl : undefined,
+        );
+        s3Presign.presign.mockReturnValue('https://signed-url');
+
+        const result = await service.generateEvidenceUploadUrl(
+          'buyer-1',
+          'photo.png',
+        );
+
+        expect(result.publicUrl).toMatch(
+          /^https:\/\/evidence\.example\.com\/evidence\/buyer-1\/[0-9a-f-]+\.png$/,
+        );
+        expect(s3Presign.presign).toHaveBeenCalledWith(result.publicUrl);
+      },
+    );
+
+    it('never writes a path segment from the filename into the object key', async () => {
+      s3Presign.presign.mockReturnValue('https://signed-url');
+
+      const result = await service.generateEvidenceUploadUrl(
+        'buyer-1',
+        'a.jpg/../../x',
+      );
+
+      expect(result.publicUrl).toMatch(
+        /^[^?]*\/evidence\/buyer-1\/[0-9a-f-]+\.bin$/,
+      );
+    });
+  });
+
+  describe('findVendorEscrows', () => {
+    it('applies default sort/order/page/limit when the query omits them', async () => {
+      repository.findVendorEscrows.mockResolvedValue({
+        data: [shippedEscrow],
+        total: 1,
+      });
+
+      const result = await service.findVendorEscrows('vendor-1', {});
+
+      expect(repository.findVendorEscrows).toHaveBeenCalledWith(
+        'vendor-1',
+        undefined,
+        'date',
+        'desc',
+        1,
+        20,
+      );
+      expect(result).toEqual({
+        data: [expect.objectContaining({ id: shippedEscrow.id, amount: 250 })],
+        total: 1,
+        page: 1,
+        limit: 20,
+      });
+    });
+
+    it('passes through explicit sort/order/page/limit/state', async () => {
+      repository.findVendorEscrows.mockResolvedValue({ data: [], total: 0 });
+
+      await service.findVendorEscrows('vendor-1', {
+        state: 'SHIPPED',
+        sort: 'amount',
+        order: 'asc',
+        page: 3,
+        limit: 5,
+      });
+
+      expect(repository.findVendorEscrows).toHaveBeenCalledWith(
+        'vendor-1',
+        'SHIPPED',
+        'amount',
+        'asc',
+        3,
+        5,
+      );
+    });
   });
 });

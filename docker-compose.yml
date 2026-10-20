@@ -15,13 +15,22 @@ services:
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318
       - OTEL_SERVICE_NAME=trustlink-backend
     depends_on:
-      - db
-      - redis
-      - jaeger
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      jaeger:
+        condition: service_started
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
   db:
-    image: postgres:15-alpine
+    image: postgres:16-alpine
     environment:
       - POSTGRES_USER=trustlink
       - POSTGRES_PASSWORD=trustlink
@@ -31,6 +40,12 @@ services:
     ports:
       - "5432:5432"
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U trustlink -d trustlink_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   redis:
     image: redis:7-alpine
@@ -39,6 +54,12 @@ services:
     volumes:
       - redis_data:/data
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   jaeger:
     image: jaegertracing/all-in-one:1.62
@@ -49,7 +70,124 @@ services:
       - COLLECTOR_OTLP_ENABLED=true
     restart: unless-stopped
 
+  # Production profile services
+  app-prod:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://trustlink:${POSTGRES_PASSWORD}@db-prod:5432/trustlink_db
+      - REDIS_URL=redis://redis-prod:6379
+      - SEP10_JWT_SECRET=${SEP10_JWT_SECRET}
+      - ADMIN_ADDRESS=${ADMIN_ADDRESS}
+      - PRESIGN_SECRET=${PRESIGN_SECRET}
+      - SYSTEM_SIGNER_SECRET=${SYSTEM_SIGNER_SECRET}
+      - CONTRACT_ID=${CONTRACT_ID}
+      - FRONTEND_URL=${FRONTEND_URL}
+      - EVIDENCE_STORAGE_BASE_URL=${EVIDENCE_STORAGE_BASE_URL}
+      - CONTACT_ENCRYPTION_KEY=${CONTACT_ENCRYPTION_KEY}
+      - CREDENTIAL_ENCRYPTION_KEY=${CREDENTIAL_ENCRYPTION_KEY}
+      - STELLAR_WEBHOOK_SECRET=${STELLAR_WEBHOOK_SECRET}
+      - SENTRY_DSN=${SENTRY_DSN}
+      - SOROBAN_RPC_URL=${SOROBAN_RPC_URL}
+      - STELLAR_NETWORK=${STELLAR_NETWORK:-MAINNET}
+      - OTEL_ENABLED=${OTEL_ENABLED:-false}
+      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT}
+      - OTEL_SERVICE_NAME=trustlink-backend
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS}
+      - API_BASE_URL=${API_BASE_URL}
+      - SENDGRID_API_KEY=${SENDGRID_API_KEY}
+      - SENDGRID_FROM_EMAIL=${SENDGRID_FROM_EMAIL}
+      - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}
+      - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
+      - TWILIO_FROM_NUMBER=${TWILIO_FROM_NUMBER}
+    depends_on:
+      db-prod:
+        condition: service_healthy
+      redis-prod:
+        condition: service_healthy
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: 3
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    profiles:
+      - production
+
+  db-prod:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=trustlink
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=trustlink_db
+    volumes:
+      - postgres_data_prod:/var/lib/postgresql/data
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: 3
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U trustlink -d trustlink_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    profiles:
+      - production
+
+  redis-prod:
+    image: redis:7-alpine
+    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: 3
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    profiles:
+      - production
+
 volumes:
   postgres_data:
   redis_data:
   app_data:
+  postgres_data_prod:

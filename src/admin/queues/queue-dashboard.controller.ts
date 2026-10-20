@@ -1,4 +1,12 @@
 import { Controller, Get, UseGuards } from '@nestjs/common';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
+import { THROTTLE_WINDOW_MS } from '../../common/security/throttle.config';
 import { JwtGuard } from '../../auth/guards/jwt.guard';
 import { AdminGuard } from '../guards/admin.guard';
 import { QueueDashboardService } from './queue-dashboard.service';
@@ -23,11 +31,30 @@ import { QueuesDashboardDto } from './queue-stats.dto';
  *   "generatedAt": "2026-05-27T10:00:00.000Z"
  * }
  */
+@ApiTags('Admin')
+@ApiBearerAuth()
 @Controller('admin/queues')
 @UseGuards(JwtGuard, AdminGuard)
 export class QueueDashboardController {
   constructor(private readonly dashboardService: QueueDashboardService) {}
 
+  /**
+   * Returns real-time job counts for all registered BullMQ queues.
+   *
+   * @returns Dashboard data with per-queue job counts and pause status
+   * @throws UnauthorizedException if Bearer token is missing or invalid
+   * @throws ForbiddenException if caller is not an admin
+   * @authentication Requires valid SEP-10 JWT (admin only)
+   */
+  @ApiOperation({ summary: 'Get real-time BullMQ queue dashboard data' })
+  @ApiResponse({
+    status: 200,
+    description: 'Queue counts returned.',
+    type: QueuesDashboardDto,
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized.' })
+  @ApiResponse({ status: 403, description: 'Admin access required.' })
+  @Throttle({ default: { limit: 20, ttl: THROTTLE_WINDOW_MS } })
   @Get()
   getDashboard(): Promise<QueuesDashboardDto> {
     return this.dashboardService.getDashboard();

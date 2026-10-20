@@ -56,6 +56,20 @@ This repository participates in the **[Stellar Wave Program](https://www.drips.n
 
 ---
 
+## 📜 Specification Requirements Document
+
+Before contributing, read **[SPECIFICATION.md](SPECIFICATION.md)** — it is the authoritative specification for this project. Every code change must conform to its requirements. PRs that violate the specification **will be rejected**.
+
+Key requirements from the SRD:
+- **No `any` types** — strict TypeScript required
+- **Tests required** for all new code — coverage of `src/` must stay at or above **95% lines / 82% branches / 90% functions**, enforced by `scripts/check_coverage.js` (issue #850 raised these floors from 70% / 64% / 65%)
+- **Security first** — JWT signature verification, input sanitization, PII encryption
+- **CI must pass** — lint, test, integration tests and migrations are required checks. Dependency auditing runs weekly in `security-audit.yml` and does not block merges
+- **Conventional commits** — `type(scope): description`
+- **Repository pattern** — services never call Prisma directly
+
+---
+
 ## Before You Start
 
 ### Finding Work
@@ -78,47 +92,107 @@ This repository participates in the **[Stellar Wave Program](https://www.drips.n
 
 | Tool | Version | Notes |
 |---|---|---|
-| Node.js | `20+` | Use [nvm](https://github.com/nvm-sh/nvm) |
-| npm / pnpm | latest | |
+| Node.js | `22` | Pinned in `.nvmrc`. Run `nvm use` in the project root |
+| npm | `10.x` | Ships with Node 22. See the note below before using another version |
 | PostgreSQL | `15+` | Local install or Docker |
 | Docker | optional | For spinning up Postgres quickly |
+
+> **Use Node 22, not just "20 or newer".** Every CI workflow reads `.nvmrc`, so
+> anything else means your local results and CI's can disagree. Newer versions
+> of npm in particular resolve optional platform dependencies differently and
+> will produce a `package-lock.json` that makes `npm ci` fail in CI with
+> `Missing: ... from lock file`. If you see that error, you are on the wrong
+> Node version.
+>
+> **Keep Node type definitions aligned.** The `@types/node` major in
+> `package.json` must always match the runtime major in `.nvmrc`. Update both
+> together, run `nvm use`, and regenerate `package-lock.json` with `npm install`.
+> Do not merge Dependabot updates that move `@types/node` past the runtime major.
 
 ### First-Time Setup
 
 ```bash
 # 1. Fork and clone
-git clone https://github.com/YOUR_USERNAME/trustlink-backend
-cd trustlink-backend
+git clone https://github.com/YOUR_USERNAME/trust-link-backend
+cd trust-link-backend
 
 # 2. Add upstream
-git remote add upstream https://github.com/your-org/trustlink-backend
+git remote add upstream https://github.com/JSE-ORG/trust-link-backend
 
-# 3. Install dependencies
-npm install
+# 3. Use the pinned Node version
+nvm use          # reads .nvmrc
 
-# 4. Set up environment
+# 4. Install dependencies
+npm ci           # not `npm install` — see note below
+
+# 5. Set up environment
 cp .env.example .env
 # Edit .env — testnet values are pre-filled, you need your own DB URL
 
-# 5. Start Postgres (Docker shortcut)
+# 6. Generate the Prisma client
+npx prisma generate
+
+# 7. Start Postgres (Docker shortcut)
 docker run --name trustlink-pg \
   -e POSTGRES_USER=trustlink \
   -e POSTGRES_PASSWORD=trustlink \
   -e POSTGRES_DB=trustlink_dev \
   -p 5432:5432 -d postgres:15
 
-# 6. Run migrations
+# 8. Run migrations
 npx prisma migrate dev
 
-# 7. Seed the database (optional — creates test escrow records)
-npx prisma db seed
+# 9. Seed the database (optional — creates test escrow records)
+npm run db:seed
 
-# 8. Start the dev server
+# 10. Start the dev server
 npm run start:dev
 ```
 
-The API will be available at `http://localhost:3001`.
-Swagger docs: `http://localhost:3001/api/docs`
+The API will be available at `http://localhost:3000`.
+Swagger docs: `http://localhost:3000/api/docs`
+
+**Step 4, why `npm ci`.** It installs exactly what the lockfile specifies and
+never rewrites it. `npm install` will silently update `package-lock.json`, and
+committing that drift is the single most common reason a pull request fails
+every check at the install step. Only run `npm install` when you are
+deliberately adding or upgrading a dependency.
+
+**Step 6, why `prisma generate`.** The Prisma client is generated into
+`node_modules` and is not committed. Skip this and `@prisma/client` exports do
+not exist, so `npm run typecheck` fails with errors like
+`Module '"@prisma/client"' has no exported member 'PrismaClient'`. That is a
+missing step, not a broken repository. Re-run it whenever
+`prisma/schema.prisma` changes. Note that `prisma generate` reads
+`prisma.config.ts`, which calls `env('DATABASE_URL')` at load time — that is
+why the `.env` file must exist before this step.
+
+### Writing Tests That Need Authentication
+
+`JwtGuard` requires a properly signed SEP-10 access token. Sending a bare
+Stellar address as a bearer token does **not** authenticate, so
+`` .set('Authorization', `Bearer ${address}`) `` will return 401.
+
+Use the helper in `test/auth-helper.ts`:
+
+```ts
+import { bearer } from '../auth-helper';
+
+// Ordinary caller
+.set('Authorization', bearer(VENDOR_ADDRESS))
+
+// Admin caller
+.set('Authorization', bearer(ADMIN_ADDRESS, { role: 'admin' }))
+```
+
+It signs tokens with the same algorithm and claim shape as
+`Sep10Service.issueJwt`, so a test token is indistinguishable from a real one to
+the guard. `test/integration/dispute-access.integration-spec.ts` is a worked
+example covering both cases.
+
+If you branched before this landed, rebase onto `dev`. Tests that authenticated
+with a bare address were migrated across the whole suite, and yours will need
+the same change.
 
 ### Staying in Sync
 
@@ -209,20 +283,53 @@ trustlink-backend/
 
 ### Branching
 
+This repository uses two long-lived branches.
+
+| Branch | What it is | Do you branch from it? |
+|---|---|---|
+| `dev` | Default branch. Every pull request targets this. | **Yes** |
+| `main` | Released baseline, promoted from `dev` once green. | No |
+
+Branch from `dev`, and open your pull request against `dev`. A pull request
+targeting `main` will be retargeted or closed.
+
 ```bash
-git checkout main
-git pull upstream main
+git checkout dev
+git pull upstream dev
 git checkout -b feat/your-feature-name
+```
+
+If you opened a pull request before this changed, you do not need to redo
+anything. Rebase onto `dev` and a maintainer will retarget it:
+
+```bash
+git fetch upstream
+git rebase upstream/dev
 ```
 
 | Type | Pattern | Example |
 |---|---|---|
 | Feature | `feat/description` | `feat/gigl-logistics-provider` |
 | Bug fix | `fix/description` | `fix/auto-release-duplicate-sign` |
-| Tests | `test/description` | `test/dispute-service-integration` |
+| Tests | `test/description` | `test/tracking-poll-worker-specs` |
 | Docs | `docs/description` | `docs/add-swagger-to-dispute-dto` |
 | Refactor | `refactor/description` | `refactor/extract-escrow-repository` |
 | Chore | `chore/description` | `chore/upgrade-prisma-5.x` |
+
+---
+
+### Changelog Entries
+
+Add an entry to the `[Unreleased]` section of `CHANGELOG.md` when a change
+affects service consumers or operators: new or changed endpoints, request or
+response contracts, authentication or authorization behavior, configuration,
+deployment behavior, security fixes, or observable bug fixes. Group entries
+under the Keep a Changelog headings and describe the outcome for users rather
+than copying the commit subject.
+
+Do not add an entry for internal-only work such as tests, CI, refactors with no
+observable behavior change, formatting, or dependency maintenance unless it
+changes a consumer-facing behavior or fixes a security issue.
 
 ---
 
@@ -231,6 +338,7 @@ git checkout -b feat/your-feature-name
 ### General
 
 - TypeScript strict mode is enabled — `any` types will be flagged in review
+- A pre-commit hook runs `eslint --fix` on your staged `.ts` files — `npm ci` installs it, so you rarely need to think about formatting before committing
 - Run `npm run lint` before committing — ESLint with NestJS rules must pass clean
 - Run `npm run format` to apply Prettier — don't submit unformatted code
 - Prefer `async/await` over raw `.then()` chains
@@ -355,7 +463,7 @@ npm run format
 npm run lint
 
 # Type check
-npm run type-check
+npm run typecheck
 
 # Tests
 npm run test
@@ -411,22 +519,17 @@ Closes #
 
 ## Testing
 
-```bash
-# Unit tests
-npm run test
+### Test Suites
 
-# Watch mode (during development)
-npm run test:watch
+The repository maintains three test suites with strict filename regex boundaries, commands, and CI workflows:
 
-# Integration tests (requires a real DB — uses a separate test DB)
-npm run test:integration
+| Suite | Filename Pattern | Command | CI Workflow | Selection Rule |
+|---|---|---|---|---|
+| **Unit** | `(src\|test)/.*\.spec\.ts$` | `npm test` / `npm run test:cov` | `test.yml` / `ci.yml` | Use for isolated unit testing of a single service or function with all dependencies mocked. |
+| **Integration** | `test/integration/.*\.integration-spec\.ts$` | `npm run test:integration` | `integration-test.yml` | Use for testing module component interactions against a database under `test/integration/`. |
+| **E2E** | `.*\.e2e-spec\.ts$` | `npm run test:e2e` | `e2e-test.yml` | Use for full HTTP request/response cycle testing using supertest against a bootstrapped NestJS app. |
 
-# E2E tests (requires full stack)
-npm run test:e2e
-
-# Coverage report
-npm run test:cov
-```
+Run `npm run check-test-match` to verify that all test files match one of the three Jest configurations. Spec files matching none of these patterns will fail CI validation.
 
 ### Test Layers
 
@@ -460,13 +563,39 @@ describe("EscrowService", () => {
 
 **Integration tests** (`test/integration/`) — Test a full module with a real test database (in-memory or Docker). Use `@nestjs/testing` with a real Prisma client pointing to a test DB.
 
-**E2E tests** (`test/e2e/`) — Test full HTTP request-response cycles using `supertest`. The full NestJS app is bootstrapped against a test DB.
+**E2E tests** (`test/*.e2e-spec.ts`) — Test full HTTP request-response cycles using `supertest`. The full NestJS app is bootstrapped against a test DB.
 
 ### Coverage Expectations
 
 New code must include tests. PRs that drop overall coverage by more than 2% will be asked to add tests before merging.
 
 ---
+
+## Database Scripts
+
+| Script | Command | Description |
+|---|---|---|
+| Apply pending migrations | `npm run db:migrate` | Runs `prisma migrate deploy` — applies all pending migrations; safe for CI and production |
+| Create a new migration | `npx prisma migrate dev --name <name>` | Generates and applies a migration for local development |
+| Reset local database | `npm run db:reset` | Drops, recreates, re-migrates, and re-seeds the local database (development only — requires confirmation) |
+| Populate test data | `npm run db:seed` | Runs `scripts/db-seed.ts` to insert 3 vendor profiles, 10 escrows, 2 disputes, and 10 notifications idempotently |
+| Open Prisma Studio | `npm run db:studio` | Launches the visual database browser |
+| Regenerate Prisma client | `npm run db:generate` | Required after editing `prisma/schema.prisma` |
+
+### Typical local development flow
+
+```bash
+# First-time setup
+npm run db:migrate    # apply all migrations
+npm run db:seed       # populate with test data
+
+# After pulling schema changes
+npm run db:generate   # regenerate client
+npm run db:migrate    # apply new migrations
+
+# Start fresh (drops all data)
+npm run db:reset      # reset + seed in one step
+```
 
 ## Database Migrations
 
@@ -489,6 +618,19 @@ npx prisma generate
 - Migration names must be descriptive: `add-dispute-resolution-timestamp`, not `update1`
 - Destructive migrations (dropping columns or tables) must include a comment explaining data handling
 - If you're adding a non-nullable column, it must either have a `@default` value or include a migration that backfills existing rows
+
+## CI Caching Strategy
+
+The CI pipeline uses two levels of caching to reduce run times:
+
+| Cache | Key | What it stores |
+|---|---|---|
+| npm cache | `setup-node cache: 'npm'` | Downloaded npm packages (`~/.npm`) |
+| TypeScript build cache | `ts-build-<os>-<hash of tsconfig + src>` | Compiled output in `dist/` and `tsconfig.build.tsbuildinfo` |
+
+The TS build cache is invalidated whenever `tsconfig.build.json` or any `src/**/*.ts` file changes. On cache hit, `nest build` skips unchanged files and only recompiles what changed.
+
+`npm ci` is used instead of `npm install` in all CI steps for faster, deterministic installs from the lockfile.
 
 ---
 
@@ -517,6 +659,7 @@ We aim to acknowledge within 48 hours and patch critical issues within 7 days.
 
 ## Getting Help
 
+- 💬 **Telegram** → [Join the TrustLink contributor group](https://t.me/+Y8K7AmrX9kViOTBk) — fastest way to reach a maintainer
 - 💬 **GitHub Discussions** → [Ask a question](../../discussions/categories/q-a)
 - 🐛 **GitHub Issues** → Confirmed bugs only — include steps to reproduce and error logs
 - 🌊 **Stellar Developers Discord** → [discord.gg/stellardev](https://discord.gg/stellardev) for real-time help

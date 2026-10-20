@@ -1,0 +1,614 @@
+import { createTracingMock } from '../../test/unit/tracing-mock';
+import { Logger } from '@nestjs/common';
+import { AutoReleaseWorker } from './auto-release.worker';
+import { EscrowRepository } from '../escrow/escrow.repository';
+import { DisputeRepository } from '../dispute/dispute.repository';
+import { ContractService } from '../stellar/contract.service';
+import {
+  AutoReleaseSourceNotConfiguredError,
+  ConfigService,
+} from '../config/config.service';
+import { EscrowRecord, DisputeRecord } from '../prisma/prisma.service';
+import { Test } from '@nestjs/testing';
+import { TracingService } from '../tracing/tracing.service';
+
+const TEST_AUTO_RELEASE_SOURCE =
+  'GCKFBEIYTKP5RQGHKGKFHVOPXQVQPQWO7EEQOFTIYSDIN2R7RQNU3XXY';
+
+function makeEscrow(overrides: Partial<EscrowRecord> = {}): EscrowRecord {
+  return {
+    id: 'escrow-1',
+    contractEscrowId: 7n,
+    itemName: 'Widget',
+    itemRef: 'REF-001',
+    amount: 100,
+    currency: 'USDC',
+    buyerAddress: 'buyer-addr',
+    vendorAddress: 'vendor-addr',
+    state: 'SHIPPED',
+    trackingId: 'track-1',
+    shippedAt: new Date('2024-01-01'),
+    deliveredAt: new Date('2024-01-02'),
+    deliveryRecordedAt: new Date('2024-01-02'),
+    autoReleaseSubmittedAt: null,
+    autoReleaseTxHash: null,
+    disputeId: null,
+    cancelledAt: null,
+    createdAt: new Date('2024-01-01'),
+    updatedAt: new Date('2024-01-01'),
+    ...overrides,
+  };
+}
+
+function makeDispute(overrides: Partial<DisputeRecord> = {}): DisputeRecord {
+  return {
+    id: 'dispute-1',
+    escrowId: 'escrow-1',
+    reason: 'Item not received',
+    description: '',
+    evidenceUrls: [],
+    status: 'OPEN',
+    resolvedAt: null,
+    createdAt: new Date('2024-01-03'),
+    updatedAt: new Date('2024-01-03'),
+    ...overrides,
+  };
+}
+
+describe('AutoReleaseWorker', () => {
+  let worker: AutoReleaseWorker;
+  let escrowRepository: jest.Mocked<EscrowRepository>;
+  let disputeRepository: jest.Mocked<DisputeRepository>;
+  let contractService: jest.Mocked<ContractService>;
+  let configService: jest.Mocked<ConfigService>;
+
+  beforeEach(() => {
+    escrowRepository = {
+      findAutoReleaseEligible: jest.fn(),
+      recordAutoReleaseSubmission: jest.fn(),
+      markAutoReleaseSubmitting: jest
+        .fn()
+        .mockImplementation((id: string) =>
+          Promise.resolve(makeEscrow({ id })),
+        ),
+      clearAutoReleaseSubmitting: jest
+        .fn()
+        .mockImplementation((id: string) =>
+          Promise.resolve(makeEscrow({ id })),
+        ),
+    } as unknown as jest.Mocked<EscrowRepository>;
+
+    disputeRepository = {
+      findByEscrow: jest.fn(),
+    } as unknown as jest.Mocked<DisputeRepository>;
+
+    contractService = {
+      submitAutoRelease: jest.fn(),
+    } as unknown as jest.Mocked<ContractService>;
+
+    configService = {
+      get: jest.fn().mockImplementation((key: string) => {
+        if (key === 'NODE_ENV') {
+          return process.env.NODE_ENV ?? 'test';
+        }
+        return TEST_AUTO_RELEASE_SOURCE;
+      }),
+      // Mirrors the real ConfigService (#672): reads through `get` and throws
+      // the shared error when the address is falsy, so the "unset" test
+      // (which stubs `get` to return undefined) still exercises the
+      // no-submit / clear-claim path.
+      requireAutoReleaseSourceAddress: jest.fn((): string => {
+        const address = configService.get('AUTO_RELEASE_SOURCE_ADDRESS');
+        if (!address) {
+          throw new AutoReleaseSourceNotConfiguredError();
+        }
+        return address;
+      }),
+    } as unknown as jest.Mocked<ConfigService>;
+
+    worker = new AutoReleaseWorker(
+      escrowRepository,
+      disputeRepository,
+      contractService,
+      configService,
+      createTracingMock().service,
+    );
+  });
+
+  describe('run()', () => {
+    it('completes without calling submitAutoRelease when there are no eligible escrows', async () => {
+      escrowRepository.findAutoReleaseEligible.mockResolvedValue([]);
+
+      await worker.run();
+
+      expect(contractService.submitAutoRelease).not.toHaveBeenCalled();
+    });
+
+    it('skips an escrow that has an open dispute', async () => {
+      const escrow = makeEscrow();
+      escrowRepository.findAutoReleaseEligible.mockResolvedValue([escrow]);
+      disputeRepository.findByEscrow.mockResolvedValue(makeDispute());
+
+      await worker.run();
+
+      expect(contractService.submitAutoRelease).not.toHaveBeenCalled();
+      expect(
+        escrowRepository.recordAutoReleaseSubmission,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('skips an escrow whose state is COMPLETED', async () => {
+      const escrow = makeEscrow({ state: 'COMPLETED' });
+      escrowRepository.findAutoReleaseEligible.mockResolvedValue([escrow]);
+      disputeRepository.findByEscrow.mockResolvedValue(null);
+
+      await worker.run();
+
+      expect(contractService.submitAutoRelease).not.toHaveBeenCalled();
+      expect(
+        escrowRepository.recordAutoReleaseSubmission,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('skips an escrow that already has an autoReleaseTxHash', async () => {
+      const escrow = makeEscrow({ autoReleaseTxHash: 'existing-tx-hash' });
+      escrowRepository.findAutoReleaseEligible.mockResolvedValue([escrow]);
+      disputeRepository.findByEscrow.mockResolvedValue(null);
+
+      await worker.run();
+
+      expect(contractService.submitAutoRelease).not.toHaveBeenCalled();
+      expect(
+        escrowRepository.recordAutoReleaseSubmission,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('calls recordAutoReleaseSubmission with the txHash on success', async () => {
+      const escrow = makeEscrow();
+      escrowRepository.findAutoReleaseEligible.mockResolvedValue([escrow]);
+      disputeRepository.findByEscrow.mockResolvedValue(null);
+      contractService.submitAutoRelease.mockResolvedValue('tx-hash-abc');
+      escrowRepository.recordAutoReleaseSubmission.mockResolvedValue(
+        makeEscrow({ state: 'COMPLETED', autoReleaseTxHash: 'tx-hash-abc' }),
+      );
+
+      await worker.run();
+
+      expect(escrowRepository.markAutoReleaseSubmitting).toHaveBeenCalledWith(
+        'escrow-1',
+      );
+      expect(contractService.submitAutoRelease).toHaveBeenCalledWith(
+        7n,
+        expect.any(String),
+      );
+      expect(escrowRepository.recordAutoReleaseSubmission).toHaveBeenCalledWith(
+        'escrow-1',
+        'tx-hash-abc',
+      );
+    });
+
+    it('skips an escrow with no contract id without claiming or submitting it', async () => {
+      const unmapped = makeEscrow({
+        id: 'escrow-unmapped',
+        contractEscrowId: null,
+      });
+      const mapped = makeEscrow({ id: 'escrow-mapped', contractEscrowId: 9n });
+      escrowRepository.findAutoReleaseEligible.mockResolvedValue([
+        unmapped,
+        mapped,
+      ]);
+      disputeRepository.findByEscrow.mockResolvedValue(null);
+      contractService.submitAutoRelease.mockResolvedValue('tx-hash-mapped');
+      const warn = jest
+        .spyOn(worker['logger'], 'warn')
+        .mockImplementation(() => undefined);
+
+      await worker.run();
+
+      expect(
+        escrowRepository.markAutoReleaseSubmitting,
+      ).not.toHaveBeenCalledWith('escrow-unmapped');
+      expect(contractService.submitAutoRelease).toHaveBeenCalledTimes(1);
+      expect(contractService.submitAutoRelease).toHaveBeenCalledWith(
+        9n,
+        expect.any(String),
+      );
+      expect(
+        escrowRepository.recordAutoReleaseSubmission,
+      ).not.toHaveBeenCalledWith('escrow-unmapped', expect.anything());
+      expect(warn).toHaveBeenCalledWith(
+        JSON.stringify({
+          msg: 'auto_release.unmapped_escrow',
+          escrowId: 'escrow-unmapped',
+          eventType: 'auto_release',
+        }),
+      );
+    });
+
+    it('skips an escrow that cannot be claimed because another run already holds it', async () => {
+      const escrow = makeEscrow();
+      escrowRepository.findAutoReleaseEligible.mockResolvedValue([escrow]);
+      disputeRepository.findByEscrow.mockResolvedValue(null);
+      escrowRepository.markAutoReleaseSubmitting.mockResolvedValueOnce(null);
+
+      await worker.run();
+
+      expect(contractService.submitAutoRelease).not.toHaveBeenCalled();
+      expect(
+        escrowRepository.recordAutoReleaseSubmission,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('increments failureCount and records the error when submitAutoRelease throws, and still processes remaining escrows', async () => {
+      const failingEscrow = makeEscrow({ id: 'escrow-fail' });
+      const successEscrow = makeEscrow({ id: 'escrow-ok' });
+
+      escrowRepository.findAutoReleaseEligible.mockResolvedValue([
+        failingEscrow,
+        successEscrow,
+      ]);
+      disputeRepository.findByEscrow.mockResolvedValue(null);
+      contractService.submitAutoRelease
+        .mockRejectedValueOnce(new Error('Stellar RPC timeout'))
+        .mockResolvedValueOnce('tx-hash-ok');
+      escrowRepository.recordAutoReleaseSubmission.mockResolvedValue(
+        makeEscrow({
+          id: 'escrow-ok',
+          state: 'COMPLETED',
+          autoReleaseTxHash: 'tx-hash-ok',
+        }),
+      );
+
+      await worker.run();
+
+      expect(escrowRepository.clearAutoReleaseSubmitting).toHaveBeenCalledWith(
+        'escrow-fail',
+      );
+      expect(contractService.submitAutoRelease).toHaveBeenCalledTimes(2);
+      expect(
+        escrowRepository.recordAutoReleaseSubmission,
+      ).toHaveBeenCalledTimes(1);
+      expect(escrowRepository.recordAutoReleaseSubmission).toHaveBeenCalledWith(
+        'escrow-ok',
+        'tx-hash-ok',
+      );
+    });
+  });
+
+  describe('ported from test/unit — query reference time and top-level failures (issue #10)', () => {
+    it('queries eligibility with the supplied reference time and submits once per eligible escrow', async () => {
+      const referenceTime = new Date('2026-05-26T00:00:00.000Z');
+      escrowRepository.findAutoReleaseEligible.mockResolvedValue([
+        makeEscrow({ id: 'escrow-1', contractEscrowId: 7n }),
+      ]);
+      disputeRepository.findByEscrow.mockResolvedValue(null);
+      contractService.submitAutoRelease.mockResolvedValue('tx-hash');
+
+      await worker.run(referenceTime);
+
+      expect(escrowRepository.findAutoReleaseEligible).toHaveBeenCalledTimes(1);
+      expect(escrowRepository.findAutoReleaseEligible).toHaveBeenCalledWith(
+        referenceTime,
+      );
+      expect(contractService.submitAutoRelease).toHaveBeenCalledTimes(1);
+      expect(contractService.submitAutoRelease).toHaveBeenCalledWith(
+        7n,
+        expect.any(String),
+      );
+      expect(escrowRepository.recordAutoReleaseSubmission).toHaveBeenCalledWith(
+        'escrow-1',
+        'tx-hash',
+      );
+    });
+
+    it('catches top-level worker failures so interval handlers do not reject', async () => {
+      escrowRepository.findAutoReleaseEligible.mockRejectedValue(
+        new Error('database unavailable'),
+      );
+      const loggerSpy = jest
+        .spyOn(worker['logger'], 'error')
+        .mockImplementation(() => undefined);
+
+      await expect(worker.run()).resolves.toBeUndefined();
+
+      expect(loggerSpy).toHaveBeenCalledWith(
+        expect.stringContaining('auto_release.worker_failed'),
+        expect.any(String),
+      );
+    });
+
+    it('resolves through Nest dependency injection with the same collaborators', async () => {
+      const moduleRef = await Test.createTestingModule({
+        providers: [
+          { provide: TracingService, useValue: createTracingMock().service },
+          AutoReleaseWorker,
+          { provide: EscrowRepository, useValue: escrowRepository },
+          { provide: DisputeRepository, useValue: disputeRepository },
+          { provide: ContractService, useValue: contractService },
+          { provide: ConfigService, useValue: configService },
+        ],
+      }).compile();
+
+      const injected = moduleRef.get(AutoReleaseWorker);
+      escrowRepository.findAutoReleaseEligible.mockResolvedValue([]);
+
+      await injected.run();
+
+      expect(injected).toBeInstanceOf(AutoReleaseWorker);
+      expect(contractService.submitAutoRelease).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('auto-release source configuration (issue #500)', () => {
+    it('does not submit and clears the claim when AUTO_RELEASE_SOURCE_ADDRESS is unset', async () => {
+      configService.get.mockReturnValue(undefined);
+      const escrow = makeEscrow();
+      escrowRepository.findAutoReleaseEligible.mockResolvedValue([escrow]);
+      disputeRepository.findByEscrow.mockResolvedValue(null);
+
+      await worker.run();
+
+      expect(contractService.submitAutoRelease).not.toHaveBeenCalled();
+      expect(
+        escrowRepository.recordAutoReleaseSubmission,
+      ).not.toHaveBeenCalled();
+      expect(escrowRepository.clearAutoReleaseSubmitting).toHaveBeenCalledWith(
+        'escrow-1',
+      );
+    });
+
+    it('submits using the address resolved from ConfigService when configured', async () => {
+      const escrow = makeEscrow();
+      escrowRepository.findAutoReleaseEligible.mockResolvedValue([escrow]);
+      disputeRepository.findByEscrow.mockResolvedValue(null);
+      contractService.submitAutoRelease.mockResolvedValue('tx-hash-abc');
+
+      await worker.run();
+
+      expect(contractService.submitAutoRelease).toHaveBeenCalledWith(
+        7n,
+        TEST_AUTO_RELEASE_SOURCE,
+      );
+    });
+  });
+
+  describe('onModuleInit()', () => {
+    it('does not start the interval when NODE_ENV is "test"', () => {
+      const originalEnv = process.env.NODE_ENV;
+      process.env.NODE_ENV = 'test';
+
+      const setIntervalSpy = jest.spyOn(global, 'setInterval');
+      worker.onModuleInit();
+
+      expect(setIntervalSpy).not.toHaveBeenCalled();
+
+      setIntervalSpy.mockRestore();
+      process.env.NODE_ENV = originalEnv;
+    });
+
+    it('starts the interval when NODE_ENV is not "test"', () => {
+      jest.useFakeTimers();
+      const originalEnv = process.env.NODE_ENV;
+      process.env.NODE_ENV = 'production';
+
+      worker.onModuleInit();
+
+      expect(worker['timer']).not.toBeNull();
+
+      worker.onApplicationShutdown();
+      process.env.NODE_ENV = originalEnv;
+      jest.useRealTimers();
+    });
+  });
+
+  describe('onApplicationShutdown()', () => {
+    it('clears the interval and sets the timer to null', () => {
+      jest.useFakeTimers();
+      const originalEnv = process.env.NODE_ENV;
+      process.env.NODE_ENV = 'production';
+
+      worker.onModuleInit();
+      expect(worker['timer']).not.toBeNull();
+
+      worker.onApplicationShutdown();
+
+      expect(worker['timer']).toBeNull();
+
+      process.env.NODE_ENV = originalEnv;
+      jest.useRealTimers();
+    });
+
+    it('does nothing when called without a running timer', () => {
+      expect(() => worker.onApplicationShutdown()).not.toThrow();
+      expect(worker['timer']).toBeNull();
+    });
+  });
+});
+
+/**
+ * Issue #840 — `AutoReleaseWorker` called `run()` from a 5-minute
+ * `setInterval` with no check for a run still in progress. A run submits one
+ * on-chain transaction per eligible escrow, so a slow run outlives the
+ * interval and the next tick starts a second overlapping cycle.
+ *
+ * `SorobanPollerService.poll()` already guards this with a `polling` flag.
+ */
+describe('AutoReleaseWorker reentrancy guard (#840)', () => {
+  let worker: AutoReleaseWorker;
+  let escrowRepository: jest.Mocked<EscrowRepository>;
+  let disputeRepository: jest.Mocked<DisputeRepository>;
+  let contractService: jest.Mocked<ContractService>;
+  let warnSpy: jest.SpyInstance;
+
+  beforeEach(() => {
+    escrowRepository = {
+      findAutoReleaseEligible: jest.fn(),
+      recordAutoReleaseSubmission: jest.fn(),
+      markAutoReleaseSubmitting: jest
+        .fn()
+        .mockImplementation((id: string) =>
+          Promise.resolve(makeEscrow({ id })),
+        ),
+      clearAutoReleaseSubmitting: jest
+        .fn()
+        .mockImplementation((id: string) =>
+          Promise.resolve(makeEscrow({ id })),
+        ),
+    } as unknown as jest.Mocked<EscrowRepository>;
+
+    disputeRepository = {
+      findByEscrow: jest.fn().mockResolvedValue(null),
+    } as unknown as jest.Mocked<DisputeRepository>;
+
+    contractService = {
+      submitAutoRelease: jest.fn().mockResolvedValue('tx-hash'),
+    } as unknown as jest.Mocked<ContractService>;
+
+    const configService = {
+      get: jest.fn().mockImplementation((key: string) => {
+        if (key === 'NODE_ENV') return 'test';
+        return TEST_AUTO_RELEASE_SOURCE;
+      }),
+      requireAutoReleaseSourceAddress: jest.fn(
+        (): string => TEST_AUTO_RELEASE_SOURCE,
+      ),
+    } as unknown as jest.Mocked<ConfigService>;
+
+    warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+
+    worker = new AutoReleaseWorker(
+      escrowRepository,
+      disputeRepository,
+      contractService,
+      configService,
+      createTracingMock().service,
+    );
+  });
+
+  afterEach(() => jest.restoreAllMocks());
+
+  it('skips a tick that starts while a run is in progress', async () => {
+    // An eligibility query that never settles: the first run is still going
+    // when the second tick arrives.
+    let release: () => void = () => undefined;
+    escrowRepository.findAutoReleaseEligible.mockReturnValue(
+      new Promise((resolve) => {
+        release = () => resolve([makeEscrow()]);
+      }),
+    );
+
+    const first = worker.run();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const second = await worker.run();
+
+    release();
+    await first;
+
+    expect(second).toBeUndefined();
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('still in progress'),
+    );
+    expect(escrowRepository.findAutoReleaseEligible).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not re-query eligibility on the skipped tick', async () => {
+    let release: () => void = () => undefined;
+    escrowRepository.findAutoReleaseEligible.mockReturnValue(
+      new Promise((resolve) => {
+        release = () => resolve([]);
+      }),
+    );
+
+    const first = worker.run();
+    await Promise.resolve();
+    await worker.run();
+    release();
+    await first;
+
+    expect(escrowRepository.findAutoReleaseEligible).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not submit a transaction from the skipped tick', async () => {
+    let release: () => void = () => undefined;
+    escrowRepository.findAutoReleaseEligible.mockReturnValue(
+      new Promise((resolve) => {
+        release = () => resolve([makeEscrow()]);
+      }),
+    );
+
+    const first = worker.run();
+    await Promise.resolve();
+    await worker.run();
+    release();
+    await first;
+
+    expect(contractService.submitAutoRelease).toHaveBeenCalledTimes(1);
+  });
+
+  it('runs normally again once the previous run finishes', async () => {
+    escrowRepository.findAutoReleaseEligible.mockResolvedValue([]);
+    await worker.run();
+    await worker.run();
+
+    expect(escrowRepository.findAutoReleaseEligible).toHaveBeenCalledTimes(2);
+  });
+
+  it('clears the flag when a run throws, so later ticks still work', async () => {
+    escrowRepository.findAutoReleaseEligible.mockRejectedValueOnce(
+      new Error('database unavailable'),
+    );
+
+    await worker.run();
+    expect(warnSpy).not.toHaveBeenCalledWith(
+      expect.stringContaining('still in progress'),
+    );
+
+    escrowRepository.findAutoReleaseEligible.mockResolvedValue([]);
+    await worker.run();
+
+    expect(escrowRepository.findAutoReleaseEligible).toHaveBeenCalledTimes(2);
+  });
+
+  it('resolves rather than rejecting when a run throws', async () => {
+    escrowRepository.findAutoReleaseEligible.mockRejectedValue(
+      new Error('database unavailable'),
+    );
+
+    await expect(worker.run()).resolves.toBeUndefined();
+  });
+
+  it('does not overlap after many rapid ticks', async () => {
+    let release: () => void = () => undefined;
+    escrowRepository.findAutoReleaseEligible.mockReturnValue(
+      new Promise((resolve) => {
+        release = () => resolve([]);
+      }),
+    );
+
+    const first = worker.run();
+    await Promise.resolve();
+    for (let i = 0; i < 5; i++) {
+      await worker.run();
+    }
+    release();
+    await first;
+
+    expect(escrowRepository.findAutoReleaseEligible).toHaveBeenCalledTimes(1);
+  });
+
+  it('still submits normally when runs are sequential', async () => {
+    escrowRepository.findAutoReleaseEligible.mockResolvedValue([
+      makeEscrow({ id: 'escrow-a' }),
+    ]);
+
+    await worker.run();
+    await worker.run();
+
+    expect(contractService.submitAutoRelease).toHaveBeenCalledTimes(2);
+    expect(escrowRepository.recordAutoReleaseSubmission).toHaveBeenCalledTimes(
+      2,
+    );
+  });
+});

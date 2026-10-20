@@ -6,8 +6,8 @@ This guide defines the production deployment order for the Trust-Link backend. U
 
 ## Infrastructure Prerequisites
 
-- Node.js 20 runtime.
-- PostgreSQL 15 or newer.
+- Node.js 22 runtime (the version pinned by `.nvmrc` and both Docker stages).
+- PostgreSQL 16 (the version used by Docker Compose and CI).
 - Redis for response and tracking cache when `REDIS_URL` is configured.
 - Stellar Horizon access for the selected network.
 - SendGrid and Twilio credentials when notifications are enabled.
@@ -23,19 +23,153 @@ Set all required variables before running migrations or starting the service:
 - `PORT`
 - `DATABASE_URL`
 - `SEP10_JWT_SECRET`
+- `SYSTEM_SIGNER_SECRET` — Stellar secret key used for transaction signing
 - `ADMIN_ADDRESS`
 - `STELLAR_NETWORK`
-- `STELLAR_WEBHOOK_SECRET`
+- `STELLAR_WEBHOOK_SECRET` — required in production; validates inbound Stellar webhook payloads
 - `REDIS_URL`
 - `ALLOWED_ORIGINS`
 - `API_BASE_URL`
-- `SENDGRID_API_KEY`
-- `TWILIO_ACCOUNT_SID`
-- `TWILIO_AUTH_TOKEN`
+- `PRESIGN_SECRET` — signs evidence pre-signed URLs; must be stable across restarts and replicas
+- `CONTRACT_ID` — Soroban escrow contract ID
+- `FRONTEND_URL` — required in production
+- `EVIDENCE_STORAGE_BASE_URL` — public base URL evidence objects are served from
+- `CONTACT_ENCRYPTION_KEY` — 64-character hex string (32 bytes); required in production
+- `CREDENTIAL_ENCRYPTION_KEY` — 64-character hex string (32 bytes); required in production
+- `SOROBAN_RPC_URL` — required in production; no safe default RPC endpoint exists
+- `SENTRY_DSN` — required in production; error reporting endpoint URL
+- `SENDGRID_API_KEY` *(optional)* — enable email notifications
+- `SENDGRID_FROM_EMAIL` — **required when `SENDGRID_API_KEY` is set**; verified sender address
+- `TWILIO_ACCOUNT_SID` *(optional)* — enable SMS notifications
+- `TWILIO_AUTH_TOKEN` — required when `TWILIO_ACCOUNT_SID` is set
+- `TWILIO_FROM_NUMBER` — **required when `TWILIO_ACCOUNT_SID` is set**; E.164 format
 - `OTEL_ENABLED`
 - `OTEL_EXPORTER_OTLP_ENDPOINT`
 
 Keep secrets in the deployment platform secret manager. Do not bake them into images, workflow files, or migration scripts.
+
+## OpenAPI schema
+
+Swagger UI is intentionally disabled when `NODE_ENV=production`. Production
+operators and API consumers should obtain the generated schema from the CI
+OpenAPI artifact or run `npm run openapi:generate` against the release source.
+
+## Docker Compose Production Deployment
+
+The `docker-compose.yml` includes a production profile optimized for production deployments. To use the production profile:
+
+### Prerequisites
+
+1. Create a `.env` file with production secrets:
+   ```bash
+   SEP10_JWT_SECRET=your-production-jwt-secret-at-least-32-chars
+   SYSTEM_SIGNER_SECRET=Sxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+   ADMIN_ADDRESS=Gxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+   POSTGRES_PASSWORD=your-secure-postgres-password
+   PRESIGN_SECRET=your-cryptographically-random-presign-secret
+   CONTRACT_ID=your-soroban-contract-id
+   FRONTEND_URL=https://app.yourdomain.com
+   EVIDENCE_STORAGE_BASE_URL=https://storage.yourdomain.com
+   CONTACT_ENCRYPTION_KEY=64-character-hex-string-for-contact-encryption
+   CREDENTIAL_ENCRYPTION_KEY=64-character-hex-string-for-credential-encryption
+   STELLAR_NETWORK=MAINNET
+   STELLAR_WEBHOOK_SECRET=your-stellar-webhook-secret
+   SENTRY_DSN=https://xxxx@sentry.io/yyyy
+   SOROBAN_RPC_URL=https://your-soroban-rpc-endpoint
+   ALLOWED_ORIGINS=https://app.yourdomain.com
+   API_BASE_URL=https://api.yourdomain.com
+   OTEL_ENABLED=false
+   OTEL_EXPORTER_OTLP_ENDPOINT=
+   # Optional — enable email notifications
+   # SENDGRID_API_KEY=SG.xxxx
+   # SENDGRID_FROM_EMAIL=noreply@yourdomain.com
+   # Optional — enable SMS notifications
+   # TWILIO_ACCOUNT_SID=ACxxxx
+   # TWILIO_AUTH_TOKEN=xxxx
+   # TWILIO_FROM_NUMBER=+15550001234
+   ```
+
+2. Generate 64-character hex keys for `CONTACT_ENCRYPTION_KEY` and `CREDENTIAL_ENCRYPTION_KEY` with:
+   ```bash
+   node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+   ```
+
+### Starting Production Services
+
+```bash
+# Start with production profile
+docker-compose --profile production up -d
+
+# View logs
+docker-compose --profile production logs -f
+
+# Stop services
+docker-compose --profile production down
+```
+
+### Production Profile Features
+
+- **Restart Policy**: `restart: always` for automatic recovery
+- **Resource Limits**: CPU and memory limits for each service
+- **Logging**: JSON-file driver with log rotation (10MB max, 3 files)
+- **Health Checks**: All services include health checks with proper dependency ordering
+- **No Development Mounts**: Source code volume mounts removed for security
+- **Non-root User**: Application runs as `nestjs` user (UID 1001)
+
+### Service Health Checks
+
+- **PostgreSQL**: Uses `pg_isready` to verify database connectivity
+- **Redis**: Uses `redis-cli ping` to verify Redis is responding
+- **Application**: Uses three HTTP endpoints — pick the right one for each job:
+
+| Endpoint          | Semantics    | When to use                                                                                                |
+| ----------------- | ------------ | ---------------------------------------------------------------------------------------------------------- |
+| `GET /health/live`| **Liveness** | Kubernetes/container-orchestrator `livenessProbe`. Always returns 200 if the HTTP stack is up; NO dependency checks. A failure here means "restart the container". Never triggers a restart because an upstream dependency is briefly down. |
+| `GET /health/ready` | **Readiness** | Kubernetes/container-orchestrator `readinessProbe` and load-balancer target-group health. Runs full dependency checks (PostgreSQL + Horizon, Redis reported but optional). Returns 503 when required dependencies are unreachable, so the instance is removed from rotation temporarily. |
+| `GET /health`    | **Legacy**   | Alias for `/health/ready` (readiness semantics). Preserved for backwards compatibility with existing monitors; new deployments should prefer the two endpoints above. |
+
+#### Orchestrator example (Kubernetes probes)
+
+```yaml
+livenessProbe:
+  httpGet:
+    path: /health/live
+    port: http
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  timeoutSeconds: 2
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /health/ready
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 5
+  timeoutSeconds: 2
+  failureThreshold: 3
+```
+
+Load balancers (AWS ALB, GCP LB, nginx, etc.) should poll **`/health/ready`** (not `/health/live`) so an instance with a database outage is taken out of the pool instead of returning 5xx to real users.
+
+### Client IP Behind a Load Balancer
+
+Behind a load balancer, `req.ip` is the balancer's address, so every user shares one rate-limit bucket. Set `TRUST_PROXY` so the app reads the real client address from `X-Forwarded-For`:
+
+- `TRUST_PROXY=1` when exactly one proxy sits in front of the app (the common case).
+- A comma-separated list of addresses or CIDR ranges, such as `10.0.0.0/8`, when the proxy addresses are known.
+
+Leave it unset when no proxy is in front of the app. Trusting `X-Forwarded-For` without a proxy lets any client choose its own IP.
+
+The application service waits for both PostgreSQL and Redis to be healthy before starting, preventing crash-loops due to unavailable dependencies.
+
+### Resource Limits
+
+Production services have the following resource limits:
+
+- **app-prod**: 1 CPU, 1GB memory (reserve: 0.5 CPU, 512MB)
+- **db-prod**: 1 CPU, 1GB memory (reserve: 0.5 CPU, 512MB)
+- **redis-prod**: 0.5 CPU, 512MB memory (reserve: 0.25 CPU, 256MB)
 
 ## Migration Order
 
@@ -67,7 +201,9 @@ Never run application instances from a new build against an old schema when the 
 ## Validation Milestones
 
 - The service starts without configuration warnings for required production variables.
-- `GET /health` returns a successful response.
+- `GET /health/live` returns 200 (always, no dependencies touched).
+- `GET /health/ready` returns 200 once database + Horizon are reachable; returns 503 when required dependencies are unavailable.
+- `GET /health` (legacy alias) returns the same status code and body as `GET /health/ready`.
 - `GET /version` returns the expected release version.
 - SEP-10 challenge and verify flows issue tokens.
 - Vendor escrow list queries return within the expected latency budget.
@@ -77,6 +213,40 @@ Never run application instances from a new build against an old schema when the 
 - Queue dashboard and logs show no failed background jobs.
 - Error rate and p95 latency remain stable for at least one canary window.
 
+## Production Baseline Migration
+
+The `20260526000000_initial` baseline migration creates the foundational tables (`Escrow`, `VendorProfile`, `Dispute`, `Notification`) and enums. All statements are idempotent (`IF NOT EXISTS`), making them safe on any database.
+
+**If your production database was originally set up via `prisma db push`** (no `_prisma_migrations` table), you must run this one-time transition before the baseline is applied:
+
+```bash
+bash scripts/resolve-existing-migrations.sh
+```
+
+This script syncs the schema and marks all 14 existing migrations as applied, so subsequent `prisma migrate deploy` runs only apply new changes.
+
+**If your production database already uses Prisma Migrate** (has `_prisma_migrations` records), no action is needed — the baseline migration is a no-op via `IF NOT EXISTS`.
+
+## Automated DB Migration Workflow
+
+The `.github/workflows/db-migrate.yml` workflow applies Prisma migrations automatically.
+
+**Triggers:**
+- Runs on every push to `main`
+- Runs on pull requests (status check)
+- Supports manual dispatch with a `dry_run` option via the GitHub Actions UI
+
+**Dry run (preview without applying):**
+1. Go to Actions → Database Migrations → Run workflow
+2. Set `dry_run` to `true`
+3. The workflow runs `prisma migrate status` to show pending migrations without applying them
+
+**Migration status check:**
+After every run (apply or dry run), `prisma migrate status` is executed so the log confirms which migrations were applied and the schema is in sync.
+
+**Running migrations before integration / E2E tests:**
+The `test.yml` workflow already runs `npx prisma migrate deploy` before executing tests. The dedicated `db-migrate.yml` workflow handles production deployments and previews independently.
+
 ## Rollback
 
 1. Stop the rollout and keep the canary isolated.
@@ -84,4 +254,21 @@ Never run application instances from a new build against an old schema when the 
 3. Restore the database from the pre-release backup when migrations are not backward-compatible.
 4. Re-run health, auth, escrow, admin, and webhook validation.
 5. Document the failing milestone before reopening rollout.
+
+**Migration rollback procedure:**
+
+Prisma does not support automatic down migrations. To roll back a schema change:
+
+```bash
+# 1. Restore from the pre-release database backup
+pg_restore -U trustlink -d trustlink_prod backup_pre_release.dump
+
+# 2. Revert to the previous application image and restart
+# 3. Verify the application connects and passes health checks
+
+# To mark a failed migration as rolled back in Prisma's migration table:
+npx prisma migrate resolve --rolled-back <migration_name>
+```
+
+Always take a labelled database snapshot before applying migrations to a shared environment.
 

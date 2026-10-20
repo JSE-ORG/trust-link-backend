@@ -1,22 +1,60 @@
-import { IsEmail, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import {
+  IsEmail,
+  IsOptional,
+  IsString,
+  Matches,
+  MaxLength,
+  MinLength,
+} from 'class-validator';
 import { Transform } from 'class-transformer';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
+/**
+ * Request body for creating or upserting a vendor profile. Contains the
+ * business name and optional contact details. Used by both POST /vendor/profile
+ * and PUT /vendor/profile endpoints.
+ */
 export class CreateVendorProfileDto {
+  @ApiProperty({
+    description: 'Registered business or trading name of the vendor.',
+    minLength: 2,
+    maxLength: 100,
+    example: 'Acme Electronics Ltd',
+  })
   @IsString()
   @MinLength(2, { message: 'Business name must be at least 2 characters long' })
   @MaxLength(100, { message: 'Business name must not exceed 100 characters' })
-  @Transform(({ value }) => value?.trim())
+  @Transform(({ value }: { value: string }) => value?.trim())
   businessName!: string;
 
+  @ApiPropertyOptional({
+    description: 'Contact email address for the vendor.',
+    format: 'email',
+    example: 'sales@acme-electronics.com',
+  })
   @IsOptional()
   @IsEmail({}, { message: 'Must be a valid email address' })
   email?: string;
 
+  @ApiPropertyOptional({
+    description: 'Contact phone number for the vendor in E.164 format.',
+    maxLength: 20,
+    example: '+14155550142',
+  })
   @IsOptional()
   @IsString()
+  @Matches(/^\+[1-9]\d{6,14}$/, {
+    message: 'phone must be a valid E.164 number (e.g. +2348012345678)',
+  })
   @MaxLength(20, { message: 'Phone must not exceed 20 characters' })
   phone?: string;
 
+  @ApiPropertyOptional({
+    description: 'Short description of the vendor and what they sell.',
+    maxLength: 500,
+    example:
+      'Authorized reseller of consumer electronics and camera equipment.',
+  })
   @IsOptional()
   @IsString()
   @MaxLength(500, { message: 'Description must not exceed 500 characters' })

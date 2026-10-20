@@ -1,0 +1,62 @@
+version: 2
+updates:
+  # ── npm ──────────────────────────────────────────────────────────────────────
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+    groups:
+      # Group production dependency minor and patch updates together
+      production-deps:
+        dependency-type: "production"
+        update-types:
+          - "minor"
+          - "patch"
+      # Group dev dependency minor and patch updates together
+      dev-dependencies:
+        dependency-type: "development"
+        update-types:
+          - "minor"
+          - "patch"
+    # Major version npm updates remain as individual pull requests since they
+    # require manual review for breaking changes. The open queue limit (10)
+    # caps how many accumulate before Dependabot pauses.
+
+  # ── GitHub Actions ────────────────────────────────────────────────────────────
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "github_actions"
+    commit-message:
+      prefix: "ci(deps)"
+      include: "scope"
+    groups:
+      # Group all GitHub Actions minor and patch bumps into a single PR so a
+      # batch of upstream pin updates doesn't fill the queue with eight
+      # identical-looking two-line diffs. Major version bumps stay separate
+      # since they typically contain breaking changes and need individual
+      # review.
+      github-actions-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  # Note: Dependabot security updates are a repository setting (Settings > Code security
+  # and analysis) and are not configured here in dependabot.yml. They take no schedule,
+  # labels, or commit-message prefix.

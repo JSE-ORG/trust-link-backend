@@ -1,0 +1,12 @@
+# Every PR in this repository requires review from the backend maintainer.
+# Order matters: the last matching pattern wins.
+
+* @Omoboi-dev
+
+# Areas where an unreviewed change is expensive to undo.
+/prisma/                 @Omoboi-dev
+/src/auth/               @Omoboi-dev
+/src/stellar/            @Omoboi-dev
+/.github/workflows/      @Omoboi-dev
+/SPECIFICATION.md        @Omoboi-dev
+/SECURITY.md             @Omoboi-dev

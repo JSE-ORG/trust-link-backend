@@ -16,10 +16,7 @@ import { resolveWorkflow } from './tracing.middleware';
 export class TracingInterceptor implements NestInterceptor {
   constructor(private readonly tracing: TracingService) {}
 
-  intercept(
-    context: ExecutionContext,
-    next: CallHandler,
-  ): Observable<unknown> {
+  intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
     if (!this.tracing.isEnabled()) {
       return next.handle();
     }

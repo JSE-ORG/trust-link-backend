@@ -1,6 +1,18 @@
-import { Injectable, OnModuleDestroy } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
+import { ConfigService } from '../config/config.service';
+import {
+  Prisma,
+  PrismaClient,
+  Escrow as PrismaEscrow,
+  Dispute as PrismaDispute,
+  FailedTransaction as PrismaFailedTransaction,
+  VendorAccountDetails as PrismaVendorAccountDetails,
+  VendorTrackingSettings as PrismaVendorTrackingSettings,
+} from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
 
 export type EscrowState =
+  | 'CREATED'
   | 'FUNDED'
   | 'SHIPPED'
   | 'DELIVERED'
@@ -9,20 +21,22 @@ export type EscrowState =
   | 'DISPUTED'
   | 'REFUNDED'
   | 'CANCELLED';
-export type NotificationChannel = 'EMAIL' | 'SMS';
 export type NotificationType =
-  | 'FUNDED'
-  | 'SHIPPED'
-  | 'DELIVERED'
-  | 'DISPUTED'
-  | 'COMPLETED'
-  | 'REFUNDED';
-export type DisputeState = 'OPEN' | 'UNDER_REVIEW' | 'RESOLVED';
+  'FUNDED' | 'SHIPPED' | 'DELIVERED' | 'DISPUTED' | 'COMPLETED' | 'REFUNDED';
+export type DisputeState =
+  'OPEN' | 'UNDER_REVIEW' | 'RESOLVED' | 'CANCELLED' | 'ABANDONED';
 
 export interface EscrowRecord {
   id: string;
+  /**
+   * The escrow's id in the Soroban contract (`u64`), or null while the
+   * on-chain escrow has not been matched to this row. Every contract call and
+   * every inbound chain event resolves through it; see the schema comment on
+   * `Escrow.contractEscrowId`.
+   */
+  contractEscrowId: bigint | null;
   itemName: string;
-  itemRef?: string;
+  itemRef: string;
   amount: number;
   currency: string;
   buyerAddress: string;
@@ -36,6 +50,8 @@ export interface EscrowRecord {
   autoReleaseTxHash: string | null;
   disputeId: string | null;
   cancelledAt?: Date | null;
+  buyerContactEmail?: string | null;
+  buyerContactPhone?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -54,572 +70,240 @@ export interface DisputeRecord {
   id: string;
   escrowId: string;
   reason: string;
-  description?: string;
-  evidenceUrls?: string[];
+  description: string;
+  evidenceUrls: string[];
   status: DisputeState;
   resolvedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
 
-export interface NotificationRecord {
+export interface VendorTrackingSettingsRecord {
   id: string;
-  escrowId: string;
-  type: NotificationType;
-  channel: NotificationChannel;
-  recipientAddress: string;
-  providerMessageId: string | null;
-  attemptCount: number;
-  lastResponseCode: number | null;
+  vendorAddress: string;
+  enableTracking: boolean;
+  trackingProvider: string | null;
+  trackingApiKey: string | null;
+  autoUpdateTracking: boolean;
+  trackingUpdateInterval: number;
+  notifyOnDelivery: boolean;
+  notifyOnDelay: boolean;
+  notifyOnException: boolean;
+  delayThresholdHours: number;
+  deliveryConfirmation: boolean;
+  requireSignature: boolean;
+  insuranceRequired: boolean;
+  insuranceValue: number | null;
+  customTrackingRules: Record<string, unknown> | null;
+  webhookUrl: string | null;
+  webhookSecret: string | null;
+  notificationChannels: string[];
+  trackingHistoryRetentionDays: number;
   createdAt: Date;
+  updatedAt: Date;
 }
 
-export interface ProcessedWebhookEventRecord {
-  operationId: string;
-  processedAt: Date;
-}
-
-export interface RefreshTokenRecord {
+export interface VendorAccountDetailsRecord {
   id: string;
-  userId: string;
-  tokenHash: string;
-  parentTokenId: string | null;
-  revoked: boolean;
-  expiresAt: Date;
+  vendorAddress: string;
+  businessLicense: string | null;
+  taxId: string | null;
+  bankAccountNumber: string | null;
+  bankRoutingNumber: string | null;
+  paymentMethods: string[];
+  preferredCurrency: string;
+  billingAddress: string | null;
+  billingCity: string | null;
+  billingState: string | null;
+  billingCountry: string | null;
+  billingPostalCode: string | null;
+  shippingAddress: string | null;
+  shippingCity: string | null;
+  shippingState: string | null;
+  shippingCountry: string | null;
+  shippingPostalCode: string | null;
+  websiteUrl: string | null;
+  socialMediaLinks: string[];
+  businessHours: string | null;
+  timezone: string;
+  language: string;
+  verificationStatus: string;
+  verifiedAt: Date | null;
+  kycStatus: string;
+  kycCompletedAt: Date | null;
+  riskScore: number;
+  complianceNotes: string | null;
+  customFields: Record<string, unknown> | null;
   createdAt: Date;
+  updatedAt: Date;
 }
 
-export interface NonceRecord {
+export type FailedTransactionStatus =
+  'PENDING_REVIEW' | 'REPLAYED' | 'ABANDONED';
+
+export interface FailedTransactionRecord {
   id: string;
-  nonce: string;
-  walletAddress: string;
-  challenge: string;
-  used: boolean;
-  expiresAt: Date;
+  operation: string;
+  escrowId: string | null;
+  errorMessage: string;
+  ledgerFeedback: Record<string, unknown> | null;
+  attempts: number;
+  status: FailedTransactionStatus;
+  lastReplayTxHash: string | null;
   createdAt: Date;
+  updatedAt: Date;
+  reviewedAt: Date | null;
+  replayedAt: Date | null;
 }
 
-type EscrowCreateInput = Omit<
-  EscrowRecord,
-  | 'id'
-  | 'state'
-  | 'trackingId'
-  | 'shippedAt'
-  | 'deliveredAt'
-  | 'deliveryRecordedAt'
-  | 'autoReleaseSubmittedAt'
-  | 'autoReleaseTxHash'
-  | 'disputeId'
-  | 'cancelledAt'
-  | 'createdAt'
-  | 'updatedAt'
-> & {
-  itemRef?: string;
-  state?: EscrowState;
-  trackingId?: string | null;
-  shippedAt?: Date | null;
-  deliveredAt?: Date | null;
-  deliveryRecordedAt?: Date | null;
-  autoReleaseSubmittedAt?: Date | null;
-  autoReleaseTxHash?: string | null;
-  disputeId?: string | null;
-  cancelledAt?: Date | null;
-};
+/**
+ * Boundary mappers: a real PrismaClient returns Prisma's generated row types
+ * (e.g. `amount` as a Decimal, `ledgerFeedback` as JsonValue). The rest of the
+ * codebase consumes the hand-written `*Record` shapes above (numeric amount,
+ * plain objects). Repositories convert generated rows through these mappers so
+ * the public contract — and every existing consumer/test — keeps working.
+ */
+export function toEscrowRecord(row: PrismaEscrow): EscrowRecord {
+  return { ...row, amount: Number(row.amount) };
+}
 
-type DisputeCreateInput = Omit<
-  DisputeRecord,
-  'id' | 'status' | 'resolvedAt' | 'createdAt' | 'updatedAt' | 'evidenceUrls'
-> & {
-  description?: string;
-  status?: DisputeState;
-  resolvedAt?: Date | null;
-  evidenceUrls?: string[];
-};
+/**
+ * Narrows a Dispute row's `status` to the DisputeState union.
+ *
+ * The column is text in the database (see the note on the model), so Prisma
+ * types it as `string`. The values written are always DisputeState members.
+ */
+export function toDisputeRecord(row: PrismaDispute): DisputeRecord {
+  return { ...row, status: row.status as DisputeState };
+}
 
-type EscrowUpdateInput = Partial<
-  Pick<
-    EscrowRecord,
-    | 'state'
-    | 'trackingId'
-    | 'shippedAt'
-    | 'deliveredAt'
-    | 'deliveryRecordedAt'
-    | 'autoReleaseSubmittedAt'
-    | 'autoReleaseTxHash'
-    | 'disputeId'
-    | 'cancelledAt'
-  >
->;
+export function toFailedTransactionRecord(
+  row: PrismaFailedTransaction,
+): FailedTransactionRecord {
+  return {
+    ...row,
+    status: row.status as FailedTransactionStatus,
+    ledgerFeedback:
+      (row.ledgerFeedback as Record<string, unknown> | null) ?? null,
+  };
+}
 
-type VendorProfileCreateInput = Omit<
-  VendorProfileRecord,
-  'createdAt' | 'updatedAt'
->;
+export function toVendorAccountDetailsRecord(
+  row: PrismaVendorAccountDetails,
+): VendorAccountDetailsRecord {
+  return {
+    ...row,
+    customFields: (row.customFields as Record<string, unknown> | null) ?? null,
+  };
+}
 
-type VendorProfileUpdateInput = Partial<
-  Omit<VendorProfileRecord, 'address' | 'createdAt' | 'updatedAt'>
->;
-
-type DisputeUpdateInput = Partial<
-  Pick<
-    DisputeRecord,
-    'status' | 'resolvedAt' | 'reason' | 'escrowId' | 'evidenceUrls'
-  >
->;
+export function toVendorTrackingSettingsRecord(
+  row: PrismaVendorTrackingSettings,
+): VendorTrackingSettingsRecord {
+  return {
+    ...row,
+    customTrackingRules:
+      (row.customTrackingRules as Record<string, unknown> | null) ?? null,
+  };
+}
 
 @Injectable()
-export class PrismaService implements OnModuleDestroy {
-  // databaseUrl is accepted so the module can pass the pool-tuned URL from
-  // ConfigService. The in-memory store does not use it, but a real PrismaClient
-  // replacement should forward it to `new PrismaClient({ datasources: { db: { url } } })`.
-  constructor(readonly databaseUrl?: string) {}
+export class PrismaService extends PrismaClient {
+  readonly effectiveDatabaseUrl?: string;
+  private readonly logger = new Logger('PrismaService');
 
-  private escrows = new Map<string, EscrowRecord>();
-  private disputes = new Map<string, DisputeRecord>();
-  private notifications = new Map<string, NotificationRecord>();
-  private vendorProfiles = new Map<string, VendorProfileRecord>();
-  private webhookEvents = new Map<string, ProcessedWebhookEventRecord>();
-  private refreshTokens = new Map<string, RefreshTokenRecord>();
-  private nonces = new Map<string, NonceRecord>();
-  private escrowId = 1;
-  private disputeId = 1;
-  private notificationId = 1;
-  private refreshTokenId = 1;
-  private nonceId = 1;
+  constructor(
+    @Optional() readonly databaseUrl?: string,
+    @Optional() private readonly configService?: ConfigService,
+  ) {
+    const baseUrl =
+      databaseUrl ||
+      process.env.DATABASE_URL ||
+      'postgresql://postgres:postgres@localhost:5432/trustlink_test';
 
-  escrow = {
-    create: ({ data }: { data: EscrowCreateInput }): Promise<EscrowRecord> => {
-      const now = new Date();
-      const escrow: EscrowRecord = {
-        ...data,
-        id: String(this.escrowId++),
-        state: data.state ?? 'FUNDED',
-        trackingId: data.trackingId ?? null,
-        shippedAt: data.shippedAt ?? null,
-        deliveredAt: data.deliveredAt ?? null,
-        deliveryRecordedAt: data.deliveryRecordedAt ?? null,
-        autoReleaseSubmittedAt: data.autoReleaseSubmittedAt ?? null,
-        autoReleaseTxHash: data.autoReleaseTxHash ?? null,
-        disputeId: data.disputeId ?? null,
-        cancelledAt: data.cancelledAt ?? null,
-        createdAt: now,
-        updatedAt: now,
-      };
-      this.escrows.set(escrow.id, escrow);
-      return Promise.resolve({ ...escrow });
-    },
-    findUnique: ({
-      where,
-    }: {
-      where: { id: string };
-    }): Promise<EscrowRecord | null> => {
-      const escrow = this.escrows.get(where.id);
-      return Promise.resolve(escrow ? { ...escrow } : null);
-    },
-    findMany: ({
-      where,
-    }: {
-      where?: Partial<
-        Pick<
-          EscrowRecord,
-          | 'state'
-          | 'trackingId'
-          | 'vendorAddress'
-          | 'buyerAddress'
-          | 'disputeId'
-          | 'itemRef'
-          | 'autoReleaseTxHash'
-          | 'autoReleaseSubmittedAt'
-        >
-      > & {
-        shippedAt?: { lte: Date };
-        deliveredAt?: { lte: Date } | null;
-      };
-    } = {}): Promise<EscrowRecord[]> => {
-      let escrows = [...this.escrows.values()].filter((escrow) => {
-        if (!where) {
-          return true;
-        }
+    const queryTimeoutMs =
+      configService?.get<number>('QUERY_TIMEOUT_MS') ??
+      parseInt(process.env.QUERY_TIMEOUT_MS ?? '30000', 10);
 
-        return Object.entries(where).every(([key, value]) => {
-          if (value === undefined) {
-            return true;
-          }
+    let effectiveUrl: string;
+    try {
+      const url = new URL(baseUrl);
+      url.searchParams.set('statement_timeout', String(queryTimeoutMs));
+      url.searchParams.set('connect_timeout', '10');
+      effectiveUrl = url.toString();
+    } catch {
+      effectiveUrl = baseUrl;
+    }
 
-          if (
-            (key === 'shippedAt' || key === 'deliveredAt') &&
-            typeof value === 'object' &&
-            value !== null &&
-            'lte' in value
-          ) {
-
-
-            const { lte } = value;
-            const field = key === 'shippedAt' ? escrow.shippedAt : escrow.deliveredAt;
-            return field !== null && field <= lte;
-          }
-
-          return escrow[key as keyof EscrowRecord] === value;
-        });
-      });
-
-      if (!where?.state) {
-        escrows = escrows.filter((e) => e.state !== 'CANCELLED');
-      }
-
-      return Promise.resolve(escrows.map((escrow) => ({ ...escrow })));
-    },
-    update: ({
-      where,
-      data,
-    }: {
-      where: { id: string };
-      data: EscrowUpdateInput;
-    }): Promise<EscrowRecord> => {
-      const existing = this.escrows.get(where.id);
-      if (!existing) {
-        throw new Error(`Escrow ${where.id} not found`);
-      }
-      const updated = { ...existing, ...data, updatedAt: new Date() };
-      this.escrows.set(where.id, updated);
-      return Promise.resolve({ ...updated });
-    },
-    deleteMany: (): Promise<{ count: number }> => {
-      const count = this.escrows.size;
-      this.escrows.clear();
-      return Promise.resolve({ count });
-    },
-  };
-
-  dispute = {
-    create: ({
-      data,
-    }: {
-      data: DisputeCreateInput;
-    }): Promise<DisputeRecord> => {
-      const now = new Date();
-      const dispute: DisputeRecord = {
-        ...data,
-        id: String(this.disputeId++),
-        status: data.status ?? 'OPEN',
-        evidenceUrls: data.evidenceUrls ?? [],
-        resolvedAt: data.resolvedAt ?? null,
-        createdAt: now,
-        updatedAt: now,
-      };
-
-      this.disputes.set(dispute.id, dispute);
-
-      const escrow = this.escrows.get(dispute.escrowId);
-      if (escrow) {
-        this.escrows.set(dispute.escrowId, {
-          ...escrow,
-          state: 'DISPUTED',
-          disputeId: dispute.id,
-          updatedAt: now,
-        });
-      }
-
-      return Promise.resolve({ ...dispute });
-    },
-    findUnique: ({
-      where,
-    }: {
-      where: { id: string };
-    }): Promise<DisputeRecord | null> => {
-      const dispute = this.disputes.get(where.id);
-      return Promise.resolve(dispute ? { ...dispute } : null);
-    },
-    findMany: ({
-      where,
-    }: {
-      where?: Partial<Pick<DisputeRecord, 'escrowId' | 'status'>>;
-    } = {}): Promise<DisputeRecord[]> => {
-      const disputes = [...this.disputes.values()].filter((dispute) => {
-        if (!where) {
-          return true;
-        }
-
-        return Object.entries(where).every(([key, value]) => {
-          if (value === undefined) {
-            return true;
-          }
-
-          return dispute[key as keyof DisputeRecord] === value;
-        });
-      });
-
-      return Promise.resolve(disputes.map((dispute) => ({ ...dispute })));
-    },
-    update: ({
-      where,
-      data,
-    }: {
-      where: { id: string };
-      data: DisputeUpdateInput;
-    }): Promise<DisputeRecord> => {
-      const existing = this.disputes.get(where.id);
-      if (!existing) {
-        throw new Error(`Dispute ${where.id} not found`);
-      }
-
-      const updated = { ...existing, ...data, updatedAt: new Date() };
-      this.disputes.set(where.id, updated);
-      return Promise.resolve({ ...updated });
-    },
-    deleteMany: (): Promise<{ count: number }> => {
-      const count = this.disputes.size;
-      this.disputes.clear();
-      return Promise.resolve({ count });
-    },
-  };
-
-  notification = {
-    create: ({
-      data,
-    }: {
-      data: Omit<NotificationRecord, 'id' | 'createdAt'>;
-    }): Promise<NotificationRecord> => {
-      const notification: NotificationRecord = {
-        ...data,
-        id: String(this.notificationId++),
-        createdAt: new Date(),
-      };
-      this.notifications.set(notification.id, notification);
-      return Promise.resolve({ ...notification });
-    },
-    findMany: (): Promise<NotificationRecord[]> =>
-      Promise.resolve(
-        [...this.notifications.values()].map((notification) => ({
-          ...notification,
-        })),
-      ),
-    deleteMany: (): Promise<{ count: number }> => {
-      const count = this.notifications.size;
-      this.notifications.clear();
-      return Promise.resolve({ count });
-    },
-  };
-
-  processedWebhookEvent = {
-    findUnique: ({
-      where,
-    }: {
-      where: { operationId: string };
-    }): Promise<ProcessedWebhookEventRecord | null> => {
-      const event = this.webhookEvents.get(where.operationId);
-      return Promise.resolve(event ? { ...event } : null);
-    },
-    create: ({
-      data,
-    }: {
-      data: { operationId: string };
-    }): Promise<ProcessedWebhookEventRecord> => {
-      const event: ProcessedWebhookEventRecord = {
-        operationId: data.operationId,
-        processedAt: new Date(),
-      };
-      this.webhookEvents.set(data.operationId, event);
-      return Promise.resolve({ ...event });
-    },
-    delete: ({
-      where,
-    }: {
-      where: { operationId: string };
-    }): Promise<ProcessedWebhookEventRecord | null> => {
-      const event = this.webhookEvents.get(where.operationId) ?? null;
-      this.webhookEvents.delete(where.operationId);
-      return Promise.resolve(event ? { ...event } : null);
-    },
-    deleteMany: (): Promise<{ count: number }> => {
-      const count = this.webhookEvents.size;
-      this.webhookEvents.clear();
-      return Promise.resolve({ count });
-    },
-  };
-
-  refreshToken = {
-    create: ({
-      data,
-    }: {
-      data: Omit<RefreshTokenRecord, 'id' | 'createdAt'>;
-    }): Promise<RefreshTokenRecord> => {
-      const token: RefreshTokenRecord = {
-        ...data,
-        id: String(this.refreshTokenId++),
-        parentTokenId: data.parentTokenId ?? null,
-        createdAt: new Date(),
-      };
-      this.refreshTokens.set(token.id, token);
-      return Promise.resolve({ ...token });
-    },
-    findUnique: ({
-      where,
-    }: {
-      where: { id?: string; tokenHash?: string };
-    }): Promise<RefreshTokenRecord | null> => {
-      const token = where.id
-        ? this.refreshTokens.get(where.id)
-        : [...this.refreshTokens.values()].find(
-            (record) => record.tokenHash === where.tokenHash,
-          );
-      return Promise.resolve(token ? { ...token } : null);
-    },
-    update: ({
-      where,
-      data,
-    }: {
-      where: { id: string };
-      data: Partial<Pick<RefreshTokenRecord, 'revoked'>>;
-    }): Promise<RefreshTokenRecord> => {
-      const existing = this.refreshTokens.get(where.id);
-      if (!existing) {
-        throw new Error(`Refresh token ${where.id} not found`);
-      }
-      const updated = { ...existing, ...data };
-      this.refreshTokens.set(where.id, updated);
-      return Promise.resolve({ ...updated });
-    },
-    updateMany: ({
-      where,
-      data,
-    }: {
-      where: { userId?: string };
-      data: Partial<Pick<RefreshTokenRecord, 'revoked'>>;
-    }): Promise<{ count: number }> => {
-      let count = 0;
-      for (const [id, token] of this.refreshTokens.entries()) {
-        if (!where.userId || token.userId === where.userId) {
-          this.refreshTokens.set(id, { ...token, ...data });
-          count++;
-        }
-      }
-      return Promise.resolve({ count });
-    },
-    deleteMany: (): Promise<{ count: number }> => {
-      const count = this.refreshTokens.size;
-      this.refreshTokens.clear();
-      return Promise.resolve({ count });
-    },
-  };
-
-  nonce = {
-    create: ({
-      data,
-    }: {
-      data: Omit<NonceRecord, 'id' | 'createdAt'>;
-    }): Promise<NonceRecord> => {
-      const nonce: NonceRecord = {
-        ...data,
-        id: String(this.nonceId++),
-        createdAt: new Date(),
-      };
-      this.nonces.set(nonce.id, nonce);
-      return Promise.resolve({ ...nonce });
-    },
-    findUnique: ({
-      where,
-    }: {
-      where: { id?: string; nonce?: string };
-    }): Promise<NonceRecord | null> => {
-      const nonce = where.id
-        ? this.nonces.get(where.id)
-        : [...this.nonces.values()].find(
-            (record) => record.nonce === where.nonce,
-          );
-      return Promise.resolve(nonce ? { ...nonce } : null);
-    },
-    update: ({
-      where,
-      data,
-    }: {
-      where: { id: string };
-      data: Partial<Pick<NonceRecord, 'used'>>;
-    }): Promise<NonceRecord> => {
-      const existing = this.nonces.get(where.id);
-      if (!existing) {
-        throw new Error(`Nonce ${where.id} not found`);
-      }
-      const updated = { ...existing, ...data };
-      this.nonces.set(where.id, updated);
-      return Promise.resolve({ ...updated });
-    },
-    deleteMany: (): Promise<{ count: number }> => {
-      const count = this.nonces.size;
-      this.nonces.clear();
-      return Promise.resolve({ count });
-    },
-  };
-
-  vendorProfile = {
-    create: ({
-      data,
-    }: {
-      data: VendorProfileCreateInput;
-    }): Promise<VendorProfileRecord> => {
-      if (this.vendorProfiles.has(data.address)) {
-        throw new Error(`Vendor profile for ${data.address} already exists`);
-      }
-      const now = new Date();
-      const profile: VendorProfileRecord = {
-        ...data,
-        email: data.email ?? null,
-        phone: data.phone ?? null,
-        description: data.description ?? null,
-        createdAt: now,
-        updatedAt: now,
-      };
-      this.vendorProfiles.set(data.address, profile);
-      return Promise.resolve({ ...profile });
-    },
-    findUnique: ({
-      where,
-    }: {
-      where: { address: string };
-    }): Promise<VendorProfileRecord | null> => {
-      const profile = this.vendorProfiles.get(where.address);
-      return Promise.resolve(profile ? { ...profile } : null);
-    },
-    update: ({
-      where,
-      data,
-    }: {
-      where: { address: string };
-      data: VendorProfileUpdateInput;
-    }): Promise<VendorProfileRecord> => {
-      const existing = this.vendorProfiles.get(where.address);
-      if (!existing) {
-        throw new Error(`Vendor profile for ${where.address} not found`);
-      }
-      const updated = { ...existing, ...data, updatedAt: new Date() };
-      this.vendorProfiles.set(where.address, updated);
-      return Promise.resolve({ ...updated });
-    },
-    deleteMany: (): Promise<{ count: number }> => {
-      const count = this.vendorProfiles.size;
-      this.vendorProfiles.clear();
-      return Promise.resolve({ count });
-    },
-  };
-
-  /** Clears all in-memory Prisma test data and resets generated IDs. */
-  async reset(): Promise<void> {
-    await this.refreshToken.deleteMany();
-    await this.nonce.deleteMany();
-    await this.vendorProfile.deleteMany();
-    await this.notification.deleteMany();
-    await this.dispute.deleteMany();
-    await this.escrow.deleteMany();
-    await this.processedWebhookEvent.deleteMany();
-    this.escrowId = 1;
-    this.disputeId = 1;
-    this.notificationId = 1;
-    this.refreshTokenId = 1;
-    this.nonceId = 1;
+    const adapter = new PrismaPg({ connectionString: effectiveUrl });
+    super({ adapter, log: [{ emit: 'event', level: 'query' }] });
+    this.effectiveDatabaseUrl = effectiveUrl;
   }
 
-  /** Clears in-memory data when the Nest module is destroyed. */
+  async onModuleInit(): Promise<void> {
+    await this.$connect();
+    const slowQueryThresholdMs =
+      this.configService?.get<number>('SLOW_QUERY_THRESHOLD_MS') ??
+      parseInt(process.env.SLOW_QUERY_THRESHOLD_MS ?? '500', 10);
+    // The base PrismaClient type does not carry the query-event log config
+    // through the subclass, so narrow $on to the query-event signature here.
+    // Prisma v7 exposes the client through a Proxy whose get trap returns
+    // methods unbound, so bind `this` explicitly before invoking.
+    const onQuery = this.$on.bind(this) as unknown as (
+      event: 'query',
+      callback: (event: Prisma.QueryEvent) => void,
+    ) => void;
+    onQuery('query', (event: Prisma.QueryEvent) => {
+      if (event.duration >= slowQueryThresholdMs) {
+        this.logger.warn(`Slow query (${event.duration}ms): ${event.query}`);
+      }
+    });
+  }
+
   async onModuleDestroy(): Promise<void> {
-    await this.reset();
+    await this.$disconnect();
+  }
+
+  /**
+   * Truncates every application table (all except `_prisma_migrations`),
+   * `CASCADE`, to give a test a clean database.
+   *
+   * **Test-only.** Throws immediately unless `NODE_ENV === 'test'`, so it can
+   * never wipe a real database if it is left in a code path by mistake.
+   *
+   * Runs as a single `TRUNCATE ... CASCADE` inside a transaction guarded by
+   * `pg_advisory_xact_lock(42)`: the one statement avoids the deadlocks of
+   * truncating tables one-by-one, and the advisory lock serialises `reset()`
+   * across parallel Jest workers sharing the same test database. It does not
+   * reset sequences beyond what `TRUNCATE` does, and it does not re-run
+   * migrations — the schema must already exist.
+   */
+  async reset(): Promise<void> {
+    if (process.env.NODE_ENV !== 'test') {
+      throw new Error(
+        'PrismaService.reset() is a test-only helper and refuses to run ' +
+          `outside NODE_ENV=test (current: ${process.env.NODE_ENV ?? 'undefined'}).`,
+      );
+    }
+    const tablenames = await this.$queryRaw<Array<{ tablename: string }>>`
+      SELECT tablename FROM pg_tables WHERE schemaname='public'
+    `;
+    const tables = tablenames
+      .map(({ tablename }) => tablename)
+      .filter((tablename) => tablename !== '_prisma_migrations')
+      .map((tablename) => `"${tablename}"`)
+      .join(', ');
+    if (tables) {
+      // Single TRUNCATE statement avoids the deadlocks caused by truncating
+      // tables one-by-one, and the advisory lock serializes reset() across
+      // parallel Jest workers sharing the same test database.
+      await this.$transaction(
+        async (tx) => {
+          await tx.$executeRawUnsafe(`SELECT pg_advisory_xact_lock(42);`);
+          await tx.$executeRawUnsafe(`TRUNCATE TABLE ${tables} CASCADE;`);
+        },
+        { timeout: 30000 },
+      );
+    }
   }
 }

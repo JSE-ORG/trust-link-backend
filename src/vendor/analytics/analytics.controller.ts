@@ -1,0 +1,127 @@
+import {
+  Controller,
+  Get,
+  Query,
+  UseGuards,
+  HttpCode,
+  HttpStatus,
+  UnauthorizedException,
+} from '@nestjs/common';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiQuery,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
+import { THROTTLE_WINDOW_MS } from '../../common/security/throttle.config';
+import { CurrentUser } from '../../auth/decorators/current-user.decorator';
+import type { AuthUser } from '../../auth/auth-user';
+import { JwtGuard } from '../../auth/guards/jwt.guard';
+import { AnalyticsService } from './analytics.service';
+import { ChartDataResponse } from './analytics.dto';
+import { AnalyticsStatsResponse } from './analytics-stats.dto';
+import { ChartQueryDto } from './chart-query.dto';
+
+@ApiTags('Vendor')
+@ApiBearerAuth()
+@Controller('vendor/analytics')
+@UseGuards(JwtGuard)
+export class AnalyticsController {
+  constructor(private readonly analyticsService: AnalyticsService) {}
+
+  /**
+   * Returns overall transaction statistics for the authenticated vendor.
+   * Includes volume totals, conversion metrics, dispute rates, and
+   * notification channel preferences.
+   *
+   * @param user - Authenticated vendor
+   * @returns Transaction statistics and channel metrics
+   * @throws UnauthorizedException if Bearer token is missing or invalid
+   * @authentication Requires valid SEP-10 JWT (vendor)
+   */
+  @ApiOperation({
+    summary: 'Get overall transaction statistics for the authenticated vendor',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Vendor transaction statistics returned.',
+    type: AnalyticsStatsResponse,
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized.' })
+  @ApiResponse({ status: 403, description: 'Forbidden.' })
+  @ApiResponse({ status: 429, description: 'Too many requests.' })
+  @ApiResponse({ status: 500, description: 'Internal server error.' })
+  @Throttle({ default: { limit: 20, ttl: THROTTLE_WINDOW_MS } })
+  @Get()
+  @HttpCode(HttpStatus.OK)
+  async getTransactionStats(
+    @CurrentUser() user?: AuthUser,
+  ): Promise<AnalyticsStatsResponse> {
+    // `CurrentUser` really can be undefined; assert-and-hope (`user!`) turned
+    // a missing user into a 500 if `JwtGuard` were ever removed or reordered.
+    // Fail as 401 instead (#671).
+    if (!user) {
+      throw new UnauthorizedException();
+    }
+    return this.analyticsService.getTransactionStats(user.address);
+  }
+
+  /**
+   * Returns daily transaction volume data for chart rendering.
+   *
+   * @param daysParam - Number of days to retrieve (default 30, max 365)
+   * @param timezoneParam - Timezone for date grouping (default UTC)
+   * @param user - Authenticated vendor
+   * @returns Daily volume data with summary totals
+   * @throws UnauthorizedException if Bearer token is missing or invalid
+   * @authentication Requires valid SEP-10 JWT (vendor)
+   */
+  @ApiOperation({
+    summary:
+      'Get daily transaction volume chart data for the authenticated vendor',
+  })
+  @ApiQuery({
+    name: 'days',
+    required: false,
+    description: 'Number of days of data to retrieve (max 365).',
+    example: 30,
+  })
+  @ApiQuery({
+    name: 'timezone',
+    required: false,
+    description: 'IANA timezone for date grouping.',
+    example: 'UTC',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Daily volume chart data returned.',
+    type: ChartDataResponse,
+  })
+  @ApiResponse({ status: 400, description: 'Bad request.' })
+  @ApiResponse({ status: 401, description: 'Unauthorized.' })
+  @ApiResponse({ status: 403, description: 'Forbidden.' })
+  @ApiResponse({ status: 429, description: 'Too many requests.' })
+  @ApiResponse({ status: 500, description: 'Internal server error.' })
+  @Throttle({ default: { limit: 20, ttl: THROTTLE_WINDOW_MS } })
+  @Get('chart')
+  @HttpCode(HttpStatus.OK)
+  async getDailyVolumeChart(
+    @Query() query?: ChartQueryDto,
+    @CurrentUser() user?: AuthUser,
+  ): Promise<ChartDataResponse> {
+    if (!user) {
+      throw new UnauthorizedException();
+    }
+
+    const days = query?.days ?? 30;
+    const timezone = query?.timezone ?? 'UTC';
+
+    return this.analyticsService.getDailyVolumeChart(
+      user.address,
+      days,
+      timezone,
+    );
+  }
+}

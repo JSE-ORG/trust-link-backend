@@ -15,19 +15,19 @@ import {
   ATTR_SERVICE_VERSION,
 } from '@opentelemetry/semantic-conventions';
 
+// Note: This file is a legitimate exception to the rule of using ConfigService.
+// It runs as the very first import in main.ts, before the Nest container exists,
+// so it cannot inject ConfigService.
 const isTest = process.env.NODE_ENV === 'test';
-const isEnabled =
-  !isTest && process.env.OTEL_ENABLED !== 'false';
+const isEnabled = !isTest && process.env.OTEL_ENABLED !== 'false';
 
 let sdk: NodeSDK | undefined;
 
 if (isEnabled) {
   propagation.setGlobalPropagator(new W3CTraceContextPropagator());
 
-  const serviceName =
-    process.env.OTEL_SERVICE_NAME ?? 'trustlink-backend';
-  const serviceVersion =
-    process.env.OTEL_SERVICE_VERSION ?? '1.0.0';
+  const serviceName = process.env.OTEL_SERVICE_NAME ?? 'trustlink-backend';
+  const serviceVersion = process.env.OTEL_SERVICE_VERSION ?? '1.0.0';
   const otlpEndpoint = process.env.OTEL_EXPORTER_OTLP_ENDPOINT?.replace(
     /\/$/,
     '',
@@ -51,12 +51,12 @@ if (isEnabled) {
   });
 
   sdk.start();
+}
 
-  const shutdown = (): void => {
-    void sdk?.shutdown();
-  };
-  process.once('SIGTERM', shutdown);
-  process.once('SIGINT', shutdown);
+export async function shutdownTracing(): Promise<void> {
+  if (sdk) {
+    await sdk.shutdown();
+  }
 }
 
 export function isTracingEnabled(): boolean {

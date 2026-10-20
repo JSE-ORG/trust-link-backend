@@ -1,0 +1,21 @@
+{
+  "$comment": "Advisories the weekly audit (.github/workflows/security-audit.yml) may ignore. Every entry needs id, package, reason and contact. scripts/check_audit.js fails the job on any advisory not listed here, and on any entry whose advisory no longer appears in npm audit, so stale entries must be deleted.",
+  "exceptions": [
+    {
+      "id": "GHSA-3f6p-5ww8-9rcr",
+      "package": "mysql2",
+      "title": "MySQL2: Auth Plugin Downgrade to mysql_clear_password Leaks Plaintext Credentials",
+      "reason": "Pulled in transitively by prisma@7 for its MySQL driver adapter. The datasource in prisma/schema.prisma is postgresql and @prisma/adapter-pg is the only adapter wired up, so this project never opens a MySQL connection and no MySQL credentials exist to leak. npm's suggested fix is a downgrade of prisma to 6.x, which is not acceptable.",
+      "contact": "@Omoboi-dev",
+      "added": "2026-09-26"
+    },
+    {
+      "id": "GHSA-rgwj-5xj2-c3m3",
+      "package": "mysql2",
+      "title": "MySQL2: Unbounded zlib inflate in compressed MySQL protocol handler allows decompression-bomb DoS",
+      "reason": "Same dependency path as GHSA-3f6p-5ww8-9rcr: mysql2 arrives via prisma@7 but no MySQL connection is ever opened, so the compressed-protocol handler is never reached.",
+      "contact": "@Omoboi-dev",
+      "added": "2026-09-26"
+    }
+  ]
+}

@@ -1,53 +1,74 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import axios from 'axios';
-import { ConfigService } from '../config/config.service';
+import { StellarWebhookDto } from '../webhooks/dto/stellar-webhook.dto';
 import { StellarWebhookService } from '../webhooks/stellar-webhook.service';
-import * as fs from 'fs';
-import * as path from 'path';
+import { CursorService } from './cursor.service';
+import { HorizonService } from './horizon.service';
+import { TracingService } from '../tracing/tracing.service';
 
 @Injectable()
 export class EventReplayService implements OnModuleInit {
   private readonly logger = new Logger(EventReplayService.name);
-  private readonly cursorFile = path.resolve(
-    process.cwd(),
-    'data',
-    'stellar_cursor.txt',
-  );
 
   constructor(
-    private readonly config: ConfigService,
     private readonly webhookService: StellarWebhookService,
+    private readonly cursorService: CursorService,
+    private readonly tracing: TracingService,
+    private readonly horizonService: HorizonService,
   ) {}
+
+  /**
+   * Runs `fn` inside a Stellar span.
+   *
+   * Spans here carry identifiers such as the contract escrow id, the network,
+   * and the contract function. Signing secrets, secret keys and full
+   * transaction envelopes are never recorded as attributes.
+   */
+  private traced<T>(
+    name: string,
+    attributes: Record<string, string | number | boolean>,
+    fn: () => T | Promise<T>,
+  ): Promise<T> {
+    return this.tracing.withSpan(name, { attributes }, fn);
+  }
 
   /** Replays recent Horizon operations from the persisted cursor on startup. */
   async onModuleInit(): Promise<void> {
-    try {
-      const network = this.config.get('STELLAR_NETWORK') || 'TESTNET';
-      const horizon =
-        network === 'MAINNET'
-          ? 'https://horizon.stellar.org'
-          : 'https://horizon-testnet.stellar.org';
+    return this.traced('stellar.event_replay.init', {}, () =>
+      this.onModuleInitInternal(),
+    );
+  }
 
-      let cursor: string | undefined = undefined;
-      if (fs.existsSync(this.cursorFile)) {
-        cursor = fs.readFileSync(this.cursorFile, 'utf8').trim();
-        if (!cursor) cursor = undefined;
-      }
+  private async onModuleInitInternal(): Promise<void> {
+    try {
+      // Resolve the Horizon base URL through HorizonService (issue #920) so the
+      // replay honours STELLAR_HORIZON_URL exactly like every other caller,
+      // instead of rebuilding the network default and ignoring the override.
+      const horizon = this.horizonService.getHorizonUrl();
+
+      const cursor = await this.cursorService.get();
 
       const url = `${horizon}/operations?order=asc&limit=200${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`;
       this.logger.log(`EventReplay fetching operations from ${url}`);
-      const res = await axios.get(url, { timeout: 15000 });
+      const res = await axios.get<{
+        _embedded?: { records: Record<string, unknown>[] };
+      }>(url, { timeout: 15000 });
       const records = res.data._embedded?.records ?? [];
 
       for (const rec of records) {
-        // Map operation to webhook DTO minimal shape
-        const dto: any = {
-          id: String(rec.id),
-          type: rec.type,
-          to: rec.to,
-          amount: rec.amount,
-          asset_code: rec.asset_code,
-          transaction_hash: rec.transaction_hash,
+        const dto: StellarWebhookDto = {
+          id: typeof rec['id'] === 'string' ? rec['id'] : '',
+          type: typeof rec['type'] === 'string' ? rec['type'] : '',
+          transaction_hash:
+            typeof rec['transaction_hash'] === 'string'
+              ? rec['transaction_hash']
+              : '',
+          to: typeof rec['to'] === 'string' ? rec['to'] : undefined,
+          amount: typeof rec['amount'] === 'string' ? rec['amount'] : undefined,
+          asset_code:
+            typeof rec['asset_code'] === 'string'
+              ? rec['asset_code']
+              : undefined,
         };
 
         try {
@@ -55,14 +76,13 @@ export class EventReplayService implements OnModuleInit {
         } catch (err) {
           this.logger.error('Failed to process replayed op', err);
         }
+      }
 
-        // persist last processed id
-        try {
-          fs.mkdirSync(path.dirname(this.cursorFile), { recursive: true });
-          fs.writeFileSync(this.cursorFile, String(rec.paging_token || rec.id));
-        } catch (err) {
-          this.logger.warn('Failed to persist cursor file: ' + err.message);
-        }
+      // Persist cursor atomically after processing all records
+      if (records.length > 0) {
+        const lastRec = records[records.length - 1];
+        const newCursor = String(lastRec['paging_token'] ?? lastRec['id']);
+        await this.cursorService.set(newCursor);
       }
 
       this.logger.log(`Event replay processed ${records.length} operations`);

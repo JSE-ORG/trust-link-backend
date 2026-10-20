@@ -1,14 +1,15 @@
 import {
   BadRequestException,
   Injectable,
+  InternalServerErrorException,
   Logger,
-  Optional,
   UnauthorizedException,
 } from '@nestjs/common';
 import * as crypto from 'crypto';
 import { ConfigService } from '../config/config.service';
 import { EscrowRepository } from '../escrow/escrow.repository';
-import { PrismaService } from '../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { StellarWebhookRepository } from './stellar-webhook.repository';
 import { StellarWebhookDto } from './dto/stellar-webhook.dto';
 
 /**
@@ -27,13 +28,12 @@ import { StellarWebhookDto } from './dto/stellar-webhook.dto';
 @Injectable()
 export class StellarWebhookService {
   private readonly logger = new Logger(StellarWebhookService.name);
-  private readonly processedIds = new Set<string>();
 
   constructor(
     private readonly configService: ConfigService,
     private readonly escrowRepository: EscrowRepository,
-    @Optional()
-    private readonly prisma?: PrismaService,
+    private readonly notificationsService: NotificationsService,
+    private readonly webhookRepository: StellarWebhookRepository,
   ) {}
 
   // ---------------------------------------------------------------------------
@@ -52,59 +52,65 @@ export class StellarWebhookService {
     signature: string | undefined,
     dto: StellarWebhookDto,
   ): Promise<{ received: boolean; skipped?: boolean; reason?: string }> {
-    this.verifySignature(rawBody, signature);
-
-    // --- Idempotency check (DB-backed, survives restarts) --------------------
-    const duplicate = this.prisma
-      ? await this.prisma.processedWebhookEvent.findUnique({
-          where: { operationId: dto.id },
-        })
-      : this.processedIds.has(dto.id);
-    if (duplicate) {
-      this.logger.log(
-        JSON.stringify({
-          msg: 'stellar.webhook.duplicate',
-          operationId: dto.id,
-        }),
-      );
-      return { received: true, skipped: true, reason: 'duplicate' };
-    }
-
-    // Persist before processing so concurrent Horizon retries are blocked.
-    if (this.prisma) {
-      await this.prisma.processedWebhookEvent.create({
-        data: { operationId: dto.id },
-      });
-    } else {
-      this.processedIds.add(dto.id);
-    }
-
     try {
-      await this.processEvent(dto);
-    } catch (err) {
-      // Roll back the cursor so the event can be retried on the next delivery.
-      if (this.prisma) {
-        await this.prisma.processedWebhookEvent.delete({
-          where: { operationId: dto.id },
-        });
-      } else {
-        this.processedIds.delete(dto.id);
+      this.verifySignature(rawBody, signature);
+
+      // --- Idempotency check (DB-backed, survives restarts) ------------------
+      const duplicate = await this.webhookRepository.isProcessed(dto.id);
+      if (duplicate) {
+        this.logger.log(
+          JSON.stringify({
+            msg: 'stellar.webhook.duplicate',
+            operationId: dto.id,
+          }),
+        );
+        return { received: true, skipped: true, reason: 'duplicate' };
       }
+
+      // Persist before processing so concurrent Horizon retries are blocked.
+      await this.webhookRepository.markProcessed(dto.id);
+
+      try {
+        await this.processEvent(dto);
+      } catch (err) {
+        // Roll back the cursor so the event can be retried on the next delivery.
+        await this.webhookRepository.unmarkProcessed(dto.id);
+        throw err;
+      }
+
+      return { received: true };
+    } catch (err) {
+      this.logger.error(
+        JSON.stringify({
+          msg: 'stellar.webhook.processing_failed',
+          eventType: dto.type,
+          operationId: dto.id,
+          txHash: dto.transaction_hash,
+          error: err instanceof Error ? err.message : String(err),
+        }),
+        err instanceof Error ? err.stack : undefined,
+      );
       throw err;
     }
-
-    return { received: true };
   }
 
   /**
-   * Programmatic processing for replayed operations (no signature verification).
-   * Returns true when processed, false when skipped (duplicate).
+   * Processes one already-trusted Stellar operation (a replay / admin
+   * backfill path) with **no HMAC signature check** — unlike
+   * {@link handleEvent}, which is the signed inbound-webhook entry point.
+   * Only call this with a `dto` whose provenance is already trusted.
+   *
+   * Idempotent by `dto.id` against the same persisted
+   * `StellarWebhookRepository` cursor {@link handleEvent} uses (issue #922):
+   * an operation the webhook already processed is skipped on replay rather
+   * than processed again. The id is marked processed *before* processing and
+   * **rolled back on failure**, so a `processEvent` error both rejects and
+   * leaves the id replayable — a retry will re-attempt it rather than skip it.
    */
-  /** Processes replayed operations without signature checks while guarding duplicates. */
   async processOperationDto(
     dto: StellarWebhookDto,
   ): Promise<{ processed: boolean; skipped?: boolean }> {
-    if (this.processedIds.has(dto.id)) {
+    if (await this.webhookRepository.isProcessed(dto.id)) {
       this.logger.log(
         JSON.stringify({
           msg: 'stellar.replay.duplicate',
@@ -114,11 +120,21 @@ export class StellarWebhookService {
       return { processed: false, skipped: true };
     }
 
-    this.processedIds.add(dto.id);
+    await this.webhookRepository.markProcessed(dto.id);
     try {
       await this.processEvent(dto);
     } catch (err) {
-      this.processedIds.delete(dto.id);
+      await this.webhookRepository.unmarkProcessed(dto.id);
+      this.logger.error(
+        JSON.stringify({
+          msg: 'stellar.replay.processing_failed',
+          eventType: dto.type,
+          operationId: dto.id,
+          txHash: dto.transaction_hash,
+          error: err instanceof Error ? err.message : String(err),
+        }),
+        err instanceof Error ? err.stack : undefined,
+      );
       throw err;
     }
 
@@ -133,8 +149,9 @@ export class StellarWebhookService {
    * Verify HMAC-SHA256 signature.
    *
    * Horizon signs the raw body with the shared secret and sends the hex digest
-   * in the `X-Stellar-Signature` header.  When no secret is configured we skip
-   * verification (useful for local development / tests).
+   * in the `X-Stellar-Signature` header.  Production deployments MUST configure
+   * STELLAR_WEBHOOK_SECRET — when the secret is missing the request is rejected
+   * immediately because there is no way to trust the caller.
    */
   private verifySignature(
     rawBody: Buffer,
@@ -142,13 +159,14 @@ export class StellarWebhookService {
   ): void {
     const secret = this.configService.get('STELLAR_WEBHOOK_SECRET');
     if (!secret) {
-      this.logger.warn(
+      this.logger.error(
         JSON.stringify({
-          msg: 'stellar.webhook.signature_check_skipped',
-          reason: 'STELLAR_WEBHOOK_SECRET not configured',
+          msg: 'stellar.webhook.secret_missing',
+          reason:
+            'STELLAR_WEBHOOK_SECRET is not configured — rejecting request',
         }),
       );
-      return;
+      throw new InternalServerErrorException('Webhook secret not configured');
     }
 
     if (!signature) {
@@ -203,8 +221,22 @@ export class StellarWebhookService {
   /**
    * Handle an incoming payment operation.
    *
-   * When a buyer sends funds to a vendor's escrow address we look up the
-   * matching escrow by the destination address and confirm the deposit.
+   * Issue #396 – the lookup previously used `findByBuyer(dto.to)` which is
+   * wrong on two counts:
+   *   1. `dto.to` is the *destination* (vendor/recipient) address, not the
+   *      buyer address.  The correct lookup is `findByVendor(dto.to)`.
+   *   2. The filter selected already-FUNDED escrows and wrote FUNDED again
+   *      (no-op).  We must require the escrow to be in CREATED so only
+   *      pending escrows are advanced.
+   *
+   * Additionally, neither the payment amount nor the asset was validated,
+   * allowing partial or wrong-asset payments to fund an escrow silently.
+   * Both are now verified before the state transition.
+   *
+   * Decision on overpayment: reject it.  Accepting a higher amount would
+   * leave excess funds in the contract with no defined reclaim path and
+   * could mask a payment directed to the wrong escrow.  The buyer must
+   * send the exact amount.
    */
   private async handlePayment(dto: StellarWebhookDto): Promise<void> {
     if (!dto.to) {
@@ -213,11 +245,14 @@ export class StellarWebhookService {
       );
     }
 
-    // Find escrows awaiting funding for this destination address
-    const escrows = await this.escrowRepository.findByBuyer(dto.to);
-    const funded = escrows.filter((e) => e.state === 'FUNDED');
+    // dto.to is the Horizon "destination" field – i.e. the vendor's Stellar
+    // address that the buyer paid into.  We therefore look up by vendorAddress.
+    const escrows = await this.escrowRepository.findByVendor(dto.to);
 
-    if (funded.length === 0) {
+    // Only advance escrows that are still awaiting payment.
+    const pending = escrows.filter((e) => e.state === 'CREATED');
+
+    if (pending.length === 0) {
       this.logger.log(
         JSON.stringify({
           msg: 'stellar.webhook.no_matching_escrow',
@@ -228,9 +263,63 @@ export class StellarWebhookService {
       return;
     }
 
-    // Update each matching escrow – in practice there should be at most one
-    for (const escrow of funded) {
-      await this.escrowRepository.updateState(escrow.id, 'FUNDED');
+    // In practice there should be at most one CREATED escrow per vendor
+    // address at any given time, but we iterate defensively.
+    for (const escrow of pending) {
+      // ── Amount validation ────────────────────────────────────────────────
+      // The escrow amount is a Prisma Decimal; convert to a plain number for
+      // comparison.  We require an exact match: underpayments leave the escrow
+      // underfunded, and overpayments are rejected (see method-level comment).
+      const expectedAmount = Number(escrow.amount);
+      const receivedAmount =
+        dto.amount !== undefined ? Number(dto.amount) : NaN;
+
+      if (isNaN(receivedAmount) || receivedAmount !== expectedAmount) {
+        this.logger.warn(
+          JSON.stringify({
+            msg: 'stellar.webhook.amount_mismatch',
+            escrowId: escrow.id,
+            expected: expectedAmount,
+            received: dto.amount,
+            txHash: dto.transaction_hash,
+          }),
+        );
+        continue;
+      }
+
+      // ── Asset validation ─────────────────────────────────────────────────
+      // escrow.currency holds the asset code (e.g. "USDC").  Native XLM
+      // payments omit asset_code in the Horizon payload; we treat a missing
+      // asset_code as "XLM" and compare case-insensitively.
+      const expectedAsset = escrow.currency.toUpperCase();
+      const receivedAsset = (dto.asset_code ?? 'XLM').toUpperCase();
+
+      if (receivedAsset !== expectedAsset) {
+        this.logger.warn(
+          JSON.stringify({
+            msg: 'stellar.webhook.asset_mismatch',
+            escrowId: escrow.id,
+            expected: expectedAsset,
+            received: dto.asset_code,
+            txHash: dto.transaction_hash,
+          }),
+        );
+        continue;
+      }
+
+      // ── State transition ─────────────────────────────────────────────────
+      const updatedEscrow = await this.escrowRepository.updateState(
+        escrow.id,
+        'FUNDED',
+      );
+      // Not awaited: delivery retries with backoff and must not hold up the
+      // webhook response.
+      this.notificationsService.notifyFunded(updatedEscrow).catch((error) => {
+        this.logger.error(
+          `Failed to send funded notification for escrow ${updatedEscrow.id}`,
+          error,
+        );
+      });
 
       this.logger.log(
         JSON.stringify({

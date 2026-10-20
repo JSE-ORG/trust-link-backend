@@ -1,300 +1,295 @@
-# Escrow Contract Events Reference
+# Event Schema Reference
 
-Complete reference for all 57 events emitted by the escrow contract
-(`contracts/escrow/src/events.rs`).
+This document is the indexer-facing event contract for TrustLink escrow events.
+Event schemas are defined in `contracts/escrow/src/events.rs`.
 
-> **Sync note:** This document must stay in sync with the contract's
-> `events.rs`. When adding events, update both files.
+> **Source verification:** Every topic in this document was verified against
+> the emitter calls in `contracts/escrow/src/events.rs` at commit
+> `4ffc37beb8265aaf7db40c8bd5facca42488e3d7` of the
+> [trust-link-contract](https://github.com/JSE-ORG/trust-link-contract) repository.
 
-## Payload Fields
+## Encoding Rules
 
-Most events include these common fields:
+- Events are Soroban contract events emitted with `env.events().publish(topic, data)`.
+- **Canonical event topics use a two-element topic tuple** of the form
+  `(symbol_short!("<Category>"), symbol_short!("<Action>"))` — two PascalCase symbols
+  that together identify the event. The category groups related events (e.g.
+  `"Escrow"`, `"Dispute"`, `"Fee"`) and the action names the specific occurrence
+  (e.g. `"Created"`, `"Funded"`, `"Updated"`).
+- Many events include a **third indexed parameter** — an `Address` identifying the
+  primary actor or subject of the event (buyer, seller, resolver, etc.). Indexers
+  SHOULD filter by `contract_id` and the first two topic elements when subscribing;
+  the third element can be used for per-address filtering.
+- **Exceptions:** A small number of events use a single-symbol topic
+  `(Symbol::new(env, "<snake_case_name>"),)` instead of the two-symbol convention.
+  These are called out explicitly in the event index below.
+- Event data is the XDR encoding of the listed `#[contracttype]` payload struct.
+- Address fields are Soroban `Address` values. Integer fields use the exact Rust
+  width shown below. Timestamps are ledger timestamps in seconds.
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `schema_version` | `u32` | Payload schema version for forward compatibility |
-| `prev_state` | `Option<EscrowState>` | State before the event (if applicable) |
-| `new_state` | `Option<EscrowState>` | State after the event (if applicable) |
-| `escrow_id` | `String` | Unique escrow identifier |
+## Event Index
 
----
+| Category | Action | Topic tuple | Payload | Indexed params | Emitted by |
+|---|---|---|---|---|---|
+| `Contract` | `Init` | `("Contract", "Init")` | `ContractInitialized` | `topic[0..1]` | `initialize` |
+| `Contract` | `Paused` | `("Contract", "Paused")` | `ContractPausedEvent` | `topic[0..1]`, `topic[2] = admin` | `pause_contract` |
+| `Contract` | `Unpaused` | `("Contract", "Unpaused")` | `ContractUnpausedEvent` | `topic[0..1]`, `topic[2] = admin` | `unpause_contract` |
+| `Admin` | `Rotated` | `("Admin", "Rotated")` | `AdminRotated` | `topic[0..1]` | `set_admin` |
+| `Fee` | `Updated` | `("Fee", "Updated")` | `FeeUpdated` | `topic[0..1]` | `set_fee` |
+| `ProtoFee` | `Updated` | `("ProtoFee", "Updated")` | `ProtocolFeeUpdated` | `topic[0..1]` | `set_protocol_fee` |
+| `ArbFee` | `Updated` | `("ArbFee", "Updated")` | `ArbitrationFeeUpdated` | `topic[0..1]` | `set_arbitration_fee` |
+| `Escrow` | `Created` | `("Escrow", "Created")` | `EscrowCreated` | `topic[0..1]`, `topic[2] = seller` | `create_escrow` |
+| `Escrow` | `Funded` | `("Escrow", "Funded")` | `EscrowFunded` | `topic[0..1]`, `topic[2] = buyer` | funding flow |
+| `Escrow` | `Shipped` | `("Escrow", "Shipped")` | `EscrowShipped` | `topic[0..1]`, `topic[2] = seller` | `mark_shipped` |
+| `Escrow` | `Delivered` | `("Escrow", "Delivered")` | `DeliveryRecorded` | `topic[0..1]` | `record_delivery` |
+| `Escrow` | `Completed` | `("Escrow", "Completed")` | `EscrowCompleted` | `topic[0..1]`, `topic[2] = recipient` | `confirm_delivery` |
+| `Dispute` | `Raised` | `("Dispute", "Raised")` | `DisputeRaised` | `topic[0..1]`, `topic[2] = buyer` | dispute flow |
+| `Dispute` | `Resolved` | `("Dispute", "Resolved")` | `DisputeResolved` | `topic[0..1]`, `topic[2] = resolver` | `resolve_dispute` |
+| `Escrow` | `Released` | `("Escrow", "Released")` | `AutoReleased` | `topic[0..1]`, `topic[2] = seller` | `auto_release` |
+| `Escrow` | `Canceled` | `("Escrow", "Canceled")` | `EscrowCancelled` | `topic[0..1]`, `topic[2] = cancelled_by` | `cancel_escrow` |
+| `Escrow` | `Expired` | `("Escrow", "Expired")` | `EscrowExpired` | `topic[0..1]`, `topic[2] = buyer` | `reclaim_expired` |
+| `Resolver` | `Rotated` | `("Resolver", "Rotated")` | `ResolverRotated` | `topic[0..1]` | `rotate_resolver` |
+| `FeeColl` | `Updated` | `("FeeColl", "Updated")` | `FeeCollectorUpdated` | `topic[0..1]` | `set_fee_collector` |
 
-## Escrow Lifecycle Events
+### Events Using a Different Convention
 
-### EscrowCreated
+The following events use a single-symbol topic rather than the two-symbol pattern:
 
-Emitted when a new escrow is created.
+| Topic | Payload | Emitted by |
+|---|---|---|
+| `resolver_vote_recorded` | `ResolverVoteRecorded` | multi-resolver vote flow |
+| `contract_upgraded` | `ContractUpgradedEvent` | contract upgrade |
+| `storage_migrated` | `StorageMigratedEvent` | storage migration |
 
-```json
-{
-  "schema_version": 1,
-  "escrow_id": "string",
-  "buyer": "G...",
-  "vendor": "G...",
-  "amount": "string",
-  "asset": "string",
-  "tracking_id": "string | null",
-  "created_at": "ISO 8601",
-  "prev_state": null,
-  "new_state": "CREATED"
+## Payload Schemas
+
+### `ContractInitialized`
+
+```rust
+pub struct ContractInitialized {
+    pub admin: Address,
+    pub fee_collector: Address,
+    pub arbitration_fee_bps: u32,
+    pub timestamp: u64,
 }
 ```
 
-### EscrowFunded
+### `ContractPausedEvent`
 
-Emitted when the buyer deposits funds into escrow.
-
-```json
-{
-  "schema_version": 1,
-  "escrow_id": "string",
-  "funder": "G...",
-  "amount": "string",
-  "funded_at": "ISO 8601",
-  "prev_state": "CREATED",
-  "new_state": "FUNDED"
+```rust
+pub struct ContractPausedEvent {
+    pub admin: Address,
+    pub timestamp: u64,
 }
 ```
 
-### EscrowShipped
+### `ContractUnpausedEvent`
 
-Emitted when the vendor marks the item as shipped.
-
-```json
-{
-  "schema_version": 1,
-  "escrow_id": "string",
-  "tracking_id": "string",
-  "shipped_at": "ISO 8601",
-  "prev_state": "FUNDED",
-  "new_state": "SHIPPED"
+```rust
+pub struct ContractUnpausedEvent {
+    pub admin: Address,
+    pub timestamp: u64,
 }
 ```
 
-### EscrowDelivered / DeliveryRecorded
+### `AdminRotated`
 
-Emitted when delivery is recorded on-chain.
-
-```json
-{
-  "schema_version": 1,
-  "escrow_id": "string",
-  "delivered_at": "ISO 8601",
-  "prev_state": "SHIPPED",
-  "new_state": "DELIVERED"
+```rust
+pub struct AdminRotated {
+    pub old_admin: Address,
+    pub new_admin: Address,
+    pub timestamp: u64,
 }
 ```
 
-### EscrowReleased
+### `FeeUpdated`
 
-Emitted when funds are released to the vendor.
-
-```json
-{
-  "schema_version": 1,
-  "escrow_id": "string",
-  "released_at": "ISO 8601",
-  "prev_state": "DELIVERED",
-  "new_state": "RELEASED"
+```rust
+pub struct FeeUpdated {
+    pub old_fee_bps: u32,
+    pub new_fee_bps: u32,
+    pub timestamp: u64,
 }
 ```
 
-### EscrowCancelled / EscrowCanceled
+### `ProtocolFeeUpdated`
 
-Emitted when an escrow is cancelled.
-
-```json
-{
-  "schema_version": 1,
-  "escrow_id": "string",
-  "cancelled_by": "G...",
-  "reason": "string | null",
-  "cancelled_at": "ISO 8601",
-  "prev_state": "any",
-  "new_state": "CANCELLED"
+```rust
+pub struct ProtocolFeeUpdated {
+    pub old_fee_bps: u32,
+    pub new_fee_bps: u32,
+    pub timestamp: u64,
 }
 ```
 
-### EscrowRefunded
+### `ArbitrationFeeUpdated`
 
-Emitted when funds are refunded to the buyer.
-
-```json
-{
-  "schema_version": 1,
-  "escrow_id": "string",
-  "refunded_at": "ISO 8601",
-  "prev_state": "any",
-  "new_state": "REFUNDED"
+```rust
+pub struct ArbitrationFeeUpdated {
+    pub old_fee_bps: u32,
+    pub new_fee_bps: u32,
+    pub timestamp: u64,
 }
 ```
 
-### Expired
+### `EscrowCreated`
 
-Emitted when an escrow expires past its deadline.
-
-```json
-{
-  "schema_version": 1,
-  "escrow_id": "string",
-  "expired_at": "ISO 8601",
-  "prev_state": "any",
-  "new_state": "EXPIRED"
+```rust
+pub struct EscrowCreated {
+    pub escrow_id: u64,
+    pub seller: Address,
+    pub resolver: Address,
+    pub token: Address,
+    pub amount: i128,
+    pub fee_bps: u32,
+    pub shipping_window: u64,
+    pub timestamp: u64,
 }
 ```
 
-### AutoCancel
+### `EscrowFunded`
 
-Emitted when an escrow is automatically cancelled (e.g., timeout).
-
-```json
-{
-  "schema_version": 1,
-  "escrow_id": "string",
-  "reason": "string",
-  "cancelled_at": "ISO 8601",
-  "prev_state": "any",
-  "new_state": "CANCELLED"
+```rust
+pub struct EscrowFunded {
+    pub escrow_id: u64,
+    pub buyer: Address,
+    pub amount: i128,
+    pub funded_at: u64,
 }
 ```
 
----
+### `EscrowShipped`
 
-## Dispute Events
-
-### DisputeOpened
-
-```json
-{
-  "schema_version": 1,
-  "escrow_id": "string",
-  "opened_by": "G...",
-  "reason": "string",
-  "opened_at": "ISO 8601",
-  "prev_state": "any",
-  "new_state": "DISPUTED"
+```rust
+pub struct EscrowShipped {
+    pub escrow_id: u64,
+    pub seller: Address,
+    pub tracking_id: String,
+    pub shipped_at: u64,
 }
 ```
 
-### DisputePending
+### `DeliveryRecorded`
 
-```json
-{
-  "schema_version": 1,
-  "escrow_id": "string",
-  "pending_at": "ISO 8601",
-  "prev_state": "DISPUTED",
-  "new_state": "DISPUTE_PENDING"
+```rust
+pub struct DeliveryRecorded {
+    pub escrow_id: u64,
+    pub delivered_at: u64,
 }
 ```
 
-### DisputeAppealed
+### `EscrowCompleted`
 
-```json
-{
-  "schema_version": 1,
-  "escrow_id": "string",
-  "appealed_by": "G...",
-  "appealed_at": "ISO 8601",
-  "prev_state": "DISPUTE_PENDING",
-  "new_state": "DISPUTED"
+```rust
+pub struct EscrowCompleted {
+    pub escrow_id: u64,
+    pub recipient: Address,
+    pub amount: i128,
+    pub fee_bps: u32,
+    pub completed_at: u64,
 }
 ```
 
-### DisputeResolved
+### `DisputeRaised`
 
-```json
-{
-  "schema_version": 1,
-  "escrow_id": "string",
-  "resolution": "string",
-  "resolved_at": "ISO 8601",
-  "prev_state": "DISPUTED | DISPUTE_PENDING",
-  "new_state": "RELEASED | REFUNDED"
+```rust
+pub struct DisputeRaised {
+    pub escrow_id: u64,
+    pub buyer: Address,
+    pub reason: Symbol,
+    pub description: String,
+    pub evidence_hash: BytesN<32>,
+    pub disputed_at: u64,
 }
 ```
 
----
+### `DisputeResolved`
 
-## Refund Events
+```rust
+pub struct DisputeResolved {
+    pub escrow_id: u64,
+    pub resolver: Address,
+    pub resolution: ResolutionType,
+    pub recipient: Address,
+    pub amount: i128,
+    pub arbitration_fee: i128,
+    pub resolved_at: u64,
+}
 
-### RefundRequested
-
-```json
-{
-  "schema_version": 1,
-  "escrow_id": "string",
-  "requested_by": "G...",
-  "reason": "string",
-  "requested_at": "ISO 8601",
-  "prev_state": "any",
-  "new_state": "REFUND_REQUESTED"
+pub enum ResolutionType {
+    Release,
+    Refund,
 }
 ```
 
-### RefundApproved
+### `AutoReleased`
 
-```json
-{
-  "schema_version": 1,
-  "escrow_id": "string",
-  "approved_by": "G...",
-  "approved_at": "ISO 8601",
-  "prev_state": "REFUND_REQUESTED",
-  "new_state": "REFUNDED"
+```rust
+pub struct AutoReleased {
+    pub escrow_id: u64,
+    pub seller: Address,
+    pub amount: i128,
+    pub fee_bps: u32,
+    pub released_at: u64,
 }
 ```
 
----
+### `EscrowCancelled`
 
-## Contract Admin Events (not handled by backend)
+```rust
+pub struct EscrowCancelled {
+    pub escrow_id: u64,
+    pub seller: Address,
+    pub cancelled_at: u64,
+}
+```
 
-These events are emitted by the contract but do **not** carry `escrow_id`.
-The backend poller skips them without dead-lettering.
+### `EscrowExpired`
 
-| Event | Description |
-|-------|-------------|
-| `FeeUpdated` | Protocol fee changed |
-| `TreasuryUpdated` | Treasury address changed |
-| `TimelockUpdated` | Timelock duration changed |
-| `Paused` | Contract paused |
-| `Unpaused` | Contract unpaused |
-| `AllowlistUpdated` | Allowlist entry added/removed |
-| `contract_upgraded` | Contract WASM upgraded |
-| `OwnershipTransferred` | Contract ownership changed |
+```rust
+pub struct EscrowExpired {
+    pub escrow_id: u64,
+    pub buyer: Address,
+    pub amount: i128,
+    pub timestamp: u64,
+}
+```
 
----
+### `ResolverRotated`
 
-## Events Emitted (57 total)
+```rust
+pub struct ResolverRotated {
+    pub escrow_id: u64,
+    pub old_resolver: Address,
+    pub new_resolver: Address,
+    pub rotated_at: u64,
+}
+```
 
-<details>
-<summary>Full event list</summary>
+### `FeeCollectorUpdated`
 
-1. EscrowCreated
-2. EscrowFunded
-3. EscrowShipped
-4. EscrowDelivered
-5. DeliveryRecorded
-6. EscrowReleased
-7. EscrowCancelled
-8. EscrowCanceled
-9. EscrowRefunded
-10. Expired
-11. AutoCancel
-12. DisputeOpened
-13. DisputePending
-14. DisputeAppealed
-15. DisputeResolved
-16. RefundRequested
-17. RefundApproved
-18. FeeUpdated
-19. TreasuryUpdated
-20. TimelockUpdated
-21. Paused
-22. Unpaused
-23. AllowlistUpdated
-24. contract_upgraded
-25. OwnershipTransferred
-26-57. (Additional events — see `contracts/escrow/src/events.rs` for the complete source)
+```rust
+pub struct FeeCollectorUpdated {
+    pub old_collector: Address,
+    pub new_collector: Address,
+    pub timestamp: u64,
+}
+```
 
-</details>
+## Indexer Guidance
+
+- The **canonical event name** is derived from the two topic symbols joined with
+  an underscore and lowercased. For example `("Escrow", "Funded")` → `escrow_funded`,
+  `("Dispute", "Raised")` → `dispute_raised`. This is the name used in the payload
+  struct and throughout the backend.
+- For single-symbol exception events, the topic itself is the canonical name.
+- Treat `escrow_id` as the primary business key for escrow lifecycle events.
+- Treat `token` as the asset key for fee accounting events.
+- Use `funded_at`, `shipped_at`, `delivered_at`, `completed_at`,
+  `disputed_at`, `resolved_at`, `released_at`, `cancelled_at`, and `timestamp`
+  as event-time fields sourced from `env.ledger().timestamp()`.
+- Store raw `i128` token amounts. Token decimal handling belongs to the token
+  metadata layer, not this event stream.
+- `FeeCollectorUpdated` uses PascalCase for its event name while all other canonical
+  events use snake_case derived from the topic pair. Indexers should preserve the
+  exact `FeeCollectorUpdated` string.

@@ -1,0 +1,32 @@
+# Normalise line endings to LF in the repository.
+#
+# Without this, a commit from a Windows checkout reintroduces CRLF into tracked
+# files and the prettier/prettier lint errors come straight back. Formatting the
+# files alone fixes the symptom for exactly one commit.
+#
+# `text=auto` lets Git detect text files; `eol=lf` fixes what goes into the
+# repository. Working-tree endings on Windows are still governed by the
+# developer's core.autocrlf, so this does not force LF into anyone's editor.
+* text=auto eol=lf
+
+# Explicit for the file types this repo actually tracks, so a misdetection
+# cannot silently reintroduce CRLF.
+*.ts    text eol=lf
+*.js    text eol=lf
+*.mjs   text eol=lf
+*.cjs   text eol=lf
+*.json  text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+*.md    text eol=lf
+*.sql   text eol=lf
+*.prisma text eol=lf
+*.sh    text eol=lf
+
+# Binary: never touched, never diffed as text.
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.pdf   binary

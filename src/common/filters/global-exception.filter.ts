@@ -1,22 +1,17 @@
-import {
-  ArgumentsHost,
-  Catch,
-  ExceptionFilter,
-  HttpException,
-  HttpStatus,
-  Logger,
-} from '@nestjs/common';
+import { Catch, HttpException, HttpStatus, Logger } from '@nestjs/common';
+import type { ArgumentsHost, ExceptionFilter } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { ConfigService } from '../../config/config.service';
+import { StandardErrorResponse } from '../dto/error-response.dto';
 
-interface ErrorResponse {
-  statusCode: number;
-  timestamp: string;
-  path: string;
-  requestId?: string;
-  message: string;
-  error?: string;
+interface HttpExceptionResponseBody {
+  message?: string | string[];
   details?: unknown;
+}
+
+interface PrismaLikeError {
+  code: string;
+  message?: string;
 }
 
 @Catch()
@@ -31,52 +26,65 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     const request = ctx.getRequest<Request>();
 
     const errorResponse = this.buildErrorResponse(exception, request);
-    // Echo the correlation id so clients can match an error to its log records.
-    errorResponse.requestId = request.requestId;
-
     // Log error details
     this.logError(exception, request, errorResponse);
 
     response.status(errorResponse.statusCode).json(errorResponse);
   }
 
-  private buildErrorResponse(exception: unknown, request: Request): ErrorResponse {
+  private buildErrorResponse(
+    exception: unknown,
+    request: Request,
+  ): StandardErrorResponse {
     const timestamp = new Date().toISOString();
     const path = request.url;
+    const requestId = request.requestId ?? 'unknown';
 
     if (exception instanceof HttpException) {
       const status = exception.getStatus();
       const exceptionResponse = exception.getResponse();
-      
+      const exceptionBody = this.asHttpExceptionBody(exceptionResponse);
+
       return {
         statusCode: status,
+        message:
+          typeof exceptionResponse === 'string'
+            ? exceptionResponse
+            : exceptionBody.message || exception.message,
+        error: exception.name,
         timestamp,
         path,
-        message: typeof exceptionResponse === 'string' 
-          ? exceptionResponse 
-          : (exceptionResponse as any)?.message || exception.message,
-        error: exception.name,
+        requestId,
         ...(this.configService.isDevelopment() && {
-          details: typeof exceptionResponse === 'object' ? exceptionResponse : undefined,
+          details:
+            typeof exceptionResponse === 'object'
+              ? exceptionResponse
+              : undefined,
         }),
       };
     }
 
     // Handle Prisma errors
     if (this.isPrismaError(exception)) {
-      return this.handlePrismaError(exception, timestamp, path);
+      return this.handlePrismaError(exception, timestamp, path, requestId);
     }
 
     // Handle validation errors
     if (this.isValidationError(exception)) {
       return {
         statusCode: HttpStatus.BAD_REQUEST,
-        timestamp,
-        path,
         message: 'Validation failed',
         error: 'ValidationError',
+        timestamp,
+        path,
+        requestId,
         ...(this.configService.isDevelopment() && {
-          details: (exception as any).details,
+          details:
+            typeof exception === 'object' &&
+            exception !== null &&
+            'details' in exception
+              ? exception.details
+              : undefined,
         }),
       };
     }
@@ -84,70 +92,85 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     // Generic error handling
     return {
       statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-      timestamp,
-      path,
-      message: this.configService.isProduction() 
-        ? 'Internal server error' 
+      message: this.configService.isProduction()
+        ? 'Internal server error'
         : (exception as Error)?.message || 'Unknown error',
       error: 'InternalServerError',
+      timestamp,
+      path,
+      requestId,
       ...(this.configService.isDevelopment() && {
         details: exception instanceof Error ? exception.stack : exception,
       }),
     };
   }
 
-  private handlePrismaError(exception: any, timestamp: string, path: string): ErrorResponse {
+  private handlePrismaError(
+    exception: PrismaLikeError,
+    timestamp: string,
+    path: string,
+    requestId = 'unknown',
+  ): StandardErrorResponse {
     const code = exception.code;
-    
+
     switch (code) {
       case 'P2002':
         return {
           statusCode: HttpStatus.CONFLICT,
-          timestamp,
-          path,
           message: 'A record with this data already exists',
           error: 'ConflictError',
+          timestamp,
+          path,
+          requestId,
         };
       case 'P2025':
         return {
           statusCode: HttpStatus.NOT_FOUND,
-          timestamp,
-          path,
           message: 'Record not found',
           error: 'NotFoundError',
+          timestamp,
+          path,
+          requestId,
         };
       default:
         return {
           statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-          timestamp,
-          path,
           message: 'Database error',
           error: 'DatabaseError',
+          timestamp,
+          path,
+          requestId,
           ...(this.configService.isDevelopment() && {
-            details: { code, message: exception.message },
+            details: { code, message: exception.message ?? 'Database error' },
           }),
         };
     }
   }
 
-  private isPrismaError(exception: unknown): boolean {
-    return exception && 
-           typeof exception === 'object' && 
-           'code' in exception && 
-           typeof (exception as any).code === 'string' &&
-           (exception as any).code.startsWith('P');
+  private isPrismaError(exception: unknown): exception is PrismaLikeError {
+    if (
+      exception &&
+      typeof exception === 'object' &&
+      'code' in exception &&
+      typeof exception.code === 'string'
+    ) {
+      return exception.code.startsWith('P');
+    }
+    return false;
   }
 
   private isValidationError(exception: unknown): boolean {
-    return exception instanceof Error && 
-           (exception.name === 'ValidationError' || 
-            exception.message.includes('validation'));
+    return exception instanceof Error && exception.name === 'ValidationError';
   }
 
-  private logError(exception: unknown, request: Request, errorResponse: ErrorResponse): void {
+  private logError(
+    exception: unknown,
+    request: Request,
+    errorResponse: StandardErrorResponse,
+  ): void {
     const { method, url, ip, headers } = request;
     const userAgent = headers['user-agent'] || '';
-    
+
     const logContext = {
       method,
       url,
@@ -157,18 +180,31 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       statusCode: errorResponse.statusCode,
       timestamp: errorResponse.timestamp,
     };
+    const message = this.formatMessage(errorResponse.message);
 
     if (errorResponse.statusCode >= 500) {
       this.logger.error(
-        `${method} ${url} - ${errorResponse.statusCode} - ${errorResponse.message}`,
+        `${method} ${url} - ${errorResponse.statusCode} - ${message}`,
         exception instanceof Error ? exception.stack : exception,
         JSON.stringify(logContext),
       );
     } else {
       this.logger.warn(
-        `${method} ${url} - ${errorResponse.statusCode} - ${errorResponse.message}`,
+        `${method} ${url} - ${errorResponse.statusCode} - ${message}`,
         JSON.stringify(logContext),
       );
     }
+  }
+
+  private asHttpExceptionBody(value: unknown): HttpExceptionResponseBody {
+    if (value && typeof value === 'object') {
+      const body: HttpExceptionResponseBody = value;
+      return body;
+    }
+    return {};
+  }
+
+  private formatMessage(message: string | string[]): string {
+    return Array.isArray(message) ? message.join('; ') : message;
   }
 }

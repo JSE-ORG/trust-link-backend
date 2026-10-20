@@ -24,7 +24,22 @@ export class StressTestService {
     private readonly configService: ConfigService,
   ) {}
 
-  /** Executes configured virtual-user profiles and returns aggregate load metrics. */
+  /**
+   * Runs every profile in `config` **sequentially**, awaiting each before
+   * starting the next, and resolves with the aggregate {@link StressTestResult}.
+   *
+   * Blocking: the returned promise does not resolve until the whole run is
+   * finished, so this is a synchronous-feeling call, not fire-and-forget.
+   * A profile failure does **not** reject — it is caught, `status` is set to
+   * `'FAILED'`, and the partial result is still returned; callers must check
+   * `result.status` rather than relying on a thrown error.
+   *
+   * The run is registered in `activeTests` under a generated `testId` for
+   * its duration and removed on completion (success or failure), so
+   * {@link getActiveTest} / {@link getAllActiveTests} only ever see a run
+   * that is still in progress. State is per-process and in-memory — nothing
+   * is persisted and a restart loses in-flight runs.
+   */
   async runStressTest(config: StressTestConfigDto): Promise<StressTestResult> {
     const testId = this.generateTestId();
     this.logger.log(`Starting stress test: ${config.testName} (ID: ${testId})`);
@@ -72,11 +87,12 @@ export class StressTestService {
 
       this.logger.log(`Stress test completed: ${config.testName}`);
       this.logAlerts(result.alerts);
-    } catch (error) {
+    } catch (error: unknown) {
       result.status = 'FAILED';
       result.endTime = Date.now();
       result.duration = result.endTime - result.startTime;
-      this.logger.error(`Stress test failed: ${error.message}`, error.stack);
+      const err = error instanceof Error ? error : new Error(String(error));
+      this.logger.error(`Stress test failed: ${err.message}`, err.stack);
     }
 
     this.activeTests.delete(testId);
@@ -136,7 +152,7 @@ export class StressTestService {
   private async runWorker(
     url: string,
     method: string,
-    payload: Record<string, any> | undefined,
+    payload: Record<string, unknown> | undefined,
     requestCount: number,
     metrics: PerformanceMetrics[],
   ): Promise<void> {
@@ -161,15 +177,18 @@ export class StressTestService {
           statusCode: response.status,
           success: response.status >= 200 && response.status < 300,
         });
-      } catch (error) {
+      } catch (error: unknown) {
         const responseTime = Date.now() - startTime;
-
+        const axiosErr = error as {
+          response?: { status?: number };
+          message?: string;
+        };
         metrics.push({
           timestamp: startTime,
           responseTime,
-          statusCode: error.response?.status || 0,
+          statusCode: axiosErr.response?.status || 0,
           success: false,
-          error: error.message,
+          error: axiosErr.message,
         });
       }
     }
@@ -298,7 +317,7 @@ export class StressTestService {
               1000
             : 0,
         0,
-      ) || result.profileResults.reduce((sum, p) => sum + 60, 0);
+      ) || result.profileResults.reduce((sum) => sum + 60, 0);
 
     result.overallMetrics = {
       totalRequests,
@@ -314,26 +333,43 @@ export class StressTestService {
 
   private logAlerts(alerts: Alert[]): void {
     if (alerts.length === 0) {
-      this.logger.log('✅ No performance alerts generated');
+      this.logger.log('[OK] No performance alerts generated');
       return;
     }
 
-    this.logger.warn(`⚠️  Generated ${alerts.length} performance alerts:`);
+    this.logger.warn(`[WARN] Generated ${alerts.length} performance alerts:`);
 
     for (const alert of alerts) {
-      const emoji = alert.severity === 'CRITICAL' ? '🚨' : '⚠️';
+      const prefix = alert.severity === 'CRITICAL' ? '[CRIT]' : '[WARN]';
       this.logger.warn(
-        `${emoji} [${alert.type}] ${alert.message} (Value: ${alert.value.toFixed(2)}, Threshold: ${alert.threshold})`,
+        `${prefix} [${alert.type}] ${alert.message} (Value: ${alert.value.toFixed(2)}, Threshold: ${alert.threshold})`,
       );
     }
   }
 
-  /** Returns a currently running stress test by ID when present. */
+  /**
+   * Returns the live {@link StressTestResult} for an **in-progress** run, or
+   * `undefined`.
+   *
+   * A run is only in `activeTests` while {@link runStressTest} is still
+   * executing it — a completed or failed run has already been removed, so
+   * this is not a way to fetch historical results (there is no history
+   * store). The returned object is the same reference `runStressTest` is
+   * mutating; read it, don't hold it.
+   */
   getActiveTest(testId: string): StressTestResult | undefined {
     return this.activeTests.get(testId);
   }
 
-  /** Returns all currently running stress tests. */
+  /**
+   * Returns a snapshot array of every stress-test run currently in progress
+   * on this process.
+   *
+   * Empty unless a `runStressTest` call is executing concurrently. Same
+   * caveats as {@link getActiveTest}: in-progress only, no history,
+   * per-process, and the entries are live references being mutated by the
+   * runner.
+   */
   getAllActiveTests(): StressTestResult[] {
     return Array.from(this.activeTests.values());
   }

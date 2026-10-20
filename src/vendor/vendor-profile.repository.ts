@@ -1,7 +1,15 @@
 import { Injectable } from '@nestjs/common';
-import { PrismaService, VendorProfileRecord } from '../prisma/prisma.service';
+import {
+  PrismaService,
+  VendorProfileRecord,
+  VendorTrackingSettingsRecord,
+  toVendorTrackingSettingsRecord,
+} from '../prisma/prisma.service';
 import { CreateVendorProfileDto } from './dto/create-vendor-profile.dto';
 import { UpdateVendorProfileDto } from './dto/update-vendor-profile.dto';
+import { UpdateNotificationPreferencesDto } from './dto/update-notification-preferences.dto';
+import { NotificationPreferencesResponseDto } from './dto/notification-preferences-response.dto';
+import { DEFAULT_NOTIFICATION_CHANNELS } from './vendor.constants';
 
 @Injectable()
 export class VendorProfileRepository {
@@ -28,6 +36,29 @@ export class VendorProfileRepository {
     return this.prisma.vendorProfile.findUnique({ where: { address } });
   }
 
+  /** Creates or updates a vendor profile — safe to call without checking existence first. */
+  upsert(
+    address: string,
+    dto: CreateVendorProfileDto,
+  ): Promise<VendorProfileRecord> {
+    return this.prisma.vendorProfile.upsert({
+      where: { address },
+      create: {
+        address,
+        businessName: dto.businessName,
+        email: dto.email ?? null,
+        phone: dto.phone ?? null,
+        description: dto.description ?? null,
+      },
+      update: {
+        businessName: dto.businessName,
+        email: dto.email ?? null,
+        phone: dto.phone ?? null,
+        description: dto.description ?? null,
+      },
+    });
+  }
+
   /** Updates mutable fields on the vendor profile identified by address. */
   update(
     address: string,
@@ -37,5 +68,73 @@ export class VendorProfileRepository {
       where: { address },
       data: dto,
     });
+  }
+
+  /** Updates notification preferences for the vendor, creating tracking settings if they don't exist. */
+  async updateNotificationPreferences(
+    address: string,
+    dto: UpdateNotificationPreferencesDto,
+  ): Promise<{ trackingSettings: VendorTrackingSettingsRecord }> {
+    // Upsert VendorTrackingSettings to ensure it exists
+    const trackingSettings = await this.prisma.vendorTrackingSettings.upsert({
+      where: { vendorAddress: address },
+      create: {
+        vendorAddress: address,
+        notifyOnDelivery: dto.notifyOnDelivery ?? true,
+        notifyOnDelay: dto.notifyOnDelay ?? true,
+        notifyOnException: dto.notifyOnException ?? true,
+        notificationChannels:
+          dto.notificationChannels ?? [...DEFAULT_NOTIFICATION_CHANNELS],
+        webhookUrl: dto.webhookUrl ?? null,
+        webhookSecret: dto.webhookSecret ?? null,
+      },
+      update: {
+        ...(dto.notifyOnDelivery !== undefined && {
+          notifyOnDelivery: dto.notifyOnDelivery,
+        }),
+        ...(dto.notifyOnDelay !== undefined && {
+          notifyOnDelay: dto.notifyOnDelay,
+        }),
+        ...(dto.notifyOnException !== undefined && {
+          notifyOnException: dto.notifyOnException,
+        }),
+        ...(dto.notificationChannels !== undefined && {
+          notificationChannels: dto.notificationChannels,
+        }),
+        ...(dto.webhookUrl !== undefined && {
+          webhookUrl: dto.webhookUrl,
+        }),
+        ...(dto.webhookSecret !== undefined && {
+          webhookSecret: dto.webhookSecret,
+        }),
+      },
+    });
+
+    return {
+      trackingSettings: toVendorTrackingSettingsRecord(trackingSettings),
+    };
+  }
+
+  /** Returns notification preferences for the vendor, falling back to platform defaults if not configured. */
+  async findNotificationPreferences(
+    address: string,
+  ): Promise<NotificationPreferencesResponseDto> {
+    const settings = await this.prisma.vendorTrackingSettings.findUnique({
+      where: { vendorAddress: address },
+    });
+
+    return {
+      notifyOnDelivery: settings?.notifyOnDelivery ?? true,
+      notifyOnDelay: settings?.notifyOnDelay ?? true,
+      notifyOnException: settings?.notifyOnException ?? true,
+      notificationChannels:
+        settings?.notificationChannels ?? [...DEFAULT_NOTIFICATION_CHANNELS],
+      webhookUrl: settings?.webhookUrl ?? null,
+      enableTracking: settings?.enableTracking ?? true,
+      delayThresholdHours: settings?.delayThresholdHours ?? 24,
+      deliveryConfirmation: settings?.deliveryConfirmation ?? true,
+      trackingHistoryRetentionDays:
+        settings?.trackingHistoryRetentionDays ?? 90,
+    };
   }
 }

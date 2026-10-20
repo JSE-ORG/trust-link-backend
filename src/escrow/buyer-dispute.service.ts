@@ -2,12 +2,14 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '../config/config.service';
 import { DisputeRecord } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { S3PresignService } from '../common/services/s3-presign.service';
+import { TracingService } from '../tracing/tracing.service';
 import { DisputeRepository } from '../dispute/dispute.repository';
 import { EscrowRepository } from './escrow.repository';
 import { OpenDisputeDto } from './dto/open-dispute.dto';
@@ -24,18 +26,70 @@ export interface DisputeResponseDto {
   updatedAt: Date;
 }
 
+const DISPUTABLE_STATES = new Set<string>(['FUNDED', 'SHIPPED', 'DELIVERED']);
+
 @Injectable()
 export class BuyerDisputeService {
+  private readonly logger = new Logger(BuyerDisputeService.name);
+
   constructor(
     private readonly escrowRepository: EscrowRepository,
     private readonly disputeRepository: DisputeRepository,
     private readonly notificationsService: NotificationsService,
     private readonly s3PresignService: S3PresignService,
     private readonly configService: ConfigService,
+    private readonly tracing: TracingService,
   ) {}
 
-  /** Opens a dispute for an escrow participant and notifies vendor and admin channels. */
+  /**
+   * Runs `fn` inside a span named for the escrow operation.
+   *
+   * Identifiers are recorded as attributes so an operation can be traced
+   * back to a specific escrow. Request bodies and contact details are never
+   * recorded, and failures are captured by `withSpan` as error spans.
+   */
+  private traced<T>(
+    operation: string,
+    attributes: Record<string, string | number | boolean>,
+    fn: () => T | Promise<T>,
+  ): Promise<T> {
+    return this.tracing.withSpan(`escrow.${operation}`, { attributes }, fn);
+  }
+
+  /**
+   * Opens a dispute against an escrow on behalf of one of its participants.
+   *
+   * The caller must be the buyer, the vendor, or the configured admin address;
+   * anyone else is rejected. A second dispute cannot be opened while the escrow
+   * is already `DISPUTED`.
+   *
+   * On success the dispute row is created first, then the linked escrow is
+   * transitioned to `DISPUTED` (which evicts the escrow cache so a subsequent
+   * `findById` sees the new state), and finally the buyer/vendor and admin
+   * notifications are dispatched together. Those notifications are awaited, so
+   * a notification failure rejects the call even though the dispute and the
+   * state change have already been persisted.
+   *
+   * @throws NotFoundException if the escrow does not exist.
+   * @throws ForbiddenException if the caller is not a participant or the admin.
+   * @throws ConflictException if a dispute is already open for the escrow.
+   */
   async openDispute(
+    escrowId: string,
+    callerAddress: string,
+    dto: OpenDisputeDto,
+  ): Promise<DisputeResponseDto> {
+    return this.traced(
+      'dispute.open',
+      {
+        'trustlink.escrow.id': escrowId,
+        'trustlink.actor.address': callerAddress,
+      },
+      () => this.openDisputeInternal(escrowId, callerAddress, dto),
+    );
+  }
+
+  private async openDisputeInternal(
     escrowId: string,
     callerAddress: string,
     dto: OpenDisputeDto,
@@ -58,23 +112,75 @@ export class BuyerDisputeService {
       throw new ConflictException('A dispute is already open for this escrow');
     }
 
+    // docs/state-machine.md: only these states may move to DISPUTED.
+    if (!DISPUTABLE_STATES.has(escrow.state)) {
+      throw new ConflictException(
+        `Cannot open a dispute on an escrow in ${escrow.state} state`,
+      );
+    }
+
     const dispute = await this.disputeRepository.create({
       escrowId,
       reason: dto.reason,
       description: dto.description,
       evidenceUrls: dto.evidenceUrls ?? [],
     });
+    // Transition the linked escrow to DISPUTED and evict the cache so
+    // a subsequent findById sees the fresh state.
+    const disputedEscrow = await this.escrowRepository.updateState(
+      escrowId,
+      'DISPUTED',
+    );
 
-    await Promise.all([
-      this.notificationsService.notifyDisputed(escrow),
-      this.notificationsService.notifyDisputedAdmin(escrow, adminAddress),
-    ]);
+    // Delivery retries email and SMS with backoff, so it can take seconds
+    // when a provider is down; the response must not wait for it.
+    // Notify with the post-update record (issue #929) — the one loaded
+    // above still carries the pre-dispute state (FUNDED/SHIPPED/DELIVERED).
+    this.notificationsService.notifyDisputed(disputedEscrow).catch((error) => {
+      this.logger.error(
+        `Failed to send disputed notification for escrow ${escrow.id}`,
+        error,
+      );
+    });
+    this.notificationsService
+      .notifyDisputedAdmin(disputedEscrow, adminAddress)
+      .catch((error) => {
+        this.logger.error(
+          `Failed to send admin disputed notification for escrow ${escrow.id}`,
+          error,
+        );
+      });
 
     return this.toResponse(dispute);
   }
 
-  /** Returns the dispute for an escrow after verifying caller participation. */
+  /**
+   * Returns the dispute attached to an escrow after authorising the caller.
+   *
+   * Access is limited to the escrow's buyer, vendor, or the configured admin
+   * address, and participation is checked before the dispute lookup so a
+   * stranger cannot probe whether a dispute exists. Evidence URLs on the
+   * returned DTO are re-signed for direct client access.
+   *
+   * @throws NotFoundException if the escrow does not exist, or if it exists but
+   *   has no dispute recorded.
+   * @throws ForbiddenException if the caller is not a participant or the admin.
+   */
   async getDispute(
+    escrowId: string,
+    callerAddress: string,
+  ): Promise<DisputeResponseDto> {
+    return this.traced(
+      'dispute.get',
+      {
+        'trustlink.escrow.id': escrowId,
+        'trustlink.actor.address': callerAddress,
+      },
+      () => this.getDisputeInternal(escrowId, callerAddress),
+    );
+  }
+
+  private async getDisputeInternal(
     escrowId: string,
     callerAddress: string,
   ): Promise<DisputeResponseDto> {

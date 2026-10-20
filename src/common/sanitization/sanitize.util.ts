@@ -48,8 +48,9 @@ export function sanitizeDeep<T>(value: T): T {
   }
 
   if (Array.isArray(value)) {
-    for (let i = 0; i < value.length; i++) {
-      value[i] = sanitizeDeep(value[i]);
+    const arr = value as unknown[];
+    for (let i = 0; i < arr.length; i++) {
+      arr[i] = sanitizeDeep(arr[i]);
     }
     return value;
   }

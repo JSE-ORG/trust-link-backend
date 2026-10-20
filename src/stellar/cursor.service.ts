@@ -1,55 +1,79 @@
 import { Injectable, Logger } from '@nestjs/common';
-import * as fs from 'fs';
-import * as path from 'path';
+import { CursorRepository } from './cursor.repository';
+import { TracingService } from '../tracing/tracing.service';
 
 /**
- * Manages per-consumer cursor state for chain sync (issue #1048).
+ * Issue #306 – Database-backed cursor persistence for the blockchain listener.
  *
- * Each consumer (poller, indexer, etc.) has its own cursor key so they
- * can advance independently without interfering with each other.
+ * Replaces the old file-based cursor with Prisma-backed storage so the cursor
+ * survives container restarts and deployments.
  */
 @Injectable()
 export class CursorService {
   private readonly logger = new Logger(CursorService.name);
-  private readonly dataDir = path.resolve(process.cwd(), 'data');
+  public static readonly DEFAULT_KEY = 'stellar-listener';
+  public static readonly SOROBAN_POLLER_KEY = 'soroban-poller';
+
+  constructor(
+    private readonly cursorRepository: CursorRepository,
+    private readonly tracing: TracingService,
+  ) {}
 
   /**
-   * Get the cursor for a consumer. Returns undefined if not set.
+   * Runs `fn` inside a Stellar span.
+   *
+   * Spans here carry identifiers such as the contract escrow id, the network,
+   * and the contract function. Signing secrets, secret keys and full
+   * transaction envelopes are never recorded as attributes.
    */
-  async getCursor(consumer: string): Promise<string | undefined> {
-    const file = this.cursorFile(consumer);
-    if (!fs.existsSync(file)) return undefined;
-    const value = fs.readFileSync(file, 'utf8').trim();
-    return value || undefined;
+  private traced<T>(
+    name: string,
+    attributes: Record<string, string | number | boolean>,
+    fn: () => T | Promise<T>,
+  ): Promise<T> {
+    return this.tracing.withSpan(name, { attributes }, fn);
   }
 
   /**
-   * Advance the cursor for a consumer. No-op if the new token is empty
-   * (e.g., empty page).
+   * Read the persisted cursor value. Returns `undefined` when no cursor has
+   * been stored yet (first run).
    */
-  async advanceCursor(consumer: string, token: string): Promise<void> {
-    if (!token) {
-      this.logger.debug(`Empty cursor token for ${consumer}, skipping advance`);
-      return;
+  async get(key: string = CursorService.DEFAULT_KEY): Promise<string | undefined> {
+    return this.traced('stellar.cursor.get', {}, () => this.getInternal(key));
+  }
+
+  private async getInternal(key: string): Promise<string | undefined> {
+    try {
+      const record = await this.cursorRepository.findById(key);
+      return record?.cursorValue ?? undefined;
+    } catch (err) {
+      this.logger.warn(
+        'Failed to read cursor from DB: ' +
+          (err instanceof Error ? err.message : String(err)),
+      );
+      return undefined;
     }
-    const file = this.cursorFile(consumer);
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, token);
-    this.logger.debug(`Advanced ${consumer} cursor to ${token}`);
   }
 
   /**
-   * Reset a consumer's cursor (for testing or recovery).
+   * Atomically upsert the cursor value. Called after each successful event
+   * batch processing so the listener can resume from the last processed
+   * position after a restart.
    */
-  async resetCursor(consumer: string): Promise<void> {
-    const file = this.cursorFile(consumer);
-    if (fs.existsSync(file)) {
-      fs.unlinkSync(file);
-    }
-    this.logger.log(`Reset ${consumer} cursor`);
+  async set(cursorValue: string, key: string = CursorService.DEFAULT_KEY): Promise<void> {
+    return this.traced('stellar.cursor.set', {}, () =>
+      this.setInternal(cursorValue, key),
+    );
   }
 
-  private cursorFile(consumer: string): string {
-    return path.join(this.dataDir, `stellar_cursor_${consumer}.txt`);
+  private async setInternal(cursorValue: string, key: string): Promise<void> {
+    try {
+      await this.cursorRepository.upsert(key, cursorValue);
+    } catch (err) {
+      this.logger.warn(
+        'Failed to persist cursor to DB: ' +
+          (err instanceof Error ? err.message : String(err)),
+      );
+    }
   }
 }

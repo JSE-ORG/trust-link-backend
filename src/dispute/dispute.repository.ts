@@ -1,9 +1,10 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import {
   DisputeRecord,
   DisputeState,
-  EscrowState,
   PrismaService,
+  toDisputeRecord,
 } from '../prisma/prisma.service';
 
 @Injectable()
@@ -18,58 +19,52 @@ export class DisputeRepository {
     evidenceUrls?: string[];
     status?: DisputeState;
   }): Promise<DisputeRecord> {
-    return this.prisma.dispute.create({ data });
+    return this.prisma.dispute.create({ data }).then(toDisputeRecord);
   }
 
   /** Returns a dispute by its primary key, or null if not found. */
   findById(id: string): Promise<DisputeRecord | null> {
-    return this.prisma.dispute.findUnique({ where: { id } });
+    return this.prisma.dispute
+      .findUnique({ where: { id } })
+      .then((row) => (row ? toDisputeRecord(row) : null));
   }
 
   /** Returns the first dispute linked to the given escrow, or null if none exists. */
-  async findByEscrow(escrowId: string): Promise<DisputeRecord | null> {
-    const disputes = await this.prisma.dispute.findMany({
-      where: { escrowId },
-    });
-    return disputes[0] ?? null;
-  }
-
-  /** Returns all disputes in OPEN or UNDER_REVIEW status. */
-  findAllOpen(): Promise<DisputeRecord[]> {
+  findByEscrow(escrowId: string): Promise<DisputeRecord | null> {
     return this.prisma.dispute
-      .findMany()
-      .then((disputes) =>
-        disputes.filter(
-          (dispute) =>
-            dispute.status === 'OPEN' || dispute.status === 'UNDER_REVIEW',
-        ),
-      );
+      .findFirst({ where: { escrowId } })
+      .then((row) => (row ? toDisputeRecord(row) : null));
   }
 
-  /**
-   * Marks the dispute as RESOLVED, records the resolution timestamp,
-   * and transitions the linked escrow to the specified final state.
-   */
-  async resolve(
-    disputeId: string,
-    escrowState: EscrowState = 'COMPLETED',
-  ): Promise<DisputeRecord> {
-    const dispute = await this.findById(disputeId);
-    if (!dispute) {
-      throw new Error(`Dispute ${disputeId} not found`);
-    }
+  findMany(params?: {
+    where?: Prisma.DisputeWhereInput;
+    orderBy?: Prisma.DisputeOrderByWithRelationInput;
+    skip?: number;
+    take?: number;
+  }): Promise<DisputeRecord[]> {
+    return this.prisma.dispute
+      .findMany(params)
+      .then((rows) => rows.map(toDisputeRecord));
+  }
 
-    const resolvedAt = new Date();
-    const resolvedDispute = await this.prisma.dispute.update({
-      where: { id: disputeId },
-      data: { status: 'RESOLVED', resolvedAt },
-    });
+  count(where?: Prisma.DisputeWhereInput): Promise<number> {
+    return this.prisma.dispute.count({ where });
+  }
 
-    await this.prisma.escrow.update({
-      where: { id: dispute.escrowId },
-      data: { state: escrowState, disputeId: null },
-    });
+  findFirst(params: {
+    where?: Prisma.DisputeWhereInput;
+  }): Promise<DisputeRecord | null> {
+    return this.prisma.dispute
+      .findFirst(params)
+      .then((row) => (row ? toDisputeRecord(row) : null));
+  }
 
-    return resolvedDispute;
+  update(params: {
+    where: Prisma.DisputeWhereUniqueInput;
+    data: Prisma.DisputeUpdateInput;
+  }): Promise<DisputeRecord> {
+    return this.prisma.dispute
+      .update(params)
+      .then((row) => toDisputeRecord(row));
   }
 }

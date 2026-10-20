@@ -1,6 +1,12 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD } from '@nestjs/core';
-import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { ScheduleModule } from '@nestjs/schedule';
+import {
+  ThrottlerGuard,
+  ThrottlerModule,
+  type ThrottlerModuleOptions,
+} from '@nestjs/throttler';
+import { ThrottlerStorageRedisService } from '@nest-lab/throttler-storage-redis';
 import { AdminStatsModule } from './admin/stats/admin-stats.module';
 import { DisputeModule as AdminDisputeModule } from './admin/dispute/dispute.module';
 import { QueueDashboardModule } from './admin/queues/queue-dashboard.module';
@@ -26,10 +32,40 @@ import { StellarModule } from './stellar/stellar.module';
 import { VendorModule } from './vendor/vendor.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 import { StressTestModule } from './stress-test/stress-test.module';
-import { CacheService } from './common/cache.service';
+
+import { DlqModule } from './dlq/dlq.module';
+import { NotificationsModule } from './notifications/notifications.module';
+import { WorkersModule } from './workers/workers.module';
+import { SentryModule } from '@sentry/nestjs/setup';
+
+export type AppThrottlerOptions = Exclude<
+  ThrottlerModuleOptions,
+  Array<unknown>
+>;
+
+export function buildThrottlerOptions(
+  config: ConfigService,
+): AppThrottlerOptions {
+  const redisUrl = config.get<string>('REDIS_URL');
+  const options: AppThrottlerOptions = {
+    throttlers: [
+      {
+        ttl: config.get<number>('PUBLIC_WINDOW') ?? 60000,
+        limit: config.get<number>('PUBLIC_LIMIT') ?? 60,
+      },
+    ],
+  };
+
+  if (redisUrl) {
+    options.storage = new ThrottlerStorageRedisService(redisUrl);
+  }
+
+  return options;
+}
 
 @Module({
   imports: [
+    SentryModule.forRoot(),
     // Core infrastructure
     ConfigModule,
     TracingModule,
@@ -38,6 +74,8 @@ import { CacheService } from './common/cache.service';
     CacheModule,
     LogisticsModule,
     AuditLogModule,
+    NotificationsModule,
+    ScheduleModule.forRoot(),
 
     // Auth
     Sep10Module,
@@ -46,6 +84,7 @@ import { CacheService } from './common/cache.service';
     EscrowModule,
     StellarModule,
     VendorModule,
+    WorkersModule,
 
     // Admin modules
     AdminStatsModule,
@@ -56,28 +95,17 @@ import { CacheService } from './common/cache.service';
     // Webhook receivers
     WebhooksModule, // issue #76 – POST /webhooks/stellar
     StressTestModule,
+    DlqModule,
 
     ThrottlerModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
-      useFactory: (config: ConfigService) => [
-        {
-          name: 'auth',
-          ttl: config.get<number>('AUTH_CHALLENGE_WINDOW') || 60000,
-          limit: config.get<number>('AUTH_CHALLENGE_LIMIT') || 10,
-        },
-        {
-          name: 'public',
-          ttl: config.get<number>('PUBLIC_WINDOW') || 60000,
-          limit: config.get<number>('PUBLIC_LIMIT') || 60,
-        },
-      ],
+      useFactory: buildThrottlerOptions,
     }),
   ],
   controllers: [AppController],
   providers: [
     AppService,
-    CacheService,
     {
       provide: APP_FILTER,
       useClass: GlobalExceptionFilter,
@@ -100,3 +128,4 @@ export class AppModule implements NestModule {
       .forRoutes('*');
   }
 }
+// update

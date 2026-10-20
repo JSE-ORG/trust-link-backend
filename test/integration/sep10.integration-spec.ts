@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
-
 /**
  * SEP-10 authentication flow — end-to-end integration tests.
  *
@@ -9,20 +7,123 @@
  */
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import { Prisma } from '@prisma/client';
 import { Keypair, Networks, TransactionBuilder } from '@stellar/stellar-sdk';
 import request from 'supertest';
-import { AppModule } from '../../src/app.module';
+import { Sep10Controller } from '../../src/auth/sep10/sep10.controller';
 import { Sep10Service } from '../../src/auth/sep10/sep10.service';
+import {
+  MAX_CHALLENGE_TRANSACTION_LENGTH,
+  MAX_REFRESH_TOKEN_LENGTH,
+} from '../../src/auth/sep10/sep10.constants';
+import { ConfigService } from '../../src/config/config.service';
+import { PrismaService } from '../../src/prisma/prisma.service';
+import { TEST_SIGNING_SECRET } from '../auth-helper';
+
+type MockNonce = Prisma.NonceCreateInput & { id: string };
+type MockRefreshToken = Prisma.RefreshTokenCreateInput & { id: string };
 
 describe('SEP-10 authentication (issue #23)', () => {
   let app: INestApplication;
   let sep10Service: Sep10Service;
+  const mockNonces = new Map<string, MockNonce>();
+  const mockRefreshTokens = new Map<string, MockRefreshToken>();
+  let nextId = 1;
   /** A fresh client keypair per test run. */
   const clientKeypair = Keypair.random();
 
   beforeAll(async () => {
+    const mockConfigService = {
+      get: jest.fn((key: string) => {
+        switch (key) {
+          case 'STELLAR_NETWORK':
+            return 'TESTNET';
+          case 'SYSTEM_SIGNER_SECRET':
+            return TEST_SIGNING_SECRET;
+          case 'SEP10_JWT_SECRET':
+            return 'a-very-long-secret-key-for-testing-purposes-32chars';
+          case 'REFRESH_TOKEN_TTL':
+            return 604800;
+          default:
+            return undefined;
+        }
+      }),
+    } as unknown as ConfigService;
+
+    const mockPrismaService = {
+      nonce: {
+        create: jest.fn(async ({ data }: Prisma.NonceCreateArgs) => {
+          const record: MockNonce = { ...data, id: `nonce-${nextId++}` };
+          mockNonces.set(data.nonce, record);
+          return record;
+        }),
+        findUnique: jest.fn(async ({ where }: Prisma.NonceFindUniqueArgs) => {
+          return (
+            (where.nonce ? mockNonces.get(where.nonce) : undefined) ?? null
+          );
+        }),
+        update: jest.fn(async ({ where, data }: Prisma.NonceUpdateArgs) => {
+          const record =
+            (where.id ? mockNonces.get(where.id) : undefined) ??
+            Array.from(mockNonces.values()).find(
+              (entry) => entry.id === where.id,
+            ) ??
+            (where.nonce ? mockNonces.get(where.nonce) : undefined) ??
+            null;
+          if (!record) return null;
+          Object.assign(record, data);
+          return record;
+        }),
+      },
+      refreshToken: {
+        create: jest.fn(async ({ data }: Prisma.RefreshTokenCreateArgs) => {
+          const record: MockRefreshToken = {
+            ...data,
+            id: `refresh-${nextId++}`,
+          };
+          mockRefreshTokens.set(data.tokenHash, record);
+          return record;
+        }),
+        findUnique: jest.fn(
+          async ({ where }: Prisma.RefreshTokenFindUniqueArgs) => {
+            return (
+              (where.tokenHash
+                ? mockRefreshTokens.get(where.tokenHash)
+                : undefined) ?? null
+            );
+          },
+        ),
+        update: jest.fn(
+          async ({ where, data }: Prisma.RefreshTokenUpdateArgs) => {
+            const record =
+              (where.tokenHash
+                ? mockRefreshTokens.get(where.tokenHash)
+                : undefined) ?? null;
+            if (!record) return null;
+            Object.assign(record, data);
+            return record;
+          },
+        ),
+        updateMany: jest.fn(
+          async ({ where, data }: Prisma.RefreshTokenUpdateManyArgs) => {
+            for (const record of mockRefreshTokens.values()) {
+              if (record.userId === where?.userId) {
+                Object.assign(record, data);
+              }
+            }
+            return { count: 0 };
+          },
+        ),
+      },
+    } as unknown as PrismaService;
+
     const moduleFixture: TestingModule = await Test.createTestingModule({
-      imports: [AppModule],
+      controllers: [Sep10Controller],
+      providers: [
+        Sep10Service,
+        { provide: ConfigService, useValue: mockConfigService },
+        { provide: PrismaService, useValue: mockPrismaService },
+      ],
     }).compile();
 
     app = moduleFixture.createNestApplication();
@@ -107,10 +208,18 @@ describe('SEP-10 authentication (issue #23)', () => {
   it('expired challenge returns 401', async () => {
     const kp = Keypair.random();
 
-    // Build a challenge whose maxTime is already in the past (timeout = -700s).
-    // The SDK adds a 300-second grace window, so we need maxTime + 300 < now,
-    // i.e. (now - 700) + 300 = now - 400 < now  ✓
-    const expiredXdr = await sep10Service.buildChallenge(kp.publicKey(), -700);
+    // Build a challenge whose maxTime is already in the past. stellar-sdk 17
+    // rejects a negative timeout (min_time > max_time), so backdate the clock
+    // while the challenge is built instead: issued 1000s ago with the default
+    // 300s timeout, maxTime + the SDK's 300s grace window is still before now.
+    const realNow = Date.now();
+    const clock = jest.spyOn(Date, 'now').mockReturnValue(realNow - 1_000_000);
+    let expiredXdr: string;
+    try {
+      expiredXdr = await sep10Service.buildChallenge(kp.publicKey());
+    } finally {
+      clock.mockRestore();
+    }
 
     const tx = TransactionBuilder.fromXDR(expiredXdr, Networks.TESTNET);
     tx.sign(kp);
@@ -136,5 +245,31 @@ describe('SEP-10 authentication (issue #23)', () => {
       .post('/auth')
       .send({ transaction: forgedXdr })
       .expect(401);
+  });
+
+  // issue #935: both of these used to reach the Stellar SDK and return 500.
+  it('GET /auth without an account returns 400', async () => {
+    await request(app.getHttpServer()).get('/auth').expect(400);
+  });
+
+  it('GET /auth with an invalid account returns 400', async () => {
+    await request(app.getHttpServer())
+      .get('/auth')
+      .query({ account: 'bogus' })
+      .expect(400);
+  });
+
+  it('POST /auth with an oversized transaction returns 400', async () => {
+    await request(app.getHttpServer())
+      .post('/auth')
+      .send({ transaction: 'A'.repeat(MAX_CHALLENGE_TRANSACTION_LENGTH + 1) })
+      .expect(400);
+  });
+
+  it('POST /auth/refresh with an oversized token returns 400', async () => {
+    await request(app.getHttpServer())
+      .post('/auth/refresh')
+      .send({ refreshToken: 'a'.repeat(MAX_REFRESH_TOKEN_LENGTH + 1) })
+      .expect(400);
   });
 });

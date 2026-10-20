@@ -66,6 +66,47 @@ Out of scope:
 
 ## Security Controls
 
+### Buyer Contact Encryption (PII at rest)
+
+`buyerContactEmail` and `buyerContactPhone` are classified as Personal Identifiable Information (PII) and **must never be written to the database in plaintext**.
+
+#### Encryption scheme
+
+| Property | Value |
+|----------|-------|
+| Algorithm | AES-256-GCM |
+| Key size | 256 bits (32 bytes) |
+| IV size | 96 bits (12 bytes), randomly generated per call |
+| Auth tag | 128 bits (16 bytes) |
+| Storage format | `<iv_hex>:<auth_tag_hex>:<ciphertext_hex>` (colon-separated hex) |
+| Key source | `CONTACT_ENCRYPTION_KEY` env variable (64 hex chars = 32 bytes) |
+
+Encrypting the same plaintext twice produces different ciphertext — each call generates a fresh IV, preventing correlation attacks.
+
+#### Code path
+
+```
+EscrowController → EscrowService.updateBuyerContact()
+  → encryptContact()           [contact-encryption.util.ts]
+  → EscrowRepository.saveBuyerContact()
+  → PrismaService.escrow.update()  [validates ciphertext format before write]
+```
+
+#### Defence-in-depth guard
+
+`PrismaService.escrow.create` and `escrow.update` both call `assertEncryptedContact()` before any write. If either field is provided without matching the expected `iv:tag:ciphertext` hex format, an exception is thrown and the write is aborted. This makes plaintext storage impossible by construction even if a new code path bypasses `encryptContact()`.
+
+#### Key rotation
+
+1. Generate a new 32-byte key: `openssl rand -hex 32`
+2. Re-encrypt all non-null `buyerContactEmail`/`buyerContactPhone` rows using the new key.
+3. Update `CONTACT_ENCRYPTION_KEY` in the secret store and restart the service.
+4. Verify no plaintext remains by checking that all stored values match the `iv:tag:ciphertext` format.
+
+#### Regulatory context
+
+This control supports compliance with NDPR (Nigeria Data Protection Regulation), GDPR (Article 32 — appropriate technical measures), and similar frameworks requiring encryption of personal data at rest.
+
 ### Environment Variables
 
 | Variable | Requirement |
@@ -74,6 +115,8 @@ Out of scope:
 | `ADMIN_ADDRESS` | Valid Stellar public key (G...) |
 | `DATABASE_URL` | TLS/SSL required in production |
 | `STELLAR_WEBHOOK_SECRET` | Required in production for webhook HMAC verification |
+| `CONTACT_ENCRYPTION_KEY` | Exactly 64 hex characters (32 bytes); rotate annually or on suspected compromise |
+| `AUTO_RELEASE_SOURCE_ADDRESS` | Stellar public key of the auto-release signing account |
 
 Never commit `.env` files. Use environment-specific secret management (Vault, AWS Secrets Manager, etc.).
 

@@ -8,63 +8,67 @@ import {
   Post,
   Req,
 } from '@nestjs/common';
+import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { SkipThrottle } from '@nestjs/throttler';
 import type { Request } from 'express';
 import { StellarWebhookDto } from './dto/stellar-webhook.dto';
+import { StellarWebhookResponseDto } from './dto/stellar-webhook-response.dto';
 import { StellarWebhookService } from './stellar-webhook.service';
+import { ErrorResponseDto } from '../common/dto/error-response.dto';
 
-/**
- * Issue #76 – POST /webhooks/stellar
- *
- * Receives ledger transaction notifications from Stellar Horizon.
- * The endpoint:
- *  - Reads the raw body buffer for HMAC verification before JSON parsing.
- *  - Validates the payload shape via the DTO.
- *  - Delegates processing (signature check + idempotency + state update) to
- *    StellarWebhookService.
- *
- * No authentication guard is applied here because Horizon calls this endpoint
- * from outside the system; authenticity is established via the HMAC signature.
- */
+@ApiTags('Webhooks')
 @Controller('webhooks')
 export class StellarWebhookController {
   constructor(private readonly webhookService: StellarWebhookService) {}
 
+  /**
+   * Receives and processes Stellar Horizon ledger event webhooks.
+   * Validates the HMAC signature and routes the event to the
+   * appropriate handler. Duplicate events are detected and skipped.
+   *
+   * @param req - Raw Express request with body buffer for signature verification
+   * @param signature - HMAC signature from x-stellar-signature header
+   * @param dto - Stellar webhook event payload
+   * @returns Processing result with received status and optional skip reason
+   * @throws BadRequestException if raw body is unavailable or payload is invalid
+   * @authentication None (HMAC signature verification instead)
+   */
+  @ApiOperation({ summary: 'Receive Stellar Horizon ledger event webhook' })
+  @ApiResponse({
+    status: 200,
+    description: 'Webhook event processed.',
+    type: StellarWebhookResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid payload or missing HMAC signature.',
+  })
+  @ApiResponse({
+    status: 500,
+    description: 'Internal server error.',
+    type: ErrorResponseDto,
+  })
+  // Issue #923 — exempt the signed Stellar webhook from rate limiting. Every
+  // delivery comes from the same Horizon sender, so the shared per-IP bucket
+  // fills after 60 events in a minute and a burst of payments is dropped (429)
+  // unless the sender retries. The HMAC signature, not the request rate, is
+  // what authenticates this route; rejections still happen on a bad signature.
+  @SkipThrottle()
   @Post('stellar')
   @HttpCode(HttpStatus.OK)
   async handleStellarWebhook(
     @Req() req: Request,
     @Headers('x-stellar-signature') signature: string | undefined,
     @Body() dto: StellarWebhookDto,
-  ): Promise<{ received: boolean; skipped?: boolean; reason?: string }> {
-    // NestJS has already parsed the body into `dto` at this point.
-    // We reconstruct the raw buffer from the parsed body for HMAC verification.
-    // In production you would configure the express raw-body middleware on this
-    // route; here we serialise back to JSON which is equivalent for HMAC
-    // purposes as long as the secret is only used for verification.
-    const rawBody = this.extractRawBody(req, dto);
-
+  ): Promise<StellarWebhookResponseDto> {
+    const rawBody = this.extractRawBody(req);
     return this.webhookService.handleEvent(rawBody, signature, dto);
   }
 
-  // ---------------------------------------------------------------------------
-  // Helpers
-  // ---------------------------------------------------------------------------
-
-  /**
-   * Attempt to get the raw body buffer that express stored on the request
-   * object (requires `verify` option on bodyParser / rawBody: true in NestJS).
-   * Falls back to re-serialising the parsed DTO, which is safe for HMAC
-   * verification when the sender also serialises with the same key order.
-   */
-  private extractRawBody(req: Request, dto: StellarWebhookDto): Buffer {
+  private extractRawBody(req: Request): Buffer {
     const raw = (req as Request & { rawBody?: Buffer }).rawBody;
     if (raw instanceof Buffer) return raw;
 
-    // Fallback: re-serialise the validated DTO
-    try {
-      return Buffer.from(JSON.stringify(dto), 'utf8');
-    } catch {
-      throw new BadRequestException('Unable to read request body');
-    }
+    throw new BadRequestException('Unable to read raw request body');
   }
 }

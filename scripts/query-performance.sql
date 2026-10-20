@@ -13,11 +13,25 @@ WHERE "vendorAddress" = 'GD3W57WQA63W6V5P2K7G2RD4M4JYZ736H72Z5TQX6Z62S7H3L2B2J5V
 LIMIT 1;
 
 SELECT 'vendor_escrows_by_state_recent' AS probe;
+SELECT indexname, indexdef
+FROM pg_indexes
+WHERE schemaname = 'public'
+  AND tablename = 'Escrow'
+  AND indexname = 'Escrow_vendorAddress_state_idx';
+
 EXPLAIN (ANALYZE, BUFFERS, VERBOSE)
 SELECT *
 FROM "Escrow"
 WHERE "vendorAddress" = 'GD3W57WQA63W6V5P2K7G2RD4M4JYZ736H72Z5TQX6Z62S7H3L2B2J5V6'
   AND "state" = 'SHIPPED'
+ORDER BY "createdAt" DESC
+LIMIT 20;
+
+SELECT 'vendor_escrows_all_states_recent' AS probe;
+EXPLAIN (ANALYZE, BUFFERS, VERBOSE)
+SELECT *
+FROM "Escrow"
+WHERE "vendorAddress" = 'GD3W57WQA63W6V5P2K7G2RD4M4JYZ736H72Z5TQX6Z62S7H3L2B2J5V6'
 ORDER BY "createdAt" DESC
 LIMIT 20;
 
