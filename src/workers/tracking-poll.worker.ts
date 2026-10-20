@@ -54,7 +54,18 @@ export class TrackingPollWorker implements OnModuleInit, OnApplicationShutdown {
 
         const deliveredAt = new Date();
         await this.escrowRepository.markDelivered(escrow.id, deliveredAt);
-        await this.contractService.recordDelivery(escrow.id);
+        try {
+          await this.contractService.recordDelivery(escrow.id);
+        } catch (contractError) {
+          // If delivery was already recorded on-chain, treat as success.
+          // The local write may have failed after a previous on-chain call.
+          const msg = contractError instanceof Error ? contractError.message : String(contractError);
+          if (msg.includes('DeliveryAlreadyRecorded')) {
+            this.logger.log(`Delivery already recorded on-chain for escrow ${escrow.id}, marking delivered`);
+          } else {
+            throw contractError;
+          }
+        }
       } catch (error) {
         this.logger.error(
           `Tracking poll failed for escrow ${escrow.id}`,
