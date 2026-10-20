@@ -3,6 +3,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { ApiKeysController } from '../../src/admin/api-keys/api-keys.controller';
 import { LogisticsService } from '../../src/logistics/logistics.service';
+import { AuditLogService } from '../../src/audit-log/audit-log.service';
 import { JwtGuard } from '../../src/auth/guards/jwt.guard';
 import { AdminGuard } from '../../src/admin/guards/admin.guard';
 import { ConfigService } from '../../src/config/config.service';
@@ -16,15 +17,8 @@ const encryptionKeyConfig = {
 
 describe('ApiKeysController (issue #410)', () => {
   let app: INestApplication;
-  // Issue #548: this used to be a hand-built mock asserting on
-  // setApiKey/setEncryptedApiKey/reencryptCredential — internals
-  // rotateLogisticsKey stopped calling after the #498/#499 rotation
-  // rewrite (rotateApiKey now does its own encryptCredential + optional
-  // Prisma upsert inline, and reencryptCredential is dead code — nothing
-  // in src/ calls it). A real LogisticsService instance, same as the
-  // "issue #498" describe block below, tests the controller against
-  // actual current behaviour instead of a stale internal API shape.
   let logisticsService: LogisticsService;
+  let auditLogService: { append: jest.Mock };
 
   // Issue #548: a real Stellar-format address that is deliberately not
   // process.env.ADMIN_ADDRESS, so the non-admin case exercises AdminGuard's
@@ -35,11 +29,13 @@ describe('ApiKeysController (issue #410)', () => {
 
   beforeEach(async () => {
     logisticsService = new LogisticsService(undefined, encryptionKeyConfig);
+    auditLogService = { append: jest.fn().mockResolvedValue(undefined) };
 
     const moduleRef: TestingModule = await Test.createTestingModule({
       controllers: [ApiKeysController],
       providers: [
         { provide: LogisticsService, useValue: logisticsService },
+        { provide: AuditLogService, useValue: auditLogService },
         JwtGuard,
         AdminGuard,
         // Issue #548: the previous mock returned the same literal
@@ -94,6 +90,15 @@ describe('ApiKeysController (issue #410)', () => {
     expect(JSON.stringify(res.body)).not.toContain('very-secret-key');
 
     expect(logisticsService.getApiKey()).toBe('very-secret-key');
+    expect(auditLogService.append).toHaveBeenCalledWith({
+      action: 'CREDENTIAL_ROTATED',
+      adminAddress: process.env.ADMIN_ADDRESS,
+      entityType: 'logistics_provider',
+      entityId: 'logistics',
+      details: {
+        provider: 'logistics',
+      },
+    });
   });
 
   it('rotates to the submitted key even when one is already configured, without leaking secrets', async () => {

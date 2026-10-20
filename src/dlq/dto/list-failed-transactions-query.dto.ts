@@ -5,6 +5,7 @@ import type { FailedTransactionStatus } from '../dlq.types';
 
 const FAILED_TRANSACTION_STATUSES = [
   'PENDING_REVIEW',
+  'REPLAYING',
   'REPLAYED',
   'ABANDONED',
 ] as const satisfies readonly FailedTransactionStatus[];

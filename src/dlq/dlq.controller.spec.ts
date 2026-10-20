@@ -15,6 +15,7 @@ import {
   ConfigService,
 } from '../config/config.service';
 import { FailedTransactionRecord } from './dlq.types';
+import { AuditLogService } from '../audit-log/audit-log.service';
 
 describe('DlqController', () => {
   const autoReleaseRecord: FailedTransactionRecord = {
@@ -73,6 +74,10 @@ describe('DlqController', () => {
           useValue: {
             findContractEscrowId: jest.fn().mockResolvedValue(contractEscrowId),
           },
+        },
+        {
+          provide: AuditLogService,
+          useValue: { append: jest.fn().mockResolvedValue(undefined) },
         },
       ],
     }).compile();

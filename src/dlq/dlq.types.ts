@@ -1,7 +1,16 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export type FailedTransactionStatus =
-  'PENDING_REVIEW' | 'REPLAYED' | 'ABANDONED';
+  | 'PENDING_REVIEW'
+  | 'REPLAYING'
+  | 'REPLAYED'
+  | 'ABANDONED';
+
+/**
+ * Records stuck in `REPLAYING` longer than this threshold (5 minutes) are
+ * considered stale and can be replayed or abandoned again (issue #1050).
+ */
+export const REPLAYING_STALE_THRESHOLD_MS = 5 * 60 * 1000;
 
 /**
  * Captured failure of a Stellar contract submission queued for admin review or
@@ -58,7 +67,7 @@ export class FailedTransactionRecord {
 
   @ApiProperty({
     description: 'Current status of the failed transaction review.',
-    enum: ['PENDING_REVIEW', 'REPLAYED', 'ABANDONED'],
+    enum: ['PENDING_REVIEW', 'REPLAYING', 'REPLAYED', 'ABANDONED'],
     example: 'PENDING_REVIEW',
   })
   status!: FailedTransactionStatus;

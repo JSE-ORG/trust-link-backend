@@ -4,7 +4,6 @@ import {
   HttpCode,
   HttpStatus,
   Patch,
-  Req,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -15,6 +14,8 @@ import {
 } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { THROTTLE_WINDOW_MS } from '../../common/security/throttle.config';
+import { CurrentUser } from '../../auth/decorators/current-user.decorator';
+import type { AuthUser } from '../../auth/auth-user';
 import { JwtGuard } from '../../auth/guards/jwt.guard';
 import { AdminGuard } from '../guards/admin.guard';
 import { LogisticsService } from '../../logistics/logistics.service';
@@ -29,7 +30,7 @@ import { AuditLogService } from '../../audit-log/audit-log.service';
 export class ApiKeysController {
   constructor(
     private readonly logisticsService: LogisticsService,
-    private readonly auditLog: AuditLogService,
+    private readonly auditLog?: AuditLogService,
   ) {}
 
   @ApiOperation({
@@ -46,22 +47,27 @@ export class ApiKeysController {
   @Throttle({ default: { limit: 5, ttl: THROTTLE_WINDOW_MS } })
   @Patch('logistics')
   @HttpCode(HttpStatus.OK)
-  async rotateLogisticsKey(@Body() dto: RotateApiKeyDto, @Req() req: any) {
+  async rotateLogisticsKey(
+    @Body() dto: RotateApiKeyDto,
+    @CurrentUser() admin?: AuthUser,
+  ) {
     // Always rotate to the submitted key, whether or not one was already set
     // (issue #498), and persist it outside process memory (issue #499).
     await this.logisticsService.rotateApiKey(dto.key);
 
-    // Issue #954: Audit credential rotation (provider name only, never the key)
-    const adminAddress = req.user?.walletAddress || 'unknown';
-    await this.auditLog.append({
-      action: 'CREDENTIAL_ROTATED',
-      adminAddress,
-      entityType: 'logistics_provider',
-      entityId: 'logistics',
-      details: {
-        provider: 'logistics',
-      },
-    });
+    // Issue #954 / #1051: Audit credential rotation (provider name only, never the key)
+    const adminAddress = admin?.address ?? 'unknown';
+    if (this.auditLog) {
+      await this.auditLog.append({
+        action: 'CREDENTIAL_ROTATED',
+        adminAddress,
+        entityType: 'logistics_provider',
+        entityId: 'logistics',
+        details: {
+          provider: 'logistics',
+        },
+      });
+    }
 
     return { message: 'Logistics API key updated and encrypted' };
   }
