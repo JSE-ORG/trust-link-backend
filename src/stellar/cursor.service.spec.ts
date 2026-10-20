@@ -46,6 +46,20 @@ describe('CursorService', () => {
       expect(repositoryMock.findById).toHaveBeenCalledWith('stellar-listener');
     });
 
+    it('should read from a custom cursor key when supplied (#1041)', async () => {
+      repositoryMock.findById.mockResolvedValue({
+        id: CursorService.EVENT_REPLAY_KEY,
+        cursorValue: '99999',
+      });
+
+      const result = await service.get(CursorService.EVENT_REPLAY_KEY);
+      expect(result).toBe('99999');
+      expect(repositoryMock.findById).toHaveBeenCalledWith(
+        'horizon-event-replay',
+      );
+      expect(CursorService.SOROBAN_POLLER_KEY).toBe('stellar-listener');
+    });
+
     it('should return undefined when no cursor exists', async () => {
       repositoryMock.findById.mockResolvedValue(null);
 
@@ -73,6 +87,16 @@ describe('CursorService', () => {
       await service.set('67890');
       expect(repositoryMock.upsert).toHaveBeenCalledWith(
         'stellar-listener',
+        '67890',
+      );
+    });
+
+    it('should upsert under a custom cursor key when supplied (#1041)', async () => {
+      repositoryMock.upsert.mockResolvedValue(undefined);
+
+      await service.set('67890', CursorService.EVENT_REPLAY_KEY);
+      expect(repositoryMock.upsert).toHaveBeenCalledWith(
+        'horizon-event-replay',
         '67890',
       );
     });

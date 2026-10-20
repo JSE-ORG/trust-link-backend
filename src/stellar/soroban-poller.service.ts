@@ -260,14 +260,14 @@ export class SorobanPollerService implements OnModuleInit, OnModuleDestroy {
 
   private async pollInternal(): Promise<void> {
     try {
-      let cursor = await this.cursorService.get(CursorService.SOROBAN_POLLER_KEY);
+      let cursor = await this.cursorService.get();
       if (!cursor) {
         const startLedger = await this.resolveStartLedger();
         cursor = `${LEDGER_CURSOR_PREFIX}${startLedger}`;
         // Persist before the first fetch so a restart resumes from this
         // ledger instead of computing a new starting point and skipping the
         // gap.
-        await this.cursorService.set(cursor, CursorService.SOROBAN_POLLER_KEY);
+        await this.cursorService.set(cursor);
         this.logger.log(
           `SorobanPollerService: no cursor stored — starting from ledger ${startLedger}`,
         );
@@ -282,11 +282,11 @@ export class SorobanPollerService implements OnModuleInit, OnModuleDestroy {
         if (latestLedger) {
           if (cursor.startsWith(LEDGER_CURSOR_PREFIX)) {
             const newStartLedger = Math.max(1, latestLedger - START_LEDGER_MARGIN);
-            await this.cursorService.set(`${LEDGER_CURSOR_PREFIX}${newStartLedger}`, CursorService.SOROBAN_POLLER_KEY);
+            await this.cursorService.set(`${LEDGER_CURSOR_PREFIX}${newStartLedger}`);
           } else {
             // Paging token cursor: reset to a fresh ledger cursor to avoid stale token retention error
             const newStartLedger = Math.max(1, latestLedger - START_LEDGER_MARGIN);
-            await this.cursorService.set(`${LEDGER_CURSOR_PREFIX}${newStartLedger}`, CursorService.SOROBAN_POLLER_KEY);
+            await this.cursorService.set(`${LEDGER_CURSOR_PREFIX}${newStartLedger}`);
           }
         }
         return;
@@ -312,7 +312,7 @@ export class SorobanPollerService implements OnModuleInit, OnModuleDestroy {
       }
 
       if (lastPagingToken) {
-        await this.cursorService.set(lastPagingToken, CursorService.SOROBAN_POLLER_KEY);
+        await this.cursorService.set(lastPagingToken);
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

@@ -126,7 +126,13 @@ describe('EventReplayService', () => {
       const service = await buildService();
       await service.onModuleInit();
 
-      expect(cursorService.set).toHaveBeenCalledWith('201');
+      expect(cursorService.get).toHaveBeenCalledWith(
+        CursorService.EVENT_REPLAY_KEY,
+      );
+      expect(cursorService.set).toHaveBeenCalledWith(
+        '201',
+        CursorService.EVENT_REPLAY_KEY,
+      );
     });
 
     it('uses existing cursor in the request URL', async () => {
@@ -138,6 +144,9 @@ describe('EventReplayService', () => {
       const service = await buildService();
       await service.onModuleInit();
 
+      expect(cursorService.get).toHaveBeenCalledWith(
+        CursorService.EVENT_REPLAY_KEY,
+      );
       const url: string = (mockedAxios.get as jest.Mock).mock.calls[0][0];
       expect(url).toContain('cursor=99');
     });
@@ -153,7 +162,10 @@ describe('EventReplayService', () => {
       const service = await buildService();
       await service.onModuleInit();
 
-      expect(cursorService.set).toHaveBeenCalledWith('300');
+      expect(cursorService.set).toHaveBeenCalledWith(
+        '300',
+        CursorService.EVENT_REPLAY_KEY,
+      );
     });
 
     it('does not persist cursor when no records are returned', async () => {
@@ -195,7 +207,10 @@ describe('EventReplayService', () => {
       await service.onModuleInit();
 
       expect(webhookService.processOperationDto).toHaveBeenCalledTimes(2);
-      expect(cursorService.set).toHaveBeenCalledWith('401');
+      expect(cursorService.set).toHaveBeenCalledWith(
+        '401',
+        CursorService.EVENT_REPLAY_KEY,
+      );
     });
 
     it('defaults to TESTNET horizon URL when STELLAR_NETWORK is not configured', async () => {
