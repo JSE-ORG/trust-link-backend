@@ -12,7 +12,6 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { MILLISECONDS_PER_SECOND } from '../../common/constants/time.constants';
 import {
   CHALLENGE_TIMEOUT_SECONDS,
-  JWT_EXPIRY_SECONDS,
   REFRESH_TOKEN_TTL_DEFAULT,
 } from './sep10.constants';
 
@@ -295,12 +294,14 @@ export class Sep10Service {
   private issueJwt(sub: string): string {
     const now = Math.floor(Date.now() / MILLISECONDS_PER_SECOND);
     const adminAddress = this.configService.get('ADMIN_ADDRESS');
+    const ttlSeconds =
+      this.configService.get<number>('ACCESS_TOKEN_TTL') ?? 3600;
     const payload: {
       sub: string;
       iat: number;
       exp: number;
       role?: 'admin';
-    } = { sub, iat: now, exp: now + JWT_EXPIRY_SECONDS };
+    } = { sub, iat: now, exp: now + ttlSeconds };
     if (adminAddress && sub === adminAddress) {
       payload.role = 'admin';
     }

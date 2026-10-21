@@ -37,6 +37,15 @@ import { ConfigService } from './config.service';
         CONTRACT_ID: Joi.string().required().messages({
           'any.required': 'Config validation error: CONTRACT_ID is required',
         }),
+        ACCESS_TOKEN_TTL: Joi.number()
+          .integer()
+          .min(1)
+          .max(86400)
+          .default(3600)
+          .messages({
+            'number.max':
+              'Config validation error: ACCESS_TOKEN_TTL must not exceed 86400 seconds (24 hours)',
+          }),
         ADMIN_ADDRESS: Joi.string().required(),
         AUTO_RELEASE_SOURCE_ADDRESS: Joi.string().optional(),
         NODE_ENV: Joi.string()
