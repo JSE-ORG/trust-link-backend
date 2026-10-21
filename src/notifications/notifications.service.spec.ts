@@ -1,5 +1,6 @@
 import { Logger } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import { StrKey } from '@stellar/stellar-sdk';
 import { NotificationsService } from './notifications.service';
 import { ConfigService } from '../config/config.service';
 import { SENDGRID_CLIENT, TWILIO_CLIENT } from './notifications.tokens';
@@ -30,6 +31,10 @@ const EMAIL_CONFIG: Record<string, string> = {
 };
 const VENDOR_EMAIL = 'vendor@example.test';
 const VENDOR_PHONE = '+15555550100';
+
+/** A valid 56-char base32 Stellar ed25519 public key (starts with G). */
+const VALID_STELLAR_PUBLIC_KEY =
+  'GDUI2TZ4FY7F5NQQ3GJ6ZCRKIOABSXBZWMHWMGK34LZDPNNCSYLOD4YD';
 
 /** Minimal ConfigService stand-in returning `values[key]`. */
 function emailConfig(
@@ -212,7 +217,6 @@ describe('NotificationsService', () => {
       expect(smsRecord!.providerMessageId).toBe('SM123');
     });
 
-
     it('creates a notification record for each dispatch', async () => {
       await service.notifyFunded(escrow);
 
@@ -385,7 +389,6 @@ describe('NotificationsService', () => {
   });
 
   describe('unconfigured email provider behaviour (#839)', () => {
-
     it('is a no-op (noop provider) when SendGrid is not configured', async () => {
       const serviceNoSendgrid = new NotificationsService(
         new NotificationRepository(prisma),
@@ -759,7 +762,6 @@ describe('NotificationsService (#726) — channel selection', () => {
       expect(n.providerMessageId).toBeNull();
     }
   });
-
 });
 
 describe('NotificationsService (#726) — extractResponseCode shapes', () => {
@@ -1215,8 +1217,8 @@ describe('NotificationsService (#946) — stop sending to Stellar addresses', ()
 
     const svc = new NotificationsService(
       makeRepo(created),
-      sendGrid as unknown as any,
-      twilio as unknown as any,
+      sendGrid,
+      twilio,
       config,
     );
 
@@ -1250,8 +1252,8 @@ describe('NotificationsService (#946) — stop sending to Stellar addresses', ()
 
     const svc = new NotificationsService(
       makeRepo(created),
-      sendGrid as unknown as any,
-      twilio as unknown as any,
+      sendGrid,
+      twilio,
       config,
     );
 
@@ -1273,8 +1275,8 @@ describe('NotificationsService (#946) — stop sending to Stellar addresses', ()
 
     const svc = new NotificationsService(
       makeRepo(created),
-      sendGrid as unknown as any,
-      twilio as unknown as any,
+      sendGrid,
+      twilio,
       config,
     );
 
@@ -1291,7 +1293,7 @@ describe('NotificationsService (#946) — stop sending to Stellar addresses', ()
     }
   });
 
-  it('neither SendGrid nor Twilio is called when a recipient address starts with G', async () => {
+  it('neither SendGrid nor Twilio is called when a recipient address is a valid Stellar public key', async () => {
     const created: Array<Record<string, unknown>> = [];
     const sendGrid = { send: jest.fn() };
     const twilio = { messages: { create: jest.fn() } };
@@ -1299,20 +1301,20 @@ describe('NotificationsService (#946) — stop sending to Stellar addresses', ()
 
     const svc = new NotificationsService(
       makeRepo(created),
-      sendGrid as unknown as any,
-      twilio as unknown as any,
+      sendGrid,
+      twilio,
       config,
     );
 
     await (svc as any).dispatchEmail(
       'SHIPPED',
       stubEscrow,
-      'GSTELLARPUBLICKEYEXAMPLE',
+      VALID_STELLAR_PUBLIC_KEY,
     );
     await (svc as any).dispatchSms(
       'SHIPPED',
       stubEscrow,
-      'GSTELLARPUBLICKEYEXAMPLE',
+      VALID_STELLAR_PUBLIC_KEY,
     );
 
     expect(sendGrid.send).not.toHaveBeenCalled();
@@ -1331,14 +1333,14 @@ describe('NotificationsService (#946) — stop sending to Stellar addresses', ()
     // No VendorProfileRepository argument → legacy path used to dispatch to G…
     const svc = new NotificationsService(
       makeRepo(created),
-      sendGrid as unknown as any,
-      twilio as unknown as any,
+      sendGrid,
+      twilio,
       config,
     );
 
     await svc.notifyDisputed({
       ...stubEscrow,
-      vendorAddress: 'GDUMMYSTELLARVENDORADDRESSFORTESTXXXXXXXXXXXXXXXXXXXX',
+      vendorAddress: VALID_STELLAR_PUBLIC_KEY,
     });
 
     expect(sendGrid.send).not.toHaveBeenCalled();
@@ -1351,3 +1353,170 @@ describe('NotificationsService (#946) — stop sending to Stellar addresses', ()
   });
 });
 
+// ── Issue #1062 — Emails starting with capital 'G' must be sent ──────────
+//
+// dispatchEmail and dispatchSms previously used `recipientAddress.startsWith('G')`
+// to detect Stellar public keys. This incorrectly flagged real email addresses
+// like `George@example.com` as Stellar keys, so they were recorded as
+// undeliverable and never sent. The fix uses `StrKey.isValidEd25519PublicKey`
+// which only returns true for valid 56-char base32-encoded ed25519 public keys.
+
+describe('NotificationsService (#1062) — emails starting with G are sent, not blocked', () => {
+  const stubEscrow: EscrowRecord = {
+    id: 'escrow-1062',
+    contractEscrowId: null,
+    itemName: 'Widget',
+    itemRef: 'ref-1062',
+    amount: 100,
+    currency: 'USDC',
+    buyerAddress: 'GBUYER1062',
+    vendorAddress: 'GVENDOR1062',
+    state: 'FUNDED',
+    trackingId: null,
+    shippedAt: null,
+    deliveredAt: null,
+    deliveryRecordedAt: null,
+    autoReleaseSubmittedAt: null,
+    autoReleaseTxHash: null,
+    disputeId: null,
+    cancelledAt: null,
+    createdAt: new Date('2026-01-01T00:00:00.000Z'),
+    updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+  };
+
+  function makeRepo(created: Array<Record<string, unknown>>) {
+    return {
+      create: jest.fn((data: unknown) => {
+        created.push(data as Record<string, unknown>);
+        return Promise.resolve(data);
+      }),
+    } as unknown as NotificationRepository;
+  }
+
+  afterEach(() => jest.restoreAllMocks());
+
+  it('sends an email to an address that starts with G but is not a Stellar key', async () => {
+    const created: Array<Record<string, unknown>> = [];
+    const sendGrid = { send: jest.fn().mockResolvedValue([{ headers: {} }]) };
+    const config = emailConfig(EMAIL_CONFIG);
+
+    const svc = new NotificationsService(
+      makeRepo(created),
+      sendGrid,
+      undefined,
+      config,
+    );
+    jest
+      .spyOn(svc, 'sleep' as keyof NotificationsService)
+      .mockResolvedValue(undefined);
+
+    // George@example.com starts with 'G' but is not a valid Stellar public key
+    await (svc as any).dispatchEmail(
+      'FUNDED',
+      stubEscrow,
+      'George@example.com',
+    );
+
+    // The email WAS sent — this is the bug: it used to be blocked
+    expect(sendGrid.send).toHaveBeenCalledTimes(1);
+    expect(sendGrid.send).toHaveBeenCalledWith(
+      expect.objectContaining({ to: 'George@example.com' }),
+    );
+
+    // An audit row was written with attemptCount=1 (the send succeeded)
+    expect(created).toHaveLength(1);
+    expect(created[0].channel).toBe('EMAIL');
+    expect(created[0].recipientAddress).toBe('George@example.com');
+    expect(created[0].attemptCount).toBe(1);
+  });
+
+  it('sends an SMS to a phone number that starts with G but is not a Stellar key', async () => {
+    const created: Array<Record<string, unknown>> = [];
+    const twilio = {
+      messages: { create: jest.fn().mockResolvedValue({ sid: 'SM1062' }) },
+    };
+    const config = emailConfig(EMAIL_CONFIG);
+
+    const svc = new NotificationsService(
+      makeRepo(created),
+      undefined,
+      twilio,
+      config,
+    );
+    jest
+      .spyOn(svc, 'sleep' as keyof NotificationsService)
+      .mockResolvedValue(undefined);
+
+    // A phone number string that starts with 'G' — not a valid Stellar key
+    await (svc as any).dispatchSms('FUNDED', stubEscrow, 'GSM-555-0199');
+
+    expect(twilio.messages.create).toHaveBeenCalledTimes(1);
+    expect(twilio.messages.create).toHaveBeenCalledWith(
+      expect.objectContaining({ to: 'GSM-555-0199' }),
+    );
+
+    expect(created).toHaveLength(1);
+    expect(created[0].channel).toBe('SMS');
+    expect(created[0].recipientAddress).toBe('GSM-555-0199');
+    expect(created[0].attemptCount).toBe(1);
+  });
+
+  it('records a real Stellar public key as undeliverable for email', async () => {
+    const created: Array<Record<string, unknown>> = [];
+    const sendGrid = { send: jest.fn() };
+    const config = emailConfig(EMAIL_CONFIG);
+
+    const svc = new NotificationsService(
+      makeRepo(created),
+      sendGrid,
+      undefined,
+      config,
+    );
+
+    // A valid 56-char Stellar ed25519 public key
+    expect(StrKey.isValidEd25519PublicKey(VALID_STELLAR_PUBLIC_KEY)).toBe(true);
+
+    await (svc as any).dispatchEmail(
+      'FUNDED',
+      stubEscrow,
+      VALID_STELLAR_PUBLIC_KEY,
+    );
+
+    // The email was NOT sent
+    expect(sendGrid.send).not.toHaveBeenCalled();
+
+    // But an undeliverable audit row was written
+    expect(created).toHaveLength(1);
+    expect(created[0].channel).toBe('EMAIL');
+    expect(created[0].recipientAddress).toBe(VALID_STELLAR_PUBLIC_KEY);
+    expect(created[0].attemptCount).toBe(0);
+    expect(created[0].providerMessageId).toBeNull();
+  });
+
+  it('records a real Stellar public key as undeliverable for SMS', async () => {
+    const created: Array<Record<string, unknown>> = [];
+    const twilio = { messages: { create: jest.fn() } };
+    const config = emailConfig(EMAIL_CONFIG);
+
+    const svc = new NotificationsService(
+      makeRepo(created),
+      undefined,
+      twilio,
+      config,
+    );
+
+    await (svc as any).dispatchSms(
+      'FUNDED',
+      stubEscrow,
+      VALID_STELLAR_PUBLIC_KEY,
+    );
+
+    expect(twilio.messages.create).not.toHaveBeenCalled();
+
+    expect(created).toHaveLength(1);
+    expect(created[0].channel).toBe('SMS');
+    expect(created[0].recipientAddress).toBe(VALID_STELLAR_PUBLIC_KEY);
+    expect(created[0].attemptCount).toBe(0);
+    expect(created[0].providerMessageId).toBeNull();
+  });
+});
