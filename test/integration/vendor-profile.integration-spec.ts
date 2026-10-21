@@ -103,6 +103,17 @@ describe('Vendor profile CRUD (issue #292, issue #643)', () => {
         .expect(400);
     });
 
+    it('returns 400 when description uses the reserved placeholder sentinel (#1061)', async () => {
+      await request(app.getHttpServer())
+        .post('/vendor/profile')
+        .set('Authorization', AUTH)
+        .send({
+          businessName: 'Sentinel Co',
+          description: '[placeholder]',
+        })
+        .expect(400);
+    });
+
     it('returns 400 for an invalid phone number (#938)', async () => {
       await request(app.getHttpServer())
         .post('/vendor/profile')
@@ -169,6 +180,25 @@ describe('Vendor profile CRUD (issue #292, issue #643)', () => {
         .set('Authorization', AUTH)
         .send(validProfile)
         .expect(409);
+    });
+
+    it('completes a legacy placeholder with a null description (#1061)', async () => {
+      await prisma.vendorProfile.create({
+        data: {
+          address: VENDOR,
+          businessName: VENDOR,
+          description: null,
+        },
+      });
+
+      const res = await request(app.getHttpServer())
+        .post('/vendor/profile')
+        .set('Authorization', AUTH)
+        .send(validProfile)
+        .expect(201);
+
+      expect(res.body.businessName).toBe(validProfile.businessName);
+      expect(res.body.description).toBe(validProfile.description);
     });
 
     it('returns 401 for unauthenticated requests', async () => {

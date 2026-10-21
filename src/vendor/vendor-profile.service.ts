@@ -61,7 +61,10 @@ export class VendorProfileService {
     return this.traced('profile.create', address, async () => {
       const existing = await this.repository.findByAddress(address);
       if (existing) {
-        if (existing.description === VENDOR_PROFILE_PLACEHOLDER_DESCRIPTION) {
+        const isPlaceholder =
+          existing.description === VENDOR_PROFILE_PLACEHOLDER_DESCRIPTION ||
+          (existing.businessName === address && existing.description === null);
+        if (isPlaceholder) {
           return this.repository.upsert(address, dto);
         }
         throw new ConflictException('Vendor profile already exists');
