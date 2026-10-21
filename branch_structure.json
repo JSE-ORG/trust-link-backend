@@ -1,0 +1,33 @@
+{
+  "default_branch": "dev",
+  "branches": [
+    "dev",
+    "fix/1068-prod-optional-env",
+    "fix/dev-red-2026-09-27",
+    "fix/dev-red-2026-09-29",
+    "fix/dev-red-2026-10-16",
+    "fix/security-hardening",
+    "main",
+    "origin"
+  ],
+  "parent": {
+    "dev": null,
+    "fix/1068-prod-optional-env": "dev",
+    "fix/dev-red-2026-09-27": "dev",
+    "fix/dev-red-2026-09-29": "dev",
+    "fix/dev-red-2026-10-16": "dev",
+    "fix/security-hardening": "dev",
+    "main": "dev",
+    "origin": "dev"
+  },
+  "order": [
+    "dev",
+    "fix/1068-prod-optional-env",
+    "fix/dev-red-2026-09-27",
+    "fix/dev-red-2026-09-29",
+    "fix/dev-red-2026-10-16",
+    "fix/security-hardening",
+    "main",
+    "origin"
+  ]
+}

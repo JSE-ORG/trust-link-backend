@@ -1,5 +1,5 @@
 import { Keypair } from '@stellar/stellar-sdk';
-import { configValidationSchema } from './config.schema';
+import { configValidationSchema, normalizeEnvVars } from './config.schema';
 import { Test } from '@nestjs/testing';
 import type { ConfigService } from './config.service';
 
@@ -1097,12 +1097,104 @@ describe('AUTO_RELEASE_SOURCE_ADDRESS — Stellar checksum validation (#979)', (
 });
 
 /**
- * Issue #976 — ACCESS_TOKEN_TTL must be a configurable env var.
+ * Issue #1068 — Optional env vars normalized from empty strings.
  *
- * Previously the access-token lifetime was the hard-coded constant
- * JWT_EXPIRY_SECONDS = 3600. The fix promotes it to a validated env var with
- * a 3600 s default.
+ * When Docker Compose passes environment variables as empty strings (`''`),
+ * they must be normalised to `undefined` before Joi validation so that:
+ * - `''` and unset are treated identically by conditional `.when()` checks
+ * - Downstream provider checks behave correctly
+ * - Required variables still reject `''` (normalisation turns it to `undefined`,
+ *   which fails `Joi.required()`)
  */
+describe('Issue #1068 — Optional env vars normalized from empty strings', () => {
+  it('production-like environment with only required variables set passes', () => {
+    const env = {
+      ...VALID_ENV,
+      NODE_ENV: 'production',
+      FRONTEND_URL: 'https://app.trustlink.example.com',
+      EVIDENCE_STORAGE_BASE_URL: 'https://storage.trustlink.example.com',
+      CONTACT_ENCRYPTION_KEY:
+        '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+      CREDENTIAL_ENCRYPTION_KEY:
+        '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+      STELLAR_WEBHOOK_SECRET: 'secret',
+      SENTRY_DSN: 'https://key@sentry.io/123',
+      SOROBAN_RPC_URL: 'https://soroban-testnet.stellar.org',
+      DATABASE_URL: 'postgresql://test:test@localhost:5432/test',
+      SEP10_JWT_SECRET: 'a-very-long-secret-key-for-testing-purposes-32chars',
+      PRESIGN_SECRET: 'test-presign-secret-64hexcharacters-for-hmac',
+      ADMIN_ADDRESS: VALID_PUBLIC_KEY,
+      CONTRACT_ID: 'test-contract-id',
+      SYSTEM_SIGNER_SECRET: VALID_SECRET_KEY,
+    };
+    const { error } = configValidationSchema.validate(
+      normalizeEnvVars(env),
+      VALIDATE_OPTIONS,
+    );
+    expect(error).toBeUndefined();
+  });
+
+  it('unset optional variable and the same variable set to "" behave identically', () => {
+    // SENDGRID_API_KEY unset
+    const env1 = { ...VALID_ENV };
+    delete env1.SENDGRID_API_KEY;
+    const { error: error1 } = configValidationSchema.validate(
+      normalizeEnvVars(env1),
+      VALIDATE_OPTIONS,
+    );
+
+    // SENDGRID_API_KEY set to ''
+    const env2 = { ...VALID_ENV, SENDGRID_API_KEY: '' };
+    const { error: error2 } = configValidationSchema.validate(
+      normalizeEnvVars(env2),
+      VALIDATE_OPTIONS,
+    );
+
+    expect(error1).toBeUndefined();
+    expect(error2).toBeUndefined();
+  });
+
+  it('SENDGRID_API_KEY without SENDGRID_FROM_EMAIL fails validation', () => {
+    const env = {
+      ...VALID_ENV,
+      SENDGRID_API_KEY: 'SG.test-key',
+    };
+    const { error } = configValidationSchema.validate(
+      normalizeEnvVars(env),
+      VALIDATE_OPTIONS,
+    );
+    expect(error).toBeDefined();
+    expect(error?.message).toContain('SENDGRID_FROM_EMAIL');
+    expect(error?.message).toContain('required');
+  });
+
+  it('TWILIO_ACCOUNT_SID without TWILIO_FROM_NUMBER fails validation', () => {
+    const env = {
+      ...VALID_ENV,
+      TWILIO_ACCOUNT_SID: 'AC123',
+    };
+    const { error } = configValidationSchema.validate(
+      normalizeEnvVars(env),
+      VALIDATE_OPTIONS,
+    );
+    expect(error).toBeDefined();
+    expect(error?.message).toContain('TWILIO_FROM_NUMBER');
+    expect(error?.message).toContain('required');
+  });
+
+  it('required variable set to empty string fails validation', () => {
+    const env = {
+      ...VALID_ENV,
+      DATABASE_URL: '',
+    };
+    const { error } = configValidationSchema.validate(
+      normalizeEnvVars(env),
+      VALIDATE_OPTIONS,
+    );
+    expect(error).toBeDefined();
+    expect(error?.message).toContain('DATABASE_URL');
+  });
+});
 describe('ACCESS_TOKEN_TTL — configurable JWT lifetime (#976)', () => {
   it('defaults to 3600 when unset', () => {
     const { error, value } = configValidationSchema.validate(
