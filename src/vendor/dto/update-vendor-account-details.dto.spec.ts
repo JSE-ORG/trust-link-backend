@@ -95,6 +95,26 @@ describe('UpdateVendorAccountDetailsDto validation (#940)', () => {
       expect(errs.length).toBeGreaterThan(0);
       expect(errs.some((e) => /max/i.test(e) || /20/i.test(e))).toBe(true);
     });
+
+    it('rejects a payment method longer than 50 characters', async () => {
+      const errs = await errors({ paymentMethods: ['M'.repeat(51)] });
+      expect(errs.length).toBeGreaterThan(0);
+      expect(errs.some((e) => /max/i.test(e) || /50/i.test(e))).toBe(true);
+    });
+  });
+
+  describe('preferredCurrency (@IsISO4217CurrencyCode)', () => {
+    it('accepts a valid ISO 4217 currency code', async () => {
+      expect(await errors({ preferredCurrency: 'USD' })).toHaveLength(0);
+    });
+
+    it('rejects an invalid currency code', async () => {
+      const errs = await errors({ preferredCurrency: 'NOT-A-CURRENCY' });
+      expect(errs.length).toBeGreaterThan(0);
+      expect(
+        errs.some((e) => /currency/i.test(e) || /ISO4217/i.test(e)),
+      ).toBe(true);
+    });
   });
 
   describe('timezone (IANA check @IsTimeZone)', () => {
