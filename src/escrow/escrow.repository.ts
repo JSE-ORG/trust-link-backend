@@ -22,6 +22,7 @@ import {
 /** Escrow fields stored as `DateTime` that a JSON round trip turns into strings. */
 const ESCROW_DATE_FIELDS = [
   'shippedAt',
+  'trackingCheckedAt',
   'deliveredAt',
   'deliveryRecordedAt',
   'autoReleaseSubmittedAt',
@@ -231,6 +232,19 @@ export class EscrowRepository {
     return toEscrowRecord(result);
   }
 
+  /** Records when the tracking carrier was last checked for an escrow. */
+  async markTrackingChecked(
+    id: string,
+    checkedAt = new Date(),
+  ): Promise<EscrowRecord> {
+    const result = await this.prisma.escrow.update({
+      where: { id },
+      data: { trackingCheckedAt: checkedAt },
+    });
+    await this.invalidate(id);
+    return toEscrowRecord(result);
+  }
+
   /**
    * Resolves a Soroban contract escrow id (`u64`) to the backend escrow's UUID.
    *
@@ -358,7 +372,8 @@ export class EscrowRepository {
    * (no `contractEscrowId`) are excluded in-query so the tracking poll never
    * wastes a carrier call on them (#960).
    *
-   * Results are oldest-first so the batch is deterministic across cycles.
+   * Results prioritize escrows that have never been checked, then the oldest
+   * check timestamp, so a capped batch rotates across all eligible rows.
    */
   findShippedWithTracking(limit = 50): Promise<EscrowRecord[]> {
     // `contractEscrowId: { not: null }` excludes unmapped escrows before any
@@ -379,7 +394,10 @@ export class EscrowRepository {
             },
           },
         },
-        orderBy: { createdAt: 'asc' },
+        orderBy: [
+          { trackingCheckedAt: { sort: 'asc', nulls: 'first' } },
+          { createdAt: 'asc' },
+        ],
         take: limit,
       })
       .then((escrows) => escrows.map(toEscrowRecord));

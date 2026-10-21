@@ -131,15 +131,18 @@ export class TrackingPollWorker implements OnModuleInit, OnApplicationShutdown {
         TRACKING_POLL_BATCH_SIZE,
       );
 
-      await this.runWithConcurrency(shipments, TRACKING_POLL_CONCURRENCY, (escrow) =>
-        this.traced(
-          'worker.tracking_poll.escrow',
-          {
-            'trustlink.escrow.id': escrow.id,
-            'trustlink.escrow.vendor_address': escrow.vendorAddress,
-          },
-          () => this.processShipment(escrow),
-        ),
+      await this.runWithConcurrency(
+        shipments,
+        TRACKING_POLL_CONCURRENCY,
+        (escrow) =>
+          this.traced(
+            'worker.tracking_poll.escrow',
+            {
+              'trustlink.escrow.id': escrow.id,
+              'trustlink.escrow.vendor_address': escrow.vendorAddress,
+            },
+            () => this.processShipment(escrow),
+          ),
       );
     } catch (error) {
       this.logger.error(
@@ -185,7 +188,9 @@ export class TrackingPollWorker implements OnModuleInit, OnApplicationShutdown {
       return next();
     };
     await Promise.all(
-      Array.from({ length: Math.min(concurrency, items.length) }).map(() => next()),
+      Array.from({ length: Math.min(concurrency, items.length) }).map(() =>
+        next(),
+      ),
     );
   }
 
@@ -202,7 +207,7 @@ export class TrackingPollWorker implements OnModuleInit, OnApplicationShutdown {
     contractEscrowId: bigint | null;
     vendorAddress: string;
   }): Promise<void> {
-    {
+    try {
       const status = await this.logisticsService.getStatus(escrow.trackingId!);
       if (status.status !== 'DELIVERED') {
         return;
@@ -248,6 +253,8 @@ export class TrackingPollWorker implements OnModuleInit, OnApplicationShutdown {
         await this.escrowRepository.clearDeliveryClaim(escrow.id);
         throw error;
       }
+    } finally {
+      await this.escrowRepository.markTrackingChecked(escrow.id);
     }
   }
 }

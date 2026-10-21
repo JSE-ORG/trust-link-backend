@@ -65,6 +65,7 @@ interface Harness {
     Pick<
       EscrowRepository,
       | 'findShippedWithTracking'
+      | 'markTrackingChecked'
       | 'claimDelivery'
       | 'markDelivered'
       | 'clearDeliveryClaim'
@@ -81,6 +82,7 @@ interface Harness {
 function createHarness(): Harness {
   const escrowRepository: Harness['escrowRepository'] = {
     findShippedWithTracking: jest.fn().mockResolvedValue([]),
+    markTrackingChecked: jest.fn().mockResolvedValue(makeEscrow()),
     claimDelivery: jest.fn().mockResolvedValue(makeEscrow()),
     markDelivered: jest.fn().mockResolvedValue(makeEscrow()),
     clearDeliveryClaim: jest.fn().mockResolvedValue(makeEscrow()),
@@ -571,6 +573,9 @@ describe('TrackingPollWorker', () => {
 
       await expect(h.worker.run()).resolves.toBeUndefined();
       expect(h.escrowRepository.claimDelivery).not.toHaveBeenCalled();
+      expect(h.escrowRepository.markTrackingChecked).toHaveBeenCalledWith(
+        'escrow-1',
+      );
       expect(h.contractService.recordDelivery).not.toHaveBeenCalled();
     });
 
