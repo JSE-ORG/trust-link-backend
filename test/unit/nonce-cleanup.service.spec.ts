@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { NonceCleanupService } from '../../src/auth/sep10/nonce-cleanup.service';
+import { NonceRepository } from '../../src/auth/sep10/nonce.repository';
 import { PrismaService } from '../../src/prisma/prisma.service';
 
 describe('NonceCleanupService', () => {
@@ -12,11 +13,18 @@ describe('NonceCleanupService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         NonceCleanupService,
-        { provide: PrismaService, useValue: prisma },
+        { provide: NonceRepository, useValue: new NonceRepository(prisma) },
       ],
     }).compile();
 
     service = module.get<NonceCleanupService>(NonceCleanupService);
+  });
+
+  afterEach(async () => {
+    // Each `new PrismaService()` opens its own connection pool. Constructed in
+    // beforeEach across ~100 suites, undisconnected clients exhaust Postgres
+    // (`sorry, too many clients already`) partway through a full run.
+    await prisma?.$disconnect();
   });
 
   afterEach(async () => {

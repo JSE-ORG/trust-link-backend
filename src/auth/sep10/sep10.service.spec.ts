@@ -13,6 +13,17 @@ import {
   WebAuth,
 } from '@stellar/stellar-sdk';
 import { createHmac } from 'crypto';
+import { REFRESH_TOKEN_TTL_DEFAULT } from './sep10.constants';
+
+/** The real Keypair mock exposes only these two members — see jest.mock() below. */
+type MockKeypair = { publicKey: jest.Mock; sign: jest.Mock };
+
+/** Exposes Sep10Service's private hashToken() for direct testing without `any`. */
+// Not an intersection with Sep10Service: hashToken is `private` there, and
+// intersecting a private member with a public one resolves to `never`.
+type Sep10ServiceWithPrivates = {
+  hashToken(token: string): string;
+};
 
 // Mock Stellar SDK
 jest.mock('@stellar/stellar-sdk', () => ({
@@ -36,7 +47,7 @@ describe('Sep10Service', () => {
   let service: Sep10Service;
   let prisma: PrismaService;
   let configService: ConfigService;
-  let mockServerKeypair: any;
+  let mockServerKeypair: MockKeypair;
 
   const TEST_ACCOUNT_ID =
     'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5';
@@ -44,8 +55,10 @@ describe('Sep10Service', () => {
     'GAQAA5L65LSYH7CQ3LBOPEZBWSK4DPO4KZ4XXJNWUVOK5SDGA5LNLA36';
   const TEST_CHALLENGE_XDR =
     'AAAABWw2D0wENyMXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX';
+  // A real 32-byte hex hash: stellar-sdk 17 returns tx.hash() as a
+  // Uint8Array, so the mock must hand back bytes that hex-encode to this.
   const TEST_TX_HASH =
-    'abc123def456ghi789jkl012mno345pqr678stu901vwx234yz567abc890def';
+    'abc123def4560789abc012def345678abc901def234abc567abc890def012345';
   const REFRESH_TOKEN_TTL = 604800; // 7 days in seconds
 
   beforeEach(async () => {
@@ -60,7 +73,9 @@ describe('Sep10Service', () => {
 
     // Mock TransactionBuilder
     const mockTransactionBuilder = {
-      hash: jest.fn().mockReturnValue({ toString: () => TEST_TX_HASH }),
+      hash: jest
+        .fn()
+        .mockReturnValue(Uint8Array.from(Buffer.from(TEST_TX_HASH, 'hex'))),
     };
 
     (TransactionBuilder as unknown as jest.Mock).mockImplementation(
@@ -100,7 +115,7 @@ describe('Sep10Service', () => {
           provide: ConfigService,
           useValue: {
             get: jest.fn((key: string) => {
-              const configMap: Record<string, any> = {
+              const configMap: Record<string, string | number | null> = {
                 STELLAR_NETWORK: 'TESTNET',
                 SYSTEM_SIGNER_SECRET:
                   'SAIJDXETR5B7YFPH7SUOISWVBHHSI46JLYFDCWDMEV2L46XAHASPP35C',
@@ -506,7 +521,7 @@ describe('Sep10Service', () => {
 
     it('should return PUBLIC network when configured for MAINNET', async () => {
       (configService.get as jest.Mock).mockImplementation((key: string) => {
-        const configMap: Record<string, any> = {
+        const configMap: Record<string, string | number | null> = {
           STELLAR_NETWORK: 'MAINNET',
           SYSTEM_SIGNER_SECRET:
             'SAIJDXETR5B7YFPH7SUOISWVBHHSI46JLYFDCWDMEV2L46XAHASPP35C',
@@ -583,7 +598,7 @@ describe('Sep10Service', () => {
 
     it('should add admin role to JWT when user is admin', async () => {
       (configService.get as jest.Mock).mockImplementation((key: string) => {
-        const configMap: Record<string, any> = {
+        const configMap: Record<string, string | number | null> = {
           STELLAR_NETWORK: 'TESTNET',
           SYSTEM_SIGNER_SECRET:
             'SAIJDXETR5B7YFPH7SUOISWVBHHSI46JLYFDCWDMEV2L46XAHASPP35C',
@@ -639,7 +654,7 @@ describe('Sep10Service', () => {
   });
 
   describe('JWT Claims and Signature', () => {
-    let mockNonce: any;
+    let mockNonce: Nonce;
 
     beforeEach(() => {
       mockNonce = {
@@ -759,14 +774,18 @@ describe('Sep10Service', () => {
     it('should consistently hash the same token and change when secret changes', () => {
       const token = 'some-random-refresh-token';
 
-      const first = (service as any).hashToken(token);
-      const second = (service as any).hashToken(token);
+      const first = (service as unknown as Sep10ServiceWithPrivates).hashToken(
+        token,
+      );
+      const second = (service as unknown as Sep10ServiceWithPrivates).hashToken(
+        token,
+      );
 
       expect(first).toBe(second);
 
       // Change secret returned by config and ensure hash changes
       (configService.get as jest.Mock).mockImplementation((key: string) => {
-        const configMap: Record<string, any> = {
+        const configMap: Record<string, string | number | null> = {
           STELLAR_NETWORK: 'TESTNET',
           SYSTEM_SIGNER_SECRET:
             'SAIJDXETR5B7YFPH7SUOISWVBHHSI46JLYFDCWDMEV2L46XAHASPP35C',
@@ -777,7 +796,9 @@ describe('Sep10Service', () => {
         return configMap[key];
       });
 
-      const third = (service as any).hashToken(token);
+      const third = (service as unknown as Sep10ServiceWithPrivates).hashToken(
+        token,
+      );
       expect(third).not.toBe(first);
     });
   });
@@ -827,7 +848,9 @@ describe('Sep10Service', () => {
 
     beforeEach(() => {
       // Mock the hashToken private method by spying on it
-      jest.spyOn(service as any, 'hashToken').mockReturnValue(TOKEN_HASH);
+      jest
+        .spyOn(service as unknown as Sep10ServiceWithPrivates, 'hashToken')
+        .mockReturnValue(TOKEN_HASH);
     });
 
     it('should rotate a valid refresh token and issue new tokens', async () => {
@@ -1079,8 +1102,12 @@ describe('Sep10Service', () => {
   describe('hashToken', () => {
     it('should produce a consistent SHA-256 hash for the same input', () => {
       const token = 'my-secret-refresh-token';
-      const hash1 = (service as any).hashToken(token);
-      const hash2 = (service as any).hashToken(token);
+      const hash1 = (service as unknown as Sep10ServiceWithPrivates).hashToken(
+        token,
+      );
+      const hash2 = (service as unknown as Sep10ServiceWithPrivates).hashToken(
+        token,
+      );
 
       expect(hash1).toBe(hash2);
       expect(hash1).toBe(
@@ -1091,8 +1118,12 @@ describe('Sep10Service', () => {
     it('should produce a different hash for a different input', () => {
       const token1 = 'my-secret-refresh-token';
       const token2 = 'my-other-secret-refresh-token';
-      const hash1 = (service as any).hashToken(token1);
-      const hash2 = (service as any).hashToken(token2);
+      const hash1 = (service as unknown as Sep10ServiceWithPrivates).hashToken(
+        token1,
+      );
+      const hash2 = (service as unknown as Sep10ServiceWithPrivates).hashToken(
+        token2,
+      );
 
       expect(hash1).not.toBe(hash2);
     });

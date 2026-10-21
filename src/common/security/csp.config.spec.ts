@@ -37,4 +37,22 @@ describe('buildCspConnectSrc', () => {
       'https://dev-api.example',
     ]);
   });
+
+  it("passes the 'self' keyword through unchanged without treating it as a URL", () => {
+    const sources = buildCspConnectSrc({
+      stellarNetwork: 'TESTNET',
+      extraConnectSrc: `'self'`,
+    });
+    expect(sources).toContain(`'self'`);
+    expect(sources.filter((s) => s === `'self'`)).toHaveLength(1);
+  });
+
+  it('rejects a non-http(s) scheme from extraConnectSrc', () => {
+    const sources = buildCspConnectSrc({
+      stellarNetwork: 'TESTNET',
+      extraConnectSrc: 'ftp://files.example.com',
+    });
+    expect(sources).not.toContain('ftp://files.example.com');
+    expect(sources.some((s) => s.startsWith('ftp:'))).toBe(false);
+  });
 });

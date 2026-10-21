@@ -21,12 +21,29 @@ export interface SpanOptions {
 export class TracingService {
   private readonly tracer = trace.getTracer('trustlink-backend');
 
-  /** Returns whether tracing is enabled for the current runtime. */
+  /**
+   * True when OpenTelemetry tracing was started for this process.
+   *
+   * Reflects the one-time bootstrap decision (`tracing.bootstrap`), which
+   * reads `OTEL_ENABLED` at startup — it does not re-check config per call
+   * and cannot be toggled at runtime. {@link withSpan} guards on this and
+   * runs the callback with no span when false, so callers rarely need to
+   * check it themselves.
+   */
   isEnabled(): boolean {
     return isTracingEnabled();
   }
 
-  /** Returns the active OpenTelemetry span when one is bound to context. */
+  /**
+   * Returns the span currently bound to the active OTel context, or
+   * `undefined` when there is none (no enclosing `withSpan`, or tracing
+   * disabled).
+   *
+   * The result is a live handle to the ambient span, not a copy — callers
+   * that want to annotate "the current operation" should prefer
+   * {@link setSpanAttributes}, which no-ops safely when this returns
+   * `undefined`.
+   */
   getActiveSpan(): Span | undefined {
     return trace.getActiveSpan();
   }
@@ -119,7 +136,15 @@ export class TracingService {
     );
   }
 
-  /** Adds attributes to the active span when tracing context exists. */
+  /**
+   * Merges `attributes` onto the currently active span.
+   *
+   * A safe no-op when there is no active span (tracing disabled, or called
+   * outside any `withSpan`/`withDbSpan`/`withWorkflowSpan`), so call sites
+   * don't need their own guard. Attributes are set on whatever span is
+   * ambient at call time — later keys overwrite earlier ones on the same
+   * span; it does not create a span or affect parent/child spans.
+   */
   setSpanAttributes(
     attributes: Record<string, string | number | boolean>,
   ): void {

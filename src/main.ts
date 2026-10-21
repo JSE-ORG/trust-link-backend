@@ -1,32 +1,26 @@
-import './tracing/tracing.bootstrap';
-import * as Sentry from '@sentry/nestjs';
-import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
-import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import './sentry.instrument';
+import { shutdownTracing } from './tracing/tracing.bootstrap';
+import './common/bigint-json';
+import { NestFactory, INestApplication } from '@nestjs/core';
 import compression from 'compression';
 import * as express from 'express';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { ConfigService } from './config/config.service';
 import { JsonLoggerService } from './common/logger/json-logger.service';
-import { ErrorResponseDto } from './common/dto/error-response.dto';
-import { SanitizationPipe } from './common/pipes/sanitization.pipe';
+import { createOpenApiDocument, setupOpenApiUi } from './openapi';
+import { createGlobalPipes } from './common/pipes/global-pipes';
 import { SentryInterceptor } from './common/interceptors/sentry.interceptor';
 import { buildCspConnectSrc } from './common/security/csp.config';
+import { CORS_ALLOWED_HEADERS, CORS_EXPOSED_HEADERS } from './common/security/cors.config';
+import {
+  ONE_YEAR_SECONDS,
+  SECONDS_PER_DAY,
+} from './common/constants/time.constants';
 
 const bootstrapLogger = new JsonLoggerService('Bootstrap');
 
-async function bootstrap(): Promise<void> {
-  const sentryDsn = process.env.SENTRY_DSN;
-  if (sentryDsn) {
-    Sentry.init({
-      dsn: sentryDsn,
-      release: process.env.GIT_SHA,
-      environment: process.env.NODE_ENV ?? 'development',
-      tracesSampleRate: process.env.NODE_ENV === 'production' ? 0.2 : 1.0,
-    });
-  }
-
+async function bootstrap(): Promise<INestApplication> {
   const app = await NestFactory.create(AppModule, {
     bufferLogs: true,
     bodyParser: false,
@@ -36,6 +30,21 @@ async function bootstrap(): Promise<void> {
   app.useLogger(jsonLogger);
 
   const configService = app.get(ConfigService);
+
+  // ── Reverse proxy trust (issue #971) ──────────────────────────────────────
+  // Behind a load balancer req.ip is the balancer's address, so every client
+  // shares one throttle bucket. TRUST_PROXY tells Express which X-Forwarded-For
+  // hops to honour. Unset leaves Express's default, which trusts no proxy.
+  const trustProxy = configService.get('TRUST_PROXY');
+  const trustProxySetting = trustProxy ? parseTrustProxy(trustProxy) : null;
+  if (trustProxySetting !== null) {
+    (app.getHttpAdapter().getInstance() as express.Express).set(
+      'trust proxy',
+      trustProxySetting,
+    );
+  }
+
+  const sentryDsn = configService.get<string | undefined>('SENTRY_DSN');
   const connectSrc = buildCspConnectSrc({
     stellarNetwork: configService.get('STELLAR_NETWORK'),
     stellarHorizonUrl: configService.get<string | undefined>(
@@ -85,6 +94,8 @@ async function bootstrap(): Promise<void> {
   // vulnerabilities. The CSP connect-src is widened to the Stellar network so
   // the app can still reach the required blockchain API systems (Horizon and
   // Soroban RPC, on both mainnet and testnet).
+  const isProduction = configService.isProduction();
+
   app.use(
     helmet({
       contentSecurityPolicy: {
@@ -99,6 +110,11 @@ async function bootstrap(): Promise<void> {
       },
       crossOriginResourcePolicy: { policy: 'cross-origin' },
       frameguard: { action: 'deny' },
+      // HSTS is configured through helmet so it can be turned off outside
+      // production rather than being set unconditionally in middleware.
+      strictTransportSecurity: isProduction
+        ? { maxAge: ONE_YEAR_SECONDS, includeSubDomains: true }
+        : false,
     }),
   );
 
@@ -117,22 +133,17 @@ async function bootstrap(): Promise<void> {
         if (allowedOrigins.includes(origin)) {
           callback(null, true);
         } else {
-          callback(new Error(`Origin ${origin} is not allowed by CORS policy`));
+          callback(null, false);
         }
       },
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-      allowedHeaders: [
-        'Origin',
-        'X-Requested-With',
-        'Content-Type',
-        'Accept',
-        'Authorization',
-      ],
+      allowedHeaders: CORS_ALLOWED_HEADERS,
+      exposedHeaders: CORS_EXPOSED_HEADERS,
       credentials: true,
-      maxAge: 86400,
+      maxAge: SECONDS_PER_DAY,
     });
   } else {
-    if (configService.isProduction()) {
+    if (isProduction) {
       app.enableCors({ origin: false });
     } else {
       app.enableCors({ origin: true });
@@ -145,40 +156,10 @@ async function bootstrap(): Promise<void> {
     app.useGlobalInterceptors(new SentryInterceptor());
   }
 
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,
-      transform: true,
-      forbidNonWhitelisted: true,
-      transformOptions: { enableImplicitConversion: true },
-    }),
-    new SanitizationPipe(),
-  );
+  app.useGlobalPipes(...createGlobalPipes());
 
-  const swaggerConfig = new DocumentBuilder()
-    .setTitle('TrustLink API')
-    .setDescription(
-      'REST API for the TrustLink escrow backend. Auto-generated from DTO decorators.',
-    )
-    .setVersion('1.0')
-    .addBearerAuth()
-    .build();
-  const document = SwaggerModule.createDocument(app, swaggerConfig, {
-    extraModels: [ErrorResponseDto],
-  });
-  document.components ??= {};
-  document.components.responses ??= {};
-  document.components.responses.StandardError = {
-    description: 'Standard error response',
-    content: {
-      'application/json': {
-        schema: { $ref: '#/components/schemas/ErrorResponseDto' },
-      },
-    },
-  };
-  SwaggerModule.setup('api/docs', app, document);
-
-  app.enableShutdownHooks();
+  const document = createOpenApiDocument(app);
+  setupOpenApiUi(app, document, isProduction);
 
   const port = configService.get('PORT');
   await app.listen(port);
@@ -189,34 +170,72 @@ async function bootstrap(): Promise<void> {
       port,
       env: configService.get('NODE_ENV'),
       network: configService.get('STELLAR_NETWORK'),
-      allowedOrigins: allowedOrigins.length > 0 ? allowedOrigins : 'all',
+      allowedOrigins:
+        allowedOrigins.length > 0
+          ? allowedOrigins
+          : isProduction
+            ? 'none'
+            : 'all',
       cspConnectSrc: connectSrc,
     }),
     'Bootstrap',
   );
+
+  return app;
 }
 
-bootstrap().catch((err: unknown) => {
-  bootstrapLogger.error(
-    JSON.stringify({
-      msg: 'server.bootstrap.failed',
-      error: err instanceof Error ? err.message : String(err),
-    }),
-    err instanceof Error ? err.stack : undefined,
-  );
-  process.exit(1);
-});
+let app: INestApplication | null = null;
 
-process.on('SIGTERM', () => {
-  bootstrapLogger.log(
-    JSON.stringify({ msg: 'server.shutdown', signal: 'SIGTERM' }),
-  );
-  process.exit(0);
-});
+bootstrap()
+  .then((instance) => {
+    app = instance;
+  })
+  .catch((err: unknown) => {
+    bootstrapLogger.error(
+      JSON.stringify({
+        msg: 'server.bootstrap.failed',
+        error: err instanceof Error ? err.message : String(err),
+      }),
+      err instanceof Error ? err.stack : undefined,
+    );
+    process.exit(1);
+  });
 
-process.on('SIGINT', () => {
+/** How long to wait for `app.close()` before forcing exit. */
+const SHUTDOWN_TIMEOUT_MS = 10_000;
+
+async function shutdown(signal: string): Promise<void> {
   bootstrapLogger.log(
-    JSON.stringify({ msg: 'server.shutdown', signal: 'SIGINT' }),
+    JSON.stringify({ msg: 'server.shutdown', signal }),
+    'Bootstrap',
   );
+
+  if (app) {
+    try {
+      await Promise.race([
+        app.close(),
+        new Promise((_, reject) =>
+          setTimeout(
+            () => reject(new Error('graceful shutdown timed out')),
+            SHUTDOWN_TIMEOUT_MS,
+          ),
+        ),
+      ]);
+    } catch (err) {
+      bootstrapLogger.error(
+        JSON.stringify({
+          msg: 'server.shutdown.error',
+          error: err instanceof Error ? err.message : String(err),
+        }),
+        err instanceof Error ? err.stack : undefined,
+      );
+    }
+  }
+
+  await shutdownTracing();
   process.exit(0);
-});
+}
+
+process.on('SIGTERM', () => void shutdown('SIGTERM'));
+
+process.on('SIGINT', () => void shutdown('SIGINT'));

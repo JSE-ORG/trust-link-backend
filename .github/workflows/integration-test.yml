@@ -2,8 +2,18 @@ name: Integration Tests
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   pull_request:
+
+# Cancel superseded runs for the same workflow + ref (#767).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# contents:read for checkout; actions:write for upload-artifact on failure (#768).
+permissions:
+  contents: read
+  actions: write
 
 jobs:
   integration-test:

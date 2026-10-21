@@ -3,12 +3,17 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  HttpException,
   Injectable,
+  InternalServerErrorException,
   NotFoundException,
+  ServiceUnavailableException,
+  UnprocessableEntityException,
   Logger,
   Optional,
 } from '@nestjs/common';
 import { NotificationsService } from '../notifications/notifications.service';
+import { ConfigService } from '../config/config.service';
 import { EscrowRecord } from '../prisma/prisma.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { LogisticsService } from '../logistics/logistics.service';
@@ -18,11 +23,22 @@ import { EscrowResponseDto } from './dto/escrow-response.dto';
 import { EscrowSummaryDto } from './dto/escrow-summary.dto';
 import { CreateEscrowDto } from './dto/create-escrow.dto';
 import { EvidenceUploadResponseDto } from './dto/evidence-upload.dto';
+import { EVIDENCE_FILE_EXTENSIONS } from './dto/evidence-upload-query.dto';
 import { S3PresignService } from '../common/services/s3-presign.service';
 import { EscrowRepository } from './escrow.repository';
 import { UpdateBuyerContactDto } from './dto/update-buyer-contact.dto';
 import { encryptContact } from '../common/sanitization/contact-encryption.util';
+import { VENDOR_PROFILE_PLACEHOLDER_DESCRIPTION } from '../vendor/vendor-profile.constants';
+import {
+  encryptContact,
+  isContactEncryptionConfigured,
+} from '../common/sanitization/contact-encryption.util';
+import { TracingService } from '../tracing/tracing.service';
 import { EventsResult } from './escrow.types';
+import {
+  ONE_HOUR_SECONDS,
+  SECONDS_PER_DAY,
+} from '../common/constants/time.constants';
 
 export type EscrowWithPaymentUrl = EscrowRecord & {
   paymentUrl: string;
@@ -31,16 +47,19 @@ export type EscrowWithPaymentUrl = EscrowRecord & {
 /** Parsed Soroban event forwarded from the blockchain listener. */
 export interface SorobanChainEvent {
   /** Soroban event name: EscrowFunded | EscrowShipped | EscrowCompleted |
-   *  DisputeRaised | DisputeResolved | AutoReleased */
+   *  DisputeRaised | DisputeResolved | AutoReleased | EscrowAutoCancelled |
+   *  EscrowExpired | RefundApproved */
   eventType: string;
   /** Trust-Link escrow ID stored in the contract. */
   escrowId: string;
   /** For EscrowShipped — on-chain tracking reference. */
   trackingId?: string;
-  /** For AutoReleased — on-chain transaction hash. */
+  /** For AutoReleased — on-chain transaction hash or event id. */
   txHash?: string;
   /** For DisputeRaised — reason/description surfaced from contract data. */
   reason?: string;
+  /** For DisputeResolved — normalized resolution outcome from contract's ResolutionType. */
+  resolution?: 'RELEASE' | 'REFUND';
 }
 
 /** States that represent a terminal escrow lifecycle — no further transitions. */
@@ -51,6 +70,36 @@ const TERMINAL_STATES = new Set<string>([
   'CANCELLED',
 ]);
 
+/** Cached outcome of an idempotent create, keyed by vendor and key. */
+interface IdempotencyCacheEntry {
+  /** SHA-256 of the stable serialisation of the request body. */
+  requestHash: string;
+  result: EscrowWithPaymentUrl;
+}
+
+/**
+ * JSON with object keys sorted at every level, so two bodies with the same
+ * fields hash the same regardless of property order.
+ */
+function stableStringify(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableStringify(item)).join(',')}]`;
+  }
+  if (value !== null && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    const fields = Object.keys(record)
+      .filter((key) => record[key] !== undefined)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${stableStringify(record[key])}`);
+    return `{${fields.join(',')}}`;
+  }
+  return JSON.stringify(value) ?? 'null';
+}
+
+function hashRequestBody(dto: CreateEscrowDto): string {
+  return crypto.createHash('sha256').update(stableStringify(dto)).digest('hex');
+}
+
 export type SyncResult =
   { skipped: boolean; reason?: string } | { skipped: false };
 
@@ -59,6 +108,7 @@ export class EscrowService {
   private readonly logger = new Logger(EscrowService.name);
 
   constructor(
+    private readonly tracing: TracingService,
     private readonly escrowRepository: EscrowRepository,
     private readonly notificationsService: NotificationsService,
     private readonly s3PresignService: S3PresignService,
@@ -69,10 +119,61 @@ export class EscrowService {
     private readonly cacheService?: CacheService,
     @Optional()
     private readonly prisma?: PrismaService,
+    @Optional()
+    private readonly configService?: ConfigService,
   ) {}
 
-  /** Returns cached or live shipment tracking status for an escrow. */
+  /**
+   * Runs `fn` inside a span named for the escrow operation.
+   *
+   * Identifiers are recorded as attributes so an operation can be traced
+   * back to a specific escrow. Request bodies and contact details are never
+   * recorded, and failures are captured by `withSpan` as error spans.
+   */
+  private traced<T>(
+    operation: string,
+    attributes: Record<string, string | number | boolean>,
+    fn: () => T | Promise<T>,
+  ): Promise<T> {
+    return this.tracing.withSpan(`escrow.${operation}`, { attributes }, fn);
+  }
+
+  /**
+   * Returns shipment tracking details for an escrow, served from cache when
+   * available.
+   *
+   * The escrow must exist and must carry a `trackingId`, and the optional
+   * logistics service must be wired in; each missing precondition surfaces as a
+   * not-found error rather than a distinct type. Results are cached under
+   * `tracking:<trackingId>` for 60 seconds, so back-to-back calls do not hit
+   * the carrier. Any error raised by the logistics provider is deliberately
+   * translated into a `NotFoundException` carrying the underlying message
+   * rather than propagated as-is.
+   *
+   * @throws NotFoundException if the escrow has no tracking id, the logistics
+   *   service is unavailable, or the carrier lookup fails.
+   */
   async getTracking(id: string): Promise<{
+    status: string;
+    estimatedDelivery?: Date;
+    carrier?: string;
+    events: Array<{
+      timestamp: Date;
+      status: string;
+      location?: string;
+      description: string;
+    }>;
+  }> {
+    return this.traced(
+      'get_tracking',
+      {
+        'trustlink.escrow.id': id,
+      },
+      () => this.getTrackingInternal(id),
+    );
+  }
+
+  private async getTrackingInternal(id: string): Promise<{
     status: string;
     estimatedDelivery?: Date;
     carrier?: string;
@@ -114,9 +215,9 @@ export class EscrowService {
 
       const details = {
         status: status.status,
-        estimatedDelivery: undefined,
-        carrier: undefined,
-        events: [],
+        estimatedDelivery: status.estimatedDelivery,
+        carrier: status.carrier,
+        events: status.events,
       };
 
       await this.cacheService?.set(key, details, 60);
@@ -130,13 +231,47 @@ export class EscrowService {
     }
   }
 
-  /** Creates a funded escrow after validating amount and duplicate item reference. */
+  /**
+   * Creates a new escrow in the `CREATED` state for the given vendor and
+   * returns it with a generated payment URL.
+   *
+   * The amount must be strictly positive, and the (vendor, itemRef) pair must
+   * be unique — a matching existing escrow is treated as a duplicate
+   * submission and rejected. Before the row is written, a minimal
+   * `VendorProfile` is upserted for the vendor so the escrow's foreign key
+   * resolves for first-time vendors (see `ensureVendorProfile`). This does not
+   * fund the escrow; funding happens later on-chain, so the returned record is
+   * `CREATED`, not `FUNDED`.
+   *
+   * @throws BadRequestException if the amount is not positive.
+   * @throws ConflictException if an escrow already exists for the same vendor
+   *   and item reference.
+   */
   async createEscrow(
+    dto: CreateEscrowDto,
+    vendorAddress: string,
+  ): Promise<EscrowWithPaymentUrl> {
+    return this.traced(
+      'create',
+      {
+        'trustlink.vendor.address': vendorAddress,
+      },
+      () => this.createEscrowInternal(dto, vendorAddress),
+    );
+  }
+
+  private async createEscrowInternal(
     dto: CreateEscrowDto,
     vendorAddress: string,
   ): Promise<EscrowWithPaymentUrl> {
     if (dto.amount <= 0) {
       throw new BadRequestException('Amount must be positive');
+    }
+
+    if (dto.buyerAddress === vendorAddress) {
+      throw new BadRequestException(
+        'buyerAddress must be different from the vendor address',
+      );
     }
 
     const existing = await this.escrowRepository.findByVendorAndItem(
@@ -147,41 +282,134 @@ export class EscrowService {
       throw new ConflictException('Duplicate escrow for this item reference');
     }
 
+    await this.ensureVendorProfile(vendorAddress);
+
     const escrow = await this.escrowRepository.create(dto, vendorAddress);
-    await this.notificationsService.notifyFunded(escrow);
     return {
       ...escrow,
       paymentUrl: this.buildPaymentUrl(escrow.id),
     };
   }
 
-  /** Wrapper for createEscrow that ensures idempotency via Redis caching. */
+  /**
+   * Guarantees the vendor has a VendorProfile row before an escrow references
+   * it.
+   *
+   * `Escrow.vendorAddress` is a foreign key onto `VendorProfile.address`. The
+   * previous in-memory store enforced no constraints, so a vendor could create
+   * an escrow without ever registering a profile. Against the real database
+   * (#475) that same request fails with
+   * `Foreign key constraint violated on the constraint: Escrow_vendorAddress_fkey`,
+   * surfacing as a 500 for every first-time vendor.
+   *
+   * The caller's address comes from a verified SEP-10 token, so creating a
+   * minimal profile here is safe: the vendor can fill in the real business
+   * details later via the vendor profile endpoints. `upsert` with an empty
+   * `update` leaves an existing profile untouched.
+   */
+  private async ensureVendorProfile(vendorAddress: string): Promise<void> {
+    if (!this.prisma) return;
+    await this.prisma.vendorProfile.upsert({
+      where: { address: vendorAddress },
+      create: {
+        address: vendorAddress,
+        businessName: vendorAddress,
+        description: VENDOR_PROFILE_PLACEHOLDER_DESCRIPTION,
+      },
+      update: {},
+    });
+  }
+
+  /**
+   * Idempotent wrapper around {@link createEscrow}, keyed by the
+   * caller-supplied idempotency key.
+   *
+   * A successful result is cached under `idempotency:<vendorAddress>:<key>` for
+   * 24 hours, so a repeated request with the same key and vendor returns the
+   * original escrow (payment URL included) instead of creating a second one.
+   * Idempotency depends on the optional cache service: when no cache is
+   * configured every call falls through to a fresh `createEscrow`, leaving that
+   * method's duplicate-item check as the only guard against double-creation.
+   * The same validation and conflict errors as `createEscrow` apply.
+   *
+   * The cache entry also stores a hash of the request body (issue #932). A
+   * retry with the same key and body gets the cached escrow; reusing the key
+   * for a different body is rejected instead of silently returning the
+   * first escrow.
+   *
+   * @throws UnprocessableEntityException if the key was already used with a
+   *   different request body.
+   */
   async createIdempotent(
     idempotencyKey: string,
     dto: CreateEscrowDto,
     vendorAddress: string,
   ): Promise<EscrowWithPaymentUrl> {
+    return this.traced(
+      'create_idempotent',
+      {
+        'trustlink.escrow.idempotency_key': idempotencyKey,
+        'trustlink.vendor.address': vendorAddress,
+      },
+      () => this.createIdempotentInternal(idempotencyKey, dto, vendorAddress),
+    );
+  }
+
+  private async createIdempotentInternal(
+    idempotencyKey: string,
+    dto: CreateEscrowDto,
+    vendorAddress: string,
+  ): Promise<EscrowWithPaymentUrl> {
     const cacheKey = `idempotency:${vendorAddress}:${idempotencyKey}`;
+    const requestHash = hashRequestBody(dto);
     if (this.cacheService) {
       const cached =
-        await this.cacheService.get<EscrowWithPaymentUrl>(cacheKey);
+        await this.cacheService.get<IdempotencyCacheEntry>(cacheKey);
       if (cached) {
-        return cached;
+        if (cached.requestHash !== requestHash) {
+          throw new UnprocessableEntityException(
+            'Idempotency-Key has already been used with a different request body',
+          );
+        }
+        return cached.result;
       }
     }
 
     const result = await this.createEscrow(dto, vendorAddress);
 
     if (this.cacheService) {
-      // Cache for 24 hours (86400 seconds)
-      await this.cacheService.set(cacheKey, result, 86400);
+      const entry: IdempotencyCacheEntry = { requestHash, result };
+      await this.cacheService.set(cacheKey, entry, SECONDS_PER_DAY);
     }
 
     return result;
   }
 
-  /** Loads an escrow by ID or raises a typed not-found error. */
+  /**
+   * Loads an escrow by its backend UUID, normalising failures into typed HTTP
+   * exceptions.
+   *
+   * A missing escrow is logged and raised as `NotFoundException`. Any other
+   * error from the repository (e.g. a database fault) is logged and rewritten
+   * as a generic `BadRequestException` so internal details never leak to the
+   * caller; an already-typed `NotFoundException` is re-thrown untouched rather
+   * than being masked by that catch-all. Reads may be served from the
+   * repository's cache.
+   *
+   * @throws NotFoundException if no escrow has the given id.
+   * @throws BadRequestException if the lookup fails for any other reason.
+   */
   async findById(id: string): Promise<EscrowRecord> {
+    return this.traced(
+      'get',
+      {
+        'trustlink.escrow.id': id,
+      },
+      () => this.findByIdInternal(id),
+    );
+  }
+
+  private async findByIdInternal(id: string): Promise<EscrowRecord> {
     try {
       const escrow = await this.escrowRepository.findById(id);
       if (!escrow) {
@@ -196,17 +424,57 @@ export class EscrowService {
       const message =
         error instanceof Error ? error.message : 'Failed to retrieve escrow';
       this.logger.error(`Error finding escrow ${id}: ${message}`, error);
-      throw new BadRequestException('Failed to retrieve escrow');
+      // issue #930: an outage is a server fault, not a bad request — a 4xx
+      // here told monitoring and the frontend the client was wrong.
+      throw new InternalServerErrorException('Failed to retrieve escrow');
     }
   }
 
-  /** Returns chronological event history for an escrow; empty array if not found. */
+  /**
+   * Returns the escrow's state-transition history, oldest event first.
+   *
+   * This is a thin pass-through to the repository's audit-table query. It does
+   * not verify that the escrow exists: an unknown id simply yields an empty
+   * array, which is indistinguishable from a known escrow that has no recorded
+   * events.
+   */
   async getEvents(id: string): Promise<EventsResult> {
+    return this.traced(
+      'get_events',
+      {
+        'trustlink.escrow.id': id,
+      },
+      () => this.getEventsInternal(id),
+    );
+  }
+
+  private async getEventsInternal(id: string): Promise<EventsResult> {
     return this.escrowRepository.findEvents(id);
   }
 
-  /** Returns the public escrow projection safe for client responses. */
+  /**
+   * Returns the client-safe projection of an escrow.
+   *
+   * Loads the escrow via {@link findById} (so the same not-found / bad-request
+   * behaviour applies) and maps it through an explicit field allowlist. Buyer
+   * contact fields and internal addresses are omitted by construction, so
+   * encrypted contact information never reaches the client.
+   *
+   * @throws NotFoundException if the escrow does not exist.
+   */
   async getPublicEscrow(id: string): Promise<EscrowResponseDto> {
+    return this.traced(
+      'get_public',
+      {
+        'trustlink.escrow.id': id,
+      },
+      () => this.getPublicEscrowInternal(id),
+    );
+  }
+
+  private async getPublicEscrowInternal(
+    id: string,
+  ): Promise<EscrowResponseDto> {
     const escrow = await this.findById(id);
     return this.toPublicEscrow(escrow);
   }
@@ -217,6 +485,21 @@ export class EscrowService {
    * existing record — no additional DB query is needed.
    */
   async getEscrowForViewer(
+    id: string,
+    callerAddress?: string,
+  ): Promise<
+    EscrowResponseDto & { viewer?: { isBuyer: boolean; isVendor: boolean } }
+  > {
+    return this.traced(
+      'get_for_viewer',
+      {
+        'trustlink.escrow.id': id,
+      },
+      () => this.getEscrowForViewerInternal(id, callerAddress),
+    );
+  }
+
+  private async getEscrowForViewerInternal(
     id: string,
     callerAddress?: string,
   ): Promise<
@@ -234,8 +517,42 @@ export class EscrowService {
     };
   }
 
-  /** Returns a paginated vendor escrow summary list using query defaults. */
+  /**
+   * Returns a paginated, sorted page of a vendor's escrows as summary DTOs.
+   *
+   * Unset query fields fall back to defaults (`sort: 'date'`, `order: 'desc'`,
+   * `page: 1`, `limit: 20`) before the query runs, so callers may pass a
+   * partial query. Results are mapped to the summary projection and returned
+   * alongside the unpaginated `total` count and the effective `page`/`limit`,
+   * which lets callers derive the number of pages. No authorisation is
+   * performed here — the caller must scope `vendorAddress` to the authenticated
+   * user.
+   */
   async findVendorEscrows(
+    vendorAddress: string,
+    query: {
+      state?: string;
+      sort?: 'date' | 'amount';
+      order?: 'asc' | 'desc';
+      page?: number;
+      limit?: number;
+    },
+  ): Promise<{
+    data: EscrowSummaryDto[];
+    total: number;
+    page: number;
+    limit: number;
+  }> {
+    return this.traced(
+      'find_vendor',
+      {
+        'trustlink.vendor.address': vendorAddress,
+      },
+      () => this.findVendorEscrowsInternal(vendorAddress, query),
+    );
+  }
+
+  private async findVendorEscrowsInternal(
     vendorAddress: string,
     query: {
       state?: string;
@@ -304,21 +621,62 @@ export class EscrowService {
   }
 
   private buildPaymentUrl(id: string): string {
-    return `https://trust-link.local/pay/${id}`;
+    const frontendUrl =
+      this.configService?.get('FRONTEND_URL') ?? 'http://localhost:3000';
+    return `${frontendUrl.replace(/\/+$/, '')}/pay/${encodeURIComponent(id)}`;
   }
 
-  /** Generates a pre-signed upload URL for evidence files scoped to the caller. */
-  generateEvidenceUploadUrl(
+  private buildEvidencePublicUrl(objectKey: string): string {
+    const baseUrl =
+      this.configService?.get('EVIDENCE_STORAGE_BASE_URL') ??
+      'http://localhost:9000';
+    return `${baseUrl.replace(/\/+$/, '')}/${objectKey}`;
+  }
+
+  /**
+   * Builds a pre-signed upload URL for a piece of evidence, scoped to the
+   * caller's address.
+   *
+   * The object key is `evidence/<callerAddress>/<uuid>.<ext>`, where the
+   * extension is taken from the supplied file name (falling back to `bin` when
+   * the name has no extension) and the random UUID guarantees a unique key even
+   * for repeated file names. This only mints the URL — it neither uploads nor
+   * validates the file — and the returned link expires one hour after issuance
+   * (`expiresInSeconds` is 3600).
+   */
+  async generateEvidenceUploadUrl(
+    callerAddress: string,
+    fileName: string,
+  ): Promise<EvidenceUploadResponseDto> {
+    return this.traced(
+      'evidence_upload_url',
+      {
+        'trustlink.actor.address': callerAddress,
+      },
+      () => this.generateEvidenceUploadUrlInternal(callerAddress, fileName),
+    );
+  }
+
+  private generateEvidenceUploadUrlInternal(
     callerAddress: string,
     fileName: string,
   ): EvidenceUploadResponseDto {
-    const ext = fileName.includes('.') ? fileName.split('.').pop() : 'bin';
+    // The query DTO already restricts the extension; this keeps the object key
+    // safe for any other caller.
+    const candidate = fileName.includes('.')
+      ? fileName.slice(fileName.lastIndexOf('.') + 1).toLowerCase()
+      : '';
+    const ext = (EVIDENCE_FILE_EXTENSIONS as readonly string[]).includes(
+      candidate,
+    )
+      ? candidate
+      : 'bin';
     const uuid = crypto.randomUUID();
     const storagePath = `evidence/${callerAddress}/`;
     const objectKey = `${storagePath}${uuid}.${ext}`;
-    const publicUrl = `https://storage.trustlink.io/${objectKey}`;
+    const publicUrl = this.buildEvidencePublicUrl(objectKey);
     const presigned = this.s3PresignService.presign(publicUrl);
-    const expiresInSeconds = 3600;
+    const expiresInSeconds = ONE_HOUR_SECONDS;
 
     return {
       uploadUrl: presigned,
@@ -330,8 +688,34 @@ export class EscrowService {
     };
   }
 
-  /** Cancels a funded escrow when requested by the buyer, vendor, or admin. */
+  /**
+   * Cancels a `FUNDED` escrow at the request of the buyer, vendor, or an admin.
+   *
+   * Only those parties may cancel; passing `isAdmin` bypasses the participant
+   * check. The escrow must currently be `FUNDED` — this path deliberately
+   * handles only already-funded escrows and never touches the chain. Use
+   * {@link cancelPendingEscrow} for escrows still in `CREATED`.
+   *
+   * @throws NotFoundException if the escrow does not exist.
+   * @throws ForbiddenException if the caller is not a participant or admin.
+   * @throws ConflictException if the escrow is not in `FUNDED` state.
+   */
   async cancelEscrow(
+    escrowId: string,
+    callerAddress: string,
+    isAdmin = false,
+  ): Promise<EscrowRecord> {
+    return this.traced(
+      'cancel',
+      {
+        'trustlink.escrow.id': escrowId,
+        'trustlink.actor.is_admin': isAdmin,
+      },
+      () => this.cancelEscrowInternal(escrowId, callerAddress, isAdmin),
+    );
+  }
+
+  private async cancelEscrowInternal(
     escrowId: string,
     callerAddress: string,
     isAdmin = false,
@@ -357,8 +741,40 @@ export class EscrowService {
     return this.escrowRepository.markCancelled(escrowId);
   }
 
-  /** Cancels a pending (CREATED) escrow with on-chain state verification and fund refund. */
+  /**
+   * Cancels a pending (`CREATED`) escrow, reconciling with on-chain state
+   * first.
+   *
+   * Only the buyer, vendor, or an admin may cancel, and the escrow must be
+   * `CREATED` locally — the funded counterpart is {@link cancelEscrow}. Chain
+   * handling turns on `contractEscrowId`: when it is null there is no on-chain
+   * counterpart, so the chain step is skipped and the escrow is simply marked
+   * cancelled. When the on-chain escrow is `FUNDED`, an on-chain refund is
+   * submitted before local cancellation; when it exists in any state other than
+   * `CREATED` or `FUNDED`, cancellation is refused. The escrow is only marked
+   * `CANCELLED` locally after any required chain call succeeds.
+   *
+   * @throws NotFoundException if the escrow does not exist.
+   * @throws ForbiddenException if the caller is not a participant or admin.
+   * @throws ConflictException if the escrow is not `CREATED` locally, or the
+   *   on-chain escrow is in a non-cancellable state.
+   */
   async cancelPendingEscrow(
+    escrowId: string,
+    callerAddress: string,
+    isAdmin = false,
+  ): Promise<EscrowRecord> {
+    return this.traced(
+      'cancel_pending',
+      {
+        'trustlink.escrow.id': escrowId,
+        'trustlink.actor.is_admin': isAdmin,
+      },
+      () => this.cancelPendingEscrowInternal(escrowId, callerAddress, isAdmin),
+    );
+  }
+
+  private async cancelPendingEscrowInternal(
     escrowId: string,
     callerAddress: string,
     isAdmin = false,
@@ -381,13 +797,29 @@ export class EscrowService {
       );
     }
 
-    const chainState = await this.contractService.getEscrowState(escrowId);
+    // Both contract calls address the escrow by the contract's own u64. An
+    // unmapped escrow has no on-chain counterpart to inspect or cancel, so the
+    // chain step is skipped rather than guessed at; the backend-side
+    // cancellation below still applies.
+    if (escrow.contractEscrowId === null) {
+      this.logger.log(
+        `Escrow ${escrowId} has no contractEscrowId; skipping the on-chain cancellation check`,
+      );
+      return this.escrowRepository.markCancelled(escrowId);
+    }
+
+    const chainState = await this.contractService.getEscrowState(
+      escrow.contractEscrowId,
+    );
 
     if (chainState.exists && chainState.state === 'FUNDED') {
       this.logger.log(
         `Escrow ${escrowId} funded on-chain — submitting on-chain refund before cancellation`,
       );
-      const txHash = await this.contractService.cancelEscrowOnChain(escrowId);
+      const txHash = await this.contractService.cancelEscrowOnChain(
+        escrow.contractEscrowId,
+        callerAddress,
+      );
       this.logger.log(
         `On-chain refund submitted for escrow ${escrowId}: ${txHash}`,
       );
@@ -400,8 +832,49 @@ export class EscrowService {
     return this.escrowRepository.markCancelled(escrowId);
   }
 
-  /** Validates vendor shipment updates and moves a funded escrow to shipped. */
+  /**
+   * Records a vendor shipment against a `FUNDED` escrow and transitions it to
+   * `SHIPPED`.
+   *
+   * The tracking id is trimmed and must be at least three characters. Only the
+   * escrow's vendor (or an admin) may ship, the escrow must be `FUNDED`, and it
+   * must not already carry a tracking id — reshipping is refused. After the
+   * state is persisted, the stale `tracking:<trackingId>` cache entry is
+   * evicted and the "shipped" notification is dispatched fire-and-forget, so a
+   * notification failure is logged but neither fails the call nor rolls back
+   * the shipment. Any error is logged and re-thrown with its original type
+   * preserved.
+   *
+   * @throws BadRequestException if the tracking id is empty or shorter than
+   *   three characters.
+   * @throws ForbiddenException if the caller is neither the vendor nor an
+   *   admin.
+   * @throws ConflictException if the escrow is not `FUNDED` or has already
+   *   shipped.
+   */
   async handleShipment(
+    escrowId: string,
+    vendorAddress: string,
+    trackingId: string,
+    isAdmin = false,
+  ): Promise<EscrowRecord> {
+    return this.traced(
+      'handle_shipment',
+      {
+        'trustlink.escrow.id': escrowId,
+        'trustlink.vendor.address': vendorAddress,
+      },
+      () =>
+        this.handleShipmentInternal(
+          escrowId,
+          vendorAddress,
+          trackingId,
+          isAdmin,
+        ),
+    );
+  }
+
+  private async handleShipmentInternal(
     escrowId: string,
     vendorAddress: string,
     trackingId: string,
@@ -466,7 +939,16 @@ export class EscrowService {
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'Failed to ship escrow';
-      this.logger.error(`Failed to ship escrow ${escrowId}: ${message}`, error);
+      // issue #931: an expected client error (400/403/409) already got its
+      // own warn/no log above; only an unexpected failure belongs at error.
+      const isClientError =
+        error instanceof HttpException && error.getStatus() < 500;
+      if (!isClientError) {
+        this.logger.error(
+          `Failed to ship escrow ${escrowId}: ${message}`,
+          error,
+        );
+      }
       throw error;
     }
   }
@@ -489,11 +971,30 @@ export class EscrowService {
     escrowId: string,
     dto: UpdateBuyerContactDto,
   ): Promise<{ message: string }> {
+    return this.traced(
+      'update_buyer_contact',
+      {
+        'trustlink.escrow.id': escrowId,
+      },
+      () => this.updateBuyerContactInternal(escrowId, dto),
+    );
+  }
+
+  private async updateBuyerContactInternal(
+    escrowId: string,
+    dto: UpdateBuyerContactDto,
+  ): Promise<{ message: string }> {
     const escrow = await this.findById(escrowId);
 
     if (TERMINAL_STATES.has(escrow.state)) {
       throw new ConflictException(
         `Cannot update buyer contact for an escrow in ${escrow.state} state.`,
+      );
+    }
+
+    if (!isContactEncryptionConfigured()) {
+      throw new ServiceUnavailableException(
+        'Buyer contact encryption is not configured.',
       );
     }
 
@@ -518,9 +1019,64 @@ export class EscrowService {
     return { message: 'Buyer contact information saved.' };
   }
 
+  /**
+   * Resolves a Soroban contract escrow id to the backend escrow's UUID.
+   * Delegates to the repository; see `findIdByContractEscrowId` there for why
+   * the two identifier spaces are separate.
+   */
+  findIdByContractEscrowId(contractEscrowId: bigint): Promise<string | null> {
+    return this.traced(
+      'find_by_contract_id',
+      {
+        'trustlink.escrow.contract_id': contractEscrowId.toString(),
+      },
+      () => this.findIdByContractEscrowIdInternal(contractEscrowId),
+    );
+  }
+
+  private findIdByContractEscrowIdInternal(
+    contractEscrowId: bigint,
+  ): Promise<string | null> {
+    return this.escrowRepository.findIdByContractEscrowId(contractEscrowId);
+  }
+
   // ── Issue #40: on-chain event handler ─────────────────────────────────────
 
+  /**
+   * Applies a parsed on-chain Soroban event to the backend escrow, driving its
+   * state machine forward. Called by the Soroban poller for each contract
+   * event.
+   *
+   * Every branch is idempotent and guarded so redelivered or out-of-order
+   * events are safe: if the escrow is missing, already in the event's target
+   * state, or in a terminal state, the event is skipped and the reason is
+   * returned in the {@link SyncResult} rather than throwing. The event's
+   * `escrowId` is the backend UUID (the caller resolves it from the contract id
+   * beforehand). Handled types are `EscrowFunded`, `EscrowShipped`,
+   * `EscrowCompleted`, `DisputeRaised`, `DisputeResolved` and `AutoReleased`;
+   * any other type is skipped as `unknown_event_type`. The two dispute events
+   * also touch the dispute table, but only when Prisma is wired in. All
+   * notifications are dispatched fire-and-forget, so a notification failure
+   * neither fails the sync nor blocks the poller's cursor.
+   *
+   * @returns a {@link SyncResult} whose `skipped` flag (and `reason` when
+   *   skipped) reports whether the event changed state or was intentionally
+   *   ignored.
+   */
   async syncStateFromChain(event: SorobanChainEvent): Promise<SyncResult> {
+    return this.traced(
+      'sync_from_chain',
+      {
+        'trustlink.escrow.id': event.escrowId,
+        'trustlink.chain.event_type': event.eventType,
+      },
+      () => this.syncStateFromChainInternal(event),
+    );
+  }
+
+  private async syncStateFromChainInternal(
+    event: SorobanChainEvent,
+  ): Promise<SyncResult> {
     const { eventType, escrowId } = event;
 
     this.logger.log(
@@ -537,7 +1093,7 @@ export class EscrowService {
 
     switch (eventType) {
       case 'EscrowFunded': {
-        if (escrow.state === 'FUNDED' || TERMINAL_STATES.has(escrow.state)) {
+        if (escrow.state !== 'CREATED') {
           return { skipped: true, reason: 'already_funded_or_terminal' };
         }
         const funded = await this.escrowRepository.updateState(
@@ -551,7 +1107,7 @@ export class EscrowService {
       }
 
       case 'EscrowShipped': {
-        if (escrow.state === 'SHIPPED' || TERMINAL_STATES.has(escrow.state)) {
+        if (escrow.state !== 'CREATED' && escrow.state !== 'FUNDED') {
           return { skipped: true, reason: 'already_shipped_or_terminal' };
         }
         const trackingId = event.trackingId ?? escrow.trackingId ?? '';
@@ -573,6 +1129,18 @@ export class EscrowService {
         this.notificationsService
           .notifyCompleted(completed)
           .catch((err) => this.logger.error('notifyCompleted failed', err));
+        return { skipped: false };
+      }
+
+      case 'EscrowCancelled':
+      case 'EscrowCanceled': {
+        if (escrow.state === 'CANCELLED' || TERMINAL_STATES.has(escrow.state)) {
+          return { skipped: true, reason: 'already_cancelled_or_terminal' };
+        }
+        const cancelled = await this.escrowRepository.markCancelled(escrowId);
+        this.notificationsService
+          .notifyCancelled(cancelled)
+          .catch((err) => this.logger.error('notifyCancelled failed', err));
         return { skipped: false };
       }
 
@@ -605,6 +1173,9 @@ export class EscrowService {
       }
 
       case 'DisputeResolved': {
+        if (TERMINAL_STATES.has(escrow.state)) {
+          return { skipped: true, reason: 'terminal_state' };
+        }
         if (this.prisma) {
           const dispute = await this.prisma.dispute.findFirst({
             where: { escrowId },
@@ -619,6 +1190,16 @@ export class EscrowService {
             });
           }
         }
+        if (event.resolution === 'REFUND') {
+          const refunded = await this.escrowRepository.markRefunded(escrowId);
+          this.notificationsService
+            .notifyRefunded(refunded)
+            .catch((err) =>
+              this.logger.error('notifyRefunded(dispute refund) failed', err),
+            );
+          return { skipped: false };
+        }
+
         const resolved = await this.escrowRepository.markCompleted(escrowId);
         this.notificationsService
           .notifyCompleted(resolved)
@@ -635,7 +1216,7 @@ export class EscrowService {
         if (TERMINAL_STATES.has(escrow.state)) {
           return { skipped: true, reason: 'terminal_state' };
         }
-        const txHash = event.txHash ?? '';
+        const txHash = event.txHash || escrow.autoReleaseTxHash || '';
         const released = await this.escrowRepository.markAutoReleased(
           escrowId,
           txHash,
@@ -645,6 +1226,39 @@ export class EscrowService {
           .catch((err) =>
             this.logger.error('notifyCompleted(auto-released) failed', err),
           );
+        return { skipped: false };
+      }
+
+      case 'EscrowAutoCancelled': {
+        if (escrow.state === 'CANCELLED' || TERMINAL_STATES.has(escrow.state)) {
+          return { skipped: true, reason: 'already_cancelled_or_terminal' };
+        }
+        const cancelled = await this.escrowRepository.markCancelled(escrowId);
+        this.notificationsService
+          .notifyCancelled(cancelled)
+          .catch((err) => this.logger.error('notifyCancelled(auto-cancel) failed', err));
+        return { skipped: false };
+      }
+
+      case 'EscrowExpired': {
+        if (escrow.state === 'REFUNDED' || TERMINAL_STATES.has(escrow.state)) {
+          return { skipped: true, reason: 'already_refunded_or_terminal' };
+        }
+        const refunded = await this.escrowRepository.markRefunded(escrowId);
+        this.notificationsService
+          .notifyCancelled(refunded)
+          .catch((err) => this.logger.error('notifyCancelled(expired) failed', err));
+        return { skipped: false };
+      }
+
+      case 'RefundApproved': {
+        if (escrow.state === 'REFUNDED' || TERMINAL_STATES.has(escrow.state)) {
+          return { skipped: true, reason: 'already_refunded_or_terminal' };
+        }
+        const refunded = await this.escrowRepository.markRefunded(escrowId);
+        this.notificationsService
+          .notifyCancelled(refunded)
+          .catch((err) => this.logger.error('notifyCancelled(refund-approved) failed', err));
         return { skipped: false };
       }
 

@@ -1,7 +1,10 @@
+import { PartialType } from '@nestjs/swagger';
+import { CreateVendorProfileDto } from './create-vendor-profile.dto';
 import {
   IsEmail,
   IsOptional,
   IsString,
+  Matches,
   MaxLength,
   MinLength,
 } from 'class-validator';
@@ -13,19 +16,9 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
  * fields are optional — only provided fields are updated. Used by
  * PATCH /vendor/profile.
  */
-export class UpdateVendorProfileDto {
-  @ApiPropertyOptional({
-    description: 'Updated registered business or trading name of the vendor.',
-    minLength: 2,
-    maxLength: 100,
-    example: 'Acme Electronics Ltd',
-  })
-  @IsOptional()
-  @IsString()
-  @MinLength(2, { message: 'Business name must be at least 2 characters long' })
-  @MaxLength(100, { message: 'Business name must not exceed 100 characters' })
-  @Transform(({ value }: { value: string }) => value?.trim())
-  businessName?: string;
+export class UpdateVendorProfileDto extends PartialType(
+  CreateVendorProfileDto,
+) {}
 
   @ApiPropertyOptional({
     description: 'Updated contact email address for the vendor.',
@@ -37,12 +30,15 @@ export class UpdateVendorProfileDto {
   email?: string;
 
   @ApiPropertyOptional({
-    description: 'Updated contact phone number for the vendor.',
+    description: 'Updated contact phone number for the vendor in E.164 format.',
     maxLength: 20,
-    example: '+1-415-555-0142',
+    example: '+14155550142',
   })
   @IsOptional()
   @IsString()
+  @Matches(/^\+[1-9]\d{6,14}$/, {
+    message: 'phone must be a valid E.164 number (e.g. +2348012345678)',
+  })
   @MaxLength(20, { message: 'Phone must not exceed 20 characters' })
   phone?: string;
 

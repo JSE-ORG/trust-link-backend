@@ -68,6 +68,24 @@ describe('QueueDashboardService', () => {
         'Dashboard connected to 3 BullMQ queues',
       );
     });
+
+    it('should warn and remain disconnected when queue construction throws', () => {
+      const { Queue } = jest.requireMock('bullmq');
+      // onModuleInit builds three queues and one success is enough to set
+      // redisConnected, so all three constructions have to throw here.
+      for (let i = 0; i < 3; i++) {
+        Queue.mockImplementationOnce(() => {
+          throw new Error('connection refused');
+        });
+      }
+      const loggerWarnSpy = jest.spyOn(service['logger'], 'warn');
+      configMock.get.mockReturnValue('redis://localhost:6379');
+
+      service.onModuleInit();
+
+      expect(service['redisConnected']).toBe(false);
+      expect(loggerWarnSpy).toHaveBeenCalledTimes(3);
+    });
   });
 
   describe('getDashboard', () => {
@@ -93,6 +111,96 @@ describe('QueueDashboardService', () => {
       expect(result.queues[0].counts.active).toBe(2);
       expect(result.queues[0].counts.completed).toBe(100);
       expect(result.queues[0].counts.failed).toBe(3);
+    });
+
+    it('defaults every missing queue count to zero', async () => {
+      configMock.get.mockReturnValue('redis://localhost:6379');
+      service.onModuleInit();
+      const queues = service['queues'] as unknown as Array<{
+        getJobCounts: jest.Mock;
+      }>;
+      queues.forEach((queue) => queue.getJobCounts.mockResolvedValue({}));
+
+      const result = await service.getDashboard();
+
+      expect(result.queues).toHaveLength(3);
+      for (const queue of result.queues) {
+        expect(queue.counts).toEqual({
+          waiting: 0,
+          active: 0,
+          completed: 0,
+          failed: 0,
+          delayed: 0,
+          paused: 0,
+        });
+      }
+    });
+
+    it('should report zeros for a queue that fails getJobCounts while others report real numbers', async () => {
+      configMock.get.mockReturnValue('redis://localhost:6379');
+      service.onModuleInit();
+      const queues = service['queues'] as unknown as Array<{
+        getJobCounts: jest.Mock;
+      }>;
+      queues[1].getJobCounts.mockRejectedValue(new Error('counts unavailable'));
+
+      const result = await service.getDashboard();
+
+      expect(result.queues).toHaveLength(3);
+      expect(result.queues[0].counts.waiting).toBe(5);
+      expect(result.queues[1].counts.waiting).toBe(0);
+      expect(result.queues[1].counts.active).toBe(0);
+      expect(result.queues[1].counts.completed).toBe(0);
+      expect(result.queues[1].counts.failed).toBe(0);
+      expect(result.queues[2].counts.waiting).toBe(5);
+    });
+
+    it('returns dashboard data with all registered queues and expected shape', async () => {
+      const dashboard = await service.getDashboard();
+
+      expect(dashboard).toHaveProperty('queues');
+      expect(dashboard).toHaveProperty('generatedAt');
+      expect(Array.isArray(dashboard.queues)).toBe(true);
+      expect(dashboard.queues.length).toBeGreaterThan(0);
+
+      const names = dashboard.queues.map((q) => q.name);
+      expect(names).toContain('auto-release');
+      expect(names).toContain('tracking-poll');
+
+      for (const queue of dashboard.queues) {
+        expect(queue).toHaveProperty('name');
+        expect(queue).toHaveProperty('isPaused');
+        expect(queue).toHaveProperty('counts');
+        expect(queue.counts).toMatchObject({
+          waiting: expect.any(Number),
+          active: expect.any(Number),
+          completed: expect.any(Number),
+          failed: expect.any(Number),
+          delayed: expect.any(Number),
+          paused: expect.any(Number),
+        });
+      }
+    });
+
+    it('generatedAt is a valid ISO-8601 timestamp', async () => {
+      const dashboard = await service.getDashboard();
+      const date = new Date(dashboard.generatedAt);
+      expect(date.toISOString()).toBe(dashboard.generatedAt);
+    });
+  });
+
+  describe('onApplicationShutdown', () => {
+    it('should not throw when queue.close() rejects', async () => {
+      configMock.get.mockReturnValue('redis://localhost:6379');
+      service.onModuleInit();
+      const queues = service['queues'] as unknown as Array<{
+        close: jest.Mock;
+      }>;
+      queues.forEach((q) =>
+        q.close.mockRejectedValue(new Error('close failed')),
+      );
+
+      await expect(service.onApplicationShutdown()).resolves.toBeUndefined();
     });
   });
 });

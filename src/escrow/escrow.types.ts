@@ -26,14 +26,18 @@ export interface VendorEscrowsResult {
 export type AutoReleaseEligibleResult = EscrowRecord[];
 
 /**
- * A single derived lifecycle event for an escrow.
+ * A single lifecycle event for an escrow.
  *
  * - `event`: the lifecycle state name (e.g. `CREATED`, `SHIPPED`).
  * - `occurredAt`: when the transition was recorded.
+ * - `fromState`: the state before the transition (null for the initial event).
+ * - `toState`: the state after the transition.
  */
 export interface EscrowEventEntry {
   event: string;
   occurredAt: Date;
+  fromState: string | null;
+  toState: string;
 }
 
 /**

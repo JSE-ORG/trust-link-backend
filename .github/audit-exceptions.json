@@ -1,0 +1,230 @@
+{
+  "$comment": "Advisories the weekly audit (.github/workflows/security-audit.yml) may ignore. Every entry needs id, package, reason and contact. scripts/check_audit.js fails the job on any advisory not listed here, and on any entry whose advisory no longer appears in npm audit, so stale entries must be deleted.",
+  "exceptions": [
+    {
+      "id": "GHSA-m9gg-hp2v-232j",
+      "package": "@grpc/grpc-js",
+      "title": "@grpc/grpc-js: In certain configurations, getAuthContext can return unauthorized certificates as though they were authorized",
+      "reason": "Pulled in transitively by @opentelemetry/auto-instrumentations-node via the OTLP gRPC exporters. The backend configures only @opentelemetry/exporter-trace-otlp-http (src/tracing/tracing.bootstrap.ts), never starts a gRPC server, and never calls getAuthContext.",
+      "contact": "@Omoboi-dev",
+      "added": "2026-10-20"
+    },
+    {
+      "id": "GHSA-qqmp-wf37-98f9",
+      "package": "@opentelemetry/instrumentation-tedious",
+      "title": "Multiple @opentelemetry/instrumentation-* packages expose database username via unconditional db.user span attribute",
+      "reason": "Pulled in transitively by @opentelemetry/auto-instrumentations-node. Traces are exported only to the operator-configured OTEL_EXPORTER_OTLP_ENDPOINT, and the non-PostgreSQL database instrumentations (cassandra-driver, knex, mongoose, mysql, mysql2, oracledb, tedious) are never active because the backend uses PostgreSQL exclusively.",
+      "contact": "@Omoboi-dev",
+      "added": "2026-10-20"
+    },
+    {
+      "id": "GHSA-3pq3-5fj3-cg6v",
+      "package": "axios",
+      "title": "Axios: HTTP/2 adapter bypasses configured DNS lookup and proxy controls",
+      "reason": "The HTTP/2 adapter is opt-in and never enabled in this backend; all axios calls use the default Node HTTP/HTTPS adapter against operator-configured service endpoints.",
+      "contact": "@Omoboi-dev",
+      "added": "2026-10-20"
+    },
+    {
+      "id": "GHSA-44g4-m2mj-wpvx",
+      "package": "axios",
+      "title": "Axios: CIDR-form NO_PROXY entries are ignored, causing proxy exclusion bypass for internal IP ranges",
+      "reason": "Outbound axios calls target fixed operator-configured endpoints (Horizon, logistics, SendGrid, Twilio) and the deployment does not rely on CIDR-form NO_PROXY exclusions.",
+      "contact": "@Omoboi-dev",
+      "added": "2026-10-20"
+    },
+    {
+      "id": "GHSA-4hqw-qxg8-jxx2",
+      "package": "axios",
+      "title": "Axios: Fetch Adapter Header Injection via Inherited FormData getHeaders",
+      "reason": "Requires prior Object.prototype pollution combined with the fetch adapter and FormData. This backend runs on Node with the default http adapter, never uses the fetch adapter or FormData with axios, and validates request payloads with class-validator.",
+      "contact": "@Omoboi-dev",
+      "added": "2026-10-20"
+    },
+    {
+      "id": "GHSA-542g-h47m-68v8",
+      "package": "axios",
+      "title": "Axios: Denial of Service via Unhandled 'error' Event in HTTP/2 ClientHttp2Session Initialization",
+      "reason": "The HTTP/2 adapter is opt-in and never configured anywhere in this backend.",
+      "contact": "@Omoboi-dev",
+      "added": "2026-10-20"
+    },
+    {
+      "id": "GHSA-9fr6-4gfg-395g",
+      "package": "axios",
+      "title": "Axios: Prototype-Pollution Gadget in the Default Instance Allows Inherited Object.prototype.method to Override HTTP Method",
+      "reason": "Gadget only — requires an existing Object.prototype pollution primitive in the process, and all axios calls in this backend invoke explicit method helpers (axios.get/post) which set config.method directly.",
+      "contact": "@Omoboi-dev",
+      "added": "2026-10-20"
+    },
+    {
+      "id": "GHSA-c29m-xwm3-cm6r",
+      "package": "axios",
+      "title": "Axios: ReDoS in fromDataURI data: URL parser freezes the Node event loop (DoS)",
+      "reason": "Axios is only ever called with operator-configured https:// service URLs (Horizon, logistics API); user input never controls request URLs and data: URIs are never passed.",
+      "contact": "@Omoboi-dev",
+      "added": "2026-10-20"
+    },
+    {
+      "id": "GHSA-j8rh-479h-cp32",
+      "package": "axios",
+      "title": "Axios: Header Injection via Inherited headers After Minimal Interceptor",
+      "reason": "Gadget only — requires prior Object.prototype pollution and a custom request interceptor that strips config.headers, neither of which exists in this backend.",
+      "contact": "@Omoboi-dev",
+      "added": "2026-10-20"
+    },
+    {
+      "id": "GHSA-m8m8-qj5v-23w3",
+      "package": "axios",
+      "title": "Axios: Node HTTP adapter prototype-pollution gadget allows request socket hijack via inherited createConnection",
+      "reason": "Gadget only — requires an attacker-controlled Object.prototype pollution primitive in the Node process; request inputs are validated and never merged onto Object.prototype.",
+      "contact": "@Omoboi-dev",
+      "added": "2026-10-20"
+    },
+    {
+      "id": "GHSA-mghh-pgcx-3jjj",
+      "package": "axios",
+      "title": "Axios: ReDoS (O(N²)) in shouldBypassProxy host normalization, reachable via untrusted redirect Location",
+      "reason": "Axios only connects to trusted, operator-configured upstreams (Stellar Horizon and the logistics provider), never to untrusted user-supplied URLs that could return malicious redirect Location headers.",
+      "contact": "@Omoboi-dev",
+      "added": "2026-10-20"
+    },
+    {
+      "id": "GHSA-r4gj-5m52-g5wh",
+      "package": "axios",
+      "title": "Axios: maxRedirects: 0 is not enforced by the fetch adapter, allowing redirect-based SSRF",
+      "reason": "Affects only the fetch adapter; this backend runs on Node using the default http adapter and never enables the fetch adapter.",
+      "contact": "@Omoboi-dev",
+      "added": "2026-10-20"
+    },
+    {
+      "id": "GHSA-vh66-26gq-q6x8",
+      "package": "axios",
+      "title": "Axios: Prototype pollution gadget in fetch adapter can alter outbound requests",
+      "reason": "Gadget only and specific to the fetch adapter, which is never used in this Node backend.",
+      "contact": "@Omoboi-dev",
+      "added": "2026-10-20"
+    },
+    {
+      "id": "GHSA-x97p-jq2g-jp4f",
+      "package": "axios",
+      "title": "Axios: Prototype Pollution Gadget in axios toFormData Options",
+      "reason": "Gadget only — requires prior Object.prototype pollution and a call to axios.toFormData, which is never called in this codebase.",
+      "contact": "@Omoboi-dev",
+      "added": "2026-10-20"
+    },
+    {
+      "id": "GHSA-6j4f-fj2g-mc7p",
+      "package": "brace-expansion",
+      "title": "brace-expansion: DoS via uncontrolled recursion in parseCommaParts causing stack exhaustion",
+      "reason": "Pulled in transitively by minimatch for developer/build CLI globbing (jest, eslint, rimraf). Never called at runtime and never receives untrusted user input.",
+      "contact": "@Omoboi-dev",
+      "added": "2026-10-20"
+    },
+    {
+      "id": "GHSA-q2hr-2g5m-vwhr",
+      "package": "brace-expansion",
+      "title": "brace-expansion: Quadratic-time expansion of the `{a},b}` rewrite causes CPU denial of service",
+      "reason": "Same dependency path as GHSA-6j4f-fj2g-mc7p: brace-expansion is used only on static file globs in build/test tooling, never on user input.",
+      "contact": "@Omoboi-dev",
+      "added": "2026-10-20"
+    },
+    {
+      "id": "GHSA-qhr7-859c-m2p7",
+      "package": "brace-expansion",
+      "title": "brace-expansion: DoS via uncontrolled recursion on nested brace groups causing stack exhaustion",
+      "reason": "Same dependency path as GHSA-6j4f-fj2g-mc7p: brace-expansion is used only on static file globs in build/test tooling, never on user input.",
+      "contact": "@Omoboi-dev",
+      "added": "2026-10-20"
+    },
+    {
+      "id": "GHSA-vc2v-76pw-4v95",
+      "package": "compression",
+      "title": "compression vulnerable to Denial of Service via memory leak on premature response close",
+      "reason": "Affects streaming responses that flush chunks repeatedly before premature client close; this backend serves small buffered JSON payloads (threshold 1024 bytes) behind rate limiting.",
+      "contact": "@Omoboi-dev",
+      "added": "2026-10-20"
+    },
+    {
+      "id": "GHSA-58mr-gqgx-xq4g",
+      "package": "fast-uri",
+      "title": "fast-uri vulnerable to host confusion via an unclosed bracket in the URI authority",
+      "reason": "Pulled in transitively by ajv inside build/CLI tooling (@nestjs/cli, @nestjs/schematics, webpack, @prisma/streams-local). Not in the runtime request validation path (which uses class-validator and Joi).",
+      "contact": "@Omoboi-dev",
+      "added": "2026-10-20"
+    },
+    {
+      "id": "GHSA-hrr3-gc8f-f4qj",
+      "package": "fast-uri",
+      "title": "fast-uri vulnerable to inconsistent host case normalization via percent-encoded octets",
+      "reason": "Same dependency path as GHSA-58mr-gqgx-xq4g: fast-uri is only used by build/CLI schema validators on static configuration schemas, never on runtime user input.",
+      "contact": "@Omoboi-dev",
+      "added": "2026-10-20"
+    },
+    {
+      "id": "GHSA-qw65-cvwx-89v3",
+      "package": "fast-uri",
+      "title": "fast-uri vulnerable to authority injection via an unvalidated port in serialize",
+      "reason": "Same dependency path as GHSA-58mr-gqgx-xq4g: fast-uri is only present in build/CLI tooling and fast-uri.serialize is never called on untrusted input.",
+      "contact": "@Omoboi-dev",
+      "added": "2026-10-20"
+    },
+    {
+      "id": "GHSA-8r5x-fm3f-whwj",
+      "package": "handlebars",
+      "title": "Handlebars: JavaScript Injection via AST Type Confusion in compile (bypass of CVE-2026-33937)",
+      "reason": "Dev-only transitive dependency of ts-jest. Handlebars is never imported by the application and never compiles untrusted templates.",
+      "contact": "@Omoboi-dev",
+      "added": "2026-10-20"
+    },
+    {
+      "id": "GHSA-p8wg-vrv2-v86f",
+      "package": "handlebars",
+      "title": "Handlebars: JavaScript Injection via Own Property Check Bypass",
+      "reason": "Same dependency path as GHSA-8r5x-fm3f-whwj: dev-only transitive dependency of ts-jest, never used at runtime or on untrusted templates.",
+      "contact": "@Omoboi-dev",
+      "added": "2026-10-20"
+    },
+    {
+      "id": "GHSA-xw65-4hp5-5hc7",
+      "package": "handlebars",
+      "title": "Handlebars: JavaScript Injection via Unsafe Inline Embedding of Precompiled Templates",
+      "reason": "Same dependency path as GHSA-8r5x-fm3f-whwj: dev-only transitive dependency of ts-jest, never used at runtime or to precompile templates.",
+      "contact": "@Omoboi-dev",
+      "added": "2026-10-20"
+    },
+    {
+      "id": "GHSA-r3ph-w7gj-g6xm",
+      "package": "js-yaml",
+      "title": "js-yaml: maxTotalMergeKeys does not limit CPU use for empty merge sources",
+      "reason": "Pulled in transitively by @nestjs/swagger, @eslint/eslintrc, and cosmiconfig. The application never parses user-supplied YAML at runtime.",
+      "contact": "@Omoboi-dev",
+      "added": "2026-10-20"
+    },
+    {
+      "id": "GHSA-3f6p-5ww8-9rcr",
+      "package": "mysql2",
+      "title": "MySQL2: Auth Plugin Downgrade to mysql_clear_password Leaks Plaintext Credentials",
+      "reason": "Pulled in transitively by prisma@7 for its MySQL driver adapter. The datasource in prisma/schema.prisma is postgresql and @prisma/adapter-pg is the only adapter wired up, so this project never opens a MySQL connection and no MySQL credentials exist to leak. npm's suggested fix is a downgrade of prisma to 6.x, which is not acceptable.",
+      "contact": "@Omoboi-dev",
+      "added": "2026-09-26"
+    },
+    {
+      "id": "GHSA-rgwj-5xj2-c3m3",
+      "package": "mysql2",
+      "title": "MySQL2: Unbounded zlib inflate in compressed MySQL protocol handler allows decompression-bomb DoS",
+      "reason": "Same dependency path as GHSA-3f6p-5ww8-9rcr: mysql2 arrives via prisma@7 but no MySQL connection is ever opened, so the compressed-protocol handler is never reached.",
+      "contact": "@Omoboi-dev",
+      "added": "2026-09-26"
+    },
+    {
+      "id": "GHSA-jqcg-44mw-7w3h",
+      "package": "proxy-addr",
+      "title": "proxy-addr vulnerable to IP spoofing via IPv4-mapped IPv6 trust subnet",
+      "reason": "Express trust proxy is disabled by default and only enabled when the operator sets TRUST_PROXY (typically a positive hop count behind a load balancer rather than an IPv4-mapped IPv6 CIDR subnet).",
+      "contact": "@Omoboi-dev",
+      "added": "2026-10-20"
+    }
+  ]
+}
+

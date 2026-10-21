@@ -9,9 +9,12 @@ import {
   Req,
 } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { SkipThrottle } from '@nestjs/throttler';
 import type { Request } from 'express';
 import { StellarWebhookDto } from './dto/stellar-webhook.dto';
+import { StellarWebhookResponseDto } from './dto/stellar-webhook-response.dto';
 import { StellarWebhookService } from './stellar-webhook.service';
+import { ErrorResponseDto } from '../common/dto/error-response.dto';
 
 @ApiTags('Webhooks')
 @Controller('webhooks')
@@ -31,18 +34,33 @@ export class StellarWebhookController {
    * @authentication None (HMAC signature verification instead)
    */
   @ApiOperation({ summary: 'Receive Stellar Horizon ledger event webhook' })
-  @ApiResponse({ status: 200, description: 'Webhook event processed.' })
+  @ApiResponse({
+    status: 200,
+    description: 'Webhook event processed.',
+    type: StellarWebhookResponseDto,
+  })
   @ApiResponse({
     status: 400,
     description: 'Invalid payload or missing HMAC signature.',
   })
+  @ApiResponse({
+    status: 500,
+    description: 'Internal server error.',
+    type: ErrorResponseDto,
+  })
+  // Issue #923 — exempt the signed Stellar webhook from rate limiting. Every
+  // delivery comes from the same Horizon sender, so the shared per-IP bucket
+  // fills after 60 events in a minute and a burst of payments is dropped (429)
+  // unless the sender retries. The HMAC signature, not the request rate, is
+  // what authenticates this route; rejections still happen on a bad signature.
+  @SkipThrottle()
   @Post('stellar')
   @HttpCode(HttpStatus.OK)
   async handleStellarWebhook(
     @Req() req: Request,
     @Headers('x-stellar-signature') signature: string | undefined,
     @Body() dto: StellarWebhookDto,
-  ): Promise<{ received: boolean; skipped?: boolean; reason?: string }> {
+  ): Promise<StellarWebhookResponseDto> {
     const rawBody = this.extractRawBody(req);
     return this.webhookService.handleEvent(rawBody, signature, dto);
   }

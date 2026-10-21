@@ -1,13 +1,14 @@
 /**
  * Escrow-module constants (issue #238). Centralises magic numbers previously
- * inlined in `escrow.repository.ts` and `auto-release.service.ts`.
+ * inlined in `escrow.repository.ts`.
  */
 
 /** Redis cache TTL for a single escrow record, in seconds. */
 export const ESCROW_CACHE_TTL_SECONDS = 60;
 
 /**
- * Number of days after delivery before an escrow qualifies for auto-release.
- * The auto-release service computes the cutoff as `now - AUTO_RELEASE_DAYS`.
+ * Hours after delivery before an escrow qualifies for auto-release.
+ * `EscrowRepository.findAutoReleaseEligible` computes the cutoff as
+ * `referenceTime - AUTO_RELEASE_WINDOW_HOURS`.
  */
-export const AUTO_RELEASE_DAYS = 7;
+export const AUTO_RELEASE_WINDOW_HOURS = 48;

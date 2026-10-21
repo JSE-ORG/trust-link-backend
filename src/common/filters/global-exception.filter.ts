@@ -1,11 +1,5 @@
-import {
-  ArgumentsHost,
-  Catch,
-  ExceptionFilter,
-  HttpException,
-  HttpStatus,
-  Logger,
-} from '@nestjs/common';
+import { Catch, HttpException, HttpStatus, Logger } from '@nestjs/common';
+import type { ArgumentsHost, ExceptionFilter } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { ConfigService } from '../../config/config.service';
 import { StandardErrorResponse } from '../dto/error-response.dto';
@@ -166,11 +160,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
   }
 
   private isValidationError(exception: unknown): boolean {
-    return (
-      exception instanceof Error &&
-      (exception.name === 'ValidationError' ||
-        exception.message.includes('validation'))
-    );
+    return exception instanceof Error && exception.name === 'ValidationError';
   }
 
   private logError(

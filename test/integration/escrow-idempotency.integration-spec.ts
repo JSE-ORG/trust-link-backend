@@ -5,6 +5,7 @@ import request from 'supertest';
 import { AppModule } from '../../src/app.module';
 import { PrismaService } from '../../src/prisma/prisma.service';
 import { bearer } from '../auth-helper';
+import { ensureVendors } from '../prisma-helpers';
 
 const VENDOR_A = 'GA36PERSXWPBG7HYKNBVT5PFLTOFYO4Q3CWGJZTYH5GU5OLTKHW7SJHE';
 const VENDOR_B = 'GB3LCRCZEETCBYV4PEIPV2PD2R3AJMC6S2OOBMV5MA6WCOKEMN3XA3K3';
@@ -26,6 +27,14 @@ describe('POST /escrow idempotency scoping (issue #397)', () => {
     await app.init();
     prisma = app.get(PrismaService);
     await prisma.reset();
+    // Escrow.vendorAddress (and the vendor settings/details tables) are
+    // foreign keys onto VendorProfile.address, so the parent rows must exist
+    // before any row referencing them can be written (#475).
+    await ensureVendors(
+      prisma,
+      'GA36PERSXWPBG7HYKNBVT5PFLTOFYO4Q3CWGJZTYH5GU5OLTKHW7SJHE',
+      'GB3LCRCZEETCBYV4PEIPV2PD2R3AJMC6S2OOBMV5MA6WCOKEMN3XA3K3',
+    );
   });
 
   afterEach(async () => {
@@ -111,6 +120,38 @@ describe('POST /escrow idempotency scoping (issue #397)', () => {
       where: { vendorAddress: VENDOR_A },
     });
     expect(escrows).toHaveLength(1);
+  });
+
+  // issue #932
+  it('rejects a reused key with a different body with 422', async () => {
+    const key = crypto.randomUUID();
+    const body = {
+      itemName: 'Original item',
+      itemRef: 'original-item',
+      amount: 42,
+      currency: 'USDC',
+      buyerAddress: BUYER,
+    };
+
+    await request(app.getHttpServer())
+      .post('/escrow')
+      .set('Authorization', bearer(VENDOR_A))
+      .set('Idempotency-Key', key)
+      .send(body)
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/escrow')
+      .set('Authorization', bearer(VENDOR_A))
+      .set('Idempotency-Key', key)
+      .send({ ...body, itemName: 'Other item', itemRef: 'other-item' })
+      .expect(422);
+
+    const escrows = await prisma.escrow.findMany({
+      where: { vendorAddress: VENDOR_A },
+    });
+    expect(escrows).toHaveLength(1);
+    expect(escrows[0].itemRef).toBe('original-item');
   });
 
   it('rejects a non-UUID Idempotency-Key with 400', async () => {

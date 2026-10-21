@@ -30,6 +30,9 @@ const LEVEL_PRIORITY: Record<string, number> = {
   fatal: 5,
 };
 
+// Note: JsonLoggerService is instantiated manually during early bootstrap
+// (before the NestJS DI container exists), so it cannot cleanly rely on
+// ConfigService. It reads process.env directly.
 function minLevel(): string {
   return (process.env.LOG_LEVEL ?? 'info').toLowerCase();
 }
@@ -100,7 +103,7 @@ export class JsonLoggerService extends ConsoleLogger {
    *   this.logger.structured('info', 'escrow.created', { escrowId, amount });
    */
   structured(
-    level: LogLevel | 'trace',
+    level: LogLevel | 'trace' | 'info',
     msg: string,
     fields: Record<string, unknown>,
     context?: string,
@@ -108,7 +111,7 @@ export class JsonLoggerService extends ConsoleLogger {
     if (!shouldLog(level)) return;
 
     const entry: Record<string, unknown> = {
-      level,
+      level: level === 'log' ? 'info' : level,
       time: new Date().toISOString(),
       pid: process.pid,
       env: process.env.NODE_ENV ?? 'development',

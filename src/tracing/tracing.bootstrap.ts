@@ -15,6 +15,9 @@ import {
   ATTR_SERVICE_VERSION,
 } from '@opentelemetry/semantic-conventions';
 
+// Note: This file is a legitimate exception to the rule of using ConfigService.
+// It runs as the very first import in main.ts, before the Nest container exists,
+// so it cannot inject ConfigService.
 const isTest = process.env.NODE_ENV === 'test';
 const isEnabled = !isTest && process.env.OTEL_ENABLED !== 'false';
 
@@ -48,12 +51,12 @@ if (isEnabled) {
   });
 
   sdk.start();
+}
 
-  const shutdown = (): void => {
-    void sdk?.shutdown();
-  };
-  process.once('SIGTERM', shutdown);
-  process.once('SIGINT', shutdown);
+export async function shutdownTracing(): Promise<void> {
+  if (sdk) {
+    await sdk.shutdown();
+  }
 }
 
 export function isTracingEnabled(): boolean {

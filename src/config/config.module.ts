@@ -1,7 +1,7 @@
 import { Global, Module } from '@nestjs/common';
 import { ConfigModule as NestConfigModule } from '@nestjs/config';
-import * as Joi from 'joi';
 import { ConfigService } from './config.service';
+import { configValidationSchema } from './config.schema';
 
 @Global()
 @Module({
@@ -77,7 +77,7 @@ import { ConfigService } from './config.service';
         GIT_SHA: Joi.string().optional(),
       }),
       validationOptions: {
-        abortEarly: true,
+        abortEarly: false,
         allowUnknown: true,
       },
     }),

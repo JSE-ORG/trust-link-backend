@@ -1,7 +1,11 @@
 import { forwardRef, Module } from '@nestjs/common';
 import { EscrowModule } from '../escrow/escrow.module';
+import { NotificationsModule } from '../notifications/notifications.module';
+import { ConfigModule } from '../config/config.module';
 import { StellarWebhookController } from './stellar-webhook.controller';
 import { StellarWebhookService } from './stellar-webhook.service';
+import { StellarWebhookRepository } from './stellar-webhook.repository';
+import { WebhookCleanupService } from './webhook-cleanup.service';
 
 /**
  * Issue #76 – Webhooks module.
@@ -11,9 +15,9 @@ import { StellarWebhookService } from './stellar-webhook.service';
  * deposits.
  */
 @Module({
-  imports: [forwardRef(() => EscrowModule)],
+  imports: [forwardRef(() => EscrowModule), NotificationsModule, ConfigModule],
   controllers: [StellarWebhookController],
-  providers: [StellarWebhookService],
+  providers: [StellarWebhookService, StellarWebhookRepository, WebhookCleanupService],
   exports: [StellarWebhookService],
 })
 export class WebhooksModule {}

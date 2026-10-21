@@ -1,29 +1,25 @@
 import { Logger } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { CursorService } from './cursor.service';
-import { PrismaService } from '../prisma/prisma.service';
+import { CursorRepository } from './cursor.repository';
+import { TracingService } from '../tracing/tracing.service';
+import { createTracingMock } from '../../test/unit/tracing-mock';
 
 describe('CursorService', () => {
   let service: CursorService;
-  let prismaMock: {
-    cursor: {
-      findFirst: jest.Mock;
-      upsert: jest.Mock;
-    };
-  };
+  let repositoryMock: { findById: jest.Mock; upsert: jest.Mock };
 
   beforeEach(async () => {
-    prismaMock = {
-      cursor: {
-        findFirst: jest.fn(),
-        upsert: jest.fn(),
-      },
+    repositoryMock = {
+      findById: jest.fn(),
+      upsert: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
+        { provide: TracingService, useValue: createTracingMock().service },
         CursorService,
-        { provide: PrismaService, useValue: prismaMock },
+        { provide: CursorRepository, useValue: repositoryMock },
       ],
     }).compile();
 
@@ -40,20 +36,32 @@ describe('CursorService', () => {
 
   describe('get', () => {
     it('should return cursor value when found', async () => {
-      prismaMock.cursor.findFirst.mockResolvedValue({
+      repositoryMock.findById.mockResolvedValue({
         id: 'stellar-listener',
         cursorValue: '12345',
       });
 
       const result = await service.get();
       expect(result).toBe('12345');
-      expect(prismaMock.cursor.findFirst).toHaveBeenCalledWith({
-        where: { id: 'stellar-listener' },
+      expect(repositoryMock.findById).toHaveBeenCalledWith('stellar-listener');
+    });
+
+    it('should read from a custom cursor key when supplied (#1041)', async () => {
+      repositoryMock.findById.mockResolvedValue({
+        id: CursorService.EVENT_REPLAY_KEY,
+        cursorValue: '99999',
       });
+
+      const result = await service.get(CursorService.EVENT_REPLAY_KEY);
+      expect(result).toBe('99999');
+      expect(repositoryMock.findById).toHaveBeenCalledWith(
+        'horizon-event-replay',
+      );
+      expect(CursorService.SOROBAN_POLLER_KEY).toBe('stellar-listener');
     });
 
     it('should return undefined when no cursor exists', async () => {
-      prismaMock.cursor.findFirst.mockResolvedValue(null);
+      repositoryMock.findById.mockResolvedValue(null);
 
       const result = await service.get();
       expect(result).toBeUndefined();
@@ -61,7 +69,7 @@ describe('CursorService', () => {
 
     it('should log a warning and return undefined on Prisma error', async () => {
       const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
-      prismaMock.cursor.findFirst.mockRejectedValue(new Error('DB error'));
+      repositoryMock.findById.mockRejectedValue(new Error('DB error'));
 
       const result = await service.get();
 
@@ -74,19 +82,28 @@ describe('CursorService', () => {
 
   describe('set', () => {
     it('should upsert cursor value', async () => {
-      prismaMock.cursor.upsert.mockResolvedValue({});
+      repositoryMock.upsert.mockResolvedValue(undefined);
 
       await service.set('67890');
-      expect(prismaMock.cursor.upsert).toHaveBeenCalledWith({
-        where: { id: 'stellar-listener' },
-        update: { cursorValue: '67890' },
-        create: { id: 'stellar-listener', cursorValue: '67890' },
-      });
+      expect(repositoryMock.upsert).toHaveBeenCalledWith(
+        'stellar-listener',
+        '67890',
+      );
+    });
+
+    it('should upsert under a custom cursor key when supplied (#1041)', async () => {
+      repositoryMock.upsert.mockResolvedValue(undefined);
+
+      await service.set('67890', CursorService.EVENT_REPLAY_KEY);
+      expect(repositoryMock.upsert).toHaveBeenCalledWith(
+        'horizon-event-replay',
+        '67890',
+      );
     });
 
     it('should log a warning and not rethrow on Prisma error', async () => {
       const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
-      prismaMock.cursor.upsert.mockRejectedValue(new Error('DB error'));
+      repositoryMock.upsert.mockRejectedValue(new Error('DB error'));
 
       await expect(service.set('67890')).resolves.toBeUndefined();
       expect(warnSpy).toHaveBeenCalledWith(

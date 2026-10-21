@@ -18,6 +18,8 @@ import { NotificationsService } from '../../src/notifications/notifications.serv
 import { EscrowRecord } from '../../src/prisma/prisma.service';
 import { S3PresignService } from '../../src/common/services/s3-presign.service';
 import { ContractService } from '../../src/stellar/contract.service';
+import { TracingService } from '../../src/tracing/tracing.service';
+import { createTracingMock } from './tracing-mock';
 
 const ESCROW_ID = 'escrow-caching-001';
 const TRACKING_ID = 'TRK-CACHE-001';
@@ -26,6 +28,7 @@ const BUYER = 'GB1BUYER0000000000000000000000000000000000000000000000000';
 
 const makeEscrow = (overrides: Partial<EscrowRecord> = {}): EscrowRecord => ({
   id: ESCROW_ID,
+  contractEscrowId: null,
   itemName: 'Laptop',
   itemRef: 'laptop-001',
   amount: 500,
@@ -70,6 +73,7 @@ describe('EscrowService tracking cache (issue #308)', () => {
 
     const moduleRef = await Test.createTestingModule({
       providers: [
+        { provide: TracingService, useValue: createTracingMock().service },
         EscrowService,
         { provide: EscrowRepository, useValue: repository },
         { provide: LogisticsService, useValue: logisticsService },
@@ -108,7 +112,8 @@ describe('EscrowService tracking cache (issue #308)', () => {
       cacheService.get.mockResolvedValue(null);
       logisticsService.getStatus.mockResolvedValue({
         status: 'IN_TRANSIT',
-      } as any);
+        events: [],
+      });
 
       await service.getTracking(ESCROW_ID);
 
@@ -151,7 +156,8 @@ describe('EscrowService tracking cache (issue #308)', () => {
       cacheService.get.mockResolvedValue(null);
       logisticsService.getStatus.mockResolvedValue({
         status: 'PENDING',
-      } as any);
+        events: [],
+      });
 
       await service.getTracking(ESCROW_ID);
 

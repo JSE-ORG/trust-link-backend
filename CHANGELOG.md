@@ -12,14 +12,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Additional escrow and dispute lifecycle states for creation, cancellation, review, resolution, and abandonment.
 - Production Docker Compose profile with service health checks, restart policies, resource limits, and log rotation.
 - Optional `SEP10_SIGNING_SECRET` configuration for a dedicated, stable SEP-10 web-auth signing key.
+- Required `PRESIGN_SECRET` configuration for a stable, configurable HMAC key used by `S3PresignService` so simulated pre-signed evidence URLs are reproducible across restarts and replicas.
 - Database commands for safely applying migrations, resetting a local database, and idempotently seeding development data.
 - Persistent notification delivery status and retry information.
+
+### Changed
+
+- `GiglClient` now rejects 2xx responses whose body does not match the expected `GiglTrackingResponse` schema, surfacing them as `GiglInvalidResponseError` instead of leaking bad payloads downstream. The new behaviour is exercised by the unit-test suite added alongside this change.
 
 ### Changed
 
 - Escrow listings for vendors and buyers are cursor-paginated, return newest records first, and default to 20 records per page.
 - Creating an escrow requires an `Idempotency-Key`; keys must be UUIDs and are scoped to the authenticated vendor.
 - SEP-10 challenge signing now uses a configured key that remains stable across restarts and replicas.
+- **Breaking:** `FRONTEND_URL` and `EVIDENCE_STORAGE_BASE_URL` are required when `NODE_ENV=production`; the process fails config validation at boot if either is missing. Outside production they default to `http://localhost:3000` and `http://localhost:9000`.
+- **Breaking:** `SENDGRID_FROM_EMAIL` is required whenever `SENDGRID_API_KEY` is set, and must be a valid sender address.
+- **Breaking:** Email notifications use SendGrid dynamic templates configured per type through `SENDGRID_TEMPLATE_FUNDED`, `SENDGRID_TEMPLATE_SHIPPED`, `SENDGRID_TEMPLATE_DELIVERED`, `SENDGRID_TEMPLATE_DISPUTED`, `SENDGRID_TEMPLATE_COMPLETED`, and `SENDGRID_TEMPLATE_REFUNDED`. Each must be a `d-` id followed by 32 hex characters or boot fails; a type with no template id is recorded as undeliverable instead of sent.
+- **Breaking:** `TWILIO_FROM_NUMBER` is required whenever `TWILIO_ACCOUNT_SID` is set, and must be an E.164 phone number.
+- Rate-limit counters are stored in Redis when `REDIS_URL` is set, so limits are shared across replicas; without `REDIS_URL` they remain per-process and in-memory.
+- **Breaking:** Per-route `@Throttle` limits are now enforced instead of falling back to the global default. Many routes are stricter than before (for example `POST /escrow` is 10/min); clients exceeding a limit receive `429 Too Many Requests`. See the route map in `SPECIFICATION.md` §5.2.
+- **Breaking:** `@stellar/stellar-sdk` is upgraded to 17.1.0, which requires Node.js 22.12 or later.
 
 ### Fixed
 
@@ -27,6 +39,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dispute creation invalidates the related escrow cache, and administrative dispute resolution records the dispute as resolved.
 - Configured SendGrid and Twilio notification clients are now used when their credentials are available.
 - Auto-release processing continues with other eligible escrows when an individual submission fails.
+- `PATCH /admin/credentials/logistics` rotates and stores the logistics API key instead of failing with a 500 because the credential encryption key could not be read.
+- `POST /escrow` returns 422 when an `Idempotency-Key` is reused with a different request body, instead of returning the first escrow.
+- `POST /escrow` rejects amounts with more than 8 decimal places or too large for the `Decimal(18,8)` column with 400, instead of silently rounding or failing with a 500.
+- `POST /escrow` trims `itemRef`, limits it to 100 characters, and rejects escrows where the buyer is the calling vendor with 400.
+- `GET /auth` returns 400 for a missing or invalid `account` instead of a 500; `transaction` and `refreshToken` have maximum lengths, and `POST /auth/challenge` uses the same 5 minute challenge lifetime as `GET /auth`.
+- HTTP request logs now honour `LOG_LEVEL`, and successful health probe requests are logged at debug instead of info (#966).
+- Only errors named `ValidationError` map to 400; errors whose message merely mentions "validation" now return 500 (#965).
+- Sentry receives only server errors, and each server error produces exactly one event (#964).
 
 ### Removed
 
@@ -34,9 +54,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Client-supplied `x-request-id` values are limited to 128 characters from `[A-Za-z0-9._-]`; anything else is replaced by a generated UUID to prevent log injection (#967).
 - Stress-test endpoints now require authenticated administrator access.
 - Escrow contact details are rejected unless encrypted before persistence, and logistics API credentials are encrypted at rest.
 - JWT validation fails closed when its signing secret is missing, malformed, expired, or has an invalid signature.
+- Upgraded `@stellar/stellar-sdk` to 17.1.0, removing the vulnerable `toml` dependency flagged by `npm audit`. The SDK now requires Node.js 22.12 or later.
 
 ---
 

@@ -1,3 +1,4 @@
+import { createTracingMock } from '../../test/unit/tracing-mock';
 import { VendorProfileService } from './vendor-profile.service';
 import { VendorProfileRepository } from './vendor-profile.repository';
 import { CreateVendorProfileDto } from './dto/create-vendor-profile.dto';
@@ -29,7 +30,7 @@ describe('VendorProfileService.upsertProfile', () => {
       findNotificationPreferences: jest.fn(),
     } as unknown as jest.Mocked<VendorProfileRepository>;
 
-    service = new VendorProfileService(repo);
+    service = new VendorProfileService(repo, createTracingMock().service);
   });
 
   it('creates a new profile when one does not exist', async () => {

@@ -3,9 +3,13 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { AppModule } from '../../src/app.module';
-import { PrismaService } from '../../src/prisma/prisma.service';
+import {
+  PrismaService,
+  type EscrowState,
+} from '../../src/prisma/prisma.service';
 import { ContractService } from '../../src/stellar/contract.service';
 import { bearer } from '../auth-helper';
+import { ensureVendors } from '../prisma-helpers';
 
 const VENDOR_ADDRESS =
   'GA36PERSXWPBG7HYKNBVT5PFLTOFYO4Q3CWGJZTYH5GU5OLTKHW7SJHE';
@@ -34,6 +38,13 @@ describe('Escrow Cancellation with On-Chain Validation (issue #298)', () => {
     contractService = app.get(ContractService);
 
     await prisma.reset();
+    // Escrow.vendorAddress (and the vendor settings/details tables) are
+    // foreign keys onto VendorProfile.address, so the parent rows must exist
+    // before any row referencing them can be written (#475).
+    await ensureVendors(
+      prisma,
+      'GA36PERSXWPBG7HYKNBVT5PFLTOFYO4Q3CWGJZTYH5GU5OLTKHW7SJHE',
+    );
 
     jest
       .spyOn(contractService, 'getEscrowState')
@@ -50,7 +61,13 @@ describe('Escrow Cancellation with On-Chain Validation (issue #298)', () => {
 
   let nextIdemKey = 1;
 
-  async function createEscrow(overrides?: Partial<{ state: string }>) {
+  /**
+   * Creates an escrow through the API, which lands it in CREATED (#494).
+   * Pass a `state` to advance it: the two cancel endpoints have different
+   * preconditions (DELETE requires CREATED, PATCH /cancel requires FUNDED), so
+   * each test has to be explicit about which one it exercises.
+   */
+  async function createEscrow(overrides?: { state?: EscrowState }) {
     const res = await request(app.getHttpServer())
       .post('/escrow')
       .set('Authorization', bearer(VENDOR_ADDRESS))
@@ -64,10 +81,11 @@ describe('Escrow Cancellation with On-Chain Validation (issue #298)', () => {
       })
       .expect(201);
 
-    if (overrides?.state && overrides.state !== 'FUNDED') {
+    const targetState = overrides?.state ?? 'CREATED';
+    if (targetState !== 'CREATED') {
       await prisma.escrow.update({
         where: { id: res.body.id },
-        data: { state: overrides.state as any },
+        data: { state: targetState },
       });
     }
 
@@ -93,7 +111,7 @@ describe('Escrow Cancellation with On-Chain Validation (issue #298)', () => {
     });
 
     it('cancels a funded escrow via cancel endpoint', async () => {
-      const escrow = await createEscrow();
+      const escrow = await createEscrow({ state: 'FUNDED' });
 
       const res = await request(app.getHttpServer())
         .patch(`/escrow/${escrow.id}/cancel`)
@@ -104,7 +122,7 @@ describe('Escrow Cancellation with On-Chain Validation (issue #298)', () => {
     });
 
     it('returns 409 when cancelling an already-shipped escrow', async () => {
-      const escrow = await createEscrow();
+      const escrow = await createEscrow({ state: 'FUNDED' });
 
       await request(app.getHttpServer())
         .patch(`/escrow/${escrow.id}/ship`)

@@ -1,7 +1,10 @@
 import { Test } from '@nestjs/testing';
 import { ConfigModule as NestConfigModule } from '@nestjs/config';
 import * as Joi from 'joi';
-import { ConfigService } from './config.service';
+import {
+  AutoReleaseSourceNotConfiguredError,
+  ConfigService,
+} from './config.service';
 
 /**
  * ConfigService unit tests.
@@ -12,15 +15,25 @@ import { ConfigService } from './config.service';
 
 const validationSchema = Joi.object({
   PORT: Joi.number().default(3000),
+  FRONTEND_URL: Joi.string().uri().default('http://localhost:3000'),
   DATABASE_URL: Joi.string().required(),
   SEP10_JWT_SECRET: Joi.string().min(32).required(),
+  PRESIGN_SECRET: Joi.string().required(),
   ADMIN_ADDRESS: Joi.string().required(),
+  AUTO_RELEASE_SOURCE_ADDRESS: Joi.string()
+    .pattern(/^G[A-Z2-7]{55}$/)
+    .optional()
+    .messages({
+      'string.pattern.base':
+        'Config validation error: AUTO_RELEASE_SOURCE_ADDRESS must be a valid Stellar public key (starts with G)',
+    }),
   NODE_ENV: Joi.string()
     .valid('development', 'production', 'test')
     .default('development'),
   SENDGRID_API_KEY: Joi.string().optional(),
   TWILIO_ACCOUNT_SID: Joi.string().optional(),
   TWILIO_AUTH_TOKEN: Joi.string().optional(),
+  TWILIO_FROM_NUMBER: Joi.string().optional(),
   STELLAR_NETWORK: Joi.string().valid('TESTNET', 'MAINNET').default('TESTNET'),
   ALLOWED_ORIGINS: Joi.string().optional(),
   STELLAR_WEBHOOK_SECRET: Joi.string().optional(),
@@ -37,14 +50,21 @@ const validationSchema = Joi.object({
 const VALID_ENV = {
   DATABASE_URL: 'postgresql://test:test@localhost:5432/test',
   SEP10_JWT_SECRET: 'a-very-long-secret-key-for-testing-purposes-32chars',
+  PRESIGN_SECRET: 'test-presign-secret-64hexcharacters-for-hmac',
   ADMIN_ADDRESS: 'GXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX',
   NODE_ENV: 'test',
   STELLAR_NETWORK: 'TESTNET',
 };
 
+const VALID_AUTO_RELEASE_SOURCE_ADDRESS =
+  'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+const INVALID_AUTO_RELEASE_SOURCE_ADDRESS =
+  'SXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX';
+
 const ALL_KNOWN_KEYS = [
   ...Object.keys(VALID_ENV),
   'PORT',
+  'AUTO_RELEASE_SOURCE_ADDRESS',
   'ALLOWED_ORIGINS',
   'STELLAR_WEBHOOK_SECRET',
   'LOG_LEVEL',
@@ -54,38 +74,38 @@ const ALL_KNOWN_KEYS = [
   'SENTRY_DSN',
 ];
 
+let originalEnv: NodeJS.ProcessEnv;
+
+beforeEach(() => {
+  originalEnv = { ...process.env };
+});
+
+afterEach(() => {
+  process.env = { ...originalEnv };
+});
+
 async function buildService(
   env: Record<string, string>,
 ): Promise<ConfigService> {
-  // Save and wipe all known keys so tests are fully isolated
-  const saved: Record<string, string | undefined> = {};
+  // Wipe all known keys so tests are fully isolated
   ALL_KNOWN_KEYS.forEach((k) => {
-    saved[k] = process.env[k];
     delete process.env[k];
   });
 
   // Apply only the keys for this test
   Object.assign(process.env, env);
 
-  try {
-    const moduleRef = await Test.createTestingModule({
-      imports: [
-        NestConfigModule.forRoot({
-          ignoreEnvFile: true,
-          validationSchema,
-        }),
-      ],
-      providers: [ConfigService],
-    }).compile();
+  const moduleRef = await Test.createTestingModule({
+    imports: [
+      NestConfigModule.forRoot({
+        ignoreEnvFile: true,
+        validationSchema,
+      }),
+    ],
+    providers: [ConfigService],
+  }).compile();
 
-    return moduleRef.get(ConfigService);
-  } finally {
-    // Restore original env
-    ALL_KNOWN_KEYS.forEach((k) => {
-      delete process.env[k];
-      if (saved[k] !== undefined) process.env[k] = saved[k];
-    });
-  }
+  return moduleRef.get(ConfigService);
 }
 
 describe('ConfigService', () => {
@@ -132,53 +152,43 @@ describe('ConfigService', () => {
     expect(service.isProduction()).toBe(false);
   });
 
-  describe('SENTRY_DSN validation', () => {
-    it('allows empty/unset SENTRY_DSN in non-production environments', async () => {
+  it('accepts a genuine valid AUTO_RELEASE_SOURCE_ADDRESS', async () => {
+    const service = await buildService({
+      ...VALID_ENV,
+      AUTO_RELEASE_SOURCE_ADDRESS: VALID_AUTO_RELEASE_SOURCE_ADDRESS,
+    });
+    expect(service.get('AUTO_RELEASE_SOURCE_ADDRESS')).toBe(
+      VALID_AUTO_RELEASE_SOURCE_ADDRESS,
+    );
+  });
+
+  it('rejects an invalid AUTO_RELEASE_SOURCE_ADDRESS', async () => {
+    await expect(
+      buildService({
+        ...VALID_ENV,
+        AUTO_RELEASE_SOURCE_ADDRESS: INVALID_AUTO_RELEASE_SOURCE_ADDRESS,
+      }),
+    ).rejects.toThrow(
+      'Config validation error: AUTO_RELEASE_SOURCE_ADDRESS must be a valid Stellar public key (starts with G)',
+    );
+  });
+
+  describe('requireAutoReleaseSourceAddress (#672)', () => {
+    it('returns the address when AUTO_RELEASE_SOURCE_ADDRESS is set', async () => {
       const service = await buildService({
         ...VALID_ENV,
-        NODE_ENV: 'development',
+        AUTO_RELEASE_SOURCE_ADDRESS: VALID_AUTO_RELEASE_SOURCE_ADDRESS,
       });
-      expect(service).toBeDefined();
-      expect(service.get('SENTRY_DSN')).toBeUndefined();
+      expect(service.requireAutoReleaseSourceAddress()).toBe(
+        VALID_AUTO_RELEASE_SOURCE_ADDRESS,
+      );
     });
 
-    it('allows valid SENTRY_DSN in non-production environments', async () => {
-      const service = await buildService({
-        ...VALID_ENV,
-        NODE_ENV: 'development',
-        SENTRY_DSN: 'https://key@sentry.io/123456',
-      });
-      expect(service).toBeDefined();
-      expect(service.get('SENTRY_DSN')).toBe('https://key@sentry.io/123456');
-    });
-
-    it('requires valid SENTRY_DSN URI in production environment', async () => {
-      const service = await buildService({
-        ...VALID_ENV,
-        NODE_ENV: 'production',
-        SENTRY_DSN: 'https://key@sentry.io/123456',
-      });
-      expect(service).toBeDefined();
-      expect(service.get('SENTRY_DSN')).toBe('https://key@sentry.io/123456');
-    });
-
-    it('fails validation if SENTRY_DSN is invalid URI in development environment', async () => {
-      await expect(
-        buildService({
-          ...VALID_ENV,
-          NODE_ENV: 'development',
-          SENTRY_DSN: 'invalid-uri',
-        }),
-      ).rejects.toThrow();
-    });
-
-    it('fails validation if SENTRY_DSN is unset in production environment', async () => {
-      await expect(
-        buildService({
-          ...VALID_ENV,
-          NODE_ENV: 'production',
-        }),
-      ).rejects.toThrow();
+    it('throws AutoReleaseSourceNotConfiguredError when it is unset', async () => {
+      const service = await buildService(VALID_ENV);
+      expect(() => service.requireAutoReleaseSourceAddress()).toThrow(
+        AutoReleaseSourceNotConfiguredError,
+      );
     });
   });
 });

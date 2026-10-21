@@ -1,3 +1,5 @@
+import { STELLAR_HORIZON_URLS } from '../../stellar/stellar-endpoints';
+
 export interface CspConnectSourceConfig {
   stellarNetwork: 'TESTNET' | 'MAINNET';
   stellarHorizonUrl?: string;
@@ -7,17 +9,12 @@ export interface CspConnectSourceConfig {
   extraConnectSrc?: string;
 }
 
-const DEFAULT_HORIZON_URLS: Record<'TESTNET' | 'MAINNET', string> = {
-  TESTNET: 'https://horizon-testnet.stellar.org',
-  MAINNET: 'https://horizon.stellar.org',
-};
-
 export function buildCspConnectSrc(config: CspConnectSourceConfig): string[] {
   const sources = new Set<string>([`'self'`]);
 
   addOrigin(
     sources,
-    config.stellarHorizonUrl ?? DEFAULT_HORIZON_URLS[config.stellarNetwork],
+    config.stellarHorizonUrl ?? STELLAR_HORIZON_URLS[config.stellarNetwork],
   );
   addOrigin(sources, config.sentryDsn);
   addOrigin(sources, config.otelExporterOtlpEndpoint);

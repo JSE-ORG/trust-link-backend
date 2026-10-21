@@ -21,6 +21,8 @@ import { DisputeRepository } from '../../src/dispute/dispute.repository';
 import { S3PresignService } from '../../src/common/services/s3-presign.service';
 import { ContractService } from '../../src/stellar/contract.service';
 import { CacheService } from '../../src/cache/cache.service';
+import { ensureVendors } from '../prisma-helpers';
+import { TracingService } from '../../src/tracing/tracing.service';
 
 describe('Cross-vendor escrow access (issue #272)', () => {
   let app: INestApplication;
@@ -76,6 +78,7 @@ describe('Cross-vendor escrow access (issue #272)', () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       controllers: [EscrowController],
       providers: [
+        TracingService,
         EscrowService,
         BuyerDisputeService,
         EscrowRepository,
@@ -103,6 +106,9 @@ describe('Cross-vendor escrow access (issue #272)', () => {
 
   beforeEach(async () => {
     await prisma.reset();
+    // Escrow.vendorAddress is a foreign key onto VendorProfile.address, so the
+    // parent rows must exist before any escrow referencing them (#475).
+    await ensureVendors(prisma, VENDOR_A, VENDOR_B);
   });
 
   describe('vendor ownership check', () => {
@@ -111,6 +117,7 @@ describe('Cross-vendor escrow access (issue #272)', () => {
         data: {
           id: '10000000-0000-4000-8000-000000000001',
           itemName: 'Test Item',
+          itemRef: 'ref-1',
           amount: 100,
           currency: 'USDC',
           buyerAddress: 'buyer-address',
@@ -133,6 +140,7 @@ describe('Cross-vendor escrow access (issue #272)', () => {
         data: {
           id: '10000000-0000-4000-8000-000000000002',
           itemName: 'Test Item',
+          itemRef: 'ref-2',
           amount: 100,
           currency: 'USDC',
           buyerAddress: 'buyer-address',
@@ -154,6 +162,7 @@ describe('Cross-vendor escrow access (issue #272)', () => {
         data: {
           id: '10000000-0000-4000-8000-000000000003',
           itemName: 'Test Item',
+          itemRef: 'ref-3',
           amount: 100,
           currency: 'USDC',
           buyerAddress: 'buyer-address',
@@ -177,6 +186,7 @@ describe('Cross-vendor escrow access (issue #272)', () => {
         data: {
           id: '10000000-0000-4000-8000-000000000004',
           itemName: 'Test Item',
+          itemRef: 'ref-4',
           amount: 100,
           currency: 'USDC',
           buyerAddress: 'buyer-address',
@@ -199,6 +209,7 @@ describe('Cross-vendor escrow access (issue #272)', () => {
         data: {
           id: '10000000-0000-4000-8000-000000000005',
           itemName: 'Test Item',
+          itemRef: 'ref-5',
           amount: 100,
           currency: 'USDC',
           buyerAddress: 'buyer-address',
@@ -220,6 +231,7 @@ describe('Cross-vendor escrow access (issue #272)', () => {
         data: {
           id: '10000000-0000-4000-8000-000000000006',
           itemName: 'Test Item',
+          itemRef: 'ref-6',
           amount: 100,
           currency: 'USDC',
           buyerAddress: 'buyer-address',

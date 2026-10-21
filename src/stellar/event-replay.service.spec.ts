@@ -4,21 +4,50 @@ import { EventReplayService } from './event-replay.service';
 import { ConfigService } from '../config/config.service';
 import { StellarWebhookService } from '../webhooks/stellar-webhook.service';
 import { CursorService } from './cursor.service';
+import { HorizonService } from './horizon.service';
 import { StellarWebhookDto } from '../webhooks/dto/stellar-webhook.dto';
+import { TracingService } from '../tracing/tracing.service';
+import { createTracingMock } from '../../test/unit/tracing-mock';
 
 jest.mock('axios');
 const mockedAxios = axios as jest.Mocked<typeof axios>;
 
 describe('EventReplayService', () => {
-  let service: EventReplayService;
-  let configService: jest.Mocked<ConfigService>;
   let webhookService: jest.Mocked<StellarWebhookService>;
   let cursorService: jest.Mocked<CursorService>;
+  let tracing: ReturnType<typeof createTracingMock>['service'];
 
-  beforeEach(async () => {
-    configService = {
-      get: jest.fn().mockReturnValue('TESTNET'),
-    } as unknown as jest.Mocked<ConfigService>;
+  /**
+   * Build the service under test. Issue #920 made the Horizon base URL come
+   * from `HorizonService`, so the config is handed to a real `HorizonService`
+   * (which resolves the URL exactly as production does) rather than to the
+   * replay service itself.
+   */
+  async function buildService(
+    values: Record<string, string | undefined> = {},
+  ): Promise<EventReplayService> {
+    const config = {
+      get: jest.fn((key: string) => values[key]),
+    } as unknown as ConfigService;
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        { provide: TracingService, useValue: tracing },
+        EventReplayService,
+        { provide: StellarWebhookService, useValue: webhookService },
+        { provide: CursorService, useValue: cursorService },
+        {
+          provide: HorizonService,
+          useValue: new HorizonService(config, tracing),
+        },
+      ],
+    }).compile();
+
+    return module.get(EventReplayService);
+  }
+
+  beforeEach(() => {
+    tracing = createTracingMock().service;
 
     webhookService = {
       processOperationDto: jest.fn().mockResolvedValue({ processed: true }),
@@ -28,24 +57,14 @@ describe('EventReplayService', () => {
       get: jest.fn().mockResolvedValue(undefined),
       set: jest.fn().mockResolvedValue(undefined),
     } as unknown as jest.Mocked<CursorService>;
-
-    const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        EventReplayService,
-        { provide: ConfigService, useValue: configService },
-        { provide: StellarWebhookService, useValue: webhookService },
-        { provide: CursorService, useValue: cursorService },
-      ],
-    }).compile();
-
-    service = module.get(EventReplayService);
   });
 
   afterEach(() => {
     jest.clearAllMocks();
   });
 
-  it('should be defined', () => {
+  it('should be defined', async () => {
+    const service = await buildService();
     expect(service).toBeDefined();
   });
 
@@ -67,6 +86,7 @@ describe('EventReplayService', () => {
         data: { _embedded: { records } },
       });
 
+      const service = await buildService();
       await service.onModuleInit();
 
       expect(webhookService.processOperationDto).toHaveBeenCalledTimes(1);
@@ -103,9 +123,16 @@ describe('EventReplayService', () => {
         data: { _embedded: { records } },
       });
 
+      const service = await buildService();
       await service.onModuleInit();
 
-      expect(cursorService.set).toHaveBeenCalledWith('201');
+      expect(cursorService.get).toHaveBeenCalledWith(
+        CursorService.EVENT_REPLAY_KEY,
+      );
+      expect(cursorService.set).toHaveBeenCalledWith(
+        '201',
+        CursorService.EVENT_REPLAY_KEY,
+      );
     });
 
     it('uses existing cursor in the request URL', async () => {
@@ -114,8 +141,12 @@ describe('EventReplayService', () => {
         data: { _embedded: { records: [] } },
       });
 
+      const service = await buildService();
       await service.onModuleInit();
 
+      expect(cursorService.get).toHaveBeenCalledWith(
+        CursorService.EVENT_REPLAY_KEY,
+      );
       const url: string = (mockedAxios.get as jest.Mock).mock.calls[0][0];
       expect(url).toContain('cursor=99');
     });
@@ -128,9 +159,13 @@ describe('EventReplayService', () => {
         data: { _embedded: { records } },
       });
 
+      const service = await buildService();
       await service.onModuleInit();
 
-      expect(cursorService.set).toHaveBeenCalledWith('300');
+      expect(cursorService.set).toHaveBeenCalledWith(
+        '300',
+        CursorService.EVENT_REPLAY_KEY,
+      );
     });
 
     it('does not persist cursor when no records are returned', async () => {
@@ -138,6 +173,7 @@ describe('EventReplayService', () => {
         data: { _embedded: { records: [] } },
       });
 
+      const service = await buildService();
       await service.onModuleInit();
 
       expect(cursorService.set).not.toHaveBeenCalled();
@@ -167,30 +203,73 @@ describe('EventReplayService', () => {
         .mockRejectedValueOnce(new Error('processing error'))
         .mockResolvedValueOnce({ processed: true });
 
+      const service = await buildService();
       await service.onModuleInit();
 
       expect(webhookService.processOperationDto).toHaveBeenCalledTimes(2);
-      expect(cursorService.set).toHaveBeenCalledWith('401');
+      expect(cursorService.set).toHaveBeenCalledWith(
+        '401',
+        CursorService.EVENT_REPLAY_KEY,
+      );
+    });
+
+    it('defaults to TESTNET horizon URL when STELLAR_NETWORK is not configured', async () => {
+      mockedAxios.get = jest.fn().mockResolvedValue({
+        data: { _embedded: { records: [] } },
+      });
+
+      const service = await buildService();
+      await service.onModuleInit();
+
+      const url: string = (mockedAxios.get as jest.Mock).mock.calls[0][0];
+      expect(url).toContain('horizon-testnet.stellar.org');
+      expect(url).not.toContain('horizon.stellar.org/');
+    });
+
+    it('completes without error and replays nothing when the response has no _embedded property', async () => {
+      mockedAxios.get = jest.fn().mockResolvedValue({ data: {} });
+
+      const service = await buildService();
+      await expect(service.onModuleInit()).resolves.toBeUndefined();
+      expect(webhookService.processOperationDto).not.toHaveBeenCalled();
+      expect(cursorService.set).not.toHaveBeenCalled();
     });
 
     it('does not throw when the Horizon request fails', async () => {
       mockedAxios.get = jest.fn().mockRejectedValue(new Error('network error'));
 
+      const service = await buildService();
       await expect(service.onModuleInit()).resolves.toBeUndefined();
       expect(webhookService.processOperationDto).not.toHaveBeenCalled();
     });
 
     it('uses MAINNET horizon URL when STELLAR_NETWORK is MAINNET', async () => {
-      configService.get.mockReturnValue('MAINNET');
       mockedAxios.get = jest.fn().mockResolvedValue({
         data: { _embedded: { records: [] } },
       });
 
+      const service = await buildService({ STELLAR_NETWORK: 'MAINNET' });
       await service.onModuleInit();
 
       const url: string = (mockedAxios.get as jest.Mock).mock.calls[0][0];
       expect(url).toContain('horizon.stellar.org');
       expect(url).not.toContain('testnet');
+    });
+
+    it('requests STELLAR_HORIZON_URL when it is configured (issue #920)', async () => {
+      mockedAxios.get = jest.fn().mockResolvedValue({
+        data: { _embedded: { records: [] } },
+      });
+
+      const service = await buildService({
+        STELLAR_NETWORK: 'MAINNET',
+        STELLAR_HORIZON_URL: 'https://horizon.internal.example',
+      });
+      await service.onModuleInit();
+
+      const url: string = (mockedAxios.get as jest.Mock).mock.calls[0][0];
+      expect(url).toContain('https://horizon.internal.example/operations');
+      expect(url).not.toContain('horizon.stellar.org');
     });
   });
 });

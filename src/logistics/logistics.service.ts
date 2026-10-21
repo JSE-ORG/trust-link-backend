@@ -1,8 +1,19 @@
-import { Injectable } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  Logger,
+  Optional,
+  OnModuleInit,
+} from '@nestjs/common';
 import {
   encryptCredential,
   decryptCredential,
 } from '../common/sanitization/credential-encryption.util';
+import { ProviderCredentialRepository } from './provider-credential.repository';
+import { ConfigService } from '../config/config.service';
+
+/** Key used to identify the logistics provider's row in `ProviderCredential`. */
+export const LOGISTICS_CREDENTIAL_PROVIDER = 'logistics';
 
 export type LogisticsStatus = 'PENDING' | 'IN_TRANSIT' | 'DELIVERED';
 
@@ -21,8 +32,61 @@ export interface TrackingDetails {
 }
 
 @Injectable()
-export class LogisticsService {
+export class LogisticsService implements OnModuleInit {
+  protected readonly logger = new Logger(LogisticsService.name);
   private apiKey: string | null = null;
+
+  constructor(
+    @Optional()
+    @Inject(ProviderCredentialRepository)
+    private readonly providerCredentialRepository?: ProviderCredentialRepository,
+    @Optional()
+    @Inject(ConfigService)
+    private readonly configService?: ConfigService,
+  ) {}
+
+  async onModuleInit(): Promise<void> {
+    await this.loadPersistedApiKey();
+    if (!this.getApiKey()) {
+      this.logger.warn(
+        'Logistics provider is not configured. Real tracking lookups will fail.',
+      );
+    }
+  }
+
+  /**
+   * Loads the logistics API key at startup, preferring a previously rotated
+   * value persisted in `ProviderCredential` (issue #499) over the
+   * `LOGISTICS_API_KEY` environment variable. The environment variable remains
+   * the fallback for a first boot with nothing stored yet.
+   */
+  private async loadPersistedApiKey(): Promise<void> {
+    if (this.providerCredentialRepository) {
+      try {
+        const record = await this.providerCredentialRepository.findByProvider(
+          LOGISTICS_CREDENTIAL_PROVIDER,
+        );
+        if (record) {
+          this.apiKey = record.encryptedKey;
+          return;
+        }
+      } catch (err) {
+        this.logger.warn(
+          `Failed to load persisted logistics API key, falling back to environment: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      }
+    }
+
+    const envToken = this.configService?.get<string>('LOGISTICS_API_KEY');
+    if (envToken) {
+      const key = this.configService?.get<string>('CREDENTIAL_ENCRYPTION_KEY');
+      if (key) {
+        this.apiKey = encryptCredential(envToken, key);
+      }
+    }
+  }
 
   /**
    * Updates the logistics provider API key at runtime. The new key is picked
@@ -31,8 +95,42 @@ export class LogisticsService {
    * The key is encrypted before being stored in memory for security.
    */
   setApiKey(key: string): void {
-    const encryptedKey = encryptCredential(key);
+    const encryptionKey = this.configService?.get<string>(
+      'CREDENTIAL_ENCRYPTION_KEY',
+    );
+    if (!encryptionKey) {
+      throw new Error('CREDENTIAL_ENCRYPTION_KEY is not configured');
+    }
+    const encryptedKey = encryptCredential(key, encryptionKey);
     this.apiKey = encryptedKey;
+  }
+
+  /**
+   * Rotates the logistics provider API key to the given plaintext value
+   * (issue #498): the submitted key is always the one that gets encrypted
+   * and stored, whether or not a key was already present. The new value is
+   * also persisted outside process memory (issue #499), via
+   * `ProviderCredential`, so the rotation survives a restart and propagates
+   * to other replicas. If no database is available (e.g. unit tests
+   * constructing this service directly), the rotation still takes effect
+   * in memory for the lifetime of the instance.
+   */
+  async rotateApiKey(key: string): Promise<void> {
+    const encryptionKey = this.configService?.get<string>(
+      'CREDENTIAL_ENCRYPTION_KEY',
+    );
+    if (!encryptionKey) {
+      throw new Error('CREDENTIAL_ENCRYPTION_KEY is not configured');
+    }
+    const encryptedKey = encryptCredential(key, encryptionKey);
+    this.apiKey = encryptedKey;
+
+    if (this.providerCredentialRepository) {
+      await this.providerCredentialRepository.upsert(
+        LOGISTICS_CREDENTIAL_PROVIDER,
+        encryptedKey,
+      );
+    }
   }
 
   /**
@@ -44,7 +142,13 @@ export class LogisticsService {
       return null;
     }
     try {
-      return decryptCredential(this.apiKey);
+      const encryptionKey = this.configService?.get<string>(
+        'CREDENTIAL_ENCRYPTION_KEY',
+      );
+      if (!encryptionKey) {
+        throw new Error('CREDENTIAL_ENCRYPTION_KEY is not configured');
+      }
+      return decryptCredential(this.apiKey, encryptionKey);
     } catch {
       throw new Error('Failed to decrypt logistics API key');
     }
@@ -64,69 +168,35 @@ export class LogisticsService {
     this.apiKey = encryptedKey;
   }
 
-  /** Fetches normalized shipment status from the configured logistics provider. */
+  /**
+   * Fetches normalized shipment status for `trackingId` from the configured
+   * logistics provider.
+   *
+   * **Currently a stub**: the real provider call is not wired yet, so this
+   * always rejects with `Error("Logistics service is not configured ...")`
+   * regardless of `trackingId` or whether an API key is present. Callers
+   * must treat a rejection as "status unavailable", not "shipment not
+   * found". When the provider integration lands, the contract is a resolved
+   * {@link TrackingDetails} on success and a reject on a provider/transport
+   * error — retryable at the caller's discretion.
+   */
   getStatus(trackingId: string): Promise<TrackingDetails> {
-    if (!this.apiKey) {
-      return Promise.reject(
-        new Error(`Logistics service is not configured for ${trackingId}`),
-      );
-    }
-
-    const normalizedId = trackingId.toUpperCase();
-    const carrier = this.extractCarrier(normalizedId);
-    if (!carrier) {
-      return Promise.reject(
-        new Error(`Unsupported shipping region for ${trackingId}`),
-      );
-    }
-
-    const status: LogisticsStatus = normalizedId.includes('DELIVERED')
-      ? 'DELIVERED'
-      : normalizedId.includes('PENDING')
-        ? 'PENDING'
-        : 'IN_TRANSIT';
-
-    const estimatedDelivery = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000);
-    const events: TrackingEvent[] = [
-      {
-        timestamp: new Date(),
-        status: 'PICKED_UP',
-        location: 'Distribution Center',
-        description: `${carrier} accepted shipment ${trackingId}`,
-      },
-      {
-        timestamp: new Date(),
-        status,
-        description: `Latest status reported by ${carrier}`,
-      },
-    ];
-
-    return Promise.resolve({
-      status,
-      estimatedDelivery,
-      carrier,
-      events,
-    });
+    return Promise.reject(
+      new Error(`Logistics service is not configured for ${trackingId}`),
+    );
   }
 
-  /** Fetches detailed tracking information including events from the logistics provider. */
+  /**
+   * Fetches detailed tracking information (status + the `events` timeline)
+   * for `trackingId`.
+   *
+   * Today this is a thin delegate to {@link getStatus} — there is no
+   * separate "details" endpoint yet — so it shares that method's stub
+   * behaviour and **always rejects** on the current build. Kept as a
+   * distinct method so callers that want the event history bind to a stable
+   * name once the provider call is implemented.
+   */
   getTrackingDetails(trackingId: string): Promise<TrackingDetails> {
     return this.getStatus(trackingId);
-  }
-
-  private extractCarrier(trackingId: string): string | undefined {
-    if (trackingId.startsWith('US-FEDEX') || trackingId.startsWith('US-FDX')) {
-      return 'FedEx';
-    }
-    if (trackingId.startsWith('US-UPS')) {
-      return 'UPS';
-    }
-    if (trackingId.startsWith('EU-DHL') || trackingId.startsWith('EU-')) {
-      return 'DHL';
-    }
-    if (trackingId.startsWith('APAC-SF') || trackingId.startsWith('APAC-')) {
-      return 'SF Express';
-    }
-    return undefined;
   }
 }

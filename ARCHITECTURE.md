@@ -23,7 +23,7 @@ Trust-Link Backend is a NestJS application that manages escrow transactions on t
 │                                                                          │
 │  Global Middleware          Global Guards          Global Filters         │
 │  ┌──────────────────┐   ┌────────────────────┐   ┌──────────────────┐   │
-│  │ SecurityMiddleware│   │  RateLimitGuard    │   │GlobalException   │   │
+│  │ SecurityMiddleware│   │  ThrottlerGuard    │   │GlobalException   │   │
 │  │ LoggerMiddleware  │   │  (per-route caps)  │   │Filter            │   │
 │  └──────────────────┘   └────────────────────┘   └──────────────────┘   │
 └──────────────────────────────────────────────────────────────────────────┘
@@ -209,7 +209,7 @@ HTTP Request
   │
   ├─ SecurityMiddleware          Sets CSP / HSTS headers
   ├─ LoggerMiddleware            Emits structured request log
-  ├─ RateLimitGuard (global)     Enforces per-route + per-IP limits (in-process Map)
+  ├─ ThrottlerGuard (global)     Enforces per-route + per-IP limits (Redis storage when REDIS_URL is set, else in-memory)
   ├─ JwtGuard (route-level)      Validates SEP-10 JWT, injects AuthUser
   │
   ├─ Controller                  Parses + validates DTO (ValidationPipe)
@@ -258,10 +258,10 @@ Both workers implement `OnModuleInit` / `OnApplicationShutdown` for clean startu
 
 ### AutoReleaseWorker — every 5 minutes
 
-1. Query escrows in `SHIPPED` state where `deliveredAt` ≤ 48 h ago, no open dispute, no `autoReleaseTxHash`.
+1. Query escrows in `DELIVERED` state where `deliveredAt` ≤ `AUTO_RELEASE_WINDOW_HOURS` (48 h) ago, no open dispute, no `autoReleaseTxHash`. The state must match what `markDelivered` writes, or the query matches nothing (issue #395).
 2. Call `markAutoReleaseSubmitting(id)` — sets `autoReleaseSubmittedAt` as an optimistic lock.
 3. Submit on-chain auto-release via `ContractService.submitAutoRelease(escrowId)`.
-4. On success: `markAutoReleaseCompleted(id, txHash)` → state becomes `COMPLETED`.
+4. On success: `recordAutoReleaseSubmission(id, txHash)` — records the hash, leaves the state at `DELIVERED`. Submission is not confirmation, so the worker does not finalise; the `AutoReleased` chain event does, via `markAutoReleased` → `RELEASED` plus `notifyCompleted`.
 5. On failure: `clearAutoReleaseSubmitting(id)` — unlocks for next cycle.
 
 ### TrackingPollWorker — every 10 minutes
@@ -401,7 +401,7 @@ Protected endpoints use `@UseGuards(JwtGuard)` + `@CurrentUser()` to extract the
 | Headers           | SecurityMiddleware: CSP, HSTS, X-Frame-Options                 |
 | CORS              | `ALLOWED_ORIGINS` allowlist; blocks all in production if unset |
 | Auth              | SEP-10 JWT on protected routes                                 |
-| Rate limiting     | `RateLimitGuard` with per-route limits (5–100 req/min)         |
+| Rate limiting     | `ThrottlerGuard` (`@nestjs/throttler`) with per-route `@Throttle` limits; Redis-backed storage when `REDIS_URL` is set |
 | Webhook integrity | HMAC-SHA256 signature verification (`X-Stellar-Signature`)     |
 | Input validation  | `ValidationPipe` (whitelist, transform, forbid extra fields)   |
 | SQL injection     | Parameterised queries via Prisma ORM                           |

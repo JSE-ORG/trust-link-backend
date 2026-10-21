@@ -4,8 +4,11 @@
   "testEnvironment": "node",
   "testRegex": ".e2e-spec.ts$",
   "transform": {
-    "^.+\\.(t|j)s$": "ts-jest"
+    "^.+\\.(t|j)s$": ["ts-jest", { "tsconfig": { "allowJs": true } }]
   },
+  "transformIgnorePatterns": [
+    "[/\\\\]node_modules[/\\\\](?!(.pnpm[/\\\\])?(uint8array-extras|@exodus|@noble|@stellar))"
+  ],
   "maxWorkers": 1,
   "testTimeout": 60000,
   "setupFiles": ["<rootDir>/setup-env.ts"]

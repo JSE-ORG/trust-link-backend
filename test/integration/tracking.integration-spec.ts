@@ -4,6 +4,7 @@ import request from 'supertest';
 import { AppModule } from '../../src/app.module';
 import { PrismaService } from '../../src/prisma/prisma.service';
 import { LogisticsService } from '../../src/logistics/logistics.service';
+import { ensureVendors } from '../prisma-helpers';
 
 describe('GET /escrow/:id/tracking integration (issue #54)', () => {
   let app: INestApplication;
@@ -39,6 +40,12 @@ describe('GET /escrow/:id/tracking integration (issue #54)', () => {
 
   beforeEach(async () => {
     await prisma.reset();
+    // Escrow.vendorAddress is a foreign key onto VendorProfile.address, so
+    // the parent row must exist before any escrow referencing it (#475).
+    await ensureVendors(
+      prisma,
+      'GB3LCRCZEETCBYV4PEIPV2PD2R3AJMC6S2OOBMV5MA6WCOKEMN3XA3K3',
+    );
   });
 
   afterAll(async () => {

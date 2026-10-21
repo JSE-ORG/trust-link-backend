@@ -9,14 +9,18 @@
  * GiglClient is fully mocked so no HTTP calls are made.
  */
 
+import { Logger } from '@nestjs/common';
 import { GiglLogisticsService } from './gigl-logistics.service';
 import {
   GiglClient,
   GiglUnauthorizedError,
   GiglNetworkError,
   GiglProviderError,
+  GiglInvalidResponseError,
 } from './gigl.client';
 import { GiglTrackingResponse } from './gigl.types';
+import { PrismaService } from '../../prisma/prisma.service';
+import { ProviderCredentialRepository } from '../provider-credential.repository';
 
 // ── Fixture factory ──────────────────────────────────────────────────────────
 
@@ -269,6 +273,16 @@ describe('GiglLogisticsService', () => {
       );
     });
 
+    it('propagates GiglProviderError when the upstream returns HTTP 404', async () => {
+      const error = new GiglProviderError('TRK-404', 404);
+      client.fetchTracking.mockRejectedValue(error);
+
+      await expect(service.getStatus('TRK-404')).rejects.toThrow(
+        GiglProviderError,
+      );
+      await expect(service.getStatus('TRK-404')).rejects.toThrow(/HTTP 404/);
+    });
+
     it('propagates GiglProviderError when the upstream returns HTTP 500', async () => {
       const error = new GiglProviderError('TRK-ERR', 500);
       client.fetchTracking.mockRejectedValue(error);
@@ -286,6 +300,30 @@ describe('GiglLogisticsService', () => {
       await expect(service.getStatus('TRK-503')).rejects.toThrow(
         GiglProviderError,
       );
+    });
+
+    it('fails clearly and logs a warning when constructed without a client', async () => {
+      const unconfiguredService = new GiglLogisticsService(null);
+      const loggerSpy = jest
+        .spyOn(
+          (unconfiguredService as unknown as { logger: Logger }).logger,
+          'warn',
+        )
+        .mockImplementation();
+
+      await unconfiguredService.onModuleInit();
+
+      expect(loggerSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Logistics provider is not configured'),
+      );
+
+      await expect(
+        unconfiguredService.getStatus('TRK-NO-CLIENT'),
+      ).rejects.toThrow('Logistics service is not configured');
+
+      await expect(
+        unconfiguredService.getTrackingDetails('TRK-NO-CLIENT'),
+      ).rejects.toThrow('Logistics service is not configured');
     });
   });
 
@@ -322,6 +360,18 @@ describe('GiglLogisticsService', () => {
         GiglProviderError,
       );
     });
+
+    it('propagates GiglInvalidResponseError from getTrackingDetails when the upstream returns a malformed body', async () => {
+      const error = new GiglInvalidResponseError(
+        'TRK-SHAPE-2',
+        'response body is missing one or more required fields',
+      );
+      client.fetchTracking.mockRejectedValue(error);
+
+      await expect(service.getTrackingDetails('TRK-SHAPE-2')).rejects.toThrow(
+        GiglInvalidResponseError,
+      );
+    });
   });
 
   // ── Error class structural assertions ────────────────────────────────────
@@ -344,6 +394,70 @@ describe('GiglLogisticsService', () => {
       expect(err.name).toBe('GiglProviderError');
       expect(err.statusCode).toBe(502);
       expect(err).toBeInstanceOf(Error);
+    });
+  });
+
+  describe('with a configured carrier client', () => {
+    it('warns about a missing API key once on module init and not again for the client', async () => {
+      const prisma = {
+        providerCredential: { findUnique: jest.fn().mockResolvedValue(null) },
+      } as unknown as PrismaService;
+      const configured = new GiglLogisticsService(
+        client as unknown as GiglClient,
+        new ProviderCredentialRepository(prisma),
+      );
+      const warn = jest
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation(() => undefined);
+      try {
+        await expect(configured.onModuleInit()).resolves.toBeUndefined();
+        // The base class warns because no API key is persisted or configured;
+        // the GIGL guard sees a client and must not add a second warning.
+        expect(
+          (prisma.providerCredential as unknown as { findUnique: jest.Mock })
+            .findUnique,
+        ).toHaveBeenCalledTimes(1);
+        expect(warn).toHaveBeenCalledTimes(1);
+        expect(warn).toHaveBeenCalledWith(
+          'Logistics provider is not configured. Real tracking lookups will fail.',
+        );
+      } finally {
+        warn.mockRestore();
+      }
+    });
+  });
+
+  describe('without a configured carrier client', () => {
+    let unconfigured: GiglLogisticsService;
+
+    beforeEach(() => {
+      unconfigured = new GiglLogisticsService(null);
+    });
+
+    it('warns on module init instead of failing startup', async () => {
+      const warn = jest
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation(() => undefined);
+      try {
+        await expect(unconfigured.onModuleInit()).resolves.toBeUndefined();
+        expect(warn).toHaveBeenCalledWith(
+          'Logistics provider is not configured. Real tracking lookups will fail.',
+        );
+      } finally {
+        warn.mockRestore();
+      }
+    });
+
+    it('rejects getStatus with a not-configured error naming the tracking id', async () => {
+      await expect(unconfigured.getStatus('TRK-404')).rejects.toThrow(
+        'Logistics service is not configured for TRK-404',
+      );
+    });
+
+    it('rejects getTrackingDetails with a not-configured error naming the tracking id', async () => {
+      await expect(unconfigured.getTrackingDetails('TRK-404')).rejects.toThrow(
+        'Logistics service is not configured for TRK-404',
+      );
     });
   });
 });

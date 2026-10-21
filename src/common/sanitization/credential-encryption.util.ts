@@ -6,35 +6,23 @@ const TAG_BYTES = 16;
 const SEPARATOR = ':';
 
 /**
- * Derives a 32-byte key from the CREDENTIAL_ENCRYPTION_KEY env variable.
- * The env value is hex-encoded (64 hex chars = 32 bytes). If absent the
- * module throws at startup so the missing config is caught immediately.
- */
-function resolveKey(): Buffer {
-  const raw = process.env.CREDENTIAL_ENCRYPTION_KEY;
-  if (!raw) {
-    throw new Error(
-      'CREDENTIAL_ENCRYPTION_KEY environment variable is required for credential encryption.',
-    );
-  }
-  const key = Buffer.from(raw, 'hex');
-  if (key.length !== 32) {
-    throw new Error(
-      `CREDENTIAL_ENCRYPTION_KEY must be exactly 64 hex characters (32 bytes). Got ${key.length} bytes.`,
-    );
-  }
-  return key;
-}
-
-/**
  * Encrypts a UTF-8 plaintext string with AES-256-GCM.
  * Output format (all hex, colon-separated): `iv:authTag:ciphertext`
  *
  * A fresh IV is generated per call so encrypting the same value twice
  * produces different ciphertext — prevents correlation attacks.
  */
-export function encryptCredential(plaintext: string): string {
-  const key = resolveKey();
+export function encryptCredential(
+  plaintext: string,
+  encryptionKey: string,
+): string {
+  const key = Buffer.from(encryptionKey, 'hex');
+  if (key.length !== 32) {
+    throw new Error(
+      `Encryption key must be exactly 64 hex characters (32 bytes). Got ${key.length} bytes.`,
+    );
+  }
+
   const iv = crypto.randomBytes(IV_BYTES);
   const cipher = crypto.createCipheriv(ALGORITHM, key, iv);
 
@@ -55,8 +43,17 @@ export function encryptCredential(plaintext: string): string {
  * Decrypts a value produced by `encryptCredential`.
  * Returns the plaintext string, or throws if the ciphertext is tampered.
  */
-export function decryptCredential(stored: string): string {
-  const key = resolveKey();
+export function decryptCredential(
+  stored: string,
+  encryptionKey: string,
+): string {
+  const key = Buffer.from(encryptionKey, 'hex');
+  if (key.length !== 32) {
+    throw new Error(
+      `Encryption key must be exactly 64 hex characters (32 bytes). Got ${key.length} bytes.`,
+    );
+  }
+
   const parts = stored.split(SEPARATOR);
   if (parts.length !== 3) {
     throw new Error('Invalid encrypted credential format.');
@@ -88,7 +85,11 @@ export function decryptCredential(stored: string): string {
  * Re-encrypts a credential with a new key.
  * This is used during key rotation operations.
  */
-export function reencryptCredential(encryptedCredential: string): string {
-  const plaintext = decryptCredential(encryptedCredential);
-  return encryptCredential(plaintext);
+export function reencryptCredential(
+  encryptedCredential: string,
+  oldKey: string,
+  newKey: string,
+): string {
+  const plaintext = decryptCredential(encryptedCredential, oldKey);
+  return encryptCredential(plaintext, newKey);
 }

@@ -1,18 +1,51 @@
 import { Injectable } from '@nestjs/common';
-import {
-  PrismaService,
-  VendorTrackingSettingsRecord,
-} from '../../prisma/prisma.service';
-import { ChartDataResponse, DailyVolumeData } from './analytics.dto';
+import { Prisma } from '@prisma/client';
+import { AnalyticsRepository } from './analytics.repository';
+import { DEFAULT_NOTIFICATION_CHANNELS } from '../vendor.constants';
+import { ChartDataResponse, DailyVolumeDataDto } from './analytics.dto';
 import {
   AnalyticsStatsResponse,
-  TransactionStats,
-  ChannelMetrics,
+  TransactionStatsDto,
+  ChannelMetricsDto,
 } from './analytics-stats.dto';
+
+/**
+ * Exact decimal arithmetic for the vendor stats aggregation (#843).
+ *
+ * `Escrow.amount` is `Decimal(18, 8)`. Reading each value with `Number()` and
+ * adding it into a running float total silently loses precision: a double
+ * carries 53 bits of mantissa, so an 8-decimal amount stops being exactly
+ * representable past ~$0.90, and every addition can round. Summing in decimal
+ * keeps the total exact; it is converted to a `number` once, at the end,
+ * because the response contract is numeric.
+ *
+ * `null`/`undefined` is treated as absent rather than zero so a `groupBy` group
+ * with no rows contributes nothing instead of throwing.
+ */
+function decimalZero(): Prisma.Decimal {
+  return new Prisma.Decimal(0);
+}
+
+/** Adds a possibly-absent Prisma Decimal into an exact running total. */
+function decimalAdd(
+  total: Prisma.Decimal,
+  value: Prisma.Decimal | number | null | undefined,
+): Prisma.Decimal {
+  if (value === null || value === undefined) {
+    return total;
+  }
+  return total.plus(value);
+}
+
+/** Converts an exact total to a `number` for the response body. */
+function decimalToNumber(value: Prisma.Decimal): number {
+  return value.toNumber();
+}
 
 @Injectable()
 export class AnalyticsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly repository: AnalyticsRepository) {}
+
 
   /**
    * Retrieves daily transaction volume data for a vendor.
@@ -30,34 +63,24 @@ export class AnalyticsService {
     startDate.setDate(startDate.getDate() - days + 1);
     startDate.setUTCHours(0, 0, 0, 0);
 
-    // Use raw SQL for database-level aggregation with proper timezone handling
-    const aggregationResult = await this.prisma.$queryRaw<{
-      date: string;
-      totalVolume: number;
-      transactionCount: number;
-      completedCount: number;
-      disputedCount: number;
-    }>`
-      SELECT 
-        DATE("createdAt" AT TIME ZONE ${timezone})::date as date,
-        COALESCE(SUM("amount"), 0) as "totalVolume",
-        COUNT(*) as "transactionCount",
-        SUM(CASE WHEN "state" IN ('COMPLETED', 'RELEASED') THEN 1 ELSE 0 END) as "completedCount",
-        SUM(CASE WHEN "state" = 'DISPUTED' THEN 1 ELSE 0 END) as "disputedCount"
-      FROM "Escrow"
-      WHERE 
-        "vendorAddress" = ${vendorAddress}
-        AND "createdAt" >= ${startDate}
-        AND "createdAt" <= ${endDate}
-      GROUP BY DATE("createdAt" AT TIME ZONE ${timezone})::date
-      ORDER BY date ASC
-    `;
+    // Use repository for database-level aggregation with proper timezone handling.
+    const aggregationResult = await this.repository.aggregateDailyVolume(
+      vendorAddress,
+      startDate,
+      endDate,
+      timezone,
+    );
+
 
     // Convert aggregation results to DailyVolumeData format
-    const dailyMap = new Map<string, DailyVolumeData>();
+    const dailyMap = new Map<string, DailyVolumeDataDto>();
 
     type AggRow = {
-      date: string;
+      // A Postgres `date` column comes back from the driver as a JS Date, not
+      // a string, so this is normalised below before being used as a map key —
+      // fillDateGaps looks the key up as 'YYYY-MM-DD' and would otherwise never
+      // match, silently reporting every day as zero.
+      date: string | Date;
       totalVolume: number | string;
       transactionCount: number | string;
       completedCount: number | string;
@@ -65,7 +88,7 @@ export class AnalyticsService {
     };
     for (const row of aggregationResult) {
       const r = row as AggRow;
-      const dateKey = r.date;
+      const dateKey = this.toDateKey(r.date);
       const totalVolume = Number(r.totalVolume);
       const transactionCount = Number(r.transactionCount);
       const completedCount = Number(r.completedCount);
@@ -121,12 +144,12 @@ export class AnalyticsService {
    * Ensures consistent time-series data even for days with no activity
    */
   private fillDateGaps(
-    dailyMap: Map<string, DailyVolumeData>,
+    dailyMap: Map<string, DailyVolumeDataDto>,
     startDate: Date,
     endDate: Date,
     timezone: string = 'UTC',
-  ): DailyVolumeData[] {
-    const result: DailyVolumeData[] = [];
+  ): DailyVolumeDataDto[] {
+    const result: DailyVolumeDataDto[] = [];
     const currentDate = new Date(startDate);
 
     while (currentDate <= endDate) {
@@ -160,65 +183,112 @@ export class AnalyticsService {
   }
 
   /**
+   * Normalises a `date` column from a raw query into a 'YYYY-MM-DD' key.
+   *
+   * The aggregation already casts to the caller's timezone in SQL, so the
+   * value returned is the calendar day itself. It is read in UTC rather than
+   * re-formatted in the caller's timezone, which would shift it by a day.
+   */
+  private toDateKey(value: string | Date): string {
+    if (value instanceof Date) {
+      return value.toISOString().slice(0, 10);
+    }
+    return String(value).slice(0, 10);
+  }
+
+  /**
    * Retrieves overall transaction statistics for a vendor.
-   * Uses fast query paths with composite indexes on (vendorAddress, state).
    * Includes conversion metrics and channel preferences.
+   *
+   * #843 — Counts and sums are aggregated by the database with a single
+   * `groupBy` on `state`, and the per-state sums are added as decimals.
+   *
+   * The previous implementation ran `findMany` over every escrow the vendor
+   * has ever created and counted and summed the rows in a JavaScript loop. The
+   * result set grew without bound with vendor history while the response
+   * stayed a fixed handful of numbers, so the cost of a dashboard page scaled
+   * with total escrows rather than with the number of states. Each amount was
+   * also pulled through `Number()` before being added: `amount` is
+   * `Decimal(18, 8)`, so converting to a double first and then summing loses
+   * precision below 2^53 minor units — exactly the small-vendor case where
+   * the total is supposed to be exact.
+   *
+   * `groupBy` narrows the transfer to one row per state and lets Postgres sum
+   * the `numeric` column exactly.
    */
   async getTransactionStats(
     vendorAddress: string,
   ): Promise<AnalyticsStatsResponse> {
-    // Query all escrows for the vendor, grouped by state
-    // Uses index on (vendorAddress, state) for fast filtering
-    const escrows = await this.prisma.escrow.findMany({
-      where: {
-        vendorAddress,
-      },
-      select: {
-        id: true,
-        amount: true,
-        state: true,
-      },
-    });
+    // One row per state, with the count and the exact `numeric` sum for that
+    // state. Uses the composite index on (vendorAddress, state).
+    const groups = await this.repository.getEscrowStateGroups(vendorAddress);
 
-    // Calculate transaction statistics
-    const stats: TransactionStats = {
-      totalVolume: 0,
-      activeVolume: 0,
-      totalTransactions: escrows.length,
-      activeTransactions: 0,
-      completedTransactions: 0,
-      completionRate: 0,
-      disputedTransactions: 0,
-      disputeRate: 0,
-      averageTransactionValue: 0,
-      cancelledTransactions: 0,
-    };
 
     // Active states: CREATED, FUNDED, SHIPPED, DELIVERED
-    const activeStates = ['CREATED', 'FUNDED', 'SHIPPED', 'DELIVERED'];
+    const activeStates = new Set(['CREATED', 'FUNDED', 'SHIPPED', 'DELIVERED']);
 
-    for (const escrow of escrows) {
-      const amount = Number(escrow.amount);
-      const state = (escrow as { state: string }).state;
-      stats.totalVolume += amount;
+    // Decimal accumulators, not floats. The running totals stay exact for the
+    // whole loop and are converted to `number` once, at the end, for the
+    // response.
+    let totalVolume = decimalZero();
+    let activeVolume = decimalZero();
+    let totalTransactions = 0;
+    let activeTransactions = 0;
+    let completedTransactions = 0;
+    let disputedTransactions = 0;
+    let cancelledTransactions = 0;
 
-      if (activeStates.includes(state)) {
-        stats.activeVolume += amount;
-        stats.activeTransactions += 1;
+    for (const group of groups) {
+      // Narrowed explicitly: `groupBy` infers a wide union here, and a null
+      // `_sum` is what an empty state group returns.
+      const { state, _count, _sum } = group as {
+        state: string;
+        _count?: number | { _all?: number };
+        _sum?: { amount?: Prisma.Decimal | null } | null;
+      };
+      const count = Number(
+        typeof _count === 'object' ? _count?._all : (_count ?? 0),
+      );
+      const sum = _sum?.amount ?? null;
+
+      totalTransactions += count;
+      totalVolume = decimalAdd(totalVolume, sum);
+
+      if (activeStates.has(state)) {
+        activeTransactions += count;
+        activeVolume = decimalAdd(activeVolume, sum);
       }
 
       if (state === 'COMPLETED' || state === 'RELEASED') {
-        stats.completedTransactions += 1;
+        completedTransactions += count;
       }
 
       if (state === 'DISPUTED') {
-        stats.disputedTransactions += 1;
+        disputedTransactions += count;
       }
 
       if (state === 'CANCELLED') {
-        stats.cancelledTransactions += 1;
+        cancelledTransactions += count;
       }
     }
+
+    // The response contract is numeric, so the exact decimals are converted
+    // once here rather than being carried as floats through the additions.
+    const totalVolumeNumber = decimalToNumber(totalVolume);
+    const activeVolumeNumber = decimalToNumber(activeVolume);
+
+    const stats: TransactionStatsDto = {
+      totalVolume: totalVolumeNumber,
+      activeVolume: activeVolumeNumber,
+      totalTransactions,
+      activeTransactions,
+      completedTransactions,
+      completionRate: 0,
+      disputedTransactions,
+      disputeRate: 0,
+      averageTransactionValue: 0,
+      cancelledTransactions,
+    };
 
     // Calculate rates
     if (stats.totalTransactions > 0) {
@@ -226,22 +296,20 @@ export class AnalyticsService {
         (stats.completedTransactions / stats.totalTransactions) * 100;
       stats.disputeRate =
         (stats.disputedTransactions / stats.totalTransactions) * 100;
-      stats.averageTransactionValue =
-        stats.totalVolume / stats.totalTransactions;
+      // Divided in decimal so the average of an exact total is not itself
+      // rounded twice; converted to a number only for the response.
+      stats.averageTransactionValue = decimalToNumber(
+        totalVolume.div(stats.totalTransactions),
+      );
     }
 
-    // Fetch vendor tracking settings for channel preferences
-    const trackingSettings =
-      (await this.prisma.vendorTrackingSettings.findUnique({
-        where: { vendorAddress },
-        select: {
-          notificationChannels: true,
-        },
-      })) as Pick<VendorTrackingSettingsRecord, 'notificationChannels'> | null;
+    // Fetch vendor tracking settings for channel preferences (defaults to platform defaults)
+    const notificationChannels =
+      (await this.repository.findNotificationChannels(vendorAddress)) ??
+      DEFAULT_NOTIFICATION_CHANNELS;
 
-    const notificationChannels = trackingSettings?.notificationChannels ?? [];
 
-    const channels: ChannelMetrics = {
+    const channels: ChannelMetricsDto = {
       email: {
         notificationsEnabled: notificationChannels.includes('EMAIL'),
       },

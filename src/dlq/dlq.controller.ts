@@ -1,51 +1,155 @@
-import { Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Query,
+  ServiceUnavailableException,
+  UseGuards,
+} from '@nestjs/common';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiParam,
+  ApiQuery,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
+import { THROTTLE_WINDOW_MS } from '../common/security/throttle.config';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import type { AuthUser } from '../auth/auth-user';
 import { JwtGuard } from '../auth/guards/jwt.guard';
 import { AdminGuard } from '../admin/guards/admin.guard';
 import { DlqService } from './dlq.service';
-import type {
-  FailedTransactionStatus,
-  ListFailedTransactionsQuery,
+import {
+  FailedTransactionRecord,
+  PaginatedFailedTransactions,
 } from './dlq.types';
 import { ContractService } from '../stellar/contract.service';
-import { ConfigService } from '../config/config.service';
+import {
+  AutoReleaseSourceNotConfiguredError,
+  ConfigService,
+} from '../config/config.service';
+import { EscrowRepository } from '../escrow/escrow.repository';
+import { ListFailedTransactionsQueryDto } from './dto/list-failed-transactions-query.dto';
+import { AuditLogService } from '../audit-log/audit-log.service';
 
 /**
  * Admin endpoints for reviewing and re-executing failed Stellar contract
  * submissions (#74).
  */
+@ApiTags('Admin')
+@ApiBearerAuth()
 @Controller('admin/dlq')
 @UseGuards(JwtGuard, AdminGuard)
 export class DlqController {
   /** Stellar address of the auto-release signing account used to replay `submitAutoRelease`. */
-  private readonly autoReleaseSourceAddress: string;
-
   constructor(
     private readonly dlq: DlqService,
     private readonly contract: ContractService,
-    config: ConfigService,
-  ) {
-    const address = config.get('AUTO_RELEASE_SOURCE_ADDRESS');
-    if (!address) {
-      throw new Error(
-        'AUTO_RELEASE_SOURCE_ADDRESS must be set to enable DLQ auto-release replay',
-      );
+    private readonly config: ConfigService,
+    private readonly escrows: EscrowRepository,
+    private readonly auditLog: AuditLogService,
+  ) {}
+
+  /**
+   * Returns the auto-release signing address, translating the shared
+   * "not configured" error into a 503 for this HTTP path (#672).
+   *
+   * The check itself lives in `ConfigService.requireAutoReleaseSourceAddress`
+   * and is resolved on use, not at construction: `AUTO_RELEASE_SOURCE_ADDRESS`
+   * is optional in `config.module.ts`, so a constructor throw would stop Nest
+   * from instantiating this controller and take the whole app down. Here only
+   * the replay endpoint degrades, and it does so with a clear 503.
+   */
+  private requireAutoReleaseSource(): string {
+    try {
+      return this.config.requireAutoReleaseSourceAddress();
+    } catch (err) {
+      if (err instanceof AutoReleaseSourceNotConfiguredError) {
+        throw new ServiceUnavailableException(err.message);
+      }
+      throw err;
     }
-    this.autoReleaseSourceAddress = address;
   }
 
+  @ApiOperation({ summary: 'List failed transactions (admin DLQ)' })
+  @ApiQuery({
+    name: 'status',
+    required: false,
+    description: 'Filter by transaction status',
+  })
+  @ApiQuery({
+    name: 'operation',
+    required: false,
+    description: 'Filter by operation name',
+  })
+  @ApiQuery({
+    name: 'escrowId',
+    required: false,
+    description: 'Filter by escrow ID',
+  })
+  @ApiQuery({
+    name: 'page',
+    required: false,
+    type: Number,
+    description: 'Page number (default 1)',
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+    description: 'Maximum records per page (default 20, max 100)',
+  })
+  @ApiOperation({
+    summary:
+      'List failed contract transactions available for review and replay',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Failed transaction records returned.',
+    type: PaginatedFailedTransactions,
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized.' })
+  @ApiResponse({ status: 403, description: 'Admin access required.' })
+  @ApiQuery({ name: 'status', required: false, example: 'failed' })
+  @ApiQuery({
+    name: 'operation',
+    required: false,
+    example: 'submitAutoRelease',
+  })
+  @ApiQuery({
+    name: 'escrowId',
+    required: false,
+    example: '9d9e2e16-0c78-4a84-9c8c-0f3a5eb2d4e3',
+  })
+  @ApiResponse({ status: 429, description: 'Too many requests.' })
+  @ApiResponse({ status: 500, description: 'Internal server error.' })
+  @Throttle({ default: { limit: 20, ttl: THROTTLE_WINDOW_MS } })
   @Get()
-  list(
-    @Query('status') status?: FailedTransactionStatus,
-    @Query('operation') operation?: string,
-    @Query('escrowId') escrowId?: string,
-  ) {
-    const query: ListFailedTransactionsQuery = {};
-    if (status) query.status = status;
-    if (operation) query.operation = operation;
-    if (escrowId) query.escrowId = escrowId;
+  list(@Query() query: ListFailedTransactionsQueryDto) {
     return this.dlq.list(query);
   }
 
+  @ApiOperation({ summary: 'Get details for a failed transaction record' })
+  @ApiResponse({
+    status: 200,
+    description: 'Failed transaction record returned.',
+    type: FailedTransactionRecord,
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized.' })
+  @ApiResponse({ status: 403, description: 'Admin access required.' })
+  @ApiResponse({
+    status: 404,
+    description: 'Failed transaction record not found.',
+  })
+  @ApiParam({ name: 'id', example: 'abc123-def4-5678-90ab-cdef12345678' })
+  @ApiResponse({ status: 429, description: 'Too many requests.' })
+  @ApiResponse({ status: 500, description: 'Internal server error.' })
+  @Throttle({ default: { limit: 30, ttl: THROTTLE_WINDOW_MS } })
   @Get(':id')
   detail(@Param('id') id: string) {
     return this.dlq.get(id);
@@ -55,25 +159,113 @@ export class DlqController {
    * Re-execute the original operation. Today the only auto-retryable operation
    * is auto-release; other operations are flagged and must be replayed by
    * hand. Either way the record is updated on the outcome.
+   *
+   * Issue #953: Successful replays are logged to the audit trail.
    */
+  @ApiOperation({ summary: 'Replay a failed on-chain transaction attempt' })
+  @ApiResponse({
+    status: 200,
+    description: 'Replay request accepted and replay execution started.',
+    type: FailedTransactionRecord,
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized.' })
+  @ApiResponse({ status: 403, description: 'Admin access required.' })
+  @ApiResponse({
+    status: 404,
+    description: 'Failed transaction record not found.',
+  })
+  @ApiResponse({
+    status: 409,
+    description: 'Failed transaction record is not in pending review status.',
+  })
+  @ApiParam({ name: 'id', example: 'abc123-def4-5678-90ab-cdef12345678' })
+  @ApiResponse({ status: 429, description: 'Too many requests.' })
+  @ApiResponse({ status: 500, description: 'Internal server error.' })
+  @Throttle({ default: { limit: 5, ttl: THROTTLE_WINDOW_MS } })
   @Post(':id/replay')
-  async replay(@Param('id') id: string) {
+  async replay(@Param('id') id: string, @CurrentUser() admin?: AuthUser) {
     const record = await this.dlq.get(id);
-    return this.dlq.replay(record.id, async (r) => {
+    const result = await this.dlq.replay(record.id, async (r) => {
       if (r.operation === 'submitAutoRelease' && r.escrowId) {
-        return this.contract.submitAutoRelease(
+        // `auto_release(env, escrow_id: u64)` takes the contract's own id.
+        // The DLQ record carries the backend UUID, so it has to be translated
+        // before replay; without a mapping there is no valid call to make.
+        // Issue #844: the lookup goes through EscrowRepository so the
+        // controller never reaches for PrismaService itself.
+        const contractEscrowId = await this.escrows.findContractEscrowId(
           r.escrowId,
-          this.autoReleaseSourceAddress,
+        );
+        if (contractEscrowId === null) {
+          throw new ConflictException(
+            `Escrow "${r.escrowId}" has no contractEscrowId, so auto-release ` +
+              `cannot be replayed on-chain.`,
+          );
+        }
+        return this.contract.submitAutoRelease(
+          contractEscrowId,
+          this.requireAutoReleaseSource(),
         );
       }
-      throw new Error(
+      throw new BadRequestException(
         `Operation "${r.operation}" cannot be replayed automatically; replay manually.`,
       );
     });
+
+    // Issue #953: Audit successful replay
+    const adminAddress = admin?.address ?? 'unknown';
+    await this.auditLog.append({
+      action: 'DLQ_REPLAYED',
+      adminAddress,
+      entityType: 'failed_transaction',
+      entityId: id,
+      details: {
+        txHash: result.lastReplayTxHash,
+        operation: result.operation,
+      },
+    });
+
+    return result;
   }
 
+  @ApiOperation({
+    summary:
+      'Abandon a failed transaction record and prevent future replay attempts',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Failed transaction record abandoned.',
+    type: FailedTransactionRecord,
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized.' })
+  @ApiResponse({ status: 403, description: 'Admin access required.' })
+  @ApiResponse({
+    status: 404,
+    description: 'Failed transaction record not found.',
+  })
+  @ApiResponse({
+    status: 409,
+    description: 'Failed transaction record is not in pending review status.',
+  })
+  @ApiParam({ name: 'id', example: 'abc123-def4-5678-90ab-cdef12345678' })
+  @ApiResponse({ status: 429, description: 'Too many requests.' })
+  @ApiResponse({ status: 500, description: 'Internal server error.' })
+  @Throttle({ default: { limit: 5, ttl: THROTTLE_WINDOW_MS } })
   @Post(':id/abandon')
-  abandon(@Param('id') id: string) {
-    return this.dlq.abandon(id);
+  async abandon(@Param('id') id: string, @CurrentUser() admin?: AuthUser) {
+    const result = await this.dlq.abandon(id);
+
+    // Issue #953: Audit abandon action
+    const adminAddress = admin?.address ?? 'unknown';
+    await this.auditLog.append({
+      action: 'DLQ_ABANDONED',
+      adminAddress,
+      entityType: 'failed_transaction',
+      entityId: id,
+      details: {
+        operation: result.operation,
+      },
+    });
+
+    return result;
   }
 }

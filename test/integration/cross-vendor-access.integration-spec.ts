@@ -25,6 +25,7 @@ describe('Cross-Vendor Escrow Access (issue #272)', () => {
 
   const mockEscrow = {
     id: escrowId,
+    contractEscrowId: null,
     itemName: 'Test Item',
     itemRef: 'ref-001',
     amount: 100,

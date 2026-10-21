@@ -37,7 +37,7 @@ The system covers:
 
 | Requirement | Specification | Enforcement |
 |---|---|---|
-| R-TS-01 | Node.js 20.x LTS | CI must use `node-version: '20'` |
+| R-TS-01 | Node.js 22.x LTS | CI must use `node-version-file: '.nvmrc'` |
 | R-TS-02 | TypeScript 5.7+ with `strict: true` | `tsconfig.json` must enforce strict mode |
 | R-TS-03 | ES2023 target | `tsconfig.json` target must be ES2023 |
 | R-TS-04 | Module system: NodeNext | `tsconfig.json` module must be NodeNext |
@@ -86,7 +86,7 @@ The system covers:
 | R-OB-02 | Request correlation ID on every request | RequestIdMiddleware must inject and propagate X-Request-ID |
 | R-OB-03 | OpenTelemetry distributed tracing | Span must be created for each request handler |
 | R-OB-04 | Sentry error tracking (optional) | SENTRY_DSN enables Sentry; app must work without it |
-| R-OB-05 | Health check at GET /health | Must report db, horizon, redis status with 200/503 |
+| R-OB-05 | Health check at GET /health | Must report db, horizon, soroban, redis status with 200/503 |
 
 ---
 
@@ -204,43 +204,55 @@ R-API-07: String inputs must pass through SanitizationPipe (HTML stripping, cont
 
 ### 5.2 Route Map
 
+Limits are the `@Throttle` values in `src/**/*.controller.ts`, counted per client IP over a 60-second window. Routes without a `@Throttle` use the global default (`PUBLIC_LIMIT`, 60/min); `—` means the route is exempt via `@SkipThrottle`. The `/auth` limit is configurable with `AUTH_CHALLENGE_LIMIT` and the evidence-upload limit with `EVIDENCE_UPLOAD_LIMIT`.
+
 | Method | Path | Auth | Rate Limit |
 |---|---|---|---|
+| GET | `/` | None | 100/min |
 | GET | `/health` | None | — |
-| GET | `/version` | None | — |
+| GET | `/health/live` | None | — |
+| GET | `/health/ready` | None | — |
+| GET | `/version` | None | 100/min |
+| GET | `/auth` | None | 10/min |
 | POST | `/auth/challenge` | None | 10/min |
 | POST | `/auth` | None | 10/min |
 | POST | `/auth/refresh` | None | 10/min |
-| POST | `/escrow` | JWT | 60/min |
+| POST | `/escrow` | JWT | 10/min |
 | GET | `/escrow/:id` | None | 60/min |
-| GET | `/escrow/:id/events` | None | 60/min |
+| GET | `/escrow/:id/events` | None | 100/min |
 | GET | `/escrow/:id/tracking` | None | 60/min |
-| PATCH | `/escrow/:id/buyer-contact` | None | 5/min |
-| PATCH | `/escrow/:id/ship` | JWT | 60/min |
-| PATCH | `/escrow/:id/cancel` | JWT | 60/min |
-| DELETE | `/escrow/:id` | JWT | 60/min |
-| POST | `/escrow/:id/dispute` | JWT | 60/min |
-| GET | `/escrow/:id/dispute` | JWT | 60/min |
+| PATCH | `/escrow/:id/buyer-contact` | None | 10/min |
+| PATCH | `/escrow/:id/ship` | JWT | 20/min |
+| PATCH | `/escrow/:id/cancel` | JWT | 10/min |
+| DELETE | `/escrow/:id` | JWT | 10/min |
+| POST | `/escrow/:id/dispute` | JWT | 5/min |
+| GET | `/escrow/:id/dispute` | JWT | 30/min |
 | POST | `/escrow/evidence-upload` | JWT | 10/min |
-| GET | `/vendor/escrows` | JWT | 60/min |
-| POST | `/vendor/profile` | JWT | 60/min |
-| GET | `/vendor/profile` | JWT | 60/min |
-| PUT | `/vendor/profile` | JWT | 60/min |
-| PATCH | `/vendor/profile` | JWT | 60/min |
-| GET | `/vendor/profile/notifications` | JWT | 60/min |
-| PATCH | `/vendor/profile/notifications` | JWT | 60/min |
-| GET | `/vendor/analytics` | JWT | 60/min |
-| GET | `/vendor/analytics/chart` | JWT | 60/min |
+| GET | `/vendor/escrows` | JWT | 20/min |
+| POST | `/vendor/profile` | JWT | 10/min |
+| GET | `/vendor/profile` | JWT | 20/min |
+| PUT | `/vendor/profile` | JWT | 10/min |
+| PATCH | `/vendor/profile` | JWT | 10/min |
+| GET | `/vendor/profile/notifications` | JWT | 20/min |
+| PATCH | `/vendor/profile/notifications` | JWT | 10/min |
+| GET | `/vendor/analytics` | JWT | 20/min |
+| GET | `/vendor/analytics/chart` | JWT | 20/min |
 | POST | `/webhooks/stellar` | HMAC | — |
-| GET | `/admin/stats` | JWT+Admin | 60/min |
-| GET | `/admin/disputes` | JWT+Admin | 60/min |
-| PATCH | `/admin/dispute/:id/resolve` | JWT+Admin | 60/min |
-| GET | `/admin/queues` | JWT+Admin | 60/min |
-| GET | `/admin/audit-log` | JWT+Admin | 60/min |
-| PATCH | `/admin/credentials/logistics` | JWT+Admin | 60/min |
-| GET | `/admin/dlq` | JWT+Admin | 60/min |
-| POST | `/admin/dlq/:id/replay` | JWT+Admin | 60/min |
-| POST | `/admin/dlq/:id/abandon` | JWT+Admin | 60/min |
+| GET | `/admin/stats` | JWT+Admin | 20/min |
+| GET | `/admin/disputes` | JWT+Admin | 20/min |
+| PATCH | `/admin/dispute/:id/resolve` | JWT+Admin | 10/min |
+| GET | `/admin/queues` | JWT+Admin | 20/min |
+| GET | `/admin/audit-log` | JWT+Admin | 20/min |
+| PATCH | `/admin/credentials/logistics` | JWT+Admin | 5/min |
+| GET | `/admin/dlq` | JWT+Admin | 20/min |
+| GET | `/admin/dlq/:id` | JWT+Admin | 30/min |
+| POST | `/admin/dlq/:id/replay` | JWT+Admin | 5/min |
+| POST | `/admin/dlq/:id/abandon` | JWT+Admin | 5/min |
+| GET | `/stress-test/active` | JWT+Admin | 30/min |
+| GET | `/stress-test/active/:testId` | JWT+Admin | 30/min |
+| POST | `/stress-test` | JWT+Admin | 10/min |
+| GET | `/vendor/account-details` | JWT | 60/min |
+| PATCH | `/vendor/account-details` | JWT | 60/min |
 
 ---
 
@@ -283,6 +295,7 @@ R-SEC-20: Public endpoints must be rate-limited at 60 requests/minute per IP.
 R-SEC-21: Auth challenge endpoints must be rate-limited at 10 requests/minute per IP.
 R-SEC-22: Evidence upload must be rate-limited at 10 requests/minute per user.
 R-SEC-23: Rate limit exceeded must return 429 with Retry-After header.
+R-SEC-24: The signed Stellar webhook (`POST /webhooks/stellar`) must be exempt from rate limiting; every delivery is authenticated by HMAC, so a burst of payments must not be dropped.
 
 ---
 
@@ -293,11 +306,14 @@ R-SEC-23: Rate limit exceeded must return 429 with Retry-After header.
 R-TST-01: Every service method must have at least one unit test.
 R-TST-02: Every controller endpoint must have at least one integration test.
 R-TST-03: Every critical user flow must have an E2E test.
-R-TST-04: Line coverage of application source (`src/`, excluding spec files
-and `main.ts`) must not drop below 70%, enforced by
-`scripts/check_coverage.js`. Coverage is measured over application source
-only. Do not widen `collectCoverageFrom` to include specs, scripts or config,
-which inflates the denominator and makes the gate meaningless.
+R-TST-04: Coverage of application source (`src/`, excluding spec files
+and `main.ts`) must meet separate floors for lines (95%), branches (82%),
+and functions (90%), enforced by `scripts/check_coverage.js`. The floors were
+raised from 70% / 64% / 65% because the suite measures 97.01% / 84.96% /
+92.71% — a gate that far below the real figure cannot catch a regression
+(#850). Coverage is measured over application source only. Do not widen
+`collectCoverageFrom` to include specs, scripts or config, which inflates the
+denominator and makes the gate meaningless.
 R-TST-05: PRs that reduce coverage by more than 2% must be rejected.
 
 ### 7.2 Test Types

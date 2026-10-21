@@ -16,6 +16,7 @@ import request from 'supertest';
 import { AppModule } from '../../src/app.module';
 import { PrismaService } from '../../src/prisma/prisma.service';
 import { bearer } from '../auth-helper';
+import { ensureVendors } from '../prisma-helpers';
 
 describe('Vendor notification preferences (issue #293)', () => {
   let app: INestApplication;
@@ -38,6 +39,10 @@ describe('Vendor notification preferences (issue #293)', () => {
     await app.init();
     prisma = app.get(PrismaService);
     await prisma.reset();
+    // Escrow.vendorAddress (and the vendor settings/details tables) are
+    // foreign keys onto VendorProfile.address, so the parent rows must exist
+    // before any row referencing them can be written (#475).
+    await ensureVendors(prisma, 'GVENDORNOT001');
 
     // Pre-create a vendor profile so notifications endpoints can find the vendor
     await request(app.getHttpServer())

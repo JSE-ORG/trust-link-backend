@@ -1,46 +1,69 @@
 # Event Schema Reference
 
 This document is the indexer-facing event contract for TrustLink escrow events.
-Event schemas are defined in `contracts/escrow/src/events.rs`, with one legacy
-inline event in `set_fee_collector`.
+Event schemas are defined in `contracts/escrow/src/events.rs`.
+
+> **Source verification:** Every topic in this document was verified against
+> the emitter calls in `contracts/escrow/src/events.rs` at commit
+> `4ffc37beb8265aaf7db40c8bd5facca42488e3d7` of the
+> [trust-link-contract](https://github.com/JSE-ORG/trust-link-contract) repository.
 
 ## Encoding Rules
 
 - Events are Soroban contract events emitted with `env.events().publish(topic, data)`.
-- Canonical event topics use a one-element topic tuple: `(Symbol("<event_name>"),)`.
+- **Canonical event topics use a two-element topic tuple** of the form
+  `(symbol_short!("<Category>"), symbol_short!("<Action>"))` — two PascalCase symbols
+  that together identify the event. The category groups related events (e.g.
+  `"Escrow"`, `"Dispute"`, `"Fee"`) and the action names the specific occurrence
+  (e.g. `"Created"`, `"Funded"`, `"Updated"`).
+- Many events include a **third indexed parameter** — an `Address` identifying the
+  primary actor or subject of the event (buyer, seller, resolver, etc.). Indexers
+  SHOULD filter by `contract_id` and the first two topic elements when subscribing;
+  the third element can be used for per-address filtering.
+- **Exceptions:** A small number of events use a single-symbol topic
+  `(Symbol::new(env, "<snake_case_name>"),)` instead of the two-symbol convention.
+  These are called out explicitly in the event index below.
 - Event data is the XDR encoding of the listed `#[contracttype]` payload struct.
-- Unless explicitly listed otherwise, there are no additional indexed topic
-  parameters. Indexers should filter by `contract_id` and topic element `0`.
 - Address fields are Soroban `Address` values. Integer fields use the exact Rust
   width shown below. Timestamps are ledger timestamps in seconds.
 
 ## Event Index
 
-| Topic | Payload | Indexed topic params | Emitted by |
-|---|---|---|---|
-| `contract_initialized` | `ContractInitialized` | `topic[0] = "contract_initialized"` | `initialize` |
-| `contract_paused` | `ContractPausedEvent` | `topic[0] = "contract_paused"` | `pause_contract` |
-| `contract_unpaused` | `ContractUnpausedEvent` | `topic[0] = "contract_unpaused"` | `unpause_contract` |
-| `admin_rotated` | `AdminRotated` | `topic[0] = "admin_rotated"` | `set_admin` |
-| `fee_updated` | `FeeUpdated` | `topic[0] = "fee_updated"` | `set_fee` |
-| `protocol_fee_updated` | `ProtocolFeeUpdated` | `topic[0] = "protocol_fee_updated"` | `set_protocol_fee` |
-| `arbitration_fee_updated` | `ArbitrationFeeUpdated` | `topic[0] = "arbitration_fee_updated"` | `set_arbitration_fee` |
-| `fees_withdrawn` | `FeesWithdrawn` | `topic[0] = "fees_withdrawn"` | `withdraw_fees` |
-| `escrow_created` | `EscrowCreated` | `topic[0] = "escrow_created"` | `create_escrow` |
-| `escrow_funded` | `EscrowFunded` | `topic[0] = "escrow_funded"` | funding flow |
-| `escrow_shipped` | `EscrowShipped` | `topic[0] = "escrow_shipped"` | `mark_shipped` |
-| `delivery_recorded` | `DeliveryRecorded` | `topic[0] = "delivery_recorded"` | `record_delivery` |
-| `escrow_completed` | `EscrowCompleted` | `topic[0] = "escrow_completed"` | `confirm_delivery` |
-| `dispute_raised` | `DisputeRaised` | `topic[0] = "dispute_raised"` | dispute flow |
-| `dispute_resolved` | `DisputeResolved` | `topic[0] = "dispute_resolved"` | `resolve_dispute` |
-| `auto_released` | `AutoReleased` | `topic[0] = "auto_released"` | `auto_release` |
-| `escrow_cancelled` | `EscrowCancelled` | `topic[0] = "escrow_cancelled"` | `cancel_escrow` |
-| `resolver_rotated` | `ResolverRotated` | `topic[0] = "resolver_rotated"` | `rotate_resolver` |
-| `FeeCollectorUpdated` | tuple | `topic[0] = "FeeCollectorUpdated"` | `set_fee_collector` |
+| Category | Action | Topic tuple | Payload | Indexed params | Emitted by |
+|---|---|---|---|---|---|
+| `Contract` | `Init` | `("Contract", "Init")` | `ContractInitialized` | `topic[0..1]` | `initialize` |
+| `Contract` | `Paused` | `("Contract", "Paused")` | `ContractPausedEvent` | `topic[0..1]`, `topic[2] = admin` | `pause_contract` |
+| `Contract` | `Unpaused` | `("Contract", "Unpaused")` | `ContractUnpausedEvent` | `topic[0..1]`, `topic[2] = admin` | `unpause_contract` |
+| `Admin` | `Rotated` | `("Admin", "Rotated")` | `AdminRotated` | `topic[0..1]` | `set_admin` |
+| `Fee` | `Updated` | `("Fee", "Updated")` | `FeeUpdated` | `topic[0..1]` | `set_fee` |
+| `ProtoFee` | `Updated` | `("ProtoFee", "Updated")` | `ProtocolFeeUpdated` | `topic[0..1]` | `set_protocol_fee` |
+| `ArbFee` | `Updated` | `("ArbFee", "Updated")` | `ArbitrationFeeUpdated` | `topic[0..1]` | `set_arbitration_fee` |
+| `Escrow` | `Created` | `("Escrow", "Created")` | `EscrowCreated` | `topic[0..1]`, `topic[2] = seller` | `create_escrow` |
+| `Escrow` | `Funded` | `("Escrow", "Funded")` | `EscrowFunded` | `topic[0..1]`, `topic[2] = buyer` | funding flow |
+| `Escrow` | `Shipped` | `("Escrow", "Shipped")` | `EscrowShipped` | `topic[0..1]`, `topic[2] = seller` | `mark_shipped` |
+| `Escrow` | `Delivered` | `("Escrow", "Delivered")` | `DeliveryRecorded` | `topic[0..1]` | `record_delivery` |
+| `Escrow` | `Completed` | `("Escrow", "Completed")` | `EscrowCompleted` | `topic[0..1]`, `topic[2] = recipient` | `confirm_delivery` |
+| `Dispute` | `Raised` | `("Dispute", "Raised")` | `DisputeRaised` | `topic[0..1]`, `topic[2] = buyer` | dispute flow |
+| `Dispute` | `Resolved` | `("Dispute", "Resolved")` | `DisputeResolved` | `topic[0..1]`, `topic[2] = resolver` | `resolve_dispute` |
+| `Escrow` | `Released` | `("Escrow", "Released")` | `AutoReleased` | `topic[0..1]`, `topic[2] = seller` | `auto_release` |
+| `Escrow` | `Canceled` | `("Escrow", "Canceled")` | `EscrowCancelled` | `topic[0..1]`, `topic[2] = cancelled_by` | `cancel_escrow` |
+| `Escrow` | `Expired` | `("Escrow", "Expired")` | `EscrowExpired` | `topic[0..1]`, `topic[2] = buyer` | `reclaim_expired` |
+| `Resolver` | `Rotated` | `("Resolver", "Rotated")` | `ResolverRotated` | `topic[0..1]` | `rotate_resolver` |
+| `FeeColl` | `Updated` | `("FeeColl", "Updated")` | `FeeCollectorUpdated` | `topic[0..1]` | `set_fee_collector` |
+
+### Events Using a Different Convention
+
+The following events use a single-symbol topic rather than the two-symbol pattern:
+
+| Topic | Payload | Emitted by |
+|---|---|---|
+| `resolver_vote_recorded` | `ResolverVoteRecorded` | multi-resolver vote flow |
+| `contract_upgraded` | `ContractUpgradedEvent` | contract upgrade |
+| `storage_migrated` | `StorageMigratedEvent` | storage migration |
 
 ## Payload Schemas
 
-### `contract_initialized`
+### `ContractInitialized`
 
 ```rust
 pub struct ContractInitialized {
@@ -51,7 +74,7 @@ pub struct ContractInitialized {
 }
 ```
 
-### `contract_paused`
+### `ContractPausedEvent`
 
 ```rust
 pub struct ContractPausedEvent {
@@ -60,7 +83,7 @@ pub struct ContractPausedEvent {
 }
 ```
 
-### `contract_unpaused`
+### `ContractUnpausedEvent`
 
 ```rust
 pub struct ContractUnpausedEvent {
@@ -69,7 +92,7 @@ pub struct ContractUnpausedEvent {
 }
 ```
 
-### `admin_rotated`
+### `AdminRotated`
 
 ```rust
 pub struct AdminRotated {
@@ -79,7 +102,7 @@ pub struct AdminRotated {
 }
 ```
 
-### `fee_updated`
+### `FeeUpdated`
 
 ```rust
 pub struct FeeUpdated {
@@ -89,7 +112,7 @@ pub struct FeeUpdated {
 }
 ```
 
-### `protocol_fee_updated`
+### `ProtocolFeeUpdated`
 
 ```rust
 pub struct ProtocolFeeUpdated {
@@ -99,7 +122,7 @@ pub struct ProtocolFeeUpdated {
 }
 ```
 
-### `arbitration_fee_updated`
+### `ArbitrationFeeUpdated`
 
 ```rust
 pub struct ArbitrationFeeUpdated {
@@ -109,18 +132,7 @@ pub struct ArbitrationFeeUpdated {
 }
 ```
 
-### `fees_withdrawn`
-
-```rust
-pub struct FeesWithdrawn {
-    pub token: Address,
-    pub to: Address,
-    pub amount: i128,
-    pub timestamp: u64,
-}
-```
-
-### `escrow_created`
+### `EscrowCreated`
 
 ```rust
 pub struct EscrowCreated {
@@ -135,7 +147,7 @@ pub struct EscrowCreated {
 }
 ```
 
-### `escrow_funded`
+### `EscrowFunded`
 
 ```rust
 pub struct EscrowFunded {
@@ -146,7 +158,7 @@ pub struct EscrowFunded {
 }
 ```
 
-### `escrow_shipped`
+### `EscrowShipped`
 
 ```rust
 pub struct EscrowShipped {
@@ -157,7 +169,7 @@ pub struct EscrowShipped {
 }
 ```
 
-### `delivery_recorded`
+### `DeliveryRecorded`
 
 ```rust
 pub struct DeliveryRecorded {
@@ -166,7 +178,7 @@ pub struct DeliveryRecorded {
 }
 ```
 
-### `escrow_completed`
+### `EscrowCompleted`
 
 ```rust
 pub struct EscrowCompleted {
@@ -178,7 +190,7 @@ pub struct EscrowCompleted {
 }
 ```
 
-### `dispute_raised`
+### `DisputeRaised`
 
 ```rust
 pub struct DisputeRaised {
@@ -191,7 +203,7 @@ pub struct DisputeRaised {
 }
 ```
 
-### `dispute_resolved`
+### `DisputeResolved`
 
 ```rust
 pub struct DisputeResolved {
@@ -210,7 +222,7 @@ pub enum ResolutionType {
 }
 ```
 
-### `auto_released`
+### `AutoReleased`
 
 ```rust
 pub struct AutoReleased {
@@ -222,7 +234,7 @@ pub struct AutoReleased {
 }
 ```
 
-### `escrow_cancelled`
+### `EscrowCancelled`
 
 ```rust
 pub struct EscrowCancelled {
@@ -232,7 +244,18 @@ pub struct EscrowCancelled {
 }
 ```
 
-### `resolver_rotated`
+### `EscrowExpired`
+
+```rust
+pub struct EscrowExpired {
+    pub escrow_id: u64,
+    pub buyer: Address,
+    pub amount: i128,
+    pub timestamp: u64,
+}
+```
+
+### `ResolverRotated`
 
 ```rust
 pub struct ResolverRotated {
@@ -245,16 +268,21 @@ pub struct ResolverRotated {
 
 ### `FeeCollectorUpdated`
 
-This legacy event is emitted inline rather than through a named `#[contracttype]`
-struct.
-
 ```rust
-topic = ("FeeCollectorUpdated",)
-data = (old_collector: Address, new_collector: Address)
+pub struct FeeCollectorUpdated {
+    pub old_collector: Address,
+    pub new_collector: Address,
+    pub timestamp: u64,
+}
 ```
 
 ## Indexer Guidance
 
+- The **canonical event name** is derived from the two topic symbols joined with
+  an underscore and lowercased. For example `("Escrow", "Funded")` → `escrow_funded`,
+  `("Dispute", "Raised")` → `dispute_raised`. This is the name used in the payload
+  struct and throughout the backend.
+- For single-symbol exception events, the topic itself is the canonical name.
 - Treat `escrow_id` as the primary business key for escrow lifecycle events.
 - Treat `token` as the asset key for fee accounting events.
 - Use `funded_at`, `shipped_at`, `delivered_at`, `completed_at`,
@@ -262,6 +290,6 @@ data = (old_collector: Address, new_collector: Address)
   as event-time fields sourced from `env.ledger().timestamp()`.
 - Store raw `i128` token amounts. Token decimal handling belongs to the token
   metadata layer, not this event stream.
-- `FeeCollectorUpdated` uses PascalCase while all other canonical topics use
-  snake_case. Indexers should preserve this exact topic string.
-
+- `FeeCollectorUpdated` uses PascalCase for its event name while all other canonical
+  events use snake_case derived from the topic pair. Indexers should preserve the
+  exact `FeeCollectorUpdated` string.

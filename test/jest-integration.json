@@ -4,8 +4,21 @@
   "testEnvironment": "node",
   "testRegex": "test/integration/.*\\.integration-spec\\.ts$",
   "transform": {
-    "^.+\\.(t|j)s$": "ts-jest"
+    "^.+\\.(t|j)s$": [
+      "ts-jest",
+      {
+        "tsconfig": {
+          "module": "commonjs",
+          "moduleResolution": "node",
+          "resolvePackageJsonExports": false,
+          "allowJs": true
+        }
+      }
+    ]
   },
+  "transformIgnorePatterns": [
+    "[/\\\\]node_modules[/\\\\](?!(.pnpm[/\\\\])?(uint8array-extras|@exodus|@noble|@stellar))"
+  ],
   "maxWorkers": 1,
   "testTimeout": 60000,
   "setupFiles": ["<rootDir>/test/setup-env.ts"]

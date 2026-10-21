@@ -24,7 +24,22 @@ export class StressTestService {
     private readonly configService: ConfigService,
   ) {}
 
-  /** Executes configured virtual-user profiles and returns aggregate load metrics. */
+  /**
+   * Runs every profile in `config` **sequentially**, awaiting each before
+   * starting the next, and resolves with the aggregate {@link StressTestResult}.
+   *
+   * Blocking: the returned promise does not resolve until the whole run is
+   * finished, so this is a synchronous-feeling call, not fire-and-forget.
+   * A profile failure does **not** reject — it is caught, `status` is set to
+   * `'FAILED'`, and the partial result is still returned; callers must check
+   * `result.status` rather than relying on a thrown error.
+   *
+   * The run is registered in `activeTests` under a generated `testId` for
+   * its duration and removed on completion (success or failure), so
+   * {@link getActiveTest} / {@link getAllActiveTests} only ever see a run
+   * that is still in progress. State is per-process and in-memory — nothing
+   * is persisted and a restart loses in-flight runs.
+   */
   async runStressTest(config: StressTestConfigDto): Promise<StressTestResult> {
     const testId = this.generateTestId();
     this.logger.log(`Starting stress test: ${config.testName} (ID: ${testId})`);
@@ -332,12 +347,29 @@ export class StressTestService {
     }
   }
 
-  /** Returns a currently running stress test by ID when present. */
+  /**
+   * Returns the live {@link StressTestResult} for an **in-progress** run, or
+   * `undefined`.
+   *
+   * A run is only in `activeTests` while {@link runStressTest} is still
+   * executing it — a completed or failed run has already been removed, so
+   * this is not a way to fetch historical results (there is no history
+   * store). The returned object is the same reference `runStressTest` is
+   * mutating; read it, don't hold it.
+   */
   getActiveTest(testId: string): StressTestResult | undefined {
     return this.activeTests.get(testId);
   }
 
-  /** Returns all currently running stress tests. */
+  /**
+   * Returns a snapshot array of every stress-test run currently in progress
+   * on this process.
+   *
+   * Empty unless a `runStressTest` call is executing concurrently. Same
+   * caveats as {@link getActiveTest}: in-progress only, no history,
+   * per-process, and the entries are live references being mutated by the
+   * runner.
+   */
   getAllActiveTests(): StressTestResult[] {
     return Array.from(this.activeTests.values());
   }

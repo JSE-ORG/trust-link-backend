@@ -1,9 +1,39 @@
 import { Global, Module } from '@nestjs/common';
+import { ConfigModule } from '../config/config.module';
+import { ConfigService } from '../config/config.service';
+import { GiglLogisticsService } from './gigl/gigl-logistics.service';
+import { GiglClient } from './gigl/gigl.client';
 import { LogisticsService } from './logistics.service';
+import { ProviderCredentialRepository } from './provider-credential.repository';
 
 @Global()
 @Module({
-  providers: [LogisticsService],
-  exports: [LogisticsService],
+  imports: [ConfigModule],
+  providers: [
+    {
+      provide: GiglClient,
+      useFactory: (config: ConfigService) => {
+        const baseUrl = config.get<string>('LOGISTICS_API_BASE_URL');
+        const envApiToken = config.get<string>('LOGISTICS_API_KEY');
+
+        if (!baseUrl) {
+          return null;
+        }
+
+        return new GiglClient({
+          baseUrl,
+          getApiToken: () => envApiToken || null,
+        });
+      },
+      inject: [ConfigService],
+    },
+    GiglLogisticsService,
+    ProviderCredentialRepository,
+    {
+      provide: LogisticsService,
+      useExisting: GiglLogisticsService,
+    },
+  ],
+  exports: [GiglClient, GiglLogisticsService, LogisticsService],
 })
 export class LogisticsModule {}

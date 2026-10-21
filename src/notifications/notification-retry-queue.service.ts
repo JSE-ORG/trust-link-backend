@@ -29,10 +29,12 @@ import {
   OnModuleInit,
   Optional,
 } from '@nestjs/common';
+import { TracingService } from '../tracing/tracing.service';
 import * as crypto from 'crypto';
 import type { ConnectionOptions } from 'bullmq';
 
-import { PrismaService } from '../prisma/prisma.service';
+import { NotificationRepository } from './notification.repository';
+import { ConfigService } from '../config/config.service';
 import {
   NotificationRetryJobData,
   NotificationRetryBackoff,
@@ -47,6 +49,16 @@ import {
  * `NotificationsService` can be reduced to this shape.
  */
 export interface NotificationChannelDispatcher {
+  /**
+   * Deliver one notification job over this channel (email or SMS).
+   *
+   * Contract: resolve on a successful send, **reject** on any failure. The
+   * queue owns retry/backoff and the DLQ, so a dispatcher must not swallow
+   * errors or retry internally — a rejection is how it signals "try again"
+   * (BullMQ backend) or "count this attempt" (in-process backend). Called
+   * once per attempt; may be called up to `backoff.attempts` times for the
+   * same job.
+   */
   dispatch(job: NotificationRetryJobData): Promise<void>;
 }
 
@@ -55,6 +67,16 @@ export interface NotificationChannelDispatcher {
  * landed on the DLQ.
  */
 export interface NotificationDeadLetterSink {
+  /**
+   * Receive one dead-letter entry — a job that exhausted every retry
+   * attempt.
+   *
+   * Called once per permanently-failed job, after the `Notification` row has
+   * already been marked `FAILED` and (when configured) the BullMQ DLQ has
+   * been written; this sink is the in-process / test-visible mirror of that.
+   * Implementations should not throw: an error here is logged by the queue
+   * but changes nothing, since the job is already dead.
+   */
   record(entry: NotificationDeadLetterRecord): Promise<void> | void;
 }
 
@@ -101,13 +123,30 @@ export class NotificationRetryQueueService
 
   constructor(
     @Optional() options?: CommonOptions,
-    @Optional() private readonly prisma?: PrismaService,
+    // Issue #845: notification status writes go through the repository
+    // (R-DB-02). Optional, matching the old optional PrismaService — the
+    // in-process runner still works without a database.
+    @Optional() private readonly notifications?: NotificationRepository,
+    @Optional() private readonly configService?: ConfigService,
+    @Optional() private readonly tracing?: TracingService,
   ) {
     if (options?.backoff) this.options.backoff = options.backoff;
     this.options.deadLetterSink = options?.deadLetterSink;
     this.options.scheduleDelayed = options?.scheduleDelayed;
   }
 
+  /**
+   * Bind the dispatcher used to actually send jobs for one channel.
+   *
+   * Must be called (for each channel that will be used) before any
+   * `enqueue` job for that channel is processed — a job whose channel has no
+   * registered dispatcher is dropped with a warning by the in-process
+   * runner, or throws inside the BullMQ worker. Wiring normally happens in
+   * `NotificationsModule` at startup.
+   *
+   * Last write wins: calling it again for the same channel replaces the
+   * previous dispatcher (used by tests). There is no unregister.
+   */
   registerDispatcher(
     channel: 'EMAIL' | 'SMS',
     dispatcher: NotificationChannelDispatcher,
@@ -120,7 +159,39 @@ export class NotificationRetryQueueService
    * the job is added to the BullMQ queue; otherwise it runs through
    * the in-process retry runner.
    */
+  /**
+   * Runs `fn` inside a notification retry span.
+   *
+   * Records the notification type, channel and attempt number so a retry
+   * storm is visible in traces. Message payloads are never recorded. Tracing
+   * is optional, so a queue built without it still retries normally.
+   */
+  private traced<T>(
+    name: string,
+    attributes: Record<string, string | number | boolean>,
+    fn: () => T | Promise<T>,
+  ): Promise<T> {
+    if (!this.tracing) {
+      return Promise.resolve(fn());
+    }
+    return this.tracing.withSpan(name, { attributes }, fn);
+  }
+
   async enqueue(job: NotificationRetryJobData): Promise<void> {
+    return this.traced(
+      'notification.retry.enqueue',
+      {
+        'trustlink.notification.type': job.type,
+        'trustlink.notification.channel': job.channel,
+        'trustlink.notification.request_id': job.requestId ?? 'generated',
+        'trustlink.notification.queued': this.bullQueue !== null,
+        'trustlink.notification.max_attempts': this.options.backoff.attempts,
+      },
+      () => this.enqueueInternal(job),
+    );
+  }
+
+  private async enqueueInternal(job: NotificationRetryJobData): Promise<void> {
     const enriched: NotificationRetryJobData = {
       ...job,
       requestId: job.requestId ?? crypto.randomUUID(),
@@ -145,6 +216,21 @@ export class NotificationRetryQueueService
    * backoff. Used in test + dev environments without Redis.
    */
   private async processInProcess(job: NotificationRetryJobData): Promise<void> {
+    return this.traced(
+      'notification.retry.attempt',
+      {
+        'trustlink.notification.type': job.type,
+        'trustlink.notification.channel': job.channel,
+        'trustlink.notification.request_id': job.requestId ?? 'unknown',
+        'trustlink.notification.max_attempts': this.options.backoff.attempts,
+      },
+      () => this.processInProcessInternal(job),
+    );
+  }
+
+  private async processInProcessInternal(
+    job: NotificationRetryJobData,
+  ): Promise<void> {
     const dispatcher = this.dispatchers[job.channel];
     if (!dispatcher) {
       this.logger.warn(
@@ -158,16 +244,9 @@ export class NotificationRetryQueueService
     for (let attempt = 1; attempt <= attempts; attempt++) {
       try {
         await dispatcher.dispatch(job);
-        if (job.notificationId && this.prisma) {
-          await this.prisma.notification
-            .update({
-              where: { id: job.notificationId },
-              data: {
-                status: 'SENT',
-                sentAt: new Date(),
-                retryCount: attempt - 1,
-              },
-            })
+        if (job.notificationId && this.notifications) {
+          await this.notifications
+            .markSent(job.notificationId, attempt - 1)
             .catch((err) =>
               this.logger.error(
                 'Failed to update notification status to SENT',
@@ -178,19 +257,16 @@ export class NotificationRetryQueueService
         return;
       } catch (err) {
         lastError = err;
-        if (job.notificationId && this.prisma) {
-          await this.prisma.notification
-            .update({
-              where: { id: job.notificationId },
-              data: {
-                retryCount: attempt,
-                failedAt: new Date(),
-                lastError: err instanceof Error ? err.message : String(err),
-              },
-            })
+        if (job.notificationId && this.notifications) {
+          await this.notifications
+            .markAttemptFailed(
+              job.notificationId,
+              attempt,
+              err instanceof Error ? err.message : String(err),
+            )
             .catch((dbErr) =>
               this.logger.error(
-                'Failed to update notification status to FAILED/PENDING',
+                'Failed to update notification status on error in worker',
                 dbErr,
               ),
             );
@@ -204,14 +280,9 @@ export class NotificationRetryQueueService
         await this.sleep(delay);
       }
     }
-    if (job.notificationId && this.prisma) {
-      await this.prisma.notification
-        .update({
-          where: { id: job.notificationId },
-          data: {
-            status: 'FAILED',
-          },
-        })
+    if (job.notificationId && this.notifications) {
+      await this.notifications
+        .markFailed(job.notificationId)
         .catch((err) =>
           this.logger.error(
             'Failed to update notification status to FAILED',
@@ -264,7 +335,7 @@ export class NotificationRetryQueueService
   }
 
   async onModuleInit(): Promise<void> {
-    const url = process.env.REDIS_URL;
+    const url = this.configService?.get<string>('REDIS_URL');
     if (!url) {
       this.logger.warn(
         'REDIS_URL is not set; NotificationRetryQueueService is using the in-process retry runner. ' +
@@ -295,16 +366,9 @@ export class NotificationRetryQueueService
           }
           try {
             await dispatcher.dispatch(job.data);
-            if (job.data.notificationId && this.prisma) {
-              await this.prisma.notification
-                .update({
-                  where: { id: job.data.notificationId },
-                  data: {
-                    status: 'SENT',
-                    sentAt: new Date(),
-                    retryCount: job.attemptsMade,
-                  },
-                })
+            if (job.data.notificationId && this.notifications) {
+              await this.notifications
+                .markSent(job.data.notificationId, job.attemptsMade)
                 .catch((err) =>
                   this.logger.error(
                     'Failed to update notification status to SENT in worker',
@@ -313,16 +377,13 @@ export class NotificationRetryQueueService
                 );
             }
           } catch (err) {
-            if (job.data.notificationId && this.prisma) {
-              await this.prisma.notification
-                .update({
-                  where: { id: job.data.notificationId },
-                  data: {
-                    retryCount: job.attemptsMade + 1,
-                    failedAt: new Date(),
-                    lastError: err instanceof Error ? err.message : String(err),
-                  },
-                })
+            if (job.data.notificationId && this.notifications) {
+              await this.notifications
+                .markAttemptFailed(
+                  job.data.notificationId,
+                  job.attemptsMade + 1,
+                  err instanceof Error ? err.message : String(err),
+                )
                 .catch((dbErr) =>
                   this.logger.error(
                     'Failed to update notification status on error in worker',
@@ -343,14 +404,9 @@ export class NotificationRetryQueueService
           if (job.attemptsMade < attemptsAllowed) {
             return;
           }
-          if (job.data.notificationId && this.prisma) {
-            await this.prisma.notification
-              .update({
-                where: { id: job.data.notificationId },
-                data: {
-                  status: 'FAILED',
-                },
-              })
+          if (job.data.notificationId && this.notifications) {
+            await this.notifications
+              .markFailed(job.data.notificationId)
               .catch((err) =>
                 this.logger.error(
                   'Failed to update notification status to FAILED in worker',

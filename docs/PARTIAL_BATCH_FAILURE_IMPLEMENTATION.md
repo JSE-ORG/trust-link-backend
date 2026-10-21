@@ -77,7 +77,7 @@ async run(referenceTime = new Date()): Promise<void> {
 
 ### Unit Tests
 
-**File**: `test/unit/auto-release.worker.spec.ts`
+**File**: `src/workers/auto-release.worker.spec.ts`
 
 Added comprehensive test suite: "Partial batch failure recovery"
 

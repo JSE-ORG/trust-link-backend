@@ -13,6 +13,10 @@ import { VendorProfileService } from '../../src/vendor/vendor-profile.service';
 import { VendorProfileRepository } from '../../src/vendor/vendor-profile.repository';
 import { CreateVendorProfileDto } from '../../src/vendor/dto/create-vendor-profile.dto';
 import { UpdateVendorProfileDto } from '../../src/vendor/dto/update-vendor-profile.dto';
+import { UpdateNotificationPreferencesDto } from '../../src/vendor/dto/update-notification-preferences.dto';
+import { TracingService } from '../../src/tracing/tracing.service';
+import { createTracingMock } from './tracing-mock';
+import { VENDOR_PROFILE_PLACEHOLDER_DESCRIPTION } from '../../src/vendor/vendor-profile.constants';
 
 // ── fixture factory ────────────────────────────────────────────────────────
 
@@ -44,12 +48,44 @@ function makeProfile(
 const createDto: CreateVendorProfileDto = {
   businessName: 'Acme Ltd',
   email: 'acme@example.com',
-  phone: '+1-555-0100',
+  phone: '+15555550100',
   description: 'Electronics reseller',
 };
 
 const updateDto: UpdateVendorProfileDto = {
   businessName: 'Acme Electronics',
+};
+
+const notificationPreferences: UpdateNotificationPreferencesDto = {
+  notifyOnDelivery: false,
+  notifyOnDelay: true,
+  notificationChannels: ['EMAIL', 'SMS'],
+  webhookUrl: 'https://acme.example/webhooks/delivery',
+};
+
+const trackingSettings = {
+  id: 'tracking-1',
+  vendorAddress: VENDOR_ADDRESS,
+  enableTracking: true,
+  trackingProvider: null,
+  trackingApiKey: null,
+  autoUpdateTracking: true,
+  trackingUpdateInterval: 60,
+  notifyOnDelivery: false,
+  notifyOnDelay: true,
+  notifyOnException: true,
+  delayThresholdHours: 24,
+  deliveryConfirmation: true,
+  requireSignature: false,
+  insuranceRequired: false,
+  insuranceValue: null,
+  customTrackingRules: null,
+  webhookUrl: 'https://acme.example/webhooks/delivery',
+  webhookSecret: null,
+  notificationChannels: ['EMAIL', 'SMS'],
+  trackingHistoryRetentionDays: 90,
+  createdAt: new Date('2026-01-01T00:00:00.000Z'),
+  updatedAt: new Date('2026-01-01T00:00:00.000Z'),
 };
 
 // ── test suite ─────────────────────────────────────────────────────────────
@@ -70,6 +106,7 @@ describe('VendorProfileService (issue #287)', () => {
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
+        { provide: TracingService, useValue: createTracingMock().service },
         VendorProfileService,
         { provide: VendorProfileRepository, useValue: repository },
       ],
@@ -103,6 +140,27 @@ describe('VendorProfileService (issue #287)', () => {
       expect(repository.create).not.toHaveBeenCalled();
     });
 
+    it('completes registration via upsert when the existing profile is a placeholder (#937)', async () => {
+      const placeholder = makeProfile({
+        businessName: VENDOR_ADDRESS,
+        description: VENDOR_PROFILE_PLACEHOLDER_DESCRIPTION,
+      });
+      const completed = makeProfile({
+        businessName: createDto.businessName,
+        email: createDto.email,
+        phone: createDto.phone,
+        description: createDto.description,
+      });
+      repository.findByAddress.mockResolvedValue(placeholder);
+      repository.upsert.mockResolvedValue(completed);
+
+      const result = await service.createProfile(VENDOR_ADDRESS, createDto);
+
+      expect(repository.findByAddress).toHaveBeenCalledWith(VENDOR_ADDRESS);
+      expect(repository.upsert).toHaveBeenCalledWith(VENDOR_ADDRESS, createDto);
+      expect(result).toEqual(completed);
+    });
+
     it('propagates repository errors', async () => {
       repository.findByAddress.mockResolvedValue(null);
       repository.create.mockRejectedValue(new Error('DB unavailable'));
@@ -123,6 +181,17 @@ describe('VendorProfileService (issue #287)', () => {
       const result = await service.getProfile(VENDOR_ADDRESS);
       expect(result).toEqual(profile);
       expect(repository.findByAddress).toHaveBeenCalledWith(VENDOR_ADDRESS);
+    });
+
+    it('masks placeholder description when returning a profile (#937)', async () => {
+      const placeholder = makeProfile({
+        businessName: VENDOR_ADDRESS,
+        description: VENDOR_PROFILE_PLACEHOLDER_DESCRIPTION,
+      });
+      repository.findByAddress.mockResolvedValue(placeholder);
+
+      const result = await service.getProfile(VENDOR_ADDRESS);
+      expect(result.description).toBeNull();
     });
 
     it('throws NotFoundException when no profile exists for the address', async () => {
@@ -213,6 +282,83 @@ describe('VendorProfileService (issue #287)', () => {
       });
 
       expect(result.businessName).toBe('Updated Name');
+    });
+  });
+
+  describe('updateNotificationPreferences()', () => {
+    it('updates and returns preferences for an existing vendor', async () => {
+      repository.findByAddress.mockResolvedValue(makeProfile());
+      repository.updateNotificationPreferences.mockResolvedValue({
+        trackingSettings,
+      });
+
+      const result = await service.updateNotificationPreferences(
+        VENDOR_ADDRESS,
+        notificationPreferences,
+      );
+
+      expect(repository.updateNotificationPreferences).toHaveBeenCalledWith(
+        VENDOR_ADDRESS,
+        notificationPreferences,
+      );
+      expect(result.trackingSettings.notificationChannels).toEqual([
+        'EMAIL',
+        'SMS',
+      ]);
+      expect(result.trackingSettings.notifyOnDelivery).toBe(false);
+    });
+
+    it('rejects empty or undefined-only preference updates without querying the repository', async () => {
+      const emptyUpdates: UpdateNotificationPreferencesDto[] = [
+        {},
+        { notifyOnDelivery: undefined, webhookUrl: undefined },
+      ];
+
+      for (const dto of emptyUpdates) {
+        await expect(
+          service.updateNotificationPreferences(VENDOR_ADDRESS, dto),
+        ).rejects.toThrow('No notification preference fields provided');
+      }
+
+      expect(repository.findByAddress).not.toHaveBeenCalled();
+      expect(repository.updateNotificationPreferences).not.toHaveBeenCalled();
+    });
+
+    it('rejects preference updates for a vendor without a profile', async () => {
+      repository.findByAddress.mockResolvedValue(null);
+
+      await expect(
+        service.updateNotificationPreferences(
+          VENDOR_ADDRESS,
+          notificationPreferences,
+        ),
+      ).rejects.toThrow(NotFoundException);
+
+      expect(repository.updateNotificationPreferences).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getNotificationPreferences()', () => {
+    it('returns the notification preferences supplied by the repository', async () => {
+      const preferences = {
+        notifyOnDelivery: false,
+        notifyOnDelay: true,
+        notifyOnException: true,
+        notificationChannels: ['EMAIL', 'SMS'],
+        webhookUrl: 'https://acme.example/webhooks/delivery',
+        enableTracking: true,
+        delayThresholdHours: 24,
+        deliveryConfirmation: true,
+        trackingHistoryRetentionDays: 90,
+      };
+      repository.findNotificationPreferences.mockResolvedValue(preferences);
+
+      await expect(
+        service.getNotificationPreferences(VENDOR_ADDRESS),
+      ).resolves.toEqual(preferences);
+      expect(repository.findNotificationPreferences).toHaveBeenCalledWith(
+        VENDOR_ADDRESS,
+      );
     });
   });
 });

@@ -66,6 +66,12 @@ describe('CacheService (issue #285) — Redis mode', () => {
       const result = await service.get('missing-key');
       expect(result).toBeNull();
     });
+
+    it('returns null when Redis cannot read the key', async () => {
+      redisMock.get.mockRejectedValue(new Error('connection lost'));
+
+      await expect(service.get('unavailable-key')).resolves.toBeNull();
+    });
   });
 
   describe('set()', () => {
@@ -90,6 +96,37 @@ describe('CacheService (issue #285) — Redis mode', () => {
         120,
       );
     });
+
+    it('handles a Redis write failure without claiming the value was cached', async () => {
+      redisMock.set.mockRejectedValue(new Error('write failed'));
+
+      await expect(
+        service.set('unavailable-key', 'value'),
+      ).resolves.toBeUndefined();
+      expect(redisMock.set).toHaveBeenCalledWith(
+        'unavailable-key',
+        JSON.stringify('value'),
+        'EX',
+        60,
+      );
+    });
+  });
+
+  describe('ping()', () => {
+    it.each([
+      ['PONG', 'ok'],
+      ['unexpected reply', 'down'],
+    ])('returns %s state for a Redis reply of %s', async (reply, expected) => {
+      redisMock.ping.mockResolvedValue(reply);
+
+      await expect(service.ping()).resolves.toBe(expected);
+    });
+
+    it('returns down when Redis ping fails', async () => {
+      redisMock.ping.mockRejectedValue(new Error('unreachable'));
+
+      await expect(service.ping()).resolves.toBe('down');
+    });
   });
 
   describe('del()', () => {
@@ -104,6 +141,12 @@ describe('CacheService (issue #285) — Redis mode', () => {
       await service.del('another-key');
       expect(redisMock.del).toHaveBeenCalledWith('another-key');
     });
+
+    it('handles a Redis delete failure', async () => {
+      redisMock.del.mockRejectedValue(new Error('delete failed'));
+
+      await expect(service.del('unavailable-key')).resolves.toBeUndefined();
+    });
   });
 
   describe('onModuleDestroy()', () => {
@@ -117,6 +160,24 @@ describe('CacheService (issue #285) — Redis mode', () => {
 
 describe('CacheService (issue #285) — in-memory fallback mode', () => {
   let service: CacheService;
+
+  /** Access the private `memory` map for assertions. */
+  function memorySize(): number {
+    return (service as unknown as Record<string, unknown>).memory instanceof Map
+      ? (
+          (service as unknown as Record<string, unknown>).memory as Map<
+            string,
+            unknown
+          >
+        ).size
+      : -1;
+  }
+
+  function hasMemoryEntry(key: string): boolean {
+    const memory = (service as unknown as { memory: Map<string, unknown> })
+      .memory;
+    return memory.has(key);
+  }
 
   beforeEach(() => {
     MockRedis.mockImplementation(() => {
@@ -192,9 +253,95 @@ describe('CacheService (issue #285) — in-memory fallback mode', () => {
     });
   });
 
+  describe('ping()', () => {
+    it('returns "disabled" when no Redis client is configured', async () => {
+      await expect(service.ping()).resolves.toBe('disabled');
+    });
+  });
+
   describe('onModuleDestroy()', () => {
     it('resolves without error when there is no Redis client', async () => {
       await expect(service.onModuleDestroy()).resolves.toBeUndefined();
+    });
+
+    it('clears the in-memory map', async () => {
+      await service.set('a', 1, 60);
+      await service.set('b', 2, 60);
+      expect(memorySize()).toBe(2);
+      await service.onModuleDestroy();
+      expect(memorySize()).toBe(0);
+    });
+  });
+
+  // ── Issue #506: in-memory fallback eviction ────────────────────────────────
+
+  describe('sweep (issue #506)', () => {
+    it('removes expired entries via periodic sweep without a get() for that key', async () => {
+      service['stopSweeper']();
+      jest.useFakeTimers();
+      service['startSweeper']();
+      try {
+        await service.set('expires-fast', 'gone', 1);
+        await service.set('stays', 'here', 3600);
+
+        await jest.advanceTimersByTimeAsync(61_000);
+
+        // Inspect the map directly so get() cannot lazily remove the expired
+        // entry and mask a broken sweep implementation.
+        expect(hasMemoryEntry('expires-fast')).toBe(false);
+        expect(hasMemoryEntry('stays')).toBe(true);
+      } finally {
+        service['stopSweeper']();
+        jest.useRealTimers();
+      }
+    });
+
+    it('does not remove entries that are still within their TTL window', async () => {
+      service['stopSweeper']();
+      jest.useFakeTimers();
+      service['startSweeper']();
+      try {
+        await service.set('valid-1', 'a', 3600);
+        await service.set('valid-2', 'b', 3600);
+
+        await jest.advanceTimersByTimeAsync(61_000);
+
+        expect(hasMemoryEntry('valid-1')).toBe(true);
+        expect(hasMemoryEntry('valid-2')).toBe(true);
+      } finally {
+        service['stopSweeper']();
+        jest.useRealTimers();
+      }
+    });
+  });
+
+  describe('bounded capacity (issue #506)', () => {
+    it('evicts the soonest-expiring entry when the map exceeds MAX_MEMORY_ENTRIES', async () => {
+      jest.useFakeTimers();
+      // Fill to capacity with 30s TTL entries
+      for (let i = 0; i < 1_000; i++) {
+        await service.set(`key-${i}`, i, 30);
+      }
+      expect(memorySize()).toBe(1_000);
+
+      // Add one more — this triggers eviction
+      await service.set('newest', 'val', 3600);
+      // Map should still be at capacity (the soonest-expiring entry was removed)
+      expect(memorySize()).toBe(1_000);
+
+      // The entry with the longest TTL (3600s) should still be present
+      expect(await service.get('newest')).toBe('val');
+      jest.useRealTimers();
+    });
+
+    it('does not grow without bound under repeated writes', async () => {
+      jest.useFakeTimers();
+      const total = 2_500;
+      for (let i = 0; i < total; i++) {
+        await service.set(`bulk-${i}`, i, 60);
+      }
+      expect(memorySize()).toBeLessThanOrEqual(1_000);
+      jest.useRealTimers();
     });
   });
 });
