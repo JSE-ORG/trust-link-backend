@@ -10,8 +10,6 @@ coverage*/
 # Local environment. Never commit a real secret.
 # .env.example documents every variable and stays tracked.
 # .env.test holds throwaway values for the test suite and stays tracked.
-.env
-.env.local
 .env.*.local
 
 # OS and editor noise
@@ -31,3 +29,4 @@ DEV_BREAKAGE_*.md
 issue-*-body.md
 publish-wave-*.sh
 /wave-bodies/
+config.bat

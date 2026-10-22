@@ -1,4 +1,4 @@
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
@@ -7,10 +7,11 @@ import { ContractService } from '../src/stellar/contract.service';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { bearer } from './auth-helper';
 import { ensureVendors } from './prisma-helpers';
+import { createGlobalPipes } from '../src/common/pipes/global-pipes';
 
 const VENDOR_ADDRESS = 'GADMINVENDOR001';
 const BUYER_ADDRESS = 'GADMINBUYER001';
-const NON_ADMIN_ADDRESS = 'GADMINNONADMIN001';
+const NON_ADMIN_ADDRESS = 'GADSINNONADMIN001';
 
 describe('Admin dashboard E2E', () => {
   let app: INestApplication;
@@ -24,9 +25,7 @@ describe('Admin dashboard E2E', () => {
     }).compile();
 
     app = moduleFixture.createNestApplication();
-    app.useGlobalPipes(
-      new ValidationPipe({ whitelist: true, transform: true }),
-    );
+    app.useGlobalPipes(...createGlobalPipes());
     await app.init();
 
     prisma = app.get(PrismaService);
@@ -36,7 +35,7 @@ describe('Admin dashboard E2E', () => {
     await ensureVendors(prisma, VENDOR_ADDRESS);
     jest
       .spyOn(contractService, 'resolveDispute')
-      .mockResolvedValue('admin-action-tx');
+      .mockResolved('admin-action-tx');
   });
 
   afterEach(async () => {
@@ -143,5 +142,15 @@ describe('Admin dashboard E2E', () => {
       .get('/admin/audit-log')
       .set(authorization)
       .expect(403);
+  });
+
+  it('rejects a dispute resolution whose resolution only fails validation after sanitising', async () => {
+    const seeded = await seedDashboard();
+
+    await request(app.getHttpServer())
+      .patch(`/admin/dispute/${seeded.disputed.id}/resolve`)
+      .set('Authorization', bearer(adminAddress, { role: 'admin' }))
+      .send({ resolution: '<SPAN>RELEASE</SPAN>' })
+      .expect(400);
   });
 });
