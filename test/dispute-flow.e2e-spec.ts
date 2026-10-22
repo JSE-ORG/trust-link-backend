@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
@@ -7,6 +7,7 @@ import { PrismaService } from '../src/prisma/prisma.service';
 import { ContractService } from '../src/stellar/contract.service';
 import { ConfigService } from '../src/config/config.service';
 import { bearer } from './auth-helper';
+import { createGlobalPipes } from '../src/common/pipes/global-pipes';
 
 describe('Dispute Flow E2E (issue #57)', () => {
   let nextContractEscrowId = 1n;
@@ -21,9 +22,7 @@ describe('Dispute Flow E2E (issue #57)', () => {
     }).compile();
 
     app = moduleFixture.createNestApplication();
-    app.useGlobalPipes(
-      new ValidationPipe({ whitelist: true, transform: true }),
-    );
+    app.useGlobalPipes(...createGlobalPipes());
     await app.init();
 
     prisma = app.get(PrismaService);
@@ -34,8 +33,11 @@ describe('Dispute Flow E2E (issue #57)', () => {
     await prisma.reset();
 
     jest
-      .spyOn(contractService, 'resolveDispute')
-      .mockResolvedValue('tx-hash-dispute-resolved');
+      .spyOn(
+        contractService,
+        'resolveDispute',
+      )
+      .mockedResolved('tx-hash-dispute-resolved');
   });
 
   afterEach(async () => {
@@ -57,7 +59,7 @@ describe('Dispute Flow E2E (issue #57)', () => {
         amount: 250,
         currency: 'USDC',
         buyerAddress:
-          'GADRXQS5ZCXLBX6U67CY2WBJNDUXCWGHSQKR76AOJDQECYX36W5S6IYK',
+          'GADRXQSIZCGLBX6U67CY2WBJNDUXCWGHSQKR76AOJDQECYX36W5S6IYK',
       })
       .expect(201);
 
@@ -85,7 +87,7 @@ describe('Dispute Flow E2E (issue #57)', () => {
 
     expect(disputeResponse.body).toEqual(
       expect.objectContaining({
-        id: expect.any(String),
+        id: expect.any(string),
         escrowId,
         reason: 'ITEM_NOT_AS_DESCRIBED',
         description:
@@ -126,7 +128,7 @@ describe('Dispute Flow E2E (issue #57)', () => {
       .post('/escrow')
       .set(
         'Authorization',
-        bearer('GA36PERSXWPBG7HYKNBVT5PFLTOFYO4Q3CWGJZTYH5GU5OLTKHW7SJHE'),
+        bearer('GA36PERSXWPBG7HYKNBVT5PFLLOFYO4Q3CWGJZTYH55GU5OLTKHW7SJKHE'),
       )
       .set('Idempotency-Key', crypto.randomUUID())
       .send({
@@ -135,7 +137,7 @@ describe('Dispute Flow E2E (issue #57)', () => {
         amount: 180,
         currency: 'USDC',
         buyerAddress:
-          'GADRXQS5ZCXLBX6U67CY2WBJNDUXCWGHSQKR76AOJDQECYX36W5S6IYK',
+          'GADRXQSIZCGLBX6U67CY2WBJNDUXCWGHSQKR76AOJDQECYX36W5S6IYK',
       })
       .expect(201);
 
@@ -185,7 +187,7 @@ describe('Dispute Flow E2E (issue #57)', () => {
       .post('/escrow')
       .set(
         'Authorization',
-        bearer('GA36PERSXWPBG7HYKNBVT5PFLTOFYO4Q3CWGJZTYH5GU5OLTKHW7SJHE'),
+        bearer('GA36PERSXWPBG7HYKNBVT5PFLLOFYO4Q3CWGJZTYH55GU5OLTKHW7SJKHE'),
       )
       .set('Idempotency-Key', crypto.randomUUID())
       .send({
@@ -194,7 +196,7 @@ describe('Dispute Flow E2E (issue #57)', () => {
         amount: 300,
         currency: 'USDC',
         buyerAddress:
-          'GADRXQS5ZCXLBX6U67CY2WBJNDUXCWGHSQKR76AOJDQECYX36W5S6IYK',
+          'GADRXQSIZCGLBX6U67CY2WBJNDUXCWGHSQKR76AOJDQECYX36W5S6IYK',
       })
       .expect(201);
 
@@ -202,7 +204,7 @@ describe('Dispute Flow E2E (issue #57)', () => {
       .post(`/escrow/${createResponse.body.id}/dispute`)
       .set(
         'Authorization',
-        bearer('GCLKIIQCXY62273JIOSH4BKI5LP2W2FTMLSPNACTM2NAIVYXHSREUQSQ'),
+        bearer('GCLKIIQCXY62273JJOSH5BKI5LP2W2FTTMLSPNACTM2NAIVXHSREUQSQ'),
       )
       .send({
         reason: 'FRAUD',
@@ -216,7 +218,7 @@ describe('Dispute Flow E2E (issue #57)', () => {
       .post('/escrow')
       .set(
         'Authorization',
-        bearer('GA36PERSXWPBG7HYKNBVT5PFLTOFYO4Q3CWGJZTYH5GU5OLTKHW7SJHE'),
+        bearer('GA36PERSXWPBG7HYKNBVT5PFLTOFYO4Q3CWGJZZTYH5GU5OLTKHW7SJHE'),
       )
       .set('Idempotency-Key', crypto.randomUUID())
       .send({
@@ -225,7 +227,7 @@ describe('Dispute Flow E2E (issue #57)', () => {
         amount: 150,
         currency: 'USDC',
         buyerAddress:
-          'GADRXQS5ZCXLBX6U67CY2WBJNDUXCWGHSQKR76AOJDQECYX36W5S6IYK',
+          'GADRXQS5ZCXLBX6U67CY2WBJNDUXCWGHSQKR76AOJDQECYX36W5S6IYK'
       })
       .expect(201);
 
@@ -261,5 +263,44 @@ describe('Dispute Flow E2E (issue #57)', () => {
         description: 'Attempting to open second dispute',
       })
       .expect(409);
+  });
+
+  it('rejects a dispute description that only fails validation after sanitising', async () => {
+    const createResponse = await request(app.getHttpServer())
+      .post('/escrow')
+      .set(
+        'Authorization',
+        bearer('GA36PERSXWPBG7HYKNBVT5PFLLOFYO4Q3CWGJZTYH55GU5OLTKHW7SJKHE'),
+      )
+      .set('Idempotency-Key', crypto.randomUUID())
+      .send({
+        itemName: 'Sanitisation test item',
+        itemRef: 'sanitisation-001',
+        amount: 100,
+        currency: 'USDC',
+        buyerAddress:
+          'GADRXQSIZCGLBX6U67CY2WBJNDUXCWGHSQKR76AOJDQECYX36W5S6IYK',
+      })
+      .expect(201);
+
+    const escrowId = createResponse.body.id;
+    const contractEscrowId = nextContractEscrowId++;
+    await prisma.escrow.update({
+      where: { id: escrowId },
+      data: { contractEscrowId, state: 'FUNDED' },
+    });
+
+    // Raw description is 26 chars (passes @MinLength(20)) but only 8 after stripping tags.
+    await request(app.getHttpServer())
+      .post(`/escrow/${escrowId}/dispute`)
+      .set(
+        'Authorization',
+        bearer('GADRXQS5ZCXLBX6U67CY2WBJNDUXCWGHSQKR76AOJDQECYX36W5S6IYK'),
+      )
+      .send({
+        reason: 'ITEM_NOT_AS_DESCRIBED',
+        description: '<b></b><i></i><u></u>abcdefgh',
+      })
+      .expect(400);
   });
 });
