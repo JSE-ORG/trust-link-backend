@@ -50,6 +50,13 @@ describe('ConfigService.getAllowedOrigins', () => {
       'https://b.example.com',
     ]);
   });
+
+  it('strips trailing slashes from configured origins', () => {
+    const service = buildService({
+      ALLOWED_ORIGINS: 'https://a.example.com/',
+    });
+    expect(service.getAllowedOrigins()).toEqual(['https://a.example.com']);
+  });
 });
 
 describe('ConfigService.isProduction / isDevelopment / isTest', () => {

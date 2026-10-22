@@ -12,7 +12,11 @@ import { createOpenApiDocument, setupOpenApiUi } from './openapi';
 import { createGlobalPipes } from './common/pipes/global-pipes';
 import { SentryInterceptor } from './common/interceptors/sentry.interceptor';
 import { buildCspConnectSrc } from './common/security/csp.config';
-import { CORS_ALLOWED_HEADERS, CORS_EXPOSED_HEADERS } from './common/security/cors.config';
+import {
+  CORS_ALLOWED_HEADERS,
+  CORS_EXPOSED_HEADERS,
+  getAllowedOriginsLogValue,
+} from './common/security/cors.config';
 import {
   ONE_YEAR_SECONDS,
   SECONDS_PER_DAY,
@@ -170,12 +174,7 @@ async function bootstrap(): Promise<INestApplication> {
       port,
       env: configService.get('NODE_ENV'),
       network: configService.get('STELLAR_NETWORK'),
-      allowedOrigins:
-        allowedOrigins.length > 0
-          ? allowedOrigins
-          : isProduction
-            ? 'none'
-            : 'all',
+      allowedOrigins: getAllowedOriginsLogValue(allowedOrigins, isProduction),
       cspConnectSrc: connectSrc,
     }),
     'Bootstrap',

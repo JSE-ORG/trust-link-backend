@@ -26,3 +26,11 @@ export const CORS_ALLOWED_HEADERS = [
  * browser silently blocks access to it (issue #973).
  */
 export const CORS_EXPOSED_HEADERS = ['X-Request-ID'];
+
+export function getAllowedOriginsLogValue(
+  allowedOrigins: string[],
+  isProduction: boolean,
+): string[] | 'none' | 'all' {
+  if (allowedOrigins.length > 0) return allowedOrigins;
+  return isProduction ? 'none' : 'all';
+}
