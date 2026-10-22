@@ -46,7 +46,6 @@ function decimalToNumber(value: Prisma.Decimal): number {
 export class AnalyticsService {
   constructor(private readonly repository: AnalyticsRepository) {}
 
-
   /**
    * Retrieves daily transaction volume data for a vendor.
    * Uses database-level aggregation with raw SQL for optimal performance on large datasets.
@@ -59,9 +58,9 @@ export class AnalyticsService {
     timezone: string = 'UTC',
   ): Promise<ChartDataResponse> {
     const endDate = new Date();
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - days + 1);
-    startDate.setUTCHours(0, 0, 0, 0);
+    const endDateKey = this.formatDateInTimezone(endDate, timezone);
+    const startDateKey = this.addCalendarDays(endDateKey, -days + 1);
+    const startDate = this.startOfDayInTimezone(startDateKey, timezone);
 
     // Use repository for database-level aggregation with proper timezone handling.
     const aggregationResult = await this.repository.aggregateDailyVolume(
@@ -71,28 +70,15 @@ export class AnalyticsService {
       timezone,
     );
 
-
     // Convert aggregation results to DailyVolumeData format
     const dailyMap = new Map<string, DailyVolumeDataDto>();
 
-    type AggRow = {
-      // A Postgres `date` column comes back from the driver as a JS Date, not
-      // a string, so this is normalised below before being used as a map key —
-      // fillDateGaps looks the key up as 'YYYY-MM-DD' and would otherwise never
-      // match, silently reporting every day as zero.
-      date: string | Date;
-      totalVolume: number | string;
-      transactionCount: number | string;
-      completedCount: number | string;
-      disputedCount: number | string;
-    };
     for (const row of aggregationResult) {
-      const r = row as AggRow;
-      const dateKey = this.toDateKey(r.date);
-      const totalVolume = Number(r.totalVolume);
-      const transactionCount = Number(r.transactionCount);
-      const completedCount = Number(r.completedCount);
-      const disputedCount = Number(r.disputedCount);
+      const dateKey = this.toDateKey(row.date);
+      const totalVolume = Number(row.totalVolume);
+      const transactionCount = Number(row.transactionCount);
+      const completedCount = Number(row.completedCount);
+      const disputedCount = Number(row.disputedCount);
 
       dailyMap.set(dateKey, {
         date: dateKey,
@@ -128,8 +114,8 @@ export class AnalyticsService {
     return {
       data: sortedData,
       period: {
-        startDate: this.formatDate(startDate),
-        endDate: this.formatDate(endDate),
+        startDate: startDateKey,
+        endDate: endDateKey,
       },
       summary: {
         totalVolume,
@@ -150,10 +136,13 @@ export class AnalyticsService {
     timezone: string = 'UTC',
   ): DailyVolumeDataDto[] {
     const result: DailyVolumeDataDto[] = [];
-    const currentDate = new Date(startDate);
+    const startDateKey = this.formatDateInTimezone(startDate, timezone);
+    const endDateKey = this.formatDateInTimezone(endDate, timezone);
+    const currentDate = new Date(`${startDateKey}T00:00:00.000Z`);
+    const lastDate = new Date(`${endDateKey}T00:00:00.000Z`);
 
-    while (currentDate <= endDate) {
-      const dateKey = this.formatDateInTimezone(currentDate, timezone);
+    while (currentDate <= lastDate) {
+      const dateKey = currentDate.toISOString().slice(0, 10);
 
       if (dailyMap.has(dateKey)) {
         result.push(dailyMap.get(dateKey)!);
@@ -168,11 +157,56 @@ export class AnalyticsService {
         });
       }
 
-      // Move to next day
-      currentDate.setDate(currentDate.getDate() + 1);
+      currentDate.setUTCDate(currentDate.getUTCDate() + 1);
     }
 
     return result;
+  }
+
+  private addCalendarDays(dateKey: string, days: number): string {
+    const date = new Date(`${dateKey}T00:00:00.000Z`);
+    date.setUTCDate(date.getUTCDate() + days);
+    return date.toISOString().slice(0, 10);
+  }
+
+  private startOfDayInTimezone(dateKey: string, timezone: string): Date {
+    const [year, month, day] = dateKey.split('-').map(Number);
+    const targetTimestamp = Date.UTC(year, month - 1, day);
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hourCycle: 'h23',
+    });
+
+    let timestamp = targetTimestamp;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const parts = formatter.formatToParts(new Date(timestamp));
+      const values = Object.fromEntries(
+        parts
+          .filter((part) => part.type !== 'literal')
+          .map((part) => [part.type, part.value]),
+      );
+      const localTimestamp = Date.UTC(
+        Number(values.year),
+        Number(values.month) - 1,
+        Number(values.day),
+        Number(values.hour),
+        Number(values.minute),
+        Number(values.second),
+      );
+      const adjustedTimestamp = timestamp + targetTimestamp - localTimestamp;
+      if (adjustedTimestamp === timestamp) {
+        return new Date(timestamp);
+      }
+      timestamp = adjustedTimestamp;
+    }
+
+    return new Date(timestamp);
   }
 
   /**
@@ -223,7 +257,6 @@ export class AnalyticsService {
     // state. Uses the composite index on (vendorAddress, state).
     const groups = await this.repository.getEscrowStateGroups(vendorAddress);
 
-
     // Active states: CREATED, FUNDED, SHIPPED, DELIVERED
     const activeStates = new Set(['CREATED', 'FUNDED', 'SHIPPED', 'DELIVERED']);
 
@@ -241,11 +274,7 @@ export class AnalyticsService {
     for (const group of groups) {
       // Narrowed explicitly: `groupBy` infers a wide union here, and a null
       // `_sum` is what an empty state group returns.
-      const { state, _count, _sum } = group as {
-        state: string;
-        _count?: number | { _all?: number };
-        _sum?: { amount?: Prisma.Decimal | null } | null;
-      };
+      const { state, _count, _sum } = group;
       const count = Number(
         typeof _count === 'object' ? _count?._all : (_count ?? 0),
       );
@@ -308,7 +337,6 @@ export class AnalyticsService {
       (await this.repository.findNotificationChannels(vendorAddress)) ??
       DEFAULT_NOTIFICATION_CHANNELS;
 
-
     const channels: ChannelMetricsDto = {
       email: {
         notificationsEnabled: notificationChannels.includes('EMAIL'),
@@ -323,12 +351,5 @@ export class AnalyticsService {
       channels,
       lastUpdated: new Date().toISOString(),
     };
-  }
-
-  /**
-   * Formats a Date object to ISO date string (YYYY-MM-DD)
-   */
-  private formatDate(date: Date): string {
-    return date.toISOString().split('T')[0];
   }
 }
