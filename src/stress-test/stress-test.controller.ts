@@ -23,7 +23,7 @@ import { JwtGuard } from '../auth/guards/jwt.guard';
 import { AdminGuard } from '../admin/guards/admin.guard';
 import { StressTestService } from './stress-test.service';
 import { StressTestConfigDto } from './dto/stress-test-config.dto';
-import { StressTestResult } from './interfaces/stress-test-result.interface';
+import type { StressTestResult } from './interfaces/stress-test-result.interface';
 import { StressTestResultDto } from './dto/stress-test-result.dto';
 import { AuditLogService } from '../audit-log/audit-log.service';
 

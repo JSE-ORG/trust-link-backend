@@ -36,10 +36,7 @@ async function buildApp(trustProxy?: string): Promise<INestApplication> {
     if (setting === null) {
       throw new Error(`test setup: invalid TRUST_PROXY "${trustProxy}"`);
     }
-    (app.getHttpAdapter().getInstance() as Express).set(
-      'trust proxy',
-      setting,
-    );
+    (app.getHttpAdapter().getInstance() as Express).set('trust proxy', setting);
   }
   await app.init();
   return app;

@@ -12,9 +12,7 @@ import { PrismaService } from '../prisma/prisma.service';
  */
 @Injectable()
 export class StellarWebhookRepository {
-  constructor(
-    @Inject(PrismaService) private readonly prisma: PrismaService,
-  ) {}
+  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   async isProcessed(operationId: string): Promise<boolean> {
     const event = await this.prisma.processedWebhookEvent.findUnique({

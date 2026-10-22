@@ -66,7 +66,9 @@ describe('StressTestConfigDto validation', () => {
     });
 
     it('accepts boundary value 1000', async () => {
-      const errors = await validationErrors(makeProfile({ requestsPerSecond: 1000 }));
+      const errors = await validationErrors(
+        makeProfile({ requestsPerSecond: 1000 }),
+      );
       expect(errors).toHaveLength(0);
     });
   });
@@ -110,7 +112,9 @@ describe('StressTestConfigDto validation', () => {
     });
 
     it('accepts a valid path', async () => {
-      const errors = await validationErrors(makeProfile({ endpoint: '/api/escrows/1' }));
+      const errors = await validationErrors(
+        makeProfile({ endpoint: '/api/escrows/1' }),
+      );
       expect(errors).toHaveLength(0);
     });
   });

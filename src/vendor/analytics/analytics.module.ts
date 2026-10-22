@@ -11,4 +11,3 @@ import { AnalyticsController } from './analytics.controller';
   exports: [AnalyticsService, AnalyticsRepository],
 })
 export class AnalyticsModule {}
-

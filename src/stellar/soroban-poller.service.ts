@@ -281,12 +281,22 @@ export class SorobanPollerService implements OnModuleInit, OnModuleDestroy {
         const latestLedger = await this.getLatestLedger().catch(() => null);
         if (latestLedger) {
           if (cursor.startsWith(LEDGER_CURSOR_PREFIX)) {
-            const newStartLedger = Math.max(1, latestLedger - START_LEDGER_MARGIN);
-            await this.cursorService.set(`${LEDGER_CURSOR_PREFIX}${newStartLedger}`);
+            const newStartLedger = Math.max(
+              1,
+              latestLedger - START_LEDGER_MARGIN,
+            );
+            await this.cursorService.set(
+              `${LEDGER_CURSOR_PREFIX}${newStartLedger}`,
+            );
           } else {
             // Paging token cursor: reset to a fresh ledger cursor to avoid stale token retention error
-            const newStartLedger = Math.max(1, latestLedger - START_LEDGER_MARGIN);
-            await this.cursorService.set(`${LEDGER_CURSOR_PREFIX}${newStartLedger}`);
+            const newStartLedger = Math.max(
+              1,
+              latestLedger - START_LEDGER_MARGIN,
+            );
+            await this.cursorService.set(
+              `${LEDGER_CURSOR_PREFIX}${newStartLedger}`,
+            );
           }
         }
         return;
@@ -580,9 +590,12 @@ export class SorobanPollerService implements OnModuleInit, OnModuleDestroy {
     try {
       // Issue #1043: For AutoReleased events, use the RPC event's id as the transaction hash
       // since the contract payload does not include a txHash field.
-      const txHashValue = eventType === 'AutoReleased'
-        ? raw.id
-        : (typeof data?.txHash === 'string' ? data.txHash : undefined);
+      const txHashValue =
+        eventType === 'AutoReleased'
+          ? raw.id
+          : typeof data?.txHash === 'string'
+            ? data.txHash
+            : undefined;
 
       const resolution = parseDisputeResolution(data?.resolution);
 

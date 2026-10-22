@@ -21,7 +21,6 @@ describe('AnalyticsService', () => {
       ],
     }).compile();
 
-
     service = module.get<AnalyticsService>(AnalyticsService);
     prisma = module.get<PrismaService>(PrismaService);
 
@@ -872,7 +871,6 @@ describe('AnalyticsService.getTransactionStats aggregation (#843)', () => {
         AnalyticsRepository,
         { provide: PrismaService, useValue: new PrismaService() },
       ],
-
     }).compile();
 
     service = module.get<AnalyticsService>(AnalyticsService);
@@ -961,8 +959,9 @@ describe('AnalyticsService.getTransactionStats aggregation (#843)', () => {
     expect(stats.completionRate).toBeCloseTo((2 / 9) * 100, 10);
     expect(stats.disputeRate).toBeCloseTo((1 / 9) * 100, 10);
     expect(stats.averageTransactionValue).toBe(50);
+    // No settings row, so the platform default (EMAIL only) applies (#943).
     expect(channels).toEqual({
-      email: { notificationsEnabled: false },
+      email: { notificationsEnabled: true },
       sms: { notificationsEnabled: false },
     });
     expect(typeof lastUpdated).toBe('string');

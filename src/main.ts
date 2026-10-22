@@ -1,7 +1,8 @@
 import './sentry.instrument';
 import { shutdownTracing } from './tracing/tracing.bootstrap';
 import './common/bigint-json';
-import { NestFactory, INestApplication } from '@nestjs/core';
+import { INestApplication } from '@nestjs/common';
+import { NestFactory } from '@nestjs/core';
 import compression from 'compression';
 import * as express from 'express';
 import helmet from 'helmet';
@@ -10,6 +11,7 @@ import { ConfigService } from './config/config.service';
 import { JsonLoggerService } from './common/logger/json-logger.service';
 import { createOpenApiDocument, setupOpenApiUi } from './openapi';
 import { createGlobalPipes } from './common/pipes/global-pipes';
+import { parseTrustProxy } from './common/security/trust-proxy.config';
 import { SentryInterceptor } from './common/interceptors/sentry.interceptor';
 import { buildCspConnectSrc } from './common/security/csp.config';
 import {

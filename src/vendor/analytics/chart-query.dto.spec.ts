@@ -29,19 +29,21 @@ describe('ChartQueryDto validation (#941)', () => {
     it('rejects days = 0', async () => {
       const errs = await errors({ days: '0' });
       expect(errs.length).toBeGreaterThan(0);
-      expect(errs.some((e) => /min/i.test(e) || /greater than or equal to 1/i.test(e))).toBe(true);
+      expect(errs.some((e) => /must not be less than 1/i.test(e))).toBe(true);
     });
 
     it('rejects negative days', async () => {
       const errs = await errors({ days: '-5' });
       expect(errs.length).toBeGreaterThan(0);
-      expect(errs.some((e) => /min/i.test(e) || /greater than or equal to 1/i.test(e))).toBe(true);
+      expect(errs.some((e) => /must not be less than 1/i.test(e))).toBe(true);
     });
 
     it('rejects days > 365', async () => {
       const errs = await errors({ days: '366' });
       expect(errs.length).toBeGreaterThan(0);
-      expect(errs.some((e) => /max/i.test(e) || /less than or equal to 365/i.test(e))).toBe(true);
+      expect(errs.some((e) => /must not be greater than 365/i.test(e))).toBe(
+        true,
+      );
     });
 
     it('rejects non-integer days', async () => {
@@ -67,7 +69,9 @@ describe('ChartQueryDto validation (#941)', () => {
     it('rejects invalid timezones', async () => {
       const errs = await errors({ timezone: 'Invalid/Timezone' });
       expect(errs.length).toBeGreaterThan(0);
-      expect(errs.some((e) => /timezone/i.test(e) || /time zone/i.test(e))).toBe(true);
+      expect(
+        errs.some((e) => /timezone/i.test(e) || /time zone/i.test(e)),
+      ).toBe(true);
     });
   });
 });

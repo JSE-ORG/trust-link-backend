@@ -48,7 +48,7 @@ describe('Vendor lifecycle (e2e) (issue #801)', () => {
       .send({
         businessName: 'Lifecycle Trading Co',
         email: 'ops@lifecycle-trading.example',
-        phone: '+1-415-555-0100',
+        phone: '+14155550100',
       })
       .expect(201);
 
@@ -65,7 +65,7 @@ describe('Vendor lifecycle (e2e) (issue #801)', () => {
       .send({
         businessLicense: 'LIC-LIFECYCLE-001',
         bankAccountNumber: '1234567890123456',
-        preferredCurrency: 'USDC',
+        preferredCurrency: 'USD',
       })
       .expect(200);
 

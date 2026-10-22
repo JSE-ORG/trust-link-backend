@@ -448,7 +448,7 @@ describe('LogisticsService & LogisticsModule (issue #479)', () => {
 
       const giglClient = new GiglClient({
         baseUrl: 'https://api.gigl.com/v1',
-        apiToken: 'test-token',
+        getApiToken: () => 'test-token',
       });
       const giglService = new GiglLogisticsService(giglClient);
 
@@ -481,7 +481,7 @@ describe('LogisticsService & LogisticsModule (issue #479)', () => {
 
       const giglClient = new GiglClient({
         baseUrl: 'https://api.gigl.com/v1',
-        apiToken: 'test-token',
+        getApiToken: () => 'test-token',
       });
       const giglService = new GiglLogisticsService(giglClient);
 
@@ -502,7 +502,7 @@ describe('LogisticsService & LogisticsModule (issue #479)', () => {
 
       const giglClient = new GiglClient({
         baseUrl: 'https://api.gigl.com/v1',
-        apiToken: 'test-token',
+        getApiToken: () => 'test-token',
       });
       const giglService = new GiglLogisticsService(giglClient);
 
@@ -526,7 +526,7 @@ describe('LogisticsService & LogisticsModule (issue #479)', () => {
 
       const giglClient = new GiglClient({
         baseUrl: 'https://api.gigl.com/v1',
-        apiToken: 'test-token',
+        getApiToken: () => 'test-token',
       });
       const giglService = new GiglLogisticsService(giglClient);
 
@@ -542,7 +542,7 @@ describe('LogisticsService & LogisticsModule (issue #479)', () => {
 
       const giglClient = new GiglClient({
         baseUrl: 'https://api.gigl.com/v1',
-        apiToken: 'test-token',
+        getApiToken: () => 'test-token',
       });
       const giglService = new GiglLogisticsService(giglClient);
 
