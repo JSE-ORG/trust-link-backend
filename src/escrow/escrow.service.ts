@@ -27,7 +27,6 @@ import { EVIDENCE_FILE_EXTENSIONS } from './dto/evidence-upload-query.dto';
 import { S3PresignService } from '../common/services/s3-presign.service';
 import { EscrowRepository } from './escrow.repository';
 import { UpdateBuyerContactDto } from './dto/update-buyer-contact.dto';
-import { encryptContact } from '../common/sanitization/contact-encryption.util';
 import { VENDOR_PROFILE_PLACEHOLDER_DESCRIPTION } from '../vendor/vendor-profile.constants';
 import {
   encryptContact,
@@ -1137,10 +1136,7 @@ export class EscrowService {
         if (escrow.state === 'CANCELLED' || TERMINAL_STATES.has(escrow.state)) {
           return { skipped: true, reason: 'already_cancelled_or_terminal' };
         }
-        const cancelled = await this.escrowRepository.markCancelled(escrowId);
-        this.notificationsService
-          .notifyCancelled(cancelled)
-          .catch((err) => this.logger.error('notifyCancelled failed', err));
+        await this.escrowRepository.markCancelled(escrowId);
         return { skipped: false };
       }
 
@@ -1233,10 +1229,7 @@ export class EscrowService {
         if (escrow.state === 'CANCELLED' || TERMINAL_STATES.has(escrow.state)) {
           return { skipped: true, reason: 'already_cancelled_or_terminal' };
         }
-        const cancelled = await this.escrowRepository.markCancelled(escrowId);
-        this.notificationsService
-          .notifyCancelled(cancelled)
-          .catch((err) => this.logger.error('notifyCancelled(auto-cancel) failed', err));
+        await this.escrowRepository.markCancelled(escrowId);
         return { skipped: false };
       }
 
@@ -1246,8 +1239,10 @@ export class EscrowService {
         }
         const refunded = await this.escrowRepository.markRefunded(escrowId);
         this.notificationsService
-          .notifyCancelled(refunded)
-          .catch((err) => this.logger.error('notifyCancelled(expired) failed', err));
+          .notifyRefunded(refunded)
+          .catch((err) =>
+            this.logger.error('notifyRefunded(expired) failed', err),
+          );
         return { skipped: false };
       }
 
@@ -1257,8 +1252,10 @@ export class EscrowService {
         }
         const refunded = await this.escrowRepository.markRefunded(escrowId);
         this.notificationsService
-          .notifyCancelled(refunded)
-          .catch((err) => this.logger.error('notifyCancelled(refund-approved) failed', err));
+          .notifyRefunded(refunded)
+          .catch((err) =>
+            this.logger.error('notifyRefunded(refund-approved) failed', err),
+          );
         return { skipped: false };
       }
 

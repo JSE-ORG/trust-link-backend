@@ -30,11 +30,19 @@ describe('UpdateVendorAccountDetailsDto validation (#940)', () => {
     it('rejects invalid country codes', async () => {
       const billingErrors = await errors({ billingCountry: 'USA' });
       expect(billingErrors.length).toBeGreaterThan(0);
-      expect(billingErrors.some((e) => /country/i.test(e) || /ISO31661Alpha2/i.test(e))).toBe(true);
+      expect(
+        billingErrors.some(
+          (e) => /country/i.test(e) || /ISO31661Alpha2/i.test(e),
+        ),
+      ).toBe(true);
 
       const shippingErrors = await errors({ shippingCountry: 'INVALID' });
       expect(shippingErrors.length).toBeGreaterThan(0);
-      expect(shippingErrors.some((e) => /country/i.test(e) || /ISO31661Alpha2/i.test(e))).toBe(true);
+      expect(
+        shippingErrors.some(
+          (e) => /country/i.test(e) || /ISO31661Alpha2/i.test(e),
+        ),
+      ).toBe(true);
     });
   });
 
@@ -111,9 +119,9 @@ describe('UpdateVendorAccountDetailsDto validation (#940)', () => {
     it('rejects an invalid currency code', async () => {
       const errs = await errors({ preferredCurrency: 'NOT-A-CURRENCY' });
       expect(errs.length).toBeGreaterThan(0);
-      expect(
-        errs.some((e) => /currency/i.test(e) || /ISO4217/i.test(e)),
-      ).toBe(true);
+      expect(errs.some((e) => /currency/i.test(e) || /ISO4217/i.test(e))).toBe(
+        true,
+      );
     });
   });
 
@@ -128,7 +136,9 @@ describe('UpdateVendorAccountDetailsDto validation (#940)', () => {
     it('rejects invalid timezones', async () => {
       const errs = await errors({ timezone: 'Mars/Phobos' });
       expect(errs.length).toBeGreaterThan(0);
-      expect(errs.some((e) => /timezone/i.test(e) || /time zone/i.test(e))).toBe(true);
+      expect(
+        errs.some((e) => /timezone/i.test(e) || /time zone/i.test(e)),
+      ).toBe(true);
     });
   });
 });

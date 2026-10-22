@@ -17,7 +17,9 @@ export class RefreshTokenCleanupService {
   /** 30 days, in milliseconds. Expired rows older than this are deleted. */
   private static readonly GRACE_PERIOD_MS = 30 * 24 * 60 * 60 * 1000;
 
-  constructor(private readonly refreshTokenRepository: RefreshTokenRepository) {}
+  constructor(
+    private readonly refreshTokenRepository: RefreshTokenRepository,
+  ) {}
 
   @Cron('0 0 * * *')
   async cleanupExpiredRefreshTokens(): Promise<void> {

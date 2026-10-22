@@ -26,9 +26,7 @@ export class WebhookCleanupService {
     const retentionDays = this.configService.get<number>(
       'WEBHOOK_EVENT_RETENTION_DAYS',
     );
-    const cutoff = new Date(
-      Date.now() - retentionDays * 24 * 60 * 60 * 1000,
-    );
+    const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
 
     this.logger.log('Starting processed webhook event prune');
 

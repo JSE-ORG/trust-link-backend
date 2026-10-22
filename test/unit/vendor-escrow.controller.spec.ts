@@ -17,6 +17,7 @@ import request from 'supertest';
 import { VendorEscrowController } from '../../src/escrow/vendor-escrow.controller';
 import { EscrowService } from '../../src/escrow/escrow.service';
 import { JwtGuard } from '../../src/auth/guards/jwt.guard';
+import { ConfigService } from '../../src/config/config.service';
 import { EscrowSummaryDto } from '../../src/escrow/dto/escrow-summary.dto';
 import { bearer } from '../auth-helper';
 
@@ -48,6 +49,10 @@ describe('VendorEscrowController (issue #575)', () => {
       providers: [
         { provide: EscrowService, useValue: escrowService },
         JwtGuard,
+        {
+          provide: ConfigService,
+          useValue: { get: jest.fn((key: string) => process.env[key]) },
+        },
       ],
     }).compile();
 

@@ -39,7 +39,9 @@ export class CursorService {
    * Read the persisted cursor value. Returns `undefined` when no cursor has
    * been stored yet (first run).
    */
-  async get(key: string = CursorService.DEFAULT_KEY): Promise<string | undefined> {
+  async get(
+    key: string = CursorService.DEFAULT_KEY,
+  ): Promise<string | undefined> {
     return this.traced('stellar.cursor.get', {}, () => this.getInternal(key));
   }
 
@@ -61,7 +63,10 @@ export class CursorService {
    * batch processing so the listener can resume from the last processed
    * position after a restart.
    */
-  async set(cursorValue: string, key: string = CursorService.DEFAULT_KEY): Promise<void> {
+  async set(
+    cursorValue: string,
+    key: string = CursorService.DEFAULT_KEY,
+  ): Promise<void> {
     return this.traced('stellar.cursor.set', {}, () =>
       this.setInternal(cursorValue, key),
     );

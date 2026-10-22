@@ -45,6 +45,23 @@ function emailConfig(
   } as unknown as ConfigService;
 }
 
+/**
+ * VendorProfileRepository stand-in for specs that build the service by hand.
+ * Without one, vendor notifications are recorded as undeliverable (#946).
+ */
+function vendorProfilesStub(
+  channels: Array<'EMAIL' | 'SMS'> = ['EMAIL'],
+): VendorProfileRepository {
+  return {
+    findByAddress: jest
+      .fn()
+      .mockResolvedValue({ email: VENDOR_EMAIL, phone: VENDOR_PHONE }),
+    findNotificationPreferences: jest
+      .fn()
+      .mockResolvedValue({ notificationChannels: channels }),
+  } as unknown as VendorProfileRepository;
+}
+
 describe('NotificationsService', () => {
   let service: NotificationsService;
   let prisma: PrismaService;
@@ -394,6 +411,8 @@ describe('NotificationsService', () => {
         new NotificationRepository(prisma),
         undefined,
         twilio,
+        undefined,
+        new VendorProfileRepository(prisma),
       );
 
       await expect(
@@ -411,6 +430,8 @@ describe('NotificationsService', () => {
         new NotificationRepository(prisma),
         sendGrid,
         undefined,
+        undefined,
+        new VendorProfileRepository(prisma),
       );
 
       await expect(
@@ -435,7 +456,7 @@ describe('NotificationsService', () => {
         .mockRejectedValueOnce(new Error('upstream down'))
         .mockResolvedValueOnce({ sid: 'SM2' });
 
-      await expect(service.notifyShipped(escrow)).resolves.toBeUndefined();
+      await expect(service.notifyFunded(escrow)).resolves.toBeUndefined();
 
       expect(sendGrid.send).toHaveBeenCalledTimes(3);
       expect(twilio.messages.create).toHaveBeenCalledTimes(3);
@@ -825,6 +846,7 @@ describe('NotificationsService (#726) — extractResponseCode shapes', () => {
       sendGrid,
       undefined,
       emailConfig(EMAIL_CONFIG),
+      vendorProfilesStub(),
     );
     jest
       .spyOn(svc, 'sleep' as keyof NotificationsService)
@@ -893,6 +915,7 @@ describe('NotificationsService SendGrid sender and template ids (#839)', () => {
     cancelledAt: null,
     createdAt: new Date('2026-01-01T00:00:00.000Z'),
     updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+    buyerContactEmail: 'enc-buyer-email',
   };
 
   function stubPrismaFor(created: unknown[]): PrismaService {
@@ -916,10 +939,14 @@ describe('NotificationsService SendGrid sender and template ids (#839)', () => {
       sendGrid,
       undefined,
       emailConfig(configValues),
+      vendorProfilesStub(),
     );
     jest
       .spyOn(svc, 'sleep' as keyof NotificationsService)
       .mockResolvedValue(undefined);
+    jest
+      .spyOn(contactEncryption, 'decryptContact')
+      .mockReturnValue('buyer@example.test');
     return { svc, sendGrid, created };
   }
 

@@ -1,10 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export type FailedTransactionStatus =
-  | 'PENDING_REVIEW'
-  | 'REPLAYING'
-  | 'REPLAYED'
-  | 'ABANDONED';
+  'PENDING_REVIEW' | 'REPLAYING' | 'REPLAYED' | 'ABANDONED';
 
 /**
  * Records stuck in `REPLAYING` longer than this threshold (5 minutes) are

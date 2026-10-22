@@ -559,6 +559,10 @@ describe('EscrowRepository', () => {
           'vendor-addr',
         );
         await repo.markShipped(escrow.id, 'TRACK-669');
+        await prisma.escrow.update({
+          where: { id: escrow.id },
+          data: { contractEscrowId: BigInt(669) },
+        });
 
         const rows = await repo.findShippedWithTracking();
         expect(rows).toEqual(
@@ -566,6 +570,17 @@ describe('EscrowRepository', () => {
             expect.objectContaining({ id: escrow.id, trackingId: 'TRACK-669' }),
           ]),
         );
+      });
+
+      it('excludes a SHIPPED escrow with no contract mapping (#960)', async () => {
+        const escrow = await repo.create(
+          { ...makeDto(), itemRef: 'unmapped' },
+          'vendor-addr',
+        );
+        await repo.markShipped(escrow.id, 'TRACK-UNMAPPED');
+
+        const rows = await repo.findShippedWithTracking();
+        expect(rows.map((r) => r.id)).not.toContain(escrow.id);
       });
 
       it('excludes escrows when the vendor has tracking disabled (#945)', async () => {
@@ -587,6 +602,10 @@ describe('EscrowRepository', () => {
           vendor,
         );
         await repo.markShipped(escrow.id, 'TRACK-DISABLED');
+        await prisma.escrow.update({
+          where: { id: escrow.id },
+          data: { contractEscrowId: BigInt(9450) },
+        });
 
         const rows = await repo.findShippedWithTracking();
         expect(rows.map((r) => r.id)).not.toContain(escrow.id);
@@ -606,6 +625,10 @@ describe('EscrowRepository', () => {
           vendor,
         );
         await repo.markShipped(escrow.id, 'TRACK-DEFAULT');
+        await prisma.escrow.update({
+          where: { id: escrow.id },
+          data: { contractEscrowId: BigInt(945) },
+        });
 
         const rows = await repo.findShippedWithTracking();
         expect(rows.map((r) => r.id)).toContain(escrow.id);
@@ -645,8 +668,9 @@ describe('EscrowRepository', () => {
         const secondCycle = await repo.findShippedWithTracking(50);
 
         expect(
-          new Set([...firstCycle, ...secondCycle].map((escrow) => escrow.id)),
-        ).toHaveSize(51);
+          new Set([...firstCycle, ...secondCycle].map((escrow) => escrow.id))
+            .size,
+        ).toBe(51);
         expect(
           firstCycle.every((escrow) => escrow.trackingCheckedAt === null),
         ).toBe(true);

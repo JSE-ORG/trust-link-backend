@@ -356,7 +356,6 @@ describe('DlqService', () => {
     });
   });
 
-
   describe('markReviewed', () => {
     it('should set reviewedAt timestamp', async () => {
       repoMock.findById.mockResolvedValue(mockRecord);

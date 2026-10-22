@@ -298,11 +298,27 @@ export class NotificationsService implements OnModuleInit {
     );
 
     if (resolvedEmail) {
-      await this.dispatchEmail(type, escrow, resolvedEmail);
+      await this.traced(
+        'notification.dispatch.email',
+        {
+          'trustlink.notification.type': type,
+          'trustlink.notification.channel': 'email',
+          'trustlink.escrow.id': escrow.id,
+        },
+        () => this.dispatchEmail(type, escrow, resolvedEmail),
+      );
     }
 
     if (resolvedPhone) {
-      await this.dispatchSms(type, escrow, resolvedPhone);
+      await this.traced(
+        'notification.dispatch.sms',
+        {
+          'trustlink.notification.type': type,
+          'trustlink.notification.channel': 'sms',
+          'trustlink.escrow.id': escrow.id,
+        },
+        () => this.dispatchSms(type, escrow, resolvedPhone),
+      );
     }
 
     if (!resolvedEmail && !resolvedPhone) {
@@ -412,40 +428,6 @@ export class NotificationsService implements OnModuleInit {
   }
 
   // ── Internal dispatch ─────────────────────────────────────────────────────
-
-  private async dispatch(
-    type: NotificationType,
-    escrow: EscrowRecord,
-    recipientAddress: string,
-  ): Promise<void> {
-    return this.traced(
-      'notification.dispatch',
-      {
-        'trustlink.notification.type': type,
-        'trustlink.escrow.id': escrow.id,
-      },
-      async () => {
-        await this.traced(
-          'notification.dispatch.email',
-          {
-            'trustlink.notification.type': type,
-            'trustlink.notification.channel': 'email',
-            'trustlink.escrow.id': escrow.id,
-          },
-          () => this.dispatchEmail(type, escrow, recipientAddress),
-        );
-        await this.traced(
-          'notification.dispatch.sms',
-          {
-            'trustlink.notification.type': type,
-            'trustlink.notification.channel': 'sms',
-            'trustlink.escrow.id': escrow.id,
-          },
-          () => this.dispatchSms(type, escrow, recipientAddress),
-        );
-      },
-    );
-  }
 
   /**
    * Records the audit row for a notification that was never attempted (issue #946),

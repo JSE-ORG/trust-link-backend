@@ -314,7 +314,15 @@ export const configValidationSchema = Joi.object({
   // Lifetime of the SEP-10 access (JWT) token, in seconds. Operators can
   // shorten it below the 1-hour default for higher-security deployments.
   // Must be a positive integer. Default: 3600 (1 hour).
-  ACCESS_TOKEN_TTL: Joi.number().integer().min(1).default(3600),
+  ACCESS_TOKEN_TTL: Joi.number()
+    .integer()
+    .min(1)
+    .max(86400)
+    .default(3600)
+    .messages({
+      'number.max':
+        'Config validation error: ACCESS_TOKEN_TTL must not exceed 86400 seconds (24 hours)',
+    }),
   LOGISTICS_API_BASE_URL: Joi.string().uri().optional(),
   LOGISTICS_API_KEY: Joi.string().optional(),
   STELLAR_HORIZON_URL: Joi.string().uri().optional(),

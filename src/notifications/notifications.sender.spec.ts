@@ -1,5 +1,6 @@
 import { ConfigService } from '../config/config.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { VendorProfileRepository } from '../vendor/vendor-profile.repository';
 import { NotificationsService } from './notifications.service';
 
 describe('NotificationsService SMS sender (#838)', () => {
@@ -15,23 +16,31 @@ describe('NotificationsService SMS sender (#838)', () => {
         key === 'TWILIO_FROM_NUMBER' ? '+15551234567' : undefined,
       ),
     } as unknown as ConfigService;
+    const vendorPhone = '+15557654321';
+    const vendorProfiles = {
+      findByAddress: jest.fn().mockResolvedValue({ phone: vendorPhone }),
+      findNotificationPreferences: jest
+        .fn()
+        .mockResolvedValue({ notificationChannels: ['SMS'] }),
+    } as unknown as VendorProfileRepository;
     const service = new NotificationsService(
       prisma,
       { send: jest.fn().mockResolvedValue(undefined) },
       twilio,
       config,
+      vendorProfiles,
     );
     const escrow = {
       id: 'escrow-1',
       itemName: 'Widget',
-      vendorAddress: '+15557654321',
-      buyerAddress: '+15557654322',
+      vendorAddress: 'GVENDOR',
+      buyerAddress: 'GBUYER',
     } as Parameters<NotificationsService['notifyFunded']>[0];
 
     await service.notifyFunded(escrow);
 
     expect(twilio.messages.create).toHaveBeenCalledWith({
-      to: escrow.vendorAddress,
+      to: vendorPhone,
       body: 'FUNDED: Widget',
       from: '+15551234567',
     });
