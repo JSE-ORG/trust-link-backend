@@ -109,7 +109,7 @@ export class DlqService {
    * Re-execute the original operation via `replay`. On success the record is
    * marked `REPLAYED` and the new tx hash is stored; on failure the attempts
    * counter is bumped and the record stays `PENDING_REVIEW` for further review.
-   * 
+   *
    * Issue #952 / #1050: Claims the record atomically before replay to prevent concurrent
    * submissions to the chain. Returns 409 if another request claimed it first.
    */
@@ -195,7 +195,6 @@ export class DlqService {
     }
     return abandoned;
   }
-
 
   /**
    * Stamps `reviewedAt` without changing `status` — an operator has looked

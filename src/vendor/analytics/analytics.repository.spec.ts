@@ -22,7 +22,6 @@ describe('AnalyticsRepository', () => {
       const vendorAddress = 'GVENDOR_ANALYTICS_1';
       const startDate = new Date();
       startDate.setDate(startDate.getDate() - 7);
-      const endDate = new Date();
 
       await prisma.escrow.create({
         data: {
@@ -35,6 +34,8 @@ describe('AnalyticsRepository', () => {
           state: 'COMPLETED',
         },
       });
+      // Taken after the insert so the row's createdAt is inside the window.
+      const endDate = new Date();
 
       const rows = await repository.aggregateDailyVolume(
         vendorAddress,
@@ -90,8 +91,9 @@ describe('AnalyticsRepository', () => {
 
   describe('findNotificationChannels', () => {
     it('returns null when vendor has no tracking settings', async () => {
-      const channels =
-        await repository.findNotificationChannels('GVENDOR_ANALYTICS_1');
+      const channels = await repository.findNotificationChannels(
+        'GVENDOR_ANALYTICS_1',
+      );
       expect(channels).toBeNull();
     });
 

@@ -208,7 +208,25 @@ export class TrackingPollWorker implements OnModuleInit, OnApplicationShutdown {
     vendorAddress: string;
   }): Promise<void> {
     try {
-      const status = await this.logisticsService.getStatus(escrow.trackingId!);
+      // The repository query already excludes these rows (#960); the guards
+      // keep a stale or hand-built row from reaching the carrier or the chain.
+      if (!escrow.trackingId) {
+        return;
+      }
+      // `record_delivery` addresses the escrow by the contract's own id, so an
+      // unmapped row has no call to make.
+      if (escrow.contractEscrowId === null) {
+        this.logger.warn(
+          JSON.stringify({
+            msg: 'tracking_poll.unmapped_escrow',
+            escrowId: escrow.id,
+            eventType: 'tracking_poll',
+          }),
+        );
+        return;
+      }
+
+      const status = await this.logisticsService.getStatus(escrow.trackingId);
       if (status.status !== 'DELIVERED') {
         return;
       }
@@ -227,7 +245,7 @@ export class TrackingPollWorker implements OnModuleInit, OnApplicationShutdown {
         // The contract requires `caller` to be the admin and calls
         // require_auth() on it, so anything else is rejected outright.
         await this.contractService.recordDelivery(
-          escrow.contractEscrowId!,
+          escrow.contractEscrowId,
           this.requireAdminAddress(),
         );
         const updated = await this.escrowRepository.markDelivered(

@@ -2,6 +2,7 @@ import {
   ArrayMaxSize,
   IsArray,
   IsISO31661Alpha2,
+  IsISO4217CurrencyCode,
   IsOptional,
   IsString,
   IsTimeZone,

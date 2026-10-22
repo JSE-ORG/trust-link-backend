@@ -46,7 +46,6 @@ function decimalToNumber(value: Prisma.Decimal): number {
 export class AnalyticsService {
   constructor(private readonly repository: AnalyticsRepository) {}
 
-
   /**
    * Retrieves daily transaction volume data for a vendor.
    * Uses database-level aggregation with raw SQL for optimal performance on large datasets.
@@ -71,23 +70,15 @@ export class AnalyticsService {
       timezone,
     );
 
-
     // Convert aggregation results to DailyVolumeData format
     const dailyMap = new Map<string, DailyVolumeDataDto>();
 
-    type AggRow = {
-      // A Postgres `date` column comes back from the driver as a JS Date, not
-      // a string, so this is normalised below before being used as a map key —
-      // fillDateGaps looks the key up as 'YYYY-MM-DD' and would otherwise never
-      // match, silently reporting every day as zero.
-      date: string | Date;
-      totalVolume: number | string;
-      transactionCount: number | string;
-      completedCount: number | string;
-      disputedCount: number | string;
-    };
+    // A Postgres `date` column comes back from the driver as a JS Date, not
+    // a string, so it is normalised before being used as a map key —
+    // fillDateGaps looks the key up as 'YYYY-MM-DD' and would otherwise never
+    // match, silently reporting every day as zero.
     for (const row of aggregationResult) {
-      const r = row as AggRow;
+      const r = row;
       const dateKey = this.toDateKey(r.date);
       const totalVolume = Number(r.totalVolume);
       const transactionCount = Number(r.transactionCount);
@@ -223,7 +214,6 @@ export class AnalyticsService {
     // state. Uses the composite index on (vendorAddress, state).
     const groups = await this.repository.getEscrowStateGroups(vendorAddress);
 
-
     // Active states: CREATED, FUNDED, SHIPPED, DELIVERED
     const activeStates = new Set(['CREATED', 'FUNDED', 'SHIPPED', 'DELIVERED']);
 
@@ -241,11 +231,7 @@ export class AnalyticsService {
     for (const group of groups) {
       // Narrowed explicitly: `groupBy` infers a wide union here, and a null
       // `_sum` is what an empty state group returns.
-      const { state, _count, _sum } = group as {
-        state: string;
-        _count?: number | { _all?: number };
-        _sum?: { amount?: Prisma.Decimal | null } | null;
-      };
+      const { state, _count, _sum } = group;
       const count = Number(
         typeof _count === 'object' ? _count?._all : (_count ?? 0),
       );
@@ -307,7 +293,6 @@ export class AnalyticsService {
     const notificationChannels =
       (await this.repository.findNotificationChannels(vendorAddress)) ??
       DEFAULT_NOTIFICATION_CHANNELS;
-
 
     const channels: ChannelMetricsDto = {
       email: {

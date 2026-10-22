@@ -1,4 +1,5 @@
 import { Global, Module } from '@nestjs/common';
+import { ModuleRef } from '@nestjs/core';
 import { ConfigModule } from '../config/config.module';
 import { ConfigService } from '../config/config.service';
 import { GiglLogisticsService } from './gigl/gigl-logistics.service';
@@ -18,7 +19,7 @@ import { ProviderCredentialRepository } from './provider-credential.repository';
     },
     {
       provide: GiglClient,
-      useFactory: (config: ConfigService, logisticsService: GiglLogisticsService) => {
+      useFactory: (config: ConfigService, moduleRef: ModuleRef) => {
         const baseUrl = config.get<string>('LOGISTICS_API_BASE_URL');
 
         if (!baseUrl) {
@@ -26,13 +27,15 @@ import { ProviderCredentialRepository } from './provider-credential.repository';
         }
 
         // Read the key dynamically so rotations via rotateApiKey() take effect
-        // immediately without a process restart (issue #1054).
+        // immediately without a process restart (issue #1054). The service is
+        // resolved at call time because it depends on this client itself.
         return new GiglClient({
           baseUrl,
-          getApiToken: () => logisticsService.getApiKey(),
+          getApiToken: () =>
+            moduleRef.get(GiglLogisticsService, { strict: false }).getApiKey(),
         });
       },
-      inject: [ConfigService, GiglLogisticsService],
+      inject: [ConfigService, ModuleRef],
     },
   ],
   exports: [GiglClient, GiglLogisticsService, LogisticsService],

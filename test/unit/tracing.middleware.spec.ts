@@ -79,7 +79,7 @@ describe('resolveWorkflow (issue #79)', () => {
     expect(resolveWorkflow('GET', '/admin/stats')).toBe('admin.stats');
     expect(resolveWorkflow('GET', '/admin/queues')).toBe('admin.queues');
     expect(resolveWorkflow('GET', '/admin/disputes')).toBe('admin.disputes');
-    expect(resolveWorkflow('GET', '/admin/api-keys')).toBe('admin.api_keys');
+    expect(resolveWorkflow('GET', '/admin/credentials')).toBe('admin.api_keys');
   });
 
   it('maps health and version', () => {

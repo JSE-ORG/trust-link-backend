@@ -17,6 +17,7 @@ describe('PrismaModule', () => {
 
     mockConfig = {
       getDatabaseUrl: jest.fn().mockReturnValue('postgresql://localhost/test'),
+      get: jest.fn().mockReturnValue(undefined),
     };
   });
 

@@ -17,7 +17,11 @@ import { WebhookCleanupService } from './webhook-cleanup.service';
 @Module({
   imports: [forwardRef(() => EscrowModule), NotificationsModule, ConfigModule],
   controllers: [StellarWebhookController],
-  providers: [StellarWebhookService, StellarWebhookRepository, WebhookCleanupService],
+  providers: [
+    StellarWebhookService,
+    StellarWebhookRepository,
+    WebhookCleanupService,
+  ],
   exports: [StellarWebhookService],
 })
 export class WebhooksModule {}

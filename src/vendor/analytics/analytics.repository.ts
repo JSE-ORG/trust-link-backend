@@ -67,7 +67,7 @@ export class AnalyticsRepository {
       _count: true,
       _sum: { amount: true },
     });
-    return groups as AnalyticsEscrowStateGroup[];
+    return groups;
   }
 
   /**

@@ -246,7 +246,7 @@ describe('SorobanPollerService', () => {
 
         // The polling guard was released: the next cycle issues a new request.
         await service.poll();
-        expect(fetchMock).toHaveBeenCalledTimes(2);
+        expect(bodyOfCall(fetchMock, 1).method).toBe('getEvents');
       } finally {
         jest.useRealTimers();
       }
@@ -335,7 +335,6 @@ describe('SorobanPollerService', () => {
 
       await service.poll();
 
-      expect(fetchMock).toHaveBeenCalledTimes(1);
       const events = bodyOfCall(fetchMock, 0);
       expect(events.method).toBe('getEvents');
       expect(events.params.cursor).toBe('PAGING_TOKEN');
@@ -378,7 +377,8 @@ describe('SorobanPollerService', () => {
 
       await service.poll();
 
-      expect(fetchMock).toHaveBeenCalledTimes(1);
+      // getEvents comes first: the replay point is used without a
+      // getLatestLedger lookup. The later lookup only advances a quiet cursor.
       const events = bodyOfCall(fetchMock, 0);
       expect(events.method).toBe('getEvents');
       expect(events.params.startLedger).toBe(12345);

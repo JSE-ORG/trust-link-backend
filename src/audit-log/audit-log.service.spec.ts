@@ -193,6 +193,7 @@ describe('AuditLogService (Issues #816 & #817)', () => {
       const result = await service.findAll();
 
       expect(prisma.auditLog.findMany).toHaveBeenCalledWith({
+        where: {},
         skip: 0,
         take: 20,
         orderBy: { occurredAt: 'desc' },
@@ -214,6 +215,7 @@ describe('AuditLogService (Issues #816 & #817)', () => {
       const result = await service.findAll({ page: 3, limit: 10 });
 
       expect(prisma.auditLog.findMany).toHaveBeenCalledWith({
+        where: {},
         skip: 20,
         take: 10,
         orderBy: { occurredAt: 'desc' },
@@ -230,6 +232,7 @@ describe('AuditLogService (Issues #816 & #817)', () => {
       const result = await service.findAll({ page: -5, limit: 10 });
 
       expect(prisma.auditLog.findMany).toHaveBeenCalledWith({
+        where: {},
         skip: 0,
         take: 10,
         orderBy: { occurredAt: 'desc' },
@@ -243,6 +246,7 @@ describe('AuditLogService (Issues #816 & #817)', () => {
 
       const resultMax = await service.findAll({ page: 1, limit: 500 });
       expect(prisma.auditLog.findMany).toHaveBeenCalledWith({
+        where: {},
         skip: 0,
         take: 100,
         orderBy: { occurredAt: 'desc' },
@@ -251,6 +255,7 @@ describe('AuditLogService (Issues #816 & #817)', () => {
 
       const resultMin = await service.findAll({ page: 1, limit: 0 });
       expect(prisma.auditLog.findMany).toHaveBeenCalledWith({
+        where: {},
         skip: 0,
         take: 1,
         orderBy: { occurredAt: 'desc' },
@@ -268,6 +273,7 @@ describe('AuditLogService (Issues #816 & #817)', () => {
       });
 
       expect(prisma.auditLog.findMany).toHaveBeenCalledWith({
+        where: {},
         skip: 0,
         take: 20,
         orderBy: { occurredAt: 'desc' },

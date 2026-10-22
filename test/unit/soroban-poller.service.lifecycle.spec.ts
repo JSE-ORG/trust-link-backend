@@ -125,6 +125,19 @@ function mockRpcResponse(
   } as unknown as Response);
 }
 
+/**
+ * Number of getEvents requests made. A quiet poll also asks for the latest
+ * ledger to advance the cursor (#917, #1042), so raw fetch counts are not a
+ * count of polls.
+ */
+function getEventsCalls(fetchSpy: jest.SpiedFunction<typeof fetch>): number {
+  return fetchSpy.mock.calls.filter(([, init]) => {
+    const raw = typeof init?.body === 'string' ? init.body : '{}';
+    const body = JSON.parse(raw) as { method?: string };
+    return body.method === 'getEvents';
+  }).length;
+}
+
 describe('SorobanPollerService — lifecycle (issue #559)', () => {
   let fetchSpy: jest.SpiedFunction<typeof fetch>;
 
@@ -147,10 +160,10 @@ describe('SorobanPollerService — lifecycle (issue #559)', () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(getEventsCalls(fetchSpy)).toBe(1);
 
     await jest.advanceTimersByTimeAsync(5_000);
-    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(getEventsCalls(fetchSpy)).toBe(2);
 
     service.onModuleDestroy();
   });
@@ -173,13 +186,13 @@ describe('SorobanPollerService — lifecycle (issue #559)', () => {
     service.onModuleInit();
     await Promise.resolve();
     await Promise.resolve();
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(getEventsCalls(fetchSpy)).toBe(1);
 
     service.onModuleDestroy();
     await jest.advanceTimersByTimeAsync(60_000);
 
     // Still just the one immediate poll from onModuleInit — destroy stopped the interval.
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(getEventsCalls(fetchSpy)).toBe(1);
   });
 
   it('re-entry guard: a second tick during an in-flight poll is a no-op', async () => {
@@ -212,17 +225,19 @@ describe('SorobanPollerService — lifecycle (issue #559)', () => {
     await firstPoll;
     await secondPoll;
 
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(getEventsCalls(fetchSpy)).toBe(1);
   });
 
-  it('does nothing when the RPC returns no new events', async () => {
+  it('syncs nothing and only advances the cursor when the RPC returns no new events', async () => {
     const { service, cursorService, escrowService } = await buildService();
     mockRpcResponse(fetchSpy, []);
 
     await service.poll();
 
     expect(escrowService.syncStateFromChain).not.toHaveBeenCalled();
-    expect(cursorService.set).not.toHaveBeenCalled();
+    // latestLedger 200 minus the 10-ledger start margin (#917).
+    expect(cursorService.set).toHaveBeenCalledTimes(1);
+    expect(cursorService.set).toHaveBeenCalledWith('ledger:190');
   });
 });
 

@@ -96,7 +96,9 @@ describe('contact-encryption.util', () => {
     delete process.env.CONTACT_ENCRYPTION_KEY;
     expect(isContactEncryptionConfigured()).toBe(false);
     expect(() => encryptContact('x')).toThrow(ServiceUnavailableException);
-    expect(() => decryptContact('00:11:22')).toThrow(ServiceUnavailableException);
+    expect(() => decryptContact('00:11:22')).toThrow(
+      ServiceUnavailableException,
+    );
   });
 
   it('invalid CONTACT_ENCRYPTION_KEY length throws ServiceUnavailableException', () => {
