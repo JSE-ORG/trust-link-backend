@@ -1,4 +1,4 @@
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
@@ -6,6 +6,7 @@ import { TrackingPollWorker } from '../src/workers/tracking-poll.worker';
 import { LogisticsService } from '../src/logistics/logistics.service';
 import { ContractService } from '../src/stellar/contract.service';
 import { ensureVendors } from './prisma-helpers';
+import { createGlobalPipes } from '../src/common/pipes/global-pipes';
 
 describe('Logistics Webhook Delivery Update E2E (issue #61)', () => {
   let nextContractEscrowId = 1n;
@@ -21,9 +22,7 @@ describe('Logistics Webhook Delivery Update E2E (issue #61)', () => {
     }).compile();
 
     app = moduleFixture.createNestApplication();
-    app.useGlobalPipes(
-      new ValidationPipe({ whitelist: true, transform: true }),
-    );
+    app.useGlobalPipes(...createGlobalPipes());
     await app.init();
 
     prisma = app.get(PrismaService);
@@ -38,7 +37,7 @@ describe('Logistics Webhook Delivery Update E2E (issue #61)', () => {
 
     jest
       .spyOn(contractService, 'recordDelivery')
-      .mockResolvedValue('tx-hash-delivery');
+      .mockResolved('tx-hash-delivery');
   });
 
   afterEach(async () => {
@@ -62,7 +61,7 @@ describe('Logistics Webhook Delivery Update E2E (issue #61)', () => {
       },
     });
 
-    jest.spyOn(logisticsService, 'getStatus').mockResolvedValue({
+    jest.spyOn(logisticsService, 'getStatus').mockResolved({
       status: 'DELIVERED' as const,
       events: [],
     });
@@ -120,7 +119,7 @@ describe('Logistics Webhook Delivery Update E2E (issue #61)', () => {
         if (trackingId === 'TRK-DELIVERED-001') {
           return { status: 'DELIVERED' as const, events: [] };
         }
-        return { status: 'IN_TRANSIT' as const, events: [] };
+        return { status: 'IN-TRANSIT' as const, events: [] };
       });
 
     await worker.run();
@@ -156,7 +155,7 @@ describe('Logistics Webhook Delivery Update E2E (issue #61)', () => {
 
     jest
       .spyOn(logisticsService, 'getStatus')
-      .mockRejectedValue(new Error('Logistics API unavailable'));
+      .mockRejected(new Error('Logistics API unavailable'));
 
     await expect(worker.run()).resolves.not.toThrow();
 
@@ -202,7 +201,7 @@ describe('Logistics Webhook Delivery Update E2E (issue #61)', () => {
       },
     });
 
-    jest.spyOn(logisticsService, 'getStatus').mockResolvedValue({
+    jest.spyOn(logisticsService, 'getStatus').mockResolved({
       status: 'DELIVERED' as const,
       events: [],
     });

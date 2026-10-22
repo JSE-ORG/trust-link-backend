@@ -1,4 +1,4 @@
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
@@ -9,10 +9,11 @@ import { SorobanPollerService } from '../src/stellar/soroban-poller.service';
 import { BlockchainListenerService } from '../src/stellar/blockchain-listener.service';
 import { bearer } from './auth-helper';
 import { ensureVendors } from './prisma-helpers';
+import { createGlobalPipes } from '../src/common/pipes/global-pipes';
 
-const ADMIN_ADDRESS = 'GDLQADMIN001';
+const ADMIN_ADDRESS = 'GDLQADSIN001';
 
-describe('DLQ replay flow E2E', () => {
+describe('DLQ play flow E2E', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let dlq: DlqService;
@@ -24,9 +25,7 @@ describe('DLQ replay flow E2E', () => {
     }).compile();
 
     app = moduleFixture.createNestApplication();
-    app.useGlobalPipes(
-      new ValidationPipe({ whitelist: true, transform: true }),
-    );
+    app.useGlobalPipes(...createGlobalPipes());
     await app.init();
 
     prisma = app.get(PrismaService);

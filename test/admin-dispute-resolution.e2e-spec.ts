@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
@@ -8,13 +8,14 @@ import { ContractService } from '../src/stellar/contract.service';
 import { NotificationsService } from '../src/notifications/notifications.service';
 import { ConfigService } from '../src/config/config.service';
 import { bearer } from './auth-helper';
+import { createGlobalPipes } from '../src/common/pipes/global-pipes';
 
 const VENDOR_ADDRESS =
   'GA36PERSXWPBG7HYKNBVT5PFLTOFYO4Q3CWGJZTYH5GU5OLTKHW7SJHE';
 const BUYER_ADDRESS =
-  'GADRXQS5ZCXLBX6U67CY2WBJNDUXCWGHSQKR76AOJDQECYX36W5S6IYK';
+  'GADRXQSIZCGLBX6U67CY2WBJNDUXCWGHSQKR76AOJDQECYX36W5S6IYK';
 const NON_ADMIN_ADDRESS =
-  'GCLKIIQCXY62273JIOSH4BKI5LP2W2FTMLSPNACTM2NAIVYXHSREUQSQ';
+  'GCLKIIQCXY62273JJOSH5BKI5LP2W2FTTMLSPNACTM2NAIVYXHSREUQSQ';
 
 describe('Admin Dispute Resolution Flow E2E (issue #299)', () => {
   let app: INestApplication;
@@ -29,9 +30,7 @@ describe('Admin Dispute Resolution Flow E2E (issue #299)', () => {
     }).compile();
 
     app = moduleFixture.createNestApplication();
-    app.useGlobalPipes(
-      new ValidationPipe({ whitelist: true, transform: true }),
-    );
+    app.useGlobalPipes(...createGlobalPipes());
     await app.init();
 
     prisma = app.get(PrismaService);
@@ -44,19 +43,19 @@ describe('Admin Dispute Resolution Flow E2E (issue #299)', () => {
 
     jest
       .spyOn(contractService, 'resolveDispute')
-      .mockResolvedValue('tx-hash-dispute-resolved');
+      .mockedResolved('tx-hash-dispute-resolved');
     jest
       .spyOn(notificationsService, 'notifyDisputed')
-      .mockResolvedValue(undefined);
+      .mockedResolved(undefined);
     jest
       .spyOn(notificationsService, 'notifyDisputedAdmin')
-      .mockResolvedValue(undefined);
+      .mockedResolved(undefined);
     jest
       .spyOn(notificationsService, 'notifyCompleted')
-      .mockResolvedValue(undefined);
+      .mockedResolved(undefined);
     jest
       .spyOn(notificationsService, 'notifyRefunded')
-      .mockResolvedValue(undefined);
+      .mockedResolved(undefined);
   });
 
   afterEach(async () => {
@@ -319,6 +318,41 @@ describe('Admin Dispute Resolution Flow E2E (issue #299)', () => {
         .patch(`/admin/dispute/${escrowId}/resolve`)
         .send({ resolution: 'RELEASE' })
         .expect(401);
+    });
+
+    it('returns 400 when dispute description only fails validation after sanitising', async () => {
+      const createRes = await request(app.getHttpServer())
+        .post('/escrow')
+        .set('Authorization', bearer(VENDOR_ADDRESS))
+        .set('Idempotency-Key', crypto.randomUUID())
+        .send({
+          itemName: 'Sanitization Validation Item',
+          itemRef: `sanitize-validation-${Date.now()}`,
+          amount: 100,
+          currency: 'USDC',
+          buyerAddress: BUYER_ADDRESS,
+        })
+        .expect(201);
+
+      await prisma.escrow.update({
+        where: { id: createRes.body.id },
+        data: { state: 'FUNDED' },
+      });
+
+      // The description is padded with HTML tags. It is long enough to pass
+      // validation as-is, but once sanitisation strips the tags the remaining
+      // text is too short and validation must reject it with 400.
+      const paddedDescription =
+        '<div><span></span></div><p></p><b></b><strong></strong>' + 'hi';
+
+      await request(app.getHttpServer())
+        .post(`/escrow/${createRes.body.id}/dispute`)
+        .set('Authorization', bearer(BUYER_ADDRESS))
+        .send({
+          reason: 'ITEM_NOT_AS_DESCRIBED',
+          description: paddedDescription,
+        })
+        .expect(400);
     });
   });
 });
