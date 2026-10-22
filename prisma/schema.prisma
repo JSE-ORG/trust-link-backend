@@ -42,6 +42,7 @@ model Escrow {
   vendorAddress          String
   state                  EscrowState    @default(CREATED)
   trackingId             String?
+  trackingCheckedAt      DateTime?
   shippedAt              DateTime?
   deliveredAt            DateTime?
   deliveryRecordedAt     DateTime?
@@ -64,6 +65,7 @@ model Escrow {
   @@index([vendorAddress, state])
   @@index([vendorAddress, itemRef], map: "Escrow_vendorAddress_itemRef_idx")
   @@index([state, trackingId])
+  @@index([state, trackingCheckedAt])
   @@index([state, createdAt])
   @@index([state, deliveredAt])
   @@index([state, deliveredAt, autoReleaseSubmittedAt])

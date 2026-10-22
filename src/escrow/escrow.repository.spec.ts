@@ -610,6 +610,50 @@ describe('EscrowRepository', () => {
         const rows = await repo.findShippedWithTracking();
         expect(rows.map((r) => r.id)).toContain(escrow.id);
       });
+
+      it('rotates a capped batch across all eligible escrows', async () => {
+        const escrows = await Promise.all(
+          Array.from({ length: 51 }, (_, index) =>
+            repo.create(
+              { ...makeDto(), itemRef: `rotation-${index}` },
+              'vendor-addr',
+            ),
+          ),
+        );
+        await Promise.all(
+          escrows.map((escrow, index) =>
+            prisma.escrow.update({
+              where: { id: escrow.id },
+              data: {
+                state: 'SHIPPED',
+                trackingId: `TRACK-ROTATION-${index}`,
+                contractEscrowId: BigInt(index + 1),
+              },
+            }),
+          ),
+        );
+
+        const firstCycle = await repo.findShippedWithTracking(50);
+        await Promise.all(
+          firstCycle.map((escrow) =>
+            repo.markTrackingChecked(
+              escrow.id,
+              new Date('2026-10-21T12:00:00Z'),
+            ),
+          ),
+        );
+        const secondCycle = await repo.findShippedWithTracking(50);
+
+        expect(
+          new Set([...firstCycle, ...secondCycle].map((escrow) => escrow.id)),
+        ).toHaveSize(51);
+        expect(
+          firstCycle.every((escrow) => escrow.trackingCheckedAt === null),
+        ).toBe(true);
+        expect(
+          secondCycle.filter((escrow) => escrow.trackingCheckedAt === null),
+        ).toHaveLength(1);
+      });
     });
 
     it('claims auto-release once and allows it to be cleared for a retry', async () => {

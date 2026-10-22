@@ -43,6 +43,7 @@ export interface EscrowRecord {
   vendorAddress: string;
   state: EscrowState;
   trackingId: string | null;
+  trackingCheckedAt?: Date | null;
   shippedAt?: Date | null;
   deliveredAt: Date | null;
   deliveryRecordedAt: Date | null;
