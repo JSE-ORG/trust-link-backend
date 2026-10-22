@@ -23,6 +23,7 @@
         "check-licences": "node scripts/check-licences.js",
         "openapi:generate": "ts-node scripts/generate-openapi.ts",
         "check-test-match": "node scripts/check_test_match.js",
+        "check-malware": "node scripts/check_malware.js",
         "db:generate": "prisma generate",
         "db:push": "prisma db push",
         "db:migrate": "prisma migrate deploy",
