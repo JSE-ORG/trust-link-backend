@@ -6,6 +6,7 @@ import {
   OnModuleInit,
   Optional,
 } from '@nestjs/common';
+import { StrKey } from '@stellar/stellar-sdk';
 import * as crypto from 'crypto';
 import { EscrowRecord, NotificationType } from '../prisma/prisma.service';
 import { ConfigService } from '../config/config.service';
@@ -233,7 +234,8 @@ export class NotificationsService implements OnModuleInit {
    */
   async notifyDisputedAdmin(
     escrow: EscrowRecord,
-    adminAddress?: string,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _adminAddress?: string,
   ): Promise<void> {
     const adminEmail = this.config?.get<string>('ADMIN_NOTIFICATION_EMAIL');
     if (!adminEmail) {
@@ -325,7 +327,6 @@ export class NotificationsService implements OnModuleInit {
     }
   }
 
-
   /**
    * Resolves the vendor's real contact channels from VendorProfile. A missing
    * email or phone skips only that channel, and no vendor notification falls
@@ -363,8 +364,9 @@ export class NotificationsService implements OnModuleInit {
         }),
     ]);
 
-    const channels =
-      prefs?.notificationChannels ?? [...DEFAULT_NOTIFICATION_CHANNELS];
+    const channels = prefs?.notificationChannels ?? [
+      ...DEFAULT_NOTIFICATION_CHANNELS,
+    ];
     const email = profile?.email?.trim() || null;
     const phone = profile?.phone?.trim() || null;
 
@@ -531,7 +533,7 @@ export class NotificationsService implements OnModuleInit {
     let attemptCount = 0;
     let lastResponseCode: number | null = null;
 
-    if (recipientAddress.startsWith('G')) {
+    if (StrKey.isValidEd25519PublicKey(recipientAddress)) {
       await this.recordUndeliverable(
         type,
         escrow,
@@ -541,7 +543,6 @@ export class NotificationsService implements OnModuleInit {
       );
       return;
     }
-
 
     // #839 — Resolve the sender and the template id BEFORE the retry loop.
     //
@@ -650,7 +651,7 @@ export class NotificationsService implements OnModuleInit {
     let attemptCount = 0;
     let lastResponseCode: number | null = null;
 
-    if (recipientAddress.startsWith('G')) {
+    if (StrKey.isValidEd25519PublicKey(recipientAddress)) {
       await this.recordUndeliverable(
         type,
         escrow,
@@ -660,7 +661,6 @@ export class NotificationsService implements OnModuleInit {
       );
       return;
     }
-
 
     while (attemptCount < MAX_ATTEMPTS) {
       attemptCount++;
