@@ -20,6 +20,7 @@ import {
   Logger,
   UnauthorizedException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '../config/config.service';
 import { EscrowRepository } from '../escrow/escrow.repository';
@@ -532,6 +533,45 @@ describe('StellarWebhookService — persisted replay guard (issues #734, #922)',
   // ── Duplicate guard via the persisted cursor ─────────────────────────────
 
   describe('duplicate-delivery (replay) guard', () => {
+    it('treats a concurrent unique insert violation as a duplicate', async () => {
+      const service = makeService();
+      const dto = makePaymentDto({ id: 'op-concurrent-duplicate' });
+      const uniqueViolation = new Prisma.PrismaClientKnownRequestError(
+        'Unique constraint failed',
+        { code: 'P2002', clientVersion: 'test' },
+      );
+      const loggerErrorSpy = jest
+        .spyOn(service['logger'], 'error')
+        .mockImplementation(() => undefined);
+
+      webhookRepository.isProcessed.mockResolvedValue(false);
+      webhookRepository.markProcessed.mockRejectedValueOnce(uniqueViolation);
+
+      await expect(callHandleEvent(service, dto)).resolves.toEqual({
+        received: true,
+        skipped: true,
+        reason: 'duplicate',
+      });
+      expect(webhookRepository.markProcessed).toHaveBeenCalledWith(dto.id);
+      expect(escrowRepository.findByVendor).not.toHaveBeenCalled();
+      expect(webhookRepository.unmarkProcessed).not.toHaveBeenCalled();
+      expect(loggerErrorSpy).not.toHaveBeenCalledWith(
+        expect.stringContaining('stellar.webhook.processing_failed'),
+        expect.anything(),
+      );
+    });
+
+    it('propagates non-unique errors when marking an operation processed', async () => {
+      const service = makeService();
+      const dto = makePaymentDto({ id: 'op-mark-failed' });
+      const databaseError = new Error('Database unavailable');
+
+      webhookRepository.isProcessed.mockResolvedValue(false);
+      webhookRepository.markProcessed.mockRejectedValueOnce(databaseError);
+
+      await expect(callHandleEvent(service, dto)).rejects.toBe(databaseError);
+    });
+
     it('returns skipped:true on the second delivery of the same operation id', async () => {
       const service = makeService();
       const dto = makePaymentDto({ id: 'op-replay-001' });

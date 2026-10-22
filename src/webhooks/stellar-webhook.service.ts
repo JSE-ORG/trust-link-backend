@@ -5,6 +5,7 @@ import {
   Logger,
   UnauthorizedException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import * as crypto from 'crypto';
 import { ConfigService } from '../config/config.service';
 import { EscrowRepository } from '../escrow/escrow.repository';
@@ -68,7 +69,23 @@ export class StellarWebhookService {
       }
 
       // Persist before processing so concurrent Horizon retries are blocked.
-      await this.webhookRepository.markProcessed(dto.id);
+      try {
+        await this.webhookRepository.markProcessed(dto.id);
+      } catch (err) {
+        if (
+          err instanceof Prisma.PrismaClientKnownRequestError &&
+          err.code === 'P2002'
+        ) {
+          this.logger.log(
+            JSON.stringify({
+              msg: 'stellar.webhook.duplicate',
+              operationId: dto.id,
+            }),
+          );
+          return { received: true, skipped: true, reason: 'duplicate' };
+        }
+        throw err;
+      }
 
       try {
         await this.processEvent(dto);
