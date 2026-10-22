@@ -23,10 +23,13 @@ Set all required variables before running migrations or starting the service:
 - `PORT`
 - `DATABASE_URL`
 - `SEP10_JWT_SECRET`
+- `ACCESS_TOKEN_TTL` *(optional)* — lifetime of SEP-10 access (JWT) tokens in seconds; default: `3600` (1 hour)
 - `SYSTEM_SIGNER_SECRET` — Stellar secret key used for transaction signing
 - `ADMIN_ADDRESS`
+- `ADMIN_NOTIFICATION_EMAIL` *(optional)* — email address for administrative dispute alert notifications; default: none (if unset, admin dispute alerts are skipped with a warning)
 - `STELLAR_NETWORK`
 - `STELLAR_WEBHOOK_SECRET` — required in production; validates inbound Stellar webhook payloads
+- `WEBHOOK_EVENT_RETENTION_DAYS` *(optional)* — retention window in days for processed Stellar webhook event records pruned by daily cleanup; default: `30`
 - `REDIS_URL`
 - `ALLOWED_ORIGINS`
 - `API_BASE_URL`
@@ -37,7 +40,10 @@ Set all required variables before running migrations or starting the service:
 - `CONTACT_ENCRYPTION_KEY` — 64-character hex string (32 bytes); required in production
 - `CREDENTIAL_ENCRYPTION_KEY` — 64-character hex string (32 bytes); required in production
 - `SOROBAN_RPC_URL` — required in production; no safe default RPC endpoint exists
+- `SOROBAN_POLL_INTERVAL_MS` *(optional)* — poll cadence in milliseconds for the Soroban event poller; default: `5000` (must be greater than `SOROBAN_RPC_TIMEOUT_MS`)
+- `SOROBAN_RPC_TIMEOUT_MS` *(optional)* — per-request timeout in milliseconds for Soroban RPC calls; default: `4000` (the application fails to boot unless this is strictly less than `SOROBAN_POLL_INTERVAL_MS`)
 - `SENTRY_DSN` — required in production; error reporting endpoint URL
+- `GIT_SHA` *(optional)* — git commit SHA of the deployed build; tags Sentry releases and is included in `GET /version` (omitted when unset); default: none
 - `SENDGRID_API_KEY` *(optional)* — enable email notifications
 - `SENDGRID_FROM_EMAIL` — **required when `SENDGRID_API_KEY` is set**; verified sender address
 - `TWILIO_ACCOUNT_SID` *(optional)* — enable SMS notifications

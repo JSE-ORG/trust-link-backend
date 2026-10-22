@@ -15,13 +15,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Required `PRESIGN_SECRET` configuration for a stable, configurable HMAC key used by `S3PresignService` so simulated pre-signed evidence URLs are reproducible across restarts and replicas.
 - Database commands for safely applying migrations, resetting a local database, and idempotently seeding development data.
 - Persistent notification delivery status and retry information.
+- Optional `ACCESS_TOKEN_TTL` configuration for SEP-10 access token lifetime in seconds (default: 3600).
+- Optional `ADMIN_NOTIFICATION_EMAIL` configuration to receive email alerts when disputes are opened.
+- Optional `WEBHOOK_EVENT_RETENTION_DAYS` configuration to set the retention window (default: 30 days) for daily cleanup of processed Stellar webhook events.
+- Optional `GIT_SHA` configuration to record the deployed commit SHA in Sentry releases and `GET /version` responses.
 
 ### Changed
 
 - `GiglClient` now rejects 2xx responses whose body does not match the expected `GiglTrackingResponse` schema, surfacing them as `GiglInvalidResponseError` instead of leaking bad payloads downstream. The new behaviour is exercised by the unit-test suite added alongside this change.
-
-### Changed
-
 - Escrow listings for vendors and buyers are cursor-paginated, return newest records first, and default to 20 records per page.
 - Creating an escrow requires an `Idempotency-Key`; keys must be UUIDs and are scoped to the authenticated vendor.
 - SEP-10 challenge signing now uses a configured key that remains stable across restarts and replicas.
@@ -32,6 +33,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Rate-limit counters are stored in Redis when `REDIS_URL` is set, so limits are shared across replicas; without `REDIS_URL` they remain per-process and in-memory.
 - **Breaking:** Per-route `@Throttle` limits are now enforced instead of falling back to the global default. Many routes are stricter than before (for example `POST /escrow` is 10/min); clients exceeding a limit receive `429 Too Many Requests`. See the route map in `SPECIFICATION.md` §5.2.
 - **Breaking:** `@stellar/stellar-sdk` is upgraded to 17.1.0, which requires Node.js 22.12 or later.
+- `GET /version` response now includes `name` (from `package.json`) and `commit` (from `GIT_SHA` when configured) fields.
+- **Breaking:** The application fails config validation at boot if `SOROBAN_RPC_TIMEOUT_MS` is not strictly less than `SOROBAN_POLL_INTERVAL_MS`, preventing hung RPC requests from spanning poll cycles.
+- **Breaking:** DLQ `POST /admin/dlq/:id/replay` and `POST /admin/dlq/:id/abandon` now return 409 Conflict when the record is not in `PENDING_REVIEW` status (or in `REPLAYING` before the stale threshold), or when another request wins the concurrent claim race, instead of throwing a 500 on replay or overwriting non-pending records on abandon.
 
 ### Fixed
 
@@ -40,8 +44,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configured SendGrid and Twilio notification clients are now used when their credentials are available.
 - Auto-release processing continues with other eligible escrows when an individual submission fails.
 - `PATCH /admin/credentials/logistics` rotates and stores the logistics API key instead of failing with a 500 because the credential encryption key could not be read.
-- `POST /escrow` returns 422 when an `Idempotency-Key` is reused with a different request body, instead of returning the first escrow.
-- `POST /escrow` rejects amounts with more than 8 decimal places or too large for the `Decimal(18,8)` column with 400, instead of silently rounding or failing with a 500.
+- **Breaking:** `POST /escrow` returns 422 when an `Idempotency-Key` is reused with a different request body, instead of returning the first escrow.
+- **Breaking:** `POST /escrow` rejects amounts with more than 8 decimal places or exceeding `9,999,999,999` (`ESCROW_AMOUNT_MAX` for the `Decimal(18,8)` column) with 400, instead of silently rounding or failing with a 500.
 - `POST /escrow` trims `itemRef`, limits it to 100 characters, and rejects escrows where the buyer is the calling vendor with 400.
 - `GET /auth` returns 400 for a missing or invalid `account` instead of a 500; `transaction` and `refreshToken` have maximum lengths, and `POST /auth/challenge` uses the same 5 minute challenge lifetime as `GET /auth`.
 - HTTP request logs now honour `LOG_LEVEL`, and successful health probe requests are logged at debug instead of info (#966).
