@@ -15,24 +15,6 @@ import {
  */
 
 /**
- * Normalize environment variables by converting empty strings to undefined.
- * This ensures that `''` and unset are treated identically by Joi validation,
- * so conditional `.when()` checks and downstream provider checks behave correctly.
- * Required variables will fail validation with `any.required` when normalized
- * to `undefined`, preserving the "do not allow empty strings for required variables"
- * guarantee.
- */
-export function normalizeEnvVars(
-  env: Record<string, unknown>,
-): Record<string, unknown> {
-  const result: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(env)) {
-    result[key] = value === '' ? undefined : value;
-  }
-  return result;
-}
-
-/**
  * Custom Joi validator for Stellar public keys (G... addresses).
  *
  * Validates by decoding via `Keypair.fromPublicKey`. Rejects secret keys,
