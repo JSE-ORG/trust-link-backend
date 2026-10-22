@@ -39,6 +39,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Vendor account details now require ISO 4217 preferred currency codes and limit each payment method to 50 characters (#1064).
+- Legacy vendor placeholder profiles can be completed through `POST /vendor/profile`, and the placeholder description is reserved (#1061).
 - Auto-release transactions reload the Stellar account sequence before retrying and use an atomic claim to prevent duplicate submissions.
 - Dispute creation invalidates the related escrow cache, and administrative dispute resolution records the dispute as resolved.
 - Configured SendGrid and Twilio notification clients are now used when their credentials are available.

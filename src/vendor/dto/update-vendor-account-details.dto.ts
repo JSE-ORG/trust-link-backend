@@ -62,20 +62,23 @@ export class UpdateVendorAccountDetailsDto {
   @ApiPropertyOptional({
     description: 'Accepted payment methods.',
     example: ['USDC', 'XLM'],
+    maxItems: 20,
+    items: { type: 'string', maxLength: 50 },
   })
   @IsOptional()
   @IsArray()
   @ArrayMaxSize(20)
   @IsString({ each: true })
+  @MaxLength(50, { each: true })
   paymentMethods?: string[];
 
   @ApiPropertyOptional({
     description: 'Preferred settlement currency.',
-    example: 'USDC',
+    example: 'USD',
   })
   @IsOptional()
   @IsString()
-  @MaxLength(10)
+  @IsISO4217CurrencyCode()
   preferredCurrency?: string;
 
   @ApiPropertyOptional({ description: 'Billing street address.' })

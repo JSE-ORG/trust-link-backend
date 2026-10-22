@@ -5,9 +5,11 @@ import {
   Matches,
   MaxLength,
   MinLength,
+  NotEquals,
 } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { VENDOR_PROFILE_PLACEHOLDER_DESCRIPTION } from '../vendor-profile.constants';
 
 /**
  * Request body for creating or upserting a vendor profile. Contains the
@@ -57,6 +59,9 @@ export class CreateVendorProfileDto {
   })
   @IsOptional()
   @IsString()
+  @NotEquals(VENDOR_PROFILE_PLACEHOLDER_DESCRIPTION, {
+    message: 'Description is reserved',
+  })
   @MaxLength(500, { message: 'Description must not exceed 500 characters' })
   description?: string;
 }
