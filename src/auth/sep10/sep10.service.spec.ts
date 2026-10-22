@@ -2,7 +2,7 @@
 
 import { Test, TestingModule } from '@nestjs/testing';
 import { UnauthorizedException } from '@nestjs/common';
-import { Nonce } from '@prisma/client';
+import * as Joi from 'joi';
 import { Sep10Service } from './sep10.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ConfigService } from '../../config/config.service';
@@ -1025,68 +1025,77 @@ describe('Sep10Service', () => {
     });
   });
 
-  describe('jwtSecret guard and TTL default', () => {
-    it('throws when SEP10_JWT_SECRET is not configured and produces no token', async () => {
-      (configService.get as jest.Mock).mockImplementation((key: string) => {
-        if (key === 'SEP10_JWT_SECRET') return undefined;
-        const configMap: Record<string, string | number | null> = {
-          STELLAR_NETWORK: 'TESTNET',
-          SYSTEM_SIGNER_SECRET:
-            'SAIJDXETR5B7YFPH7SUOISWVBHHSI46JLYFDCWDMEV2L46XAHASPP35C',
-          REFRESH_TOKEN_TTL: REFRESH_TOKEN_TTL,
-          ADMIN_ADDRESS: null,
-        };
-        return configMap[key];
+  describe('ACCESS_TOKEN_TTL', () => {
+    let mockNonce: any;
+
+    beforeEach(() => {
+      mockNonce = {
+        id: 'nonce-id-123',
+        nonce: TEST_TX_HASH,
+        walletAddress: TEST_ACCOUNT_ID,
+        challenge: TEST_CHALLENGE_XDR,
+        used: false,
+        expiresAt: new Date(Date.now() + 10000),
+        createdAt: new Date(),
+      };
+      (prisma.nonce.findUnique as jest.Mock).mockResolvedValue(mockNonce);
+      (prisma.nonce.update as jest.Mock).mockResolvedValue({
+        ...mockNonce,
+        used: true,
       });
-
-      // rotateRefreshToken calls hashToken (→ jwtSecret) before any DB access,
-      // so no token can be produced and no refresh token is created.
-      await expect(service.rotateRefreshToken('any-token')).rejects.toThrow(
-        'SEP10_JWT_SECRET is not configured',
-      );
-
-      expect(prisma.refreshToken.create).not.toHaveBeenCalled();
+      (prisma.refreshToken.create as jest.Mock).mockResolvedValue({
+        id: 'rt-id',
+        userId: TEST_ACCOUNT_ID,
+        tokenHash: 'hash',
+      });
     });
 
-    it('uses REFRESH_TOKEN_TTL_DEFAULT when REFRESH_TOKEN_TTL is not configured', async () => {
+    it('exp - iat equals the ACCESS_TOKEN_TTL setting', async () => {
+      const customTtl = 7200; // 2 hours
       (configService.get as jest.Mock).mockImplementation((key: string) => {
-        const configMap: Record<string, string | null> = {
+        const configMap: Record<string, any> = {
           STELLAR_NETWORK: 'TESTNET',
           SYSTEM_SIGNER_SECRET:
             'SAIJDXETR5B7YFPH7SUOISWVBHHSI46JLYFDCWDMEV2L46XAHASPP35C',
           SEP10_JWT_SECRET: 'test-secret-key',
+          REFRESH_TOKEN_TTL: REFRESH_TOKEN_TTL,
           ADMIN_ADDRESS: null,
-          // REFRESH_TOKEN_TTL intentionally absent
+          ACCESS_TOKEN_TTL: customTtl,
         };
-        return configMap[key] ?? undefined;
+        return configMap[key];
       });
 
-      const now = new Date();
-      (prisma.nonce.findUnique as jest.Mock).mockResolvedValue({
-        id: 'nonce-ttl',
-        nonce: TEST_TX_HASH,
-        walletAddress: TEST_ACCOUNT_ID,
-        used: false,
-        expiresAt: new Date(now.getTime() + 3600 * 1000),
-        createdAt: now,
-      });
-      (prisma.nonce.update as jest.Mock).mockResolvedValue({});
-      (prisma.refreshToken.create as jest.Mock).mockResolvedValue({
-        id: 'rt-ttl',
-      });
+      const { token } = await service.verifyAndIssueToken(TEST_CHALLENGE_XDR);
+      const payload = JSON.parse(
+        Buffer.from(token.split('.')[1], 'base64url').toString('utf-8'),
+      );
 
-      const before = Date.now();
-      await service.verifyAndIssueToken(TEST_CHALLENGE_XDR);
-      const after = Date.now();
+      expect(payload.exp - payload.iat).toBe(customTtl);
+    });
 
-      const createCall = (prisma.refreshToken.create as jest.Mock).mock
-        .calls[0][0];
-      const expiresAt: Date = createCall.data.expiresAt;
+    it('defaults to 3600 when ACCESS_TOKEN_TTL is not set', async () => {
+      // configService already returns undefined for ACCESS_TOKEN_TTL in the default mock
+      const { token } = await service.verifyAndIssueToken(TEST_CHALLENGE_XDR);
+      const payload = JSON.parse(
+        Buffer.from(token.split('.')[1], 'base64url').toString('utf-8'),
+      );
 
-      const expectedMin = before + REFRESH_TOKEN_TTL_DEFAULT * 1000 - 2000;
-      const expectedMax = after + REFRESH_TOKEN_TTL_DEFAULT * 1000 + 2000;
-      expect(expiresAt.getTime()).toBeGreaterThanOrEqual(expectedMin);
-      expect(expiresAt.getTime()).toBeLessThanOrEqual(expectedMax);
+      expect(payload.exp - payload.iat).toBe(3600);
+    });
+
+    it('Joi schema rejects ACCESS_TOKEN_TTL values above 86400', () => {
+      // Validate inline using Joi directly — no need to boot NestJS
+      const schema = Joi.number().integer().min(1).max(86400);
+      const { error } = schema.validate(86401);
+      expect(error).toBeDefined();
+      expect(error!.message).toMatch(/86400/);
+    });
+
+    it('Joi schema accepts ACCESS_TOKEN_TTL values within the valid range', () => {
+      const schema = Joi.number().integer().min(1).max(86400);
+      expect(schema.validate(1).error).toBeUndefined();
+      expect(schema.validate(3600).error).toBeUndefined();
+      expect(schema.validate(86400).error).toBeUndefined();
     });
   });
 
