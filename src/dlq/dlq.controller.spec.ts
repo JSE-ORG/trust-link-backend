@@ -61,6 +61,10 @@ describe('DlqController', () => {
       }),
     } as unknown as jest.Mocked<ConfigService>;
 
+    const auditLog = {
+      append: jest.fn().mockResolvedValue(undefined),
+    } as unknown as jest.Mocked<AuditLogService>;
+
     const moduleRef: TestingModule = await Test.createTestingModule({
       controllers: [DlqController],
       providers: [
@@ -75,10 +79,7 @@ describe('DlqController', () => {
             findContractEscrowId: jest.fn().mockResolvedValue(contractEscrowId),
           },
         },
-        {
-          provide: AuditLogService,
-          useValue: { append: jest.fn().mockResolvedValue(undefined) },
-        },
+        { provide: AuditLogService, useValue: auditLog },
       ],
     }).compile();
 
@@ -87,6 +88,7 @@ describe('DlqController', () => {
       dlq,
       contract,
       config,
+      auditLog,
     };
   };
 
@@ -229,6 +231,52 @@ describe('DlqController', () => {
       expect(contract.submitAutoRelease).not.toHaveBeenCalled();
     });
 
+    it('appends a DLQ_REPLAYED audit entry with the tx hash and admin address', async () => {
+      const { controller, dlq, contract, auditLog } = await buildController(
+        'GAUTORELEASESOURCEADDRESS0000000000000000000000000000',
+      );
+      contract.submitAutoRelease.mockResolvedValue('tx-hash-abc');
+      dlq.get.mockResolvedValue(autoReleaseRecord);
+      dlq.replay.mockImplementation(async (_id, replay) => {
+        const txHash = await replay(autoReleaseRecord);
+        return {
+          ...autoReleaseRecord,
+          status: 'REPLAYED',
+          lastReplayTxHash: txHash,
+        };
+      });
+
+      await controller.replay('failed-tx-1', {
+        address: 'GADMINADDRESS00000000000000000000000000000000000000',
+      });
+
+      expect(auditLog.append).toHaveBeenCalledTimes(1);
+      expect(auditLog.append).toHaveBeenCalledWith({
+        action: 'DLQ_REPLAYED',
+        adminAddress: 'GADMINADDRESS00000000000000000000000000000000000000',
+        entityType: 'failed_transaction',
+        entityId: 'failed-tx-1',
+        details: { txHash: 'tx-hash-abc', operation: 'submitAutoRelease' },
+      });
+    });
+
+    it('appends no audit entry when the replay fails', async () => {
+      const { controller, dlq, contract, auditLog } = await buildController(
+        'GAUTORELEASESOURCEADDRESS0000000000000000000000000000',
+      );
+      contract.submitAutoRelease.mockRejectedValue(new Error('tx_bad_seq'));
+      dlq.get.mockResolvedValue(autoReleaseRecord);
+      dlq.replay.mockImplementation(async (_id, replay) => {
+        await replay(autoReleaseRecord);
+        return autoReleaseRecord;
+      });
+
+      await expect(controller.replay('failed-tx-1')).rejects.toThrow(
+        'tx_bad_seq',
+      );
+      expect(auditLog.append).not.toHaveBeenCalled();
+    });
+
     it('rejects replaying a record that is not PENDING_REVIEW', async () => {
       const { controller, dlq } = await buildController(
         'GAUTORELEASESOURCEADDRESS0000000000000000000000000000',
@@ -317,6 +365,29 @@ describe('DlqController', () => {
 
       expect(dlq.abandon).toHaveBeenCalledWith('failed-tx-1');
       expect(result).toEqual(abandonedRecord);
+    });
+
+    it('appends a DLQ_ABANDONED audit entry with the admin address', async () => {
+      const { controller, dlq, auditLog } = await buildController(
+        'GAUTORELEASESOURCEADDRESS0000000000000000000000000000',
+      );
+      dlq.abandon.mockResolvedValue({
+        ...autoReleaseRecord,
+        status: 'ABANDONED',
+      });
+
+      await controller.abandon('failed-tx-1', {
+        address: 'GADMINADDRESS00000000000000000000000000000000000000',
+      });
+
+      expect(auditLog.append).toHaveBeenCalledTimes(1);
+      expect(auditLog.append).toHaveBeenCalledWith({
+        action: 'DLQ_ABANDONED',
+        adminAddress: 'GADMINADDRESS00000000000000000000000000000000000000',
+        entityType: 'failed_transaction',
+        entityId: 'failed-tx-1',
+        details: { operation: 'submitAutoRelease' },
+      });
     });
   });
 });

@@ -63,6 +63,40 @@ describe('CreateEscrowDto', () => {
     );
   });
 
+  describe('currency', () => {
+    afterEach(() => {
+      delete process.env.SUPPORTED_CURRENCIES;
+    });
+
+    it('accepts USDC', async () => {
+      await expect(failingProperties({ currency: 'USDC' })).resolves.toEqual(
+        [],
+      );
+    });
+
+    it('accepts a lower case usdc', async () => {
+      await expect(failingProperties({ currency: 'usdc' })).resolves.toEqual(
+        [],
+      );
+    });
+
+    it('rejects XYZ', async () => {
+      await expect(failingProperties({ currency: 'XYZ' })).resolves.toEqual([
+        'currency',
+      ]);
+    });
+
+    it('accepts any code listed in SUPPORTED_CURRENCIES', async () => {
+      process.env.SUPPORTED_CURRENCIES = 'USDC, EURC';
+      await expect(failingProperties({ currency: 'eurc' })).resolves.toEqual(
+        [],
+      );
+      await expect(failingProperties({ currency: 'XYZ' })).resolves.toEqual([
+        'currency',
+      ]);
+    });
+  });
+
   // issue #934
   describe('itemRef', () => {
     it('trims surrounding whitespace', () => {

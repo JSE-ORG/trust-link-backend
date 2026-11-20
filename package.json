@@ -4,6 +4,9 @@
     "description": "",
     "author": "",
     "license": "ISC",
+    "engines": {
+        "node": ">=22 <23"
+    },
     "scripts": {
         "build": "nest build",
         "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",

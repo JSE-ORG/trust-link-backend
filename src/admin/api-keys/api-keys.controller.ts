@@ -44,6 +44,7 @@ export class ApiKeysController {
   @ApiResponse({ status: 400, description: 'Invalid key payload.' })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   @ApiResponse({ status: 403, description: 'Admin access required.' })
+  @ApiResponse({ status: 429, description: 'Too many requests.' })
   @Throttle({ default: { limit: 5, ttl: THROTTLE_WINDOW_MS } })
   @Patch('logistics')
   @HttpCode(HttpStatus.OK)

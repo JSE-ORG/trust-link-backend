@@ -20,7 +20,13 @@ describe('AppController (e2e)', () => {
     return request(app.getHttpServer())
       .get('/')
       .expect(200)
-      .expect('Hello World!');
+      .expect((res) => {
+        expect(res.body).toMatchObject({
+          name: 'trustlink-backend',
+          docsPath: '/api/docs',
+        });
+        expect(typeof res.body.version).toBe('string');
+      });
   });
 
   afterEach(async () => {

@@ -4,6 +4,7 @@ import {
   parseTrustProxy,
   TRUST_PROXY_ERROR,
 } from '../common/security/trust-proxy.config';
+import { DEFAULT_SUPPORTED_CURRENCIES } from './supported-currencies';
 
 /**
  * Single source of truth for environment validation.
@@ -224,6 +225,13 @@ export const configValidationSchema = Joi.object({
       'Config validation error: ADMIN_NOTIFICATION_EMAIL must be a valid email address',
   }),
   AUTO_RELEASE_SOURCE_ADDRESS: stellarPublicKey.optional(),
+  SUPPORTED_CURRENCIES: Joi.string()
+    .pattern(/^[A-Za-z0-9]{3,12}(\s*,\s*[A-Za-z0-9]{3,12})*$/)
+    .default(DEFAULT_SUPPORTED_CURRENCIES)
+    .messages({
+      'string.pattern.base':
+        'Config validation error: SUPPORTED_CURRENCIES must be a comma-separated list of 3 to 12 letter or digit codes',
+    }),
   NODE_ENV: Joi.string()
     .valid('development', 'production', 'test')
     .default('development'),
@@ -283,6 +291,7 @@ export const configValidationSchema = Joi.object({
     .valid('trace', 'debug', 'info', 'warn', 'error', 'fatal')
     .default('info'),
   REDIS_URL: Joi.string().uri().optional(),
+  ESCROW_CACHE_TTL_SECONDS: Joi.number().integer().min(1).max(60).default(60),
   DB_POOL_CONNECTION_LIMIT: Joi.number().integer().min(1).default(10),
   DB_POOL_TIMEOUT_MS: Joi.number().integer().min(0).default(10000),
   OTEL_ENABLED: Joi.string().valid('true', 'false').default('true'),
@@ -325,6 +334,8 @@ export const configValidationSchema = Joi.object({
     }),
   LOGISTICS_API_BASE_URL: Joi.string().uri().optional(),
   LOGISTICS_API_KEY: Joi.string().optional(),
+  TERMINAL_AFRICA_API_BASE_URL: Joi.string().uri().optional(),
+  TERMINAL_AFRICA_API_KEY: Joi.string().optional(),
   STELLAR_HORIZON_URL: Joi.string().uri().optional(),
   QUERY_TIMEOUT_MS: Joi.number().integer().min(1000).default(30000),
   SLOW_QUERY_THRESHOLD_MS: Joi.number().integer().min(0).default(500),

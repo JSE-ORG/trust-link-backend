@@ -20,7 +20,6 @@ import { LogisticsService } from '../logistics/logistics.service';
 import { CacheService } from '../cache/cache.service';
 import { ContractService } from '../stellar/contract.service';
 import { EscrowResponseDto } from './dto/escrow-response.dto';
-import { EscrowSummaryDto } from './dto/escrow-summary.dto';
 import { CreateEscrowDto } from './dto/create-escrow.dto';
 import { EvidenceUploadResponseDto } from './dto/evidence-upload.dto';
 import { EVIDENCE_FILE_EXTENSIONS } from './dto/evidence-upload-query.dto';
@@ -33,7 +32,14 @@ import {
   isContactEncryptionConfigured,
 } from '../common/sanitization/contact-encryption.util';
 import { TracingService } from '../tracing/tracing.service';
-import { EventsResult } from './escrow.types';
+import {
+  EscrowListPage,
+  EscrowListQuery,
+  EventsResult,
+  VendorEscrowsResult,
+} from './escrow.types';
+import { ESCROW_EXPORT_MAX_ROWS } from './escrow.constants';
+import { escrowsToCsv } from './escrow-csv';
 import {
   ONE_HOUR_SECONDS,
   SECONDS_PER_DAY,
@@ -529,56 +535,104 @@ export class EscrowService {
    */
   async findVendorEscrows(
     vendorAddress: string,
-    query: {
-      state?: string;
-      sort?: 'date' | 'amount';
-      order?: 'asc' | 'desc';
-      page?: number;
-      limit?: number;
-    },
-  ): Promise<{
-    data: EscrowSummaryDto[];
-    total: number;
-    page: number;
-    limit: number;
-  }> {
+    query: EscrowListQuery,
+  ): Promise<EscrowListPage> {
     return this.traced(
       'find_vendor',
       {
         'trustlink.vendor.address': vendorAddress,
       },
-      () => this.findVendorEscrowsInternal(vendorAddress, query),
+      () =>
+        this.findEscrowPage(query, (sort, order, page, limit) =>
+          this.escrowRepository.findVendorEscrows(
+            vendorAddress,
+            query.state,
+            sort,
+            order,
+            page,
+            limit,
+            {
+              from: query.from,
+              to: query.to,
+              buyerAddress: query.buyerAddress,
+              q: query.q,
+            },
+          ),
+        ),
     );
   }
 
-  private async findVendorEscrowsInternal(
+  /**
+   * Returns a page of the buyer's escrows, with the same query options and
+   * shape as {@link findVendorEscrows}. Any `buyerAddress` in the query is
+   * replaced by the caller's address, so a buyer only ever sees their own.
+   */
+  async findBuyerEscrows(
+    buyerAddress: string,
+    query: EscrowListQuery,
+  ): Promise<EscrowListPage> {
+    return this.traced(
+      'find_buyer',
+      { 'trustlink.buyer.address': buyerAddress },
+      () =>
+        this.findEscrowPage(query, (sort, order, page, limit) =>
+          this.escrowRepository.findEscrows(
+            {
+              state: query.state,
+              from: query.from,
+              to: query.to,
+              q: query.q,
+              buyerAddress,
+            },
+            sort,
+            order,
+            page,
+            limit,
+          ),
+        ),
+    );
+  }
+
+  /**
+   * Returns the vendor's escrows matching `query` as CSV, newest first,
+   * capped at {@link ESCROW_EXPORT_MAX_ROWS} rows. Paging fields are ignored.
+   */
+  async exportVendorEscrowsCsv(
     vendorAddress: string,
-    query: {
-      state?: string;
-      sort?: 'date' | 'amount';
-      order?: 'asc' | 'desc';
-      page?: number;
-      limit?: number;
-    },
-  ): Promise<{
-    data: EscrowSummaryDto[];
-    total: number;
-    page: number;
-    limit: number;
-  }> {
+    query: EscrowListQuery,
+  ): Promise<string> {
+    const { data } = await this.escrowRepository.findEscrows(
+      {
+        state: query.state,
+        from: query.from,
+        to: query.to,
+        buyerAddress: query.buyerAddress,
+        q: query.q,
+        vendorAddress,
+      },
+      query.sort ?? 'date',
+      query.order ?? 'desc',
+      1,
+      ESCROW_EXPORT_MAX_ROWS,
+    );
+    return escrowsToCsv(data);
+  }
+
+  private async findEscrowPage(
+    query: EscrowListQuery,
+    fetch: (
+      sort: 'date' | 'amount',
+      order: 'asc' | 'desc',
+      page: number,
+      limit: number,
+    ) => Promise<VendorEscrowsResult>,
+  ): Promise<EscrowListPage> {
     const sort = query.sort ?? 'date';
     const order = query.order ?? 'desc';
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
 
-    const { data, total } = await this.escrowRepository.findVendorEscrows(
-      vendorAddress,
-      query.state,
-      sort,
-      order,
-      page,
-      limit,
-    );
+    const { data, total } = await fetch(sort, order, page, limit);
 
     return {
       data: data.map((escrow) => this.toSummary(escrow)),
