@@ -11,6 +11,8 @@ import { ContractService } from '../../src/stellar/contract.service';
 
 type TestServer = Parameters<typeof request>[0];
 
+const MISSING_ID = '00000000-0000-4000-8000-000000000000';
+
 describe('Admin DLQ Operations (issue #297)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
@@ -180,7 +182,7 @@ describe('Admin DLQ Operations (issue #297)', () => {
 
     it('returns 404 for non-existent entry', async () => {
       await request(httpServer())
-        .get('/admin/dlq/non-existent-id')
+        .get(`/admin/dlq/${MISSING_ID}`)
         .set('Authorization', `Bearer ${adminJwt()}`)
         .expect(404);
     });
@@ -299,7 +301,7 @@ describe('Admin DLQ Operations (issue #297)', () => {
 
     it('returns 404 for non-existent entry', async () => {
       await request(httpServer())
-        .post('/admin/dlq/non-existent-id/replay')
+        .post(`/admin/dlq/${MISSING_ID}/replay`)
         .set('Authorization', `Bearer ${adminJwt()}`)
         .expect(404);
     });
@@ -351,6 +353,26 @@ describe('Admin DLQ Operations (issue #297)', () => {
 
     it('returns 401 for unauthenticated requests', async () => {
       await request(httpServer()).get('/admin/dlq').expect(401);
+    });
+  });
+
+  describe('malformed ids (issue #1113)', () => {
+    it.each([
+      ['GET', '/admin/dlq/nope'],
+      ['POST', '/admin/dlq/nope/replay'],
+      ['POST', '/admin/dlq/nope/abandon'],
+    ])('%s %s returns 400 for a non-UUID id', async (method, path) => {
+      const req = request(app.getHttpServer());
+      const call = method === 'GET' ? req.get(path) : req.post(path);
+      await call.set('Authorization', `Bearer ${adminJwt()}`).expect(400);
+    });
+
+    it('GET /admin/dlq returns 400 for a non-UUID escrowId filter', async () => {
+      await request(app.getHttpServer())
+        .get('/admin/dlq')
+        .query({ escrowId: 'nope' })
+        .set('Authorization', `Bearer ${adminJwt()}`)
+        .expect(400);
     });
   });
 });

@@ -52,6 +52,7 @@ export interface Config {
   TWILIO_AUTH_TOKEN?: string;
   TWILIO_FROM_NUMBER?: string;
   STELLAR_NETWORK: 'TESTNET' | 'MAINNET';
+  SUPPORTED_CURRENCIES?: string;
   STELLAR_HORIZON_URL?: string;
   ALLOWED_ORIGINS?: string;
   STELLAR_WEBHOOK_SECRET?: string;
@@ -95,6 +96,13 @@ export class ConfigService {
   get<T = unknown>(key: string): T;
   get<T = unknown>(key: string): T {
     return this.nestConfigService.get<T>(key, { infer: true }) as T;
+  }
+
+  get supportedCurrencies(): string[] {
+    return (this.get('SUPPORTED_CURRENCIES') ?? '')
+      .split(',')
+      .map((code) => code.trim().toUpperCase())
+      .filter((code) => code.length > 0);
   }
 
   /** Returns the complete normalized application configuration snapshot. */

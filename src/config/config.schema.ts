@@ -269,6 +269,19 @@ export const configValidationSchema = Joi.object({
         'Config validation error: TWILIO_FROM_NUMBER must be an E.164 phone number',
     }),
   STELLAR_NETWORK: Joi.string().valid('TESTNET', 'MAINNET').default('TESTNET'),
+  // Asset codes an escrow may be denominated in. An escrow in any other asset
+  // could never be funded, so its payment webhook would never match it.
+  SUPPORTED_CURRENCIES: Joi.string()
+    .default('USDC')
+    .custom((value: string, helpers) => {
+      const codes = value.split(',').map((code) => code.trim().toUpperCase());
+      return codes.every((code) => /^[A-Z0-9]{3,12}$/.test(code))
+        ? value
+        : helpers.message({
+            custom:
+              'Config validation error: SUPPORTED_CURRENCIES must be a comma-separated list of 3 to 12 character asset codes',
+          });
+    }),
   ALLOWED_ORIGINS: Joi.string().optional(),
   CSP_CONNECT_SRC: Joi.string().optional(),
   STELLAR_WEBHOOK_SECRET: Joi.when('NODE_ENV', {

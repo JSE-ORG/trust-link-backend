@@ -273,6 +273,15 @@ export class EscrowService {
       );
     }
 
+    const supportedCurrencies = this.configService?.supportedCurrencies ?? [
+      'USDC',
+    ];
+    if (!supportedCurrencies.includes(dto.currency)) {
+      throw new BadRequestException(
+        `Currency ${dto.currency} is not supported. Supported currencies: ${supportedCurrencies.join(', ')}`,
+      );
+    }
+
     const existing = await this.escrowRepository.findByVendorAndItem(
       vendorAddress,
       dto.itemRef,

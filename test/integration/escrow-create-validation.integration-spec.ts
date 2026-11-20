@@ -74,6 +74,26 @@ describe('POST /escrow input validation (issues #933, #934)', () => {
     expect(res.body.itemRef).toBe('padded-ref');
   });
 
+  it('accepts the supported USDC currency', async () => {
+    await createEscrow({ ...validBody, currency: 'USDC' }).expect(201);
+  });
+
+  it('accepts a lower case currency code by normalising it to USDC', async () => {
+    const res = await createEscrow({ ...validBody, currency: 'usdc' }).expect(
+      201,
+    );
+
+    expect(res.body.currency).toBe('USDC');
+  });
+
+  it('rejects an unsupported currency with 400 and stores nothing', async () => {
+    await createEscrow({ ...validBody, currency: 'XYZ' }).expect(400);
+
+    await expect(
+      prisma.escrow.count({ where: { currency: 'XYZ' } }),
+    ).resolves.toBe(0);
+  });
+
   it('rejects an escrow where the vendor is the buyer with 400', async () => {
     await createEscrow({ ...validBody, buyerAddress: VENDOR }).expect(400);
 

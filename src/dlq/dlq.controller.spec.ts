@@ -16,6 +16,7 @@ import {
 } from '../config/config.service';
 import { FailedTransactionRecord } from './dlq.types';
 import { AuditLogService } from '../audit-log/audit-log.service';
+import type { AuthUser } from '../auth/auth-user';
 
 describe('DlqController', () => {
   const autoReleaseRecord: FailedTransactionRecord = {
@@ -61,6 +62,8 @@ describe('DlqController', () => {
       }),
     } as unknown as jest.Mocked<ConfigService>;
 
+    const auditLog = { append: jest.fn().mockResolvedValue(undefined) };
+
     const moduleRef: TestingModule = await Test.createTestingModule({
       controllers: [DlqController],
       providers: [
@@ -77,7 +80,7 @@ describe('DlqController', () => {
         },
         {
           provide: AuditLogService,
-          useValue: { append: jest.fn().mockResolvedValue(undefined) },
+          useValue: auditLog,
         },
       ],
     }).compile();
@@ -87,6 +90,7 @@ describe('DlqController', () => {
       dlq,
       contract,
       config,
+      auditLog,
     };
   };
 
@@ -317,6 +321,129 @@ describe('DlqController', () => {
 
       expect(dlq.abandon).toHaveBeenCalledWith('failed-tx-1');
       expect(result).toEqual(abandonedRecord);
+    });
+  });
+
+  describe('audit trail for replay and abandon', () => {
+    const admin = { address: 'GADMINTESTADDRESS' } as AuthUser;
+
+    it('appends DLQ_REPLAYED with the tx hash and admin address after a successful replay', async () => {
+      const { controller, dlq, contract, auditLog } = await buildController(
+        'GAUTORELEASESOURCEADDRESS0000000000000000000000000000',
+      );
+      contract.submitAutoRelease.mockResolvedValue('tx-hash-audit-1');
+      dlq.get.mockResolvedValue(autoReleaseRecord);
+      dlq.replay.mockImplementation(async (_id, replay) => {
+        const txHash = await replay(autoReleaseRecord);
+        return {
+          ...autoReleaseRecord,
+          status: 'REPLAYED',
+          lastReplayTxHash: txHash,
+        };
+      });
+
+      await controller.replay('failed-tx-1', admin);
+
+      expect(auditLog.append).toHaveBeenCalledTimes(1);
+      expect(auditLog.append).toHaveBeenCalledWith({
+        action: 'DLQ_REPLAYED',
+        adminAddress: 'GADMINTESTADDRESS',
+        entityType: 'failed_transaction',
+        entityId: 'failed-tx-1',
+        details: {
+          txHash: 'tx-hash-audit-1',
+          operation: 'submitAutoRelease',
+        },
+      });
+    });
+
+    it('records the admin address as unknown when no admin is attached to the replay request', async () => {
+      const { controller, dlq, contract, auditLog } = await buildController(
+        'GAUTORELEASESOURCEADDRESS0000000000000000000000000000',
+      );
+      contract.submitAutoRelease.mockResolvedValue('tx-hash-audit-2');
+      dlq.get.mockResolvedValue(autoReleaseRecord);
+      dlq.replay.mockImplementation(async (_id, replay) => {
+        const txHash = await replay(autoReleaseRecord);
+        return { ...autoReleaseRecord, lastReplayTxHash: txHash };
+      });
+
+      await controller.replay('failed-tx-1');
+
+      expect(auditLog.append).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'DLQ_REPLAYED',
+          adminAddress: 'unknown',
+        }),
+      );
+    });
+
+    it('appends nothing when the replay fails', async () => {
+      const { controller, dlq, auditLog } = await buildController(
+        'GAUTORELEASESOURCEADDRESS0000000000000000000000000000',
+      );
+      dlq.get.mockResolvedValue(autoReleaseRecord);
+      dlq.replay.mockRejectedValue(
+        new Error('Failed transaction failed-tx-1 is not pending review'),
+      );
+
+      await expect(controller.replay('failed-tx-1', admin)).rejects.toThrow(
+        'is not pending review',
+      );
+      expect(auditLog.append).not.toHaveBeenCalled();
+    });
+
+    it('appends nothing when the replay is rejected by the operation check', async () => {
+      const { controller, dlq, auditLog } = await buildController(
+        'GAUTORELEASESOURCEADDRESS0000000000000000000000000000',
+      );
+      const manualRecord = {
+        ...autoReleaseRecord,
+        operation: 'resolveDispute',
+      };
+      dlq.get.mockResolvedValue(manualRecord);
+      dlq.replay.mockImplementation(async (_id, replay) => {
+        await replay(manualRecord);
+        throw new Error('unreachable');
+      });
+
+      await expect(controller.replay('failed-tx-1', admin)).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(auditLog.append).not.toHaveBeenCalled();
+    });
+
+    it('appends DLQ_ABANDONED with the operation after abandoning a record', async () => {
+      const { controller, dlq, auditLog } = await buildController(
+        'GAUTORELEASESOURCEADDRESS0000000000000000000000000000',
+      );
+      dlq.abandon.mockResolvedValue({
+        ...autoReleaseRecord,
+        status: 'ABANDONED',
+      });
+
+      await controller.abandon('failed-tx-1', admin);
+
+      expect(auditLog.append).toHaveBeenCalledTimes(1);
+      expect(auditLog.append).toHaveBeenCalledWith({
+        action: 'DLQ_ABANDONED',
+        adminAddress: 'GADMINTESTADDRESS',
+        entityType: 'failed_transaction',
+        entityId: 'failed-tx-1',
+        details: { operation: 'submitAutoRelease' },
+      });
+    });
+
+    it('appends nothing when abandon fails', async () => {
+      const { controller, dlq, auditLog } = await buildController(
+        'GAUTORELEASESOURCEADDRESS0000000000000000000000000000',
+      );
+      dlq.abandon.mockRejectedValue(new Error('not found'));
+
+      await expect(controller.abandon('failed-tx-1', admin)).rejects.toThrow(
+        'not found',
+      );
+      expect(auditLog.append).not.toHaveBeenCalled();
     });
   });
 });

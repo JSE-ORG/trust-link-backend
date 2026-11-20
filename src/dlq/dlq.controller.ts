@@ -6,6 +6,7 @@ import {
   Param,
   Post,
   Query,
+  ParseUUIDPipe,
   ServiceUnavailableException,
   UseGuards,
 } from '@nestjs/common';
@@ -151,7 +152,7 @@ export class DlqController {
   @ApiResponse({ status: 500, description: 'Internal server error.' })
   @Throttle({ default: { limit: 30, ttl: THROTTLE_WINDOW_MS } })
   @Get(':id')
-  detail(@Param('id') id: string) {
+  detail(@Param('id', ParseUUIDPipe) id: string) {
     return this.dlq.get(id);
   }
 
@@ -183,7 +184,10 @@ export class DlqController {
   @ApiResponse({ status: 500, description: 'Internal server error.' })
   @Throttle({ default: { limit: 5, ttl: THROTTLE_WINDOW_MS } })
   @Post(':id/replay')
-  async replay(@Param('id') id: string, @CurrentUser() admin?: AuthUser) {
+  async replay(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() admin?: AuthUser,
+  ) {
     const record = await this.dlq.get(id);
     const result = await this.dlq.replay(record.id, async (r) => {
       if (r.operation === 'submitAutoRelease' && r.escrowId) {
@@ -251,7 +255,10 @@ export class DlqController {
   @ApiResponse({ status: 500, description: 'Internal server error.' })
   @Throttle({ default: { limit: 5, ttl: THROTTLE_WINDOW_MS } })
   @Post(':id/abandon')
-  async abandon(@Param('id') id: string, @CurrentUser() admin?: AuthUser) {
+  async abandon(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() admin?: AuthUser,
+  ) {
     const result = await this.dlq.abandon(id);
 
     // Issue #953: Audit abandon action

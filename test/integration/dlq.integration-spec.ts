@@ -14,6 +14,8 @@ import { AppModule } from '../../src/app.module';
 import { ConfigService } from '../../src/config/config.service';
 import { PrismaService } from '../../src/prisma/prisma.service';
 
+const MISSING_ID = '00000000-0000-4000-8000-000000000000';
+
 describe('DLQ endpoints (issue #640)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
@@ -171,7 +173,7 @@ describe('DLQ endpoints (issue #640)', () => {
 
     it('returns 404 for non-existent entry', async () => {
       await request(app.getHttpServer())
-        .get('/admin/dlq/non-existent-id')
+        .get(`/admin/dlq/${MISSING_ID}`)
         .set('Authorization', `Bearer ${adminJwt()}`)
         .expect(404);
     });
@@ -211,7 +213,7 @@ describe('DLQ endpoints (issue #640)', () => {
 
     it('returns 404 for non-existent entry', async () => {
       await request(app.getHttpServer())
-        .post('/admin/dlq/non-existent-id/abandon')
+        .post(`/admin/dlq/${MISSING_ID}/abandon`)
         .set('Authorization', `Bearer ${adminJwt()}`)
         .expect(404);
     });
@@ -239,7 +241,7 @@ describe('DLQ endpoints (issue #640)', () => {
   describe('POST /admin/dlq/:id/replay', () => {
     it('returns 404 for non-existent entry', async () => {
       await request(app.getHttpServer())
-        .post('/admin/dlq/non-existent-id/replay')
+        .post(`/admin/dlq/${MISSING_ID}/replay`)
         .set('Authorization', `Bearer ${adminJwt()}`)
         .expect(404);
     });
@@ -259,6 +261,26 @@ describe('DLQ endpoints (issue #640)', () => {
         .post(`/admin/dlq/${entry.id}/replay`)
         .set('Authorization', `Bearer ${nonAdminJwt()}`)
         .expect(403);
+    });
+  });
+
+  describe('malformed ids (issue #1113)', () => {
+    it.each([
+      ['GET', '/admin/dlq/nope'],
+      ['POST', '/admin/dlq/nope/replay'],
+      ['POST', '/admin/dlq/nope/abandon'],
+    ])('%s %s returns 400 for a non-UUID id', async (method, path) => {
+      const req = request(app.getHttpServer());
+      const call = method === 'GET' ? req.get(path) : req.post(path);
+      await call.set('Authorization', `Bearer ${adminJwt()}`).expect(400);
+    });
+
+    it('GET /admin/dlq returns 400 for a non-UUID escrowId filter', async () => {
+      await request(app.getHttpServer())
+        .get('/admin/dlq')
+        .query({ escrowId: 'nope' })
+        .set('Authorization', `Bearer ${adminJwt()}`)
+        .expect(400);
     });
   });
 });
