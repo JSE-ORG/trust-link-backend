@@ -354,7 +354,14 @@ describe('DisputeService (issues #25, #924, #925, #926, #927)', () => {
         expect.objectContaining({ where: undefined, skip: 0, take: 20 }),
       );
       expect(disputeRepository.count).toHaveBeenCalledWith(undefined);
-      expect(result).toEqual({ data: [], total: 0, page: 1, limit: 20 });
+      expect(result).toEqual({
+        data: [],
+        total: 0,
+        page: 1,
+        limit: 20,
+        totalPages: 0,
+        hasNextPage: false,
+      });
     });
 
     it('filters by status and computes skip from page/limit', async () => {

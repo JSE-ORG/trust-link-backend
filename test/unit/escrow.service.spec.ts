@@ -747,6 +747,8 @@ describe('EscrowService: tracking, idempotency, evidence upload, and vendor list
         total: 1,
         page: 1,
         limit: 20,
+        totalPages: 1,
+        hasNextPage: false,
       });
     });
 

@@ -94,6 +94,13 @@ export class AnalyticsController {
     description: 'IANA timezone for date grouping.',
     example: 'UTC',
   })
+  @ApiQuery({
+    name: 'interval',
+    required: false,
+    enum: ['day', 'week', 'month'],
+    description: 'Aggregation interval (default: day).',
+    example: 'day',
+  })
   @ApiResponse({
     status: 200,
     description: 'Daily volume chart data returned.',
@@ -117,11 +124,13 @@ export class AnalyticsController {
 
     const days = query?.days ?? 30;
     const timezone = query?.timezone ?? 'UTC';
+    const interval = query?.interval ?? 'day';
 
     return this.analyticsService.getDailyVolumeChart(
       user.address,
       days,
       timezone,
+      interval,
     );
   }
 }

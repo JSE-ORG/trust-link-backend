@@ -305,6 +305,8 @@ describe('DlqController', () => {
         total: 1,
         page: 2,
         limit: 10,
+        totalPages: 1,
+        hasNextPage: false,
       };
       dlq.list.mockResolvedValue(paginated);
 
@@ -325,7 +327,14 @@ describe('DlqController', () => {
       const { controller, dlq } = await buildController(
         'GAUTORELEASESOURCEADDRESS0000000000000000000000000000',
       );
-      const emptyPaginated = { data: [], total: 0, page: 1, limit: 20 };
+      const emptyPaginated = {
+        data: [],
+        total: 0,
+        page: 1,
+        limit: 20,
+        totalPages: 0,
+        hasNextPage: false,
+      };
       dlq.list.mockResolvedValue(emptyPaginated);
 
       const query = new ListFailedTransactionsQueryDto();

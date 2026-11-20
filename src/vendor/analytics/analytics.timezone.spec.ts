@@ -29,6 +29,7 @@ describe('AnalyticsService timezone window boundaries (#1109)', () => {
       new Date(expectedStart),
       new Date('2026-11-20T12:00:00.000Z'),
       timezone,
+      'day',
     );
     expect(result.period).toEqual({
       startDate: '2026-11-19',

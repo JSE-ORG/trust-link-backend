@@ -205,6 +205,8 @@ describe('AuditLogService (Issues #816 & #817)', () => {
         total: 1,
         page: 1,
         limit: 20,
+        totalPages: 1,
+        hasNextPage: false,
       });
     });
 
@@ -343,7 +345,14 @@ describe('AuditLogService (Issues #816 & #817)', () => {
 
       const result = await service.findAll();
 
-      expect(result).toEqual({ data: [], total: 0, page: 1, limit: 20 });
+      expect(result).toEqual({
+        data: [],
+        total: 0,
+        page: 1,
+        limit: 20,
+        totalPages: 0,
+        hasNextPage: false,
+      });
       expect(prisma.auditLog.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ skip: 0, take: 20 }),
       );

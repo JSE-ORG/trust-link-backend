@@ -62,6 +62,8 @@ describe('AnalyticsController', () => {
           disputeRate: 0,
           averageTransactionValue: 0,
           cancelledTransactions: 0,
+          averageHoursToShip: null,
+          averageHoursToDeliver: null,
         },
         channels: {
           email: { notificationsEnabled: false },
@@ -96,6 +98,7 @@ describe('AnalyticsController', () => {
         'GVENDOR123',
         30,
         'UTC',
+        'day',
       );
 
       const emptyQuery = new ChartQueryDto();
@@ -105,6 +108,7 @@ describe('AnalyticsController', () => {
         'GVENDOR123',
         30,
         'UTC',
+        'day',
       );
     });
 
@@ -116,6 +120,7 @@ describe('AnalyticsController', () => {
         'GVENDOR123',
         7,
         'UTC',
+        'day',
       );
     });
 
@@ -129,6 +134,7 @@ describe('AnalyticsController', () => {
         'GVENDOR123',
         30,
         'America/New_York',
+        'day',
       );
     });
 
@@ -143,6 +149,7 @@ describe('AnalyticsController', () => {
         'GVENDOR123',
         14,
         'Europe/London',
+        'day',
       );
     });
   });

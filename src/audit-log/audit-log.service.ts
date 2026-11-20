@@ -1,3 +1,4 @@
+import { buildPaginatedEnvelope } from '../common/pagination/pagination.helper';
 import { Injectable } from '@nestjs/common';
 import { AuditLogRepository } from './audit-log.repository';
 
@@ -27,6 +28,8 @@ export interface PaginatedAuditLogResponse {
   total: number;
   page: number;
   limit: number;
+  totalPages: number;
+  hasNextPage: boolean;
 }
 
 @Injectable()
@@ -97,11 +100,6 @@ export class AuditLogService {
       this.auditLog.count(filters),
     ]);
 
-    return {
-      data,
-      total,
-      page,
-      limit,
-    };
+    return buildPaginatedEnvelope(data, total, page, limit);
   }
 }
