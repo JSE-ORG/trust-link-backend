@@ -279,6 +279,12 @@ npx prisma migrate resolve --rolled-back <migration_name>
 Always take a labelled database snapshot before applying migrations to a shared environment.
 
 
+## Image revision and container probes
+
+CI passes the checked-out Git commit SHA to Docker with `--build-arg GIT_SHA=<sha>` and the production stage exposes it as `GIT_SHA`. Verify `GET /version` reports the matching `commit` value. For local builds, use `docker build --build-arg GIT_SHA=abc -t trustlink-backend:test .` and check the `/version` response from a running container.
+
+The Dockerfile and both Compose application services use `GET /health/live` as their **container liveness** check. Configure ingress and load balancers to use `GET /health/ready` for **readiness**. A dependency outage must not restart an otherwise healthy process.
+
 ## Configuration variable reference (from `src/config/config.schema.ts`)
 
 The following table lists all environment variables validated by `configValidationSchema`, including their default value, whether they are required in production, and a one-line description derived from the schema. Conditions such as "required when X is set" or "required when STELLAR_NETWORK is MAINNET" apply in all environments unless noted.

@@ -20,6 +20,9 @@ RUN DATABASE_URL=$DATABASE_URL npx prisma generate && npm run build
 # Production stage
 FROM node:22-alpine AS production
 
+ARG GIT_SHA=unknown
+ENV GIT_SHA=${GIT_SHA}
+
 # Install dumb-init for proper signal handling
 RUN apk add --no-cache dumb-init
 
@@ -49,7 +52,7 @@ EXPOSE 3000
 
 # Health check with increased timeout for production
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-  CMD node -e "require('http').get('http://localhost:3000/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"
+  CMD node -e "require('http').get('http://localhost:3000/health/live', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"
 
 # Use dumb-init to handle signals properly
 ENTRYPOINT ["dumb-init", "--"]

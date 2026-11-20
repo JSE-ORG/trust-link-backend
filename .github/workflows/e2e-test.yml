@@ -64,7 +64,7 @@ jobs:
         run: npx prisma migrate deploy
 
       - name: Run e2e tests
-        run: npm run test:e2e -- --forceExit
+        run: npm run test:e2e -- --detectOpenHandles --runInBand
 
       - name: Upload test artifacts on failure
         if: failure()
