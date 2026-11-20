@@ -132,6 +132,8 @@ describe('GET /admin/audit-log integration (issue #798)', () => {
     expect(body.data).toHaveLength(3);
     expect(body.page).toBe(1);
     expect(body.limit).toBe(20);
+    expect(body.totalPages).toBe(1);
+    expect(body.hasNextPage).toBe(false);
     expect(body.data.map((entry) => entry.entityId).sort()).toEqual([
       'dispute-1',
       'dispute-2',
@@ -161,6 +163,8 @@ describe('GET /admin/audit-log integration (issue #798)', () => {
 
     expect(secondBody.data).toHaveLength(1);
     expect(secondBody.page).toBe(2);
+    expect(secondBody.totalPages).toBe(2);
+    expect(secondBody.hasNextPage).toBe(false);
   });
 
   it.each([

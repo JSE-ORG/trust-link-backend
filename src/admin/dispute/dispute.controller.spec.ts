@@ -50,6 +50,8 @@ describe('DisputeController', () => {
         total: 0,
         page: 1,
         limit: 20,
+        totalPages: 0,
+        hasNextPage: false,
       };
       disputeService.getDisputes.mockResolvedValue(expected);
 
@@ -66,6 +68,8 @@ describe('DisputeController', () => {
         total: 1,
         page: 2,
         limit: 25,
+        totalPages: 1,
+        hasNextPage: false,
       };
       disputeService.getDisputes.mockResolvedValue(expected);
 
@@ -81,7 +85,7 @@ describe('DisputeController', () => {
     });
 
     it('passes status, page, and limit through unchanged', async () => {
-      const expected = { data: [], total: 1, page: 2, limit: 25 };
+      const expected = { data: [], total: 1, page: 2, limit: 25, totalPages: 1, hasNextPage: false };
       const query = Object.assign(new AdminDisputesQueryDto(), {
         status: 'OPEN',
         page: 2,
@@ -130,6 +134,8 @@ describe('DisputeController', () => {
         total: 0,
         page: 1,
         limit: 20,
+        totalPages: 0,
+        hasNextPage: false,
       };
       auditLogService.findAll.mockResolvedValue(expected);
 

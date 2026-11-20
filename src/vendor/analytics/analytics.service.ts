@@ -47,36 +47,34 @@ export class AnalyticsService {
   constructor(private readonly repository: AnalyticsRepository) {}
 
   /**
-   * Retrieves daily transaction volume data for a vendor.
+   * Retrieves transaction volume data for a vendor.
    * Uses database-level aggregation with raw SQL for optimal performance on large datasets.
-   * Handles timezone boundaries correctly and fills gaps for days with zero transactions.
-   * Returns time-series data grouped by date with aggregated metrics.
+   * Handles timezone boundaries correctly, groups by interval (day, week, month), and fills gaps.
+   * Returns time-series data grouped by date with aggregated metrics (issues #942, #1155).
    */
   async getDailyVolumeChart(
     vendorAddress: string,
     days: number = 30,
     timezone: string = 'UTC',
+    interval: 'day' | 'week' | 'month' = 'day',
   ): Promise<ChartDataResponse> {
     const endDate = new Date();
     const endDateKey = this.formatDateInTimezone(endDate, timezone);
     const startDateKey = this.addCalendarDays(endDateKey, -(days - 1));
     const startDate = this.localMidnightInTimezone(startDateKey, timezone);
 
-    // Use repository for database-level aggregation with proper timezone handling.
+    // Use repository for database-level aggregation with proper timezone handling and interval.
     const aggregationResult = await this.repository.aggregateDailyVolume(
       vendorAddress,
       startDate,
       endDate,
       timezone,
+      interval,
     );
 
     // Convert aggregation results to DailyVolumeData format
     const dailyMap = new Map<string, DailyVolumeDataDto>();
 
-    // A Postgres `date` column comes back from the driver as a JS Date, not
-    // a string, so it is normalised before being used as a map key —
-    // fillDateGaps looks the key up as 'YYYY-MM-DD' and would otherwise never
-    // match, silently reporting every day as zero.
     for (const row of aggregationResult) {
       const r = row;
       const dateKey = this.toDateKey(r.date);
@@ -96,8 +94,13 @@ export class AnalyticsService {
       });
     }
 
-    // Fill gaps for days with zero transactions
-    const filledData = this.fillDateGaps(dailyMap, startDateKey, endDateKey);
+    // Fill gaps for intervals with zero transactions
+    const filledData = this.fillDateGaps(
+      dailyMap,
+      startDateKey,
+      endDateKey,
+      interval,
+    );
 
     // Sort by date ascending
     const sortedData = filledData.sort((a, b) => a.date.localeCompare(b.date));
@@ -126,34 +129,75 @@ export class AnalyticsService {
   }
 
   /**
-   * Fills gaps in the date range with zero-transaction entries
-   * Ensures consistent time-series data even for days with no activity
+   * Fills gaps in the date range with zero-transaction entries for day, week, or month intervals.
    */
   private fillDateGaps(
     dailyMap: Map<string, DailyVolumeDataDto>,
     startDateKey: string,
     endDateKey: string,
+    interval: 'day' | 'week' | 'month' = 'day',
   ): DailyVolumeDataDto[] {
     const result: DailyVolumeDataDto[] = [];
-    let dateKey = startDateKey;
-    while (dateKey <= endDateKey) {
-      if (dailyMap.has(dateKey)) {
-        result.push(dailyMap.get(dateKey)!);
-      } else {
-        result.push({
-          date: dateKey,
-          totalVolume: 0,
-          transactionCount: 0,
-          completedCount: 0,
-          disputedCount: 0,
-          averageTransactionValue: 0,
-        });
-      }
 
-      dateKey = this.addCalendarDays(dateKey, 1);
+    if (interval === 'week') {
+      const [year, month, day] = startDateKey.split('-').map(Number);
+      const d = new Date(Date.UTC(year, month - 1, day));
+      const dayOfWeek = d.getUTCDay();
+      const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+      d.setUTCDate(d.getUTCDate() + diff);
+
+      const [endYear, endMonth, endDay] = endDateKey.split('-').map(Number);
+      const endD = new Date(Date.UTC(endYear, endMonth - 1, endDay));
+      const endDayOfWeek = endD.getUTCDay();
+      const endDiff = endDayOfWeek === 0 ? -6 : 1 - endDayOfWeek;
+      endD.setUTCDate(endD.getUTCDate() + endDiff);
+      const lastWeekKey = endD.toISOString().slice(0, 10);
+
+      let dateKey = d.toISOString().slice(0, 10);
+      while (dateKey <= lastWeekKey) {
+        this.pushBucket(result, dailyMap, dateKey);
+        const next = new Date(dateKey + 'T00:00:00Z');
+        next.setUTCDate(next.getUTCDate() + 7);
+        dateKey = next.toISOString().slice(0, 10);
+      }
+    } else if (interval === 'month') {
+      let dateKey = startDateKey.slice(0, 7) + '-01';
+      const endMonthKey = endDateKey.slice(0, 7) + '-01';
+
+      while (dateKey <= endMonthKey) {
+        this.pushBucket(result, dailyMap, dateKey);
+        const [y, m] = dateKey.split('-').map(Number);
+        const next = new Date(Date.UTC(y, m, 1));
+        dateKey = next.toISOString().slice(0, 10);
+      }
+    } else {
+      let dateKey = startDateKey;
+      while (dateKey <= endDateKey) {
+        this.pushBucket(result, dailyMap, dateKey);
+        dateKey = this.addCalendarDays(dateKey, 1);
+      }
     }
 
     return result;
+  }
+
+  private pushBucket(
+    result: DailyVolumeDataDto[],
+    dailyMap: Map<string, DailyVolumeDataDto>,
+    dateKey: string,
+  ): void {
+    if (dailyMap.has(dateKey)) {
+      result.push(dailyMap.get(dateKey)!);
+    } else {
+      result.push({
+        date: dateKey,
+        totalVolume: 0,
+        transactionCount: 0,
+        completedCount: 0,
+        disputedCount: 0,
+        averageTransactionValue: 0,
+      });
+    }
   }
 
   /**
@@ -186,37 +230,29 @@ export class AnalyticsService {
 
   /**
    * Retrieves overall transaction statistics for a vendor.
-   * Includes conversion metrics and channel preferences.
+   * Includes conversion metrics, speed metrics, and channel preferences.
    *
    * #843 — Counts and sums are aggregated by the database with a single
    * `groupBy` on `state`, and the per-state sums are added as decimals.
-   *
-   * The previous implementation ran `findMany` over every escrow the vendor
-   * has ever created and counted and summed the rows in a JavaScript loop. The
-   * result set grew without bound with vendor history while the response
-   * stayed a fixed handful of numbers, so the cost of a dashboard page scaled
-   * with total escrows rather than with the number of states. Each amount was
-   * also pulled through `Number()` before being added: `amount` is
-   * `Decimal(18, 8)`, so converting to a double first and then summing loses
-   * precision below 2^53 minor units — exactly the small-vendor case where
-   * the total is supposed to be exact.
-   *
-   * `groupBy` narrows the transfer to one row per state and lets Postgres sum
-   * the `numeric` column exactly.
+   * Speed metrics are computed in SQL (issue #1154).
    */
   async getTransactionStats(
     vendorAddress: string,
   ): Promise<AnalyticsStatsResponse> {
-    // One row per state, with the count and the exact `numeric` sum for that
-    // state. Uses the composite index on (vendorAddress, state).
-    const groups = await this.repository.getEscrowStateGroups(vendorAddress);
+    const [groups, speedStats, notificationChannels] = await Promise.all([
+      this.repository.getEscrowStateGroups(vendorAddress),
+      typeof this.repository.getAverageShippingAndDeliveryTimes === 'function'
+        ? this.repository.getAverageShippingAndDeliveryTimes(vendorAddress)
+        : Promise.resolve({
+            averageHoursToShip: null,
+            averageHoursToDeliver: null,
+          }),
+      this.repository.findNotificationChannels(vendorAddress),
+    ]);
 
     // Active states: CREATED, FUNDED, SHIPPED, DELIVERED
     const activeStates = new Set(['CREATED', 'FUNDED', 'SHIPPED', 'DELIVERED']);
 
-    // Decimal accumulators, not floats. The running totals stay exact for the
-    // whole loop and are converted to `number` once, at the end, for the
-    // response.
     let totalVolume = decimalZero();
     let activeVolume = decimalZero();
     let totalTransactions = 0;
@@ -226,8 +262,6 @@ export class AnalyticsService {
     let cancelledTransactions = 0;
 
     for (const group of groups) {
-      // Narrowed explicitly: `groupBy` infers a wide union here, and a null
-      // `_sum` is what an empty state group returns.
       const { state, _count, _sum } = group;
       const count = Number(
         typeof _count === 'object' ? _count?._all : (_count ?? 0),
@@ -255,8 +289,6 @@ export class AnalyticsService {
       }
     }
 
-    // The response contract is numeric, so the exact decimals are converted
-    // once here rather than being carried as floats through the additions.
     const totalVolumeNumber = decimalToNumber(totalVolume);
     const activeVolumeNumber = decimalToNumber(activeVolume);
 
@@ -271,32 +303,29 @@ export class AnalyticsService {
       disputeRate: 0,
       averageTransactionValue: 0,
       cancelledTransactions,
+      averageHoursToShip: speedStats.averageHoursToShip,
+      averageHoursToDeliver: speedStats.averageHoursToDeliver,
     };
 
-    // Calculate rates
     if (stats.totalTransactions > 0) {
       stats.completionRate =
         (stats.completedTransactions / stats.totalTransactions) * 100;
       stats.disputeRate =
         (stats.disputedTransactions / stats.totalTransactions) * 100;
-      // Divided in decimal so the average of an exact total is not itself
-      // rounded twice; converted to a number only for the response.
       stats.averageTransactionValue = decimalToNumber(
         totalVolume.div(stats.totalTransactions),
       );
     }
 
-    // Fetch vendor tracking settings for channel preferences (defaults to platform defaults)
-    const notificationChannels =
-      (await this.repository.findNotificationChannels(vendorAddress)) ??
-      DEFAULT_NOTIFICATION_CHANNELS;
+    const activeChannels =
+      notificationChannels ?? DEFAULT_NOTIFICATION_CHANNELS;
 
     const channels: ChannelMetricsDto = {
       email: {
-        notificationsEnabled: notificationChannels.includes('EMAIL'),
+        notificationsEnabled: activeChannels.includes('EMAIL'),
       },
       sms: {
-        notificationsEnabled: notificationChannels.includes('SMS'),
+        notificationsEnabled: activeChannels.includes('SMS'),
       },
     };
 
@@ -333,8 +362,6 @@ export class AnalyticsService {
       hourCycle: 'h23',
     });
 
-    // Reconcile the UTC guess against the local wall-clock representation.
-    // This handles both positive and negative UTC offsets and DST changes.
     for (let attempt = 0; attempt < 4; attempt += 1) {
       const parts = new Map(
         formatter

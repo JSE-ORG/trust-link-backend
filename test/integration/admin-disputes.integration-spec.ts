@@ -169,6 +169,8 @@ describe('GET /admin/disputes filters integration (issue #53)', () => {
     expect(body.data).toHaveLength(3);
     expect(body.page).toBe(1);
     expect(body.limit).toBe(20);
+    expect(body.totalPages).toBe(1);
+    expect(body.hasNextPage).toBe(false);
   });
 
   it('filters disputes by status', async () => {
@@ -196,6 +198,8 @@ describe('GET /admin/disputes filters integration (issue #53)', () => {
     expect(body.total).toBe(3);
     expect(body.page).toBe(1);
     expect(body.limit).toBe(2);
+    expect(body.totalPages).toBe(2);
+    expect(body.hasNextPage).toBe(true);
   });
 
   it.each([

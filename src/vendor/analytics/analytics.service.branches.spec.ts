@@ -87,4 +87,19 @@ describe('AnalyticsService.getTransactionStats', () => {
     expect(result.stats.completionRate).toBeGreaterThan(0);
     expect(result.stats.averageTransactionValue).toBeGreaterThan(0);
   });
+  it('includes speed metrics from getAverageShippingAndDeliveryTimes (issue #1154)', async () => {
+    const repo = {
+      getEscrowStateGroups: jest.fn().mockResolvedValue([]),
+      findNotificationChannels: jest.fn().mockResolvedValue(null),
+      getAverageShippingAndDeliveryTimes: jest.fn().mockResolvedValue({
+        averageHoursToShip: 4.5,
+        averageHoursToDeliver: 12.3,
+      }),
+    } as unknown as jest.Mocked<AnalyticsRepository>;
+    const svc = makeService(repo);
+
+    const result = await svc.getTransactionStats('VENDOR');
+    expect(result.stats.averageHoursToShip).toBe(4.5);
+    expect(result.stats.averageHoursToDeliver).toBe(12.3);
+  });
 });

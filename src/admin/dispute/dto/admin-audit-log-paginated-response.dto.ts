@@ -4,7 +4,7 @@ import { AuditLogEntryDto } from '../../stats/dto/audit-log-entry.dto';
 /**
  * Paginated wrapper for the admin audit log listing at GET /admin/audit-log.
  * Includes a single page of audit log entries, total count,
- * current page number, and page size.
+ * current page number, page size, total pages, and next-page indicator.
  */
 export class AdminAuditLogPaginatedResponseDto {
   @ApiProperty({
@@ -33,4 +33,17 @@ export class AdminAuditLogPaginatedResponseDto {
     minimum: 1,
   })
   limit!: number;
+
+  @ApiProperty({
+    description: 'Total number of pages available.',
+    example: 8,
+    minimum: 0,
+  })
+  totalPages!: number;
+
+  @ApiProperty({
+    description: 'Whether there is a subsequent page available.',
+    example: true,
+  })
+  hasNextPage!: boolean;
 }

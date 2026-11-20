@@ -17,6 +17,7 @@ describe('ChartQueryDto validation (#941)', () => {
     const dto = toDto({});
     expect(dto.days).toBe(30);
     expect(dto.timezone).toBe('UTC');
+    expect(dto.interval).toBe('day');
   });
 
   describe('days parameter validation', () => {
@@ -72,6 +73,19 @@ describe('ChartQueryDto validation (#941)', () => {
       expect(
         errs.some((e) => /timezone/i.test(e) || /time zone/i.test(e)),
       ).toBe(true);
+    });
+  });
+  describe('interval parameter validation (issue #1155)', () => {
+    it('accepts valid intervals (day, week, month)', async () => {
+      expect(await errors({ interval: 'day' })).toHaveLength(0);
+      expect(await errors({ interval: 'week' })).toHaveLength(0);
+      expect(await errors({ interval: 'month' })).toHaveLength(0);
+    });
+
+    it('rejects invalid intervals', async () => {
+      const errs = await errors({ interval: 'hourly' });
+      expect(errs.length).toBeGreaterThan(0);
+      expect(errs.some((e) => /interval/i.test(e) || /isIn/i.test(e))).toBe(true);
     });
   });
 });

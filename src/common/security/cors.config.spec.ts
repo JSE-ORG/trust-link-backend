@@ -1,4 +1,4 @@
-import { Controller, Headers, INestApplication, Post } from '@nestjs/common';
+import { Controller, Get, Headers, INestApplication, Post } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import {
@@ -23,6 +23,11 @@ class FixtureEscrowController {
   create(@Headers('idempotency-key') idempotencyKey?: string) {
     return { ok: true, idempotencyKey };
   }
+
+  @Get()
+  list() {
+    return { ok: true };
+  }
 }
 
 describe('CORS allowedHeaders (issue #497)', () => {
@@ -38,6 +43,7 @@ describe('CORS allowedHeaders (issue #497)', () => {
       origin: 'https://allowed-origin.example',
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
       allowedHeaders: CORS_ALLOWED_HEADERS,
+      exposedHeaders: CORS_EXPOSED_HEADERS,
       credentials: true,
       maxAge: 86400,
     });
@@ -76,6 +82,39 @@ describe('CORS allowedHeaders (issue #497)', () => {
       ).toBe(true);
     }
   });
+
+  it('exposes rate limit and request id headers on preflight requests (issue #1158)', async () => {
+    const response = await request(app.getHttpServer())
+      .options('/escrow')
+      .set('Origin', 'https://allowed-origin.example')
+      .set('Access-Control-Request-Method', 'GET');
+
+    expect(response.status).toBe(204);
+    const exposed = (response.headers['access-control-expose-headers'] ?? '')
+      .split(',')
+      .map((h: string) => h.trim().toLowerCase());
+    expect(exposed).toContain('x-request-id');
+    expect(exposed).toContain('x-ratelimit-limit');
+    expect(exposed).toContain('x-ratelimit-remaining');
+    expect(exposed).toContain('x-ratelimit-reset');
+    expect(exposed).toContain('retry-after');
+  });
+
+  it('exposes rate limit and request id headers on simple requests (issue #1158)', async () => {
+    const response = await request(app.getHttpServer())
+      .get('/escrow')
+      .set('Origin', 'https://allowed-origin.example');
+
+    expect(response.status).toBe(200);
+    const exposed = (response.headers['access-control-expose-headers'] ?? '')
+      .split(',')
+      .map((h: string) => h.trim().toLowerCase());
+    expect(exposed).toContain('x-request-id');
+    expect(exposed).toContain('x-ratelimit-limit');
+    expect(exposed).toContain('x-ratelimit-remaining');
+    expect(exposed).toContain('x-ratelimit-reset');
+    expect(exposed).toContain('retry-after');
+  });
 });
 
 describe('CORS startup log value', () => {
@@ -92,7 +131,11 @@ describe('CORS startup log value', () => {
     expect(getAllowedOriginsLogValue(origins, true)).toBe(origins);
   });
 
-  it('exposes the request ID header to browser scripts', () => {
+  it('exposes the rate limit and request ID headers to browser scripts (issue #1158)', () => {
     expect(CORS_EXPOSED_HEADERS).toContain('X-Request-ID');
+    expect(CORS_EXPOSED_HEADERS).toContain('X-RateLimit-Limit');
+    expect(CORS_EXPOSED_HEADERS).toContain('X-RateLimit-Remaining');
+    expect(CORS_EXPOSED_HEADERS).toContain('X-RateLimit-Reset');
+    expect(CORS_EXPOSED_HEADERS).toContain('Retry-After');
   });
 });

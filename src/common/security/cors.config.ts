@@ -22,10 +22,16 @@ export const CORS_ALLOWED_HEADERS = [
  *
  * By default the CORS spec only exposes a small set of "safe" headers
  * (Content-Type, Cache-Control, etc.). Any custom header the front-end needs
- * to read — like the request-correlation id — must be listed here or the
- * browser silently blocks access to it (issue #973).
+ * to read — like the request-correlation id or rate limit headers — must
+ * be listed here or the browser silently blocks access to it (issues #973, #1158).
  */
-export const CORS_EXPOSED_HEADERS = ['X-Request-ID'];
+export const CORS_EXPOSED_HEADERS = [
+  'X-Request-ID',
+  'X-RateLimit-Limit',
+  'X-RateLimit-Remaining',
+  'X-RateLimit-Reset',
+  'Retry-After',
+];
 
 export function getAllowedOriginsLogValue(
   allowedOrigins: string[],

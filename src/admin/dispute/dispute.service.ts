@@ -1,3 +1,4 @@
+import { buildPaginatedEnvelope } from '../../common/pagination/pagination.helper';
 import {
   ConflictException,
   Injectable,
@@ -54,6 +55,8 @@ export class DisputeService {
     total: number;
     page: number;
     limit: number;
+    totalPages: number;
+    hasNextPage: boolean;
   }> {
     const page = Math.max(1, query.page ?? 1);
     const limit = Math.min(100, Math.max(1, query.limit ?? 20));
@@ -72,7 +75,7 @@ export class DisputeService {
       }),
       this.disputeRepository.count(where),
     ]);
-    return { data, total, page, limit };
+    return buildPaginatedEnvelope(data, total, page, limit);
   }
 
   /** Resolves a dispute by submitting the contract action and finalizing escrow state. */

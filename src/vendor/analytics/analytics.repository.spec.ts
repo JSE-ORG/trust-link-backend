@@ -110,4 +110,36 @@ describe('AnalyticsRepository', () => {
       expect(channels).toEqual(['EMAIL', 'SMS']);
     });
   });
+  describe('getAverageShippingAndDeliveryTimes (issue #1154)', () => {
+    it('returns nulls when no escrows have shipped or delivered', async () => {
+      const vendorAddress = 'GVENDOR_ANALYTICS_1';
+      const result = await repository.getAverageShippingAndDeliveryTimes(vendorAddress);
+      expect(result.averageHoursToShip).toBeNull();
+      expect(result.averageHoursToDeliver).toBeNull();
+    });
+
+    it('computes average shipping and delivery hours in SQL', async () => {
+      const vendorAddress = 'GVENDOR_ANALYTICS_1';
+      const base = new Date('2026-05-01T10:00:00.000Z');
+
+      await prisma.escrow.create({
+        data: {
+          vendorAddress,
+          itemName: 'Item Speed',
+          itemRef: 'ref-repo-speed-1',
+          amount: 100,
+          currency: 'USD',
+          buyerAddress: 'GBUYER_1',
+          state: 'DELIVERED',
+          createdAt: base,
+          shippedAt: new Date(base.getTime() + 2 * 3600 * 1000),
+          deliveredAt: new Date(base.getTime() + 5 * 3600 * 1000),
+        },
+      });
+
+      const result = await repository.getAverageShippingAndDeliveryTimes(vendorAddress);
+      expect(result.averageHoursToShip).toBe(2);
+      expect(result.averageHoursToDeliver).toBe(3);
+    });
+  });
 });

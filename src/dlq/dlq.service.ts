@@ -1,3 +1,4 @@
+import { buildPaginatedEnvelope } from '../common/pagination/pagination.helper';
 import {
   ConflictException,
   Injectable,
@@ -82,12 +83,7 @@ export class DlqService {
       this.failedTransactions.count(where),
     ]);
 
-    return {
-      data: records,
-      total,
-      page,
-      limit,
-    };
+    return buildPaginatedEnvelope(records, total, page, limit);
   }
 
   /**

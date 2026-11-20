@@ -306,4 +306,45 @@ describe('GET /vendor/analytics/chart (issue #290)', () => {
       .get('/vendor/analytics/chart')
       .expect(401);
   });
+  // ── Interval grouping (issue #1155) ──────────────────────────────────────
+
+  it('aggregates by weekly interval across a month boundary', async () => {
+    const d1 = new Date('2026-05-28T12:00:00.000Z');
+    const d2 = new Date('2026-06-02T12:00:00.000Z');
+    await seedEscrow(VENDOR, 100, d1);
+    await seedEscrow(VENDOR, 200, d2);
+
+    const res = await request(app.getHttpServer())
+      .get('/vendor/analytics/chart')
+      .query({ interval: 'week', days: 60 })
+      .set('Authorization', AUTH)
+      .expect(200);
+
+    expect(res.body.data.length).toBeGreaterThan(1);
+    const sumVolume = res.body.data.reduce(
+      (sum: number, b: { totalVolume: number }) => sum + b.totalVolume,
+      0,
+    );
+    expect(sumVolume).toBe(300);
+  });
+
+  it('aggregates by monthly interval across month boundaries', async () => {
+    const d1 = new Date('2026-04-15T10:00:00.000Z');
+    const d2 = new Date('2026-05-20T10:00:00.000Z');
+    await seedEscrow(VENDOR, 150, d1);
+    await seedEscrow(VENDOR, 250, d2);
+
+    const res = await request(app.getHttpServer())
+      .get('/vendor/analytics/chart')
+      .query({ interval: 'month', days: 90 })
+      .set('Authorization', AUTH)
+      .expect(200);
+
+    expect(res.body.data.length).toBeGreaterThan(1);
+    const sumVolume = res.body.data.reduce(
+      (sum: number, b: { totalVolume: number }) => sum + b.totalVolume,
+      0,
+    );
+    expect(sumVolume).toBe(400);
+  });
 });

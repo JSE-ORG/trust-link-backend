@@ -1,3 +1,4 @@
+import { buildPaginatedEnvelope } from '../common/pagination/pagination.helper';
 import crypto from 'node:crypto';
 import {
   BadRequestException,
@@ -634,12 +635,12 @@ export class EscrowService {
 
     const { data, total } = await fetch(sort, order, page, limit);
 
-    return {
-      data: data.map((escrow) => this.toSummary(escrow)),
+    return buildPaginatedEnvelope(
+      data.map((escrow) => this.toSummary(escrow)),
       total,
       page,
       limit,
-    };
+    );
   }
 
   private toPublicEscrow(escrow: EscrowRecord) {
