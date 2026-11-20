@@ -29,6 +29,7 @@ export interface Config {
   CREDENTIAL_ENCRYPTION_KEY?: string;
   DB_POOL_CONNECTION_LIMIT?: number;
   DB_POOL_TIMEOUT_MS?: number;
+  REQUEST_TIMEOUT_MS?: number;
   SEP10_JWT_SECRET: string;
   /** Secret used to sign simulated S3 pre-signed evidence URLs (required). */
   PRESIGN_SECRET: string;

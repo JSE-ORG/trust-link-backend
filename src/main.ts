@@ -13,6 +13,7 @@ import { createOpenApiDocument, setupOpenApiUi } from './openapi';
 import { createGlobalPipes } from './common/pipes/global-pipes';
 import { parseTrustProxy } from './common/security/trust-proxy.config';
 import { SentryInterceptor } from './common/interceptors/sentry.interceptor';
+import { TimeoutInterceptor } from './common/interceptors/timeout.interceptor';
 import { buildCspConnectSrc } from './common/security/csp.config';
 import {
   CORS_ALLOWED_HEADERS,
@@ -158,8 +159,15 @@ async function bootstrap(): Promise<INestApplication> {
 
   app.use(compression({ threshold: 1024 }));
 
+  const requestTimeoutMs =
+    configService.get<number>('REQUEST_TIMEOUT_MS') ?? 30000;
   if (sentryDsn) {
-    app.useGlobalInterceptors(new SentryInterceptor());
+    app.useGlobalInterceptors(
+      new SentryInterceptor(),
+      new TimeoutInterceptor(requestTimeoutMs),
+    );
+  } else {
+    app.useGlobalInterceptors(new TimeoutInterceptor(requestTimeoutMs));
   }
 
   app.useGlobalPipes(...createGlobalPipes());
