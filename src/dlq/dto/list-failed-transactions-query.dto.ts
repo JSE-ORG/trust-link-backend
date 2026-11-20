@@ -1,6 +1,14 @@
 import { Type } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsIn, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+import {
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Max,
+  Min,
+} from 'class-validator';
 import type { FailedTransactionStatus } from '../dlq.types';
 
 const FAILED_TRANSACTION_STATUSES = [
@@ -21,9 +29,9 @@ export class ListFailedTransactionsQueryDto {
   @IsString()
   operation?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ format: 'uuid' })
   @IsOptional()
-  @IsString()
+  @IsUUID()
   escrowId?: string;
 
   @ApiPropertyOptional({ minimum: 1, maximum: 1_000_000, default: 1 })
