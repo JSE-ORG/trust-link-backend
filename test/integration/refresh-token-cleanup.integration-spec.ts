@@ -97,7 +97,11 @@ describe('RefreshTokenCleanupService integration (issue #1120)', () => {
 
   it('keeps revoked-but-unexpired tokens (replay detection requires them)', async () => {
     const future = new Date(Date.now() + 60 * 60 * 1000);
-    await createToken({ tokenHash: 'hash-revoked-live', expiresAt: future, revoked: true });
+    await createToken({
+      tokenHash: 'hash-revoked-live',
+      expiresAt: future,
+      revoked: true,
+    });
 
     await cleanupService.cleanupExpiredRefreshTokens();
 
@@ -109,7 +113,11 @@ describe('RefreshTokenCleanupService integration (issue #1120)', () => {
 
   it('deletes revoked tokens that are also past the grace period', async () => {
     const expiredLongAgo = new Date(Date.now() - GRACE_PERIOD_MS - 1000);
-    await createToken({ tokenHash: 'hash-revoked-stale', expiresAt: expiredLongAgo, revoked: true });
+    await createToken({
+      tokenHash: 'hash-revoked-stale',
+      expiresAt: expiredLongAgo,
+      revoked: true,
+    });
 
     await cleanupService.cleanupExpiredRefreshTokens();
 
@@ -120,7 +128,9 @@ describe('RefreshTokenCleanupService integration (issue #1120)', () => {
   });
 
   it('runs without error on an empty table', async () => {
-    await expect(cleanupService.cleanupExpiredRefreshTokens()).resolves.not.toThrow();
+    await expect(
+      cleanupService.cleanupExpiredRefreshTokens(),
+    ).resolves.not.toThrow();
   });
 
   it('only deletes expired-past-grace-period rows, leaving others intact', async () => {
@@ -130,18 +140,27 @@ describe('RefreshTokenCleanupService integration (issue #1120)', () => {
 
     await createToken({ tokenHash: 'hash-delete', expiresAt: expiredLongAgo });
     await createToken({ tokenHash: 'hash-keep-live', expiresAt: future });
-    await createToken({ tokenHash: 'hash-keep-recent', expiresAt: expiredRecently });
+    await createToken({
+      tokenHash: 'hash-keep-recent',
+      expiresAt: expiredRecently,
+    });
 
     await cleanupService.cleanupExpiredRefreshTokens();
 
     expect(
-      await prisma.refreshToken.findUnique({ where: { tokenHash: 'hash-delete' } }),
+      await prisma.refreshToken.findUnique({
+        where: { tokenHash: 'hash-delete' },
+      }),
     ).toBeNull();
     expect(
-      await prisma.refreshToken.findUnique({ where: { tokenHash: 'hash-keep-live' } }),
+      await prisma.refreshToken.findUnique({
+        where: { tokenHash: 'hash-keep-live' },
+      }),
     ).not.toBeNull();
     expect(
-      await prisma.refreshToken.findUnique({ where: { tokenHash: 'hash-keep-recent' } }),
+      await prisma.refreshToken.findUnique({
+        where: { tokenHash: 'hash-keep-recent' },
+      }),
     ).not.toBeNull();
   });
 });

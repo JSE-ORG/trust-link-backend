@@ -1,4 +1,4 @@
-import { Account, Keypair } from '@stellar/stellar-sdk';
+import { Account, Keypair, rpc } from '@stellar/stellar-sdk';
 import { ContractService } from './contract.service';
 import { ContractCallFailedException } from './contract-call-failed.exception';
 import {
@@ -798,14 +798,18 @@ describe('ContractService', () => {
       } as unknown as import('../config/config.service').ConfigService;
     }
 
-    it('falls back to returning tx as-is when server has no prepareTransaction', async () => {
-      // With no server.prepareTransaction and rpc.assembleTransaction typically absent,
-      // prepareTransaction returns the original tx unchanged (the final fallback branch).
+    it('assembles the transaction via rpc.assembleTransaction when server has no prepareTransaction', async () => {
       const server = makeServerNoPrepare();
-      const svc = new ContractService(server, makeConfig());
+      const assembleSpy = jest
+        .spyOn(rpc, 'assembleTransaction')
+        .mockImplementation((tx: any) => ({ build: () => tx }) as any);
 
+      const svc = new ContractService(server, makeConfig());
       const hash = await svc.resolveDispute(ESCROW, 'RELEASE', ADMIN);
+
       expect(hash).toBe('no-prepare-hash');
+      expect(assembleSpy).toHaveBeenCalled();
+      assembleSpy.mockRestore();
     });
   });
 
@@ -844,12 +848,12 @@ describe('ContractService', () => {
       const server = makeServerMissingHash();
       const svc = new ContractService(server, makeConfig());
 
-      await expect(svc.resolveDispute(ESCROW, 'RELEASE', ADMIN)).rejects.toThrow(
-        ContractCallFailedException,
-      );
-      await expect(svc.resolveDispute(ESCROW, 'RELEASE', ADMIN)).rejects.toThrow(
-        'Missing transaction hash',
-      );
+      await expect(
+        svc.resolveDispute(ESCROW, 'RELEASE', ADMIN),
+      ).rejects.toThrow(ContractCallFailedException);
+      await expect(
+        svc.resolveDispute(ESCROW, 'RELEASE', ADMIN),
+      ).rejects.toThrow('Missing transaction hash');
     });
   });
 });

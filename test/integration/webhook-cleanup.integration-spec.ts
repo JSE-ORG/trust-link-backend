@@ -87,7 +87,9 @@ describe('WebhookCleanupService integration (issue #1121)', () => {
   });
 
   it('runs without error on an empty table', async () => {
-    await expect(cleanupService.pruneProcessedWebhookEvents()).resolves.not.toThrow();
+    await expect(
+      cleanupService.pruneProcessedWebhookEvents(),
+    ).resolves.not.toThrow();
   });
 
   it('only removes old rows, leaving recent rows intact', async () => {
@@ -101,10 +103,14 @@ describe('WebhookCleanupService integration (issue #1121)', () => {
     await cleanupService.pruneProcessedWebhookEvents();
 
     expect(
-      await prisma.processedWebhookEvent.findUnique({ where: { operationId: 'op-delete' } }),
+      await prisma.processedWebhookEvent.findUnique({
+        where: { operationId: 'op-delete' },
+      }),
     ).toBeNull();
     expect(
-      await prisma.processedWebhookEvent.findUnique({ where: { operationId: 'op-keep' } }),
+      await prisma.processedWebhookEvent.findUnique({
+        where: { operationId: 'op-keep' },
+      }),
     ).not.toBeNull();
   });
 
@@ -129,7 +135,9 @@ describe('WebhookCleanupService integration (issue #1121)', () => {
     // Row processed 8 days ago — older than 7-day window → deleted.
     const old8d = new Date(Date.now() - shortRetentionMs - 24 * 60 * 60 * 1000);
     // Row processed 6 days ago — within 7-day window → kept.
-    const recent6d = new Date(Date.now() - shortRetentionMs + 24 * 60 * 60 * 1000);
+    const recent6d = new Date(
+      Date.now() - shortRetentionMs + 24 * 60 * 60 * 1000,
+    );
 
     await createEvent('op-8d-old', old8d);
     await createEvent('op-6d-recent', recent6d);
@@ -137,10 +145,14 @@ describe('WebhookCleanupService integration (issue #1121)', () => {
     await shortCleanup.pruneProcessedWebhookEvents();
 
     expect(
-      await prisma.processedWebhookEvent.findUnique({ where: { operationId: 'op-8d-old' } }),
+      await prisma.processedWebhookEvent.findUnique({
+        where: { operationId: 'op-8d-old' },
+      }),
     ).toBeNull();
     expect(
-      await prisma.processedWebhookEvent.findUnique({ where: { operationId: 'op-6d-recent' } }),
+      await prisma.processedWebhookEvent.findUnique({
+        where: { operationId: 'op-6d-recent' },
+      }),
     ).not.toBeNull();
 
     await shortApp.close();
