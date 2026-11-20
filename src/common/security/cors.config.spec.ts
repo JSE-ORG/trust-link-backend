@@ -1,7 +1,11 @@
 import { Controller, Headers, INestApplication, Post } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
-import { CORS_ALLOWED_HEADERS } from './cors.config';
+import {
+  CORS_ALLOWED_HEADERS,
+  CORS_EXPOSED_HEADERS,
+  getAllowedOriginsLogValue,
+} from './cors.config';
 
 /**
  * Issue #497: `POST /escrow` reads `Idempotency-Key`, but it was missing from
@@ -71,5 +75,24 @@ describe('CORS allowedHeaders (issue #497)', () => {
         ),
       ).toBe(true);
     }
+  });
+});
+
+describe('CORS startup log value', () => {
+  it('reports none when production has no allowed origins', () => {
+    expect(getAllowedOriginsLogValue([], true)).toBe('none');
+  });
+
+  it('reports all when a non-production environment has no allowed origins', () => {
+    expect(getAllowedOriginsLogValue([], false)).toBe('all');
+  });
+
+  it('returns the configured origins when present', () => {
+    const origins = ['https://a.example.com'];
+    expect(getAllowedOriginsLogValue(origins, true)).toBe(origins);
+  });
+
+  it('exposes the request ID header to browser scripts', () => {
+    expect(CORS_EXPOSED_HEADERS).toContain('X-Request-ID');
   });
 });

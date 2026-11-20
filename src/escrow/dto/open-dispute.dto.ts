@@ -62,6 +62,9 @@ export class OpenDisputeDto {
   @IsArray()
   @ArrayMaxSize(10, { message: 'At most 10 evidence URLs are allowed' })
   @IsUrl({}, { each: true })
-  @MaxLength(500, { each: true, message: 'Each evidence URL must be at most 500 characters' })
+  @MaxLength(500, {
+    each: true,
+    message: 'Each evidence URL must be at most 500 characters',
+  })
   evidenceUrls?: string[];
 }

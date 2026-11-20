@@ -1,8 +1,8 @@
 import './sentry.instrument';
-import './tracing/tracing.bootstrap';
+import { shutdownTracing } from './tracing/tracing.bootstrap';
 import './common/bigint-json';
+import { INestApplication } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
 import compression from 'compression';
 import * as express from 'express';
 import helmet from 'helmet';
@@ -10,10 +10,15 @@ import { AppModule } from './app.module';
 import { ConfigService } from './config/config.service';
 import { JsonLoggerService } from './common/logger/json-logger.service';
 import { createOpenApiDocument, setupOpenApiUi } from './openapi';
-import { SanitizationPipe } from './common/pipes/sanitization.pipe';
+import { createGlobalPipes } from './common/pipes/global-pipes';
+import { parseTrustProxy } from './common/security/trust-proxy.config';
 import { SentryInterceptor } from './common/interceptors/sentry.interceptor';
 import { buildCspConnectSrc } from './common/security/csp.config';
-import { CORS_ALLOWED_HEADERS } from './common/security/cors.config';
+import {
+  CORS_ALLOWED_HEADERS,
+  CORS_EXPOSED_HEADERS,
+  getAllowedOriginsLogValue,
+} from './common/security/cors.config';
 import {
   ONE_YEAR_SECONDS,
   SECONDS_PER_DAY,
@@ -21,7 +26,7 @@ import {
 
 const bootstrapLogger = new JsonLoggerService('Bootstrap');
 
-async function bootstrap(): Promise<void> {
+async function bootstrap(): Promise<INestApplication> {
   const app = await NestFactory.create(AppModule, {
     bufferLogs: true,
     bodyParser: false,
@@ -31,6 +36,19 @@ async function bootstrap(): Promise<void> {
   app.useLogger(jsonLogger);
 
   const configService = app.get(ConfigService);
+
+  // ── Reverse proxy trust (issue #971) ──────────────────────────────────────
+  // Behind a load balancer req.ip is the balancer's address, so every client
+  // shares one throttle bucket. TRUST_PROXY tells Express which X-Forwarded-For
+  // hops to honour. Unset leaves Express's default, which trusts no proxy.
+  const trustProxy = configService.get('TRUST_PROXY');
+  const trustProxySetting = trustProxy ? parseTrustProxy(trustProxy) : null;
+  if (trustProxySetting !== null) {
+    (app.getHttpAdapter().getInstance() as express.Express).set(
+      'trust proxy',
+      trustProxySetting,
+    );
+  }
 
   const sentryDsn = configService.get<string | undefined>('SENTRY_DSN');
   const connectSrc = buildCspConnectSrc({
@@ -126,6 +144,7 @@ async function bootstrap(): Promise<void> {
       },
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
       allowedHeaders: CORS_ALLOWED_HEADERS,
+      exposedHeaders: CORS_EXPOSED_HEADERS,
       credentials: true,
       maxAge: SECONDS_PER_DAY,
     });
@@ -143,20 +162,10 @@ async function bootstrap(): Promise<void> {
     app.useGlobalInterceptors(new SentryInterceptor());
   }
 
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,
-      transform: true,
-      forbidNonWhitelisted: true,
-      transformOptions: { enableImplicitConversion: true },
-    }),
-    new SanitizationPipe(),
-  );
+  app.useGlobalPipes(...createGlobalPipes());
 
   const document = createOpenApiDocument(app);
   setupOpenApiUi(app, document, isProduction);
-
-  app.enableShutdownHooks();
 
   const port = configService.get('PORT');
   await app.listen(port);
@@ -167,34 +176,67 @@ async function bootstrap(): Promise<void> {
       port,
       env: configService.get('NODE_ENV'),
       network: configService.get('STELLAR_NETWORK'),
-      allowedOrigins: allowedOrigins.length > 0 ? allowedOrigins : 'all',
+      allowedOrigins: getAllowedOriginsLogValue(allowedOrigins, isProduction),
       cspConnectSrc: connectSrc,
     }),
     'Bootstrap',
   );
+
+  return app;
 }
 
-bootstrap().catch((err: unknown) => {
-  bootstrapLogger.error(
-    JSON.stringify({
-      msg: 'server.bootstrap.failed',
-      error: err instanceof Error ? err.message : String(err),
-    }),
-    err instanceof Error ? err.stack : undefined,
-  );
-  process.exit(1);
-});
+let app: INestApplication | null = null;
 
-process.on('SIGTERM', () => {
-  bootstrapLogger.log(
-    JSON.stringify({ msg: 'server.shutdown', signal: 'SIGTERM' }),
-  );
-  process.exit(0);
-});
+bootstrap()
+  .then((instance) => {
+    app = instance;
+  })
+  .catch((err: unknown) => {
+    bootstrapLogger.error(
+      JSON.stringify({
+        msg: 'server.bootstrap.failed',
+        error: err instanceof Error ? err.message : String(err),
+      }),
+      err instanceof Error ? err.stack : undefined,
+    );
+    process.exit(1);
+  });
 
-process.on('SIGINT', () => {
+/** How long to wait for `app.close()` before forcing exit. */
+const SHUTDOWN_TIMEOUT_MS = 10_000;
+
+async function shutdown(signal: string): Promise<void> {
   bootstrapLogger.log(
-    JSON.stringify({ msg: 'server.shutdown', signal: 'SIGINT' }),
+    JSON.stringify({ msg: 'server.shutdown', signal }),
+    'Bootstrap',
   );
+
+  if (app) {
+    try {
+      await Promise.race([
+        app.close(),
+        new Promise((_, reject) =>
+          setTimeout(
+            () => reject(new Error('graceful shutdown timed out')),
+            SHUTDOWN_TIMEOUT_MS,
+          ),
+        ),
+      ]);
+    } catch (err) {
+      bootstrapLogger.error(
+        JSON.stringify({
+          msg: 'server.shutdown.error',
+          error: err instanceof Error ? err.message : String(err),
+        }),
+        err instanceof Error ? err.stack : undefined,
+      );
+    }
+  }
+
+  await shutdownTracing();
   process.exit(0);
-});
+}
+
+process.on('SIGTERM', () => void shutdown('SIGTERM'));
+
+process.on('SIGINT', () => void shutdown('SIGINT'));

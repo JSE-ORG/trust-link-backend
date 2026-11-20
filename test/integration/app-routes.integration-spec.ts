@@ -175,7 +175,7 @@ describe('App-level routes (issue #800)', () => {
 
       expect(body).toEqual({
         version: expect.any(String),
-        name: '@truestlink/trustlink-backend',
+        name: 'trustlink-backend',
         environment: 'test',
       });
     });

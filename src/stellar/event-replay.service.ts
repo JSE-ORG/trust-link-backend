@@ -46,7 +46,9 @@ export class EventReplayService implements OnModuleInit {
       // instead of rebuilding the network default and ignoring the override.
       const horizon = this.horizonService.getHorizonUrl();
 
-      const cursor = await this.cursorService.get();
+      const cursor = await this.cursorService.get(
+        CursorService.EVENT_REPLAY_KEY,
+      );
 
       const url = `${horizon}/operations?order=asc&limit=200${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`;
       this.logger.log(`EventReplay fetching operations from ${url}`);
@@ -82,7 +84,7 @@ export class EventReplayService implements OnModuleInit {
       if (records.length > 0) {
         const lastRec = records[records.length - 1];
         const newCursor = String(lastRec['paging_token'] ?? lastRec['id']);
-        await this.cursorService.set(newCursor);
+        await this.cursorService.set(newCursor, CursorService.EVENT_REPLAY_KEY);
       }
 
       this.logger.log(`Event replay processed ${records.length} operations`);

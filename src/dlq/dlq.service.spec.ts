@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException } from '@nestjs/common';
+import { ConflictException, NotFoundException } from '@nestjs/common';
 import { DlqService } from './dlq.service';
+
 import { FailedTransactionRepository } from './failed-transaction.repository';
 
 describe('DlqService', () => {
@@ -14,6 +15,8 @@ describe('DlqService', () => {
     count: jest.Mock;
     findById: jest.Mock;
     incrementAttempts: jest.Mock;
+    claimForReplay: jest.Mock;
+    releaseClaim: jest.Mock;
     markReplayed: jest.Mock;
     markAbandoned: jest.Mock;
     markReviewed: jest.Mock;
@@ -41,8 +44,13 @@ describe('DlqService', () => {
       count: jest.fn(),
       findById: jest.fn(),
       incrementAttempts: jest.fn(),
+      claimForReplay: jest.fn().mockResolvedValue(mockRecord),
+      releaseClaim: jest.fn().mockResolvedValue(mockRecord),
       markReplayed: jest.fn(),
-      markAbandoned: jest.fn(),
+      markAbandoned: jest.fn().mockResolvedValue({
+        ...mockRecord,
+        status: 'ABANDONED',
+      }),
       markReviewed: jest.fn(),
     };
 
@@ -201,19 +209,73 @@ describe('DlqService', () => {
       );
     });
 
-    it('should throw if record is not PENDING_REVIEW', async () => {
+    it('should throw ConflictException if record is not PENDING_REVIEW', async () => {
       const replayedRecord = { ...mockRecord, status: 'REPLAYED' };
       repoMock.findById.mockResolvedValue(replayedRecord);
 
       const replayFn = jest.fn();
       await expect(service.replay('test-id-1', replayFn)).rejects.toThrow(
-        'not pending review',
+        ConflictException,
       );
+      await expect(service.replay('test-id-1', replayFn)).rejects.toThrow(
+        /REPLAYED/,
+      );
+    });
+
+    it('throws ConflictException when replay loses the claim race', async () => {
+      repoMock.findById.mockResolvedValue(mockRecord);
+      repoMock.claimForReplay.mockResolvedValue(null);
+
+      const replayFn = jest.fn();
+      await expect(service.replay('test-id-1', replayFn)).rejects.toThrow(
+        ConflictException,
+      );
+      expect(replayFn).not.toHaveBeenCalled();
+    });
+
+    it('allows replaying a record stuck in REPLAYING past the stale threshold', async () => {
+      const staleRecord = {
+        ...mockRecord,
+        status: 'REPLAYING',
+        updatedAt: new Date(Date.now() - 10 * 60 * 1000),
+      };
+      const replayedRecord = {
+        ...staleRecord,
+        status: 'REPLAYED',
+        lastReplayTxHash: 'tx-stale-recovered',
+      };
+      repoMock.findById.mockResolvedValue(staleRecord);
+      repoMock.claimForReplay.mockResolvedValue(staleRecord);
+      repoMock.markReplayed.mockResolvedValue(replayedRecord);
+
+      const replayFn = jest.fn().mockResolvedValue('tx-stale-recovered');
+      const result = await service.replay('test-id-1', replayFn);
+
+      expect(result.status).toBe('REPLAYED');
+      expect(repoMock.claimForReplay).toHaveBeenCalledWith(
+        'test-id-1',
+        expect.any(Date),
+      );
+    });
+
+    it('rejects replaying a record in REPLAYING that is not yet stale', async () => {
+      const activeRecord = {
+        ...mockRecord,
+        status: 'REPLAYING',
+        updatedAt: new Date(),
+      };
+      repoMock.findById.mockResolvedValue(activeRecord);
+
+      const replayFn = jest.fn();
+      await expect(service.replay('test-id-1', replayFn)).rejects.toThrow(
+        ConflictException,
+      );
+      expect(repoMock.claimForReplay).not.toHaveBeenCalled();
     });
   });
 
   describe('abandon', () => {
-    it('should mark record as ABANDONED', async () => {
+    it('should mark record as ABANDONED when status is PENDING_REVIEW', async () => {
       repoMock.findById.mockResolvedValue(mockRecord);
       repoMock.markAbandoned.mockResolvedValue({
         ...mockRecord,
@@ -222,7 +284,75 @@ describe('DlqService', () => {
 
       const result = await service.abandon('test-id-1');
       expect(result.status).toBe('ABANDONED');
-      expect(repoMock.markAbandoned).toHaveBeenCalledWith('test-id-1');
+      expect(repoMock.markAbandoned).toHaveBeenCalledWith(
+        'test-id-1',
+        expect.any(Date),
+      );
+    });
+
+    it('allows abandoning a record stuck in REPLAYING past the stale threshold', async () => {
+      const staleRecord = {
+        ...mockRecord,
+        status: 'REPLAYING',
+        updatedAt: new Date(Date.now() - 10 * 60 * 1000),
+      };
+      repoMock.findById.mockResolvedValue(staleRecord);
+      repoMock.markAbandoned.mockResolvedValue({
+        ...staleRecord,
+        status: 'ABANDONED',
+      });
+
+      const result = await service.abandon('test-id-1');
+      expect(result.status).toBe('ABANDONED');
+      expect(repoMock.markAbandoned).toHaveBeenCalledWith(
+        'test-id-1',
+        expect.any(Date),
+      );
+    });
+
+    it('rejects abandoning a record in REPLAYING that is not yet stale', async () => {
+      const activeRecord = {
+        ...mockRecord,
+        status: 'REPLAYING',
+        updatedAt: new Date(),
+      };
+      repoMock.findById.mockResolvedValue(activeRecord);
+
+      await expect(service.abandon('test-id-1')).rejects.toThrow(
+        ConflictException,
+      );
+      expect(repoMock.markAbandoned).not.toHaveBeenCalled();
+    });
+
+    it('throws ConflictException when abandon conditional update loses race', async () => {
+      repoMock.findById.mockResolvedValue(mockRecord);
+      repoMock.markAbandoned.mockResolvedValue(null);
+
+      await expect(service.abandon('test-id-1')).rejects.toThrow(
+        ConflictException,
+      );
+    });
+
+    it('refuses to abandon a REPLAYED record and throws ConflictException', async () => {
+      const replayedRecord = { ...mockRecord, status: 'REPLAYED' };
+      repoMock.findById.mockResolvedValue(replayedRecord);
+
+      await expect(service.abandon('test-id-1')).rejects.toThrow(
+        ConflictException,
+      );
+      await expect(service.abandon('test-id-1')).rejects.toThrow(/REPLAYED/);
+      expect(repoMock.markAbandoned).not.toHaveBeenCalled();
+    });
+
+    it('refuses to abandon an already ABANDONED record and throws ConflictException', async () => {
+      const abandonedRecord = { ...mockRecord, status: 'ABANDONED' };
+      repoMock.findById.mockResolvedValue(abandonedRecord);
+
+      await expect(service.abandon('test-id-1')).rejects.toThrow(
+        ConflictException,
+      );
+      await expect(service.abandon('test-id-1')).rejects.toThrow(/ABANDONED/);
+      expect(repoMock.markAbandoned).not.toHaveBeenCalled();
     });
   });
 
@@ -321,7 +451,10 @@ describe('DlqService', () => {
 
       await expect(
         service.replay('test-id-1', () => Promise.resolve('tx')),
-      ).rejects.toThrow(/not pending review/i);
+      ).rejects.toThrow(ConflictException);
+      await expect(
+        service.replay('test-id-1', () => Promise.resolve('tx')),
+      ).rejects.toThrow(/ABANDONED/);
     });
 
     it('marks the record ABANDONED with a reviewedAt timestamp', async () => {

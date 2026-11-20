@@ -14,6 +14,7 @@ import type { Request } from 'express';
 import { StellarWebhookDto } from './dto/stellar-webhook.dto';
 import { StellarWebhookResponseDto } from './dto/stellar-webhook-response.dto';
 import { StellarWebhookService } from './stellar-webhook.service';
+import { ErrorResponseDto } from '../common/dto/error-response.dto';
 
 @ApiTags('Webhooks')
 @Controller('webhooks')
@@ -41,6 +42,11 @@ export class StellarWebhookController {
   @ApiResponse({
     status: 400,
     description: 'Invalid payload or missing HMAC signature.',
+  })
+  @ApiResponse({
+    status: 500,
+    description: 'Internal server error.',
+    type: ErrorResponseDto,
   })
   // Issue #923 — exempt the signed Stellar webhook from rate limiting. Every
   // delivery comes from the same Horizon sender, so the shared per-IP bucket

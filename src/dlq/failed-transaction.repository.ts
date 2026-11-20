@@ -99,6 +99,52 @@ export class FailedTransactionRepository {
     return toFailedTransactionRecord(row);
   }
 
+  /**
+   * Atomically claims a record for replay by updating its status conditionally.
+   * Succeeds if the record is in `PENDING_REVIEW` or stuck in `REPLAYING` past `staleBefore`.
+   * Returns null if the record was already claimed or replayed.
+   */
+  async claimForReplay(
+    id: string,
+    staleBefore?: Date,
+  ): Promise<FailedTransactionRecord | null> {
+    const where: Prisma.FailedTransactionWhereInput = {
+      id,
+      OR: [
+        { status: 'PENDING_REVIEW' },
+        ...(staleBefore
+          ? [{ status: 'REPLAYING', updatedAt: { lte: staleBefore } }]
+          : []),
+      ],
+    };
+
+    const result = await this.prisma.failedTransaction.updateMany({
+      where,
+      data: {
+        status: 'REPLAYING',
+      },
+    });
+
+    if (result.count === 0) {
+      return null;
+    }
+
+    return this.findById(id);
+  }
+
+  /**
+   * Releases a claim by returning the record to PENDING_REVIEW after a failed replay.
+   */
+  async releaseClaim(id: string): Promise<FailedTransactionRecord> {
+    const row = await this.prisma.failedTransaction.update({
+      where: { id },
+      data: {
+        status: 'PENDING_REVIEW',
+      },
+    });
+    return toFailedTransactionRecord(row);
+  }
+
   /** Marks a row `REPLAYED` with the transaction hash the replay produced. */
   async markReplayed(
     id: string,
@@ -115,16 +161,37 @@ export class FailedTransactionRepository {
     return toFailedTransactionRecord(row);
   }
 
-  /** Marks a row `ABANDONED` and stamps when an operator reviewed it. */
-  async markAbandoned(id: string): Promise<FailedTransactionRecord> {
-    const row = await this.prisma.failedTransaction.update({
-      where: { id },
+  /**
+   * Marks a row `ABANDONED` conditionally on PENDING_REVIEW (or stale REPLAYING)
+   * and stamps when an operator reviewed it.
+   */
+  async markAbandoned(
+    id: string,
+    staleBefore?: Date,
+  ): Promise<FailedTransactionRecord | null> {
+    const where: Prisma.FailedTransactionWhereInput = {
+      id,
+      OR: [
+        { status: 'PENDING_REVIEW' },
+        ...(staleBefore
+          ? [{ status: 'REPLAYING', updatedAt: { lte: staleBefore } }]
+          : []),
+      ],
+    };
+
+    const result = await this.prisma.failedTransaction.updateMany({
+      where,
       data: {
         status: 'ABANDONED',
         reviewedAt: new Date(),
       },
     });
-    return toFailedTransactionRecord(row);
+
+    if (result.count === 0) {
+      return null;
+    }
+
+    return this.findById(id);
   }
 
   /** Stamps `reviewedAt` without changing the status. */

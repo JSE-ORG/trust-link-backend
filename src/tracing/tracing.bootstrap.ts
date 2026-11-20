@@ -51,12 +51,12 @@ if (isEnabled) {
   });
 
   sdk.start();
+}
 
-  const shutdown = (): void => {
-    void sdk?.shutdown();
-  };
-  process.once('SIGTERM', shutdown);
-  process.once('SIGINT', shutdown);
+export async function shutdownTracing(): Promise<void> {
+  if (sdk) {
+    await sdk.shutdown();
+  }
 }
 
 export function isTracingEnabled(): boolean {

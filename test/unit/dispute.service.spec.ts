@@ -198,9 +198,9 @@ describe('DisputeService (issues #25, #924, #925, #926, #927)', () => {
       state: 'COMPLETED',
     });
 
-    await expect(
-      service.resolve(disputedEscrow.id, 'RELEASE'),
-    ).rejects.toThrow(ConflictException);
+    await expect(service.resolve(disputedEscrow.id, 'RELEASE')).rejects.toThrow(
+      ConflictException,
+    );
     expect(contractService.resolveDispute).not.toHaveBeenCalled();
   });
 
@@ -210,9 +210,9 @@ describe('DisputeService (issues #25, #924, #925, #926, #927)', () => {
       state: 'REFUNDED',
     });
 
-    await expect(
-      service.resolve(disputedEscrow.id, 'REFUND'),
-    ).rejects.toThrow(ConflictException);
+    await expect(service.resolve(disputedEscrow.id, 'REFUND')).rejects.toThrow(
+      ConflictException,
+    );
     expect(contractService.resolveDispute).not.toHaveBeenCalled();
   });
 
@@ -222,9 +222,9 @@ describe('DisputeService (issues #25, #924, #925, #926, #927)', () => {
       new Error('Network failure'),
     );
 
-    await expect(
-      service.resolve(disputedEscrow.id, 'RELEASE'),
-    ).rejects.toThrow('Network failure');
+    await expect(service.resolve(disputedEscrow.id, 'RELEASE')).rejects.toThrow(
+      'Network failure',
+    );
     expect(repository.markCompleted).not.toHaveBeenCalled();
     expect(repository.markRefunded).not.toHaveBeenCalled();
   });
@@ -243,9 +243,9 @@ describe('DisputeService (issues #25, #924, #925, #926, #927)', () => {
       contractEscrowId: null,
     });
 
-    await expect(
-      service.resolve(disputedEscrow.id, 'RELEASE'),
-    ).rejects.toThrow(ConflictException);
+    await expect(service.resolve(disputedEscrow.id, 'RELEASE')).rejects.toThrow(
+      ConflictException,
+    );
     expect(contractService.resolveDispute).not.toHaveBeenCalled();
   });
 

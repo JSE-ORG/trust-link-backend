@@ -32,7 +32,9 @@ export class AdminStatsRepository {
    * shapes; the service composes them into the response DTO.
    */
   async collectTotals(): Promise<AdminStatsTotals> {
-    const [aggregation, stateGroups, vendorGroups, buyerGroups] =
+    type CountRow = [{ count: bigint }];
+
+    const [aggregation, stateGroups, vendorCountRows, buyerCountRows] =
       await Promise.all([
         this.prisma.escrow.aggregate({
           _sum: { amount: true },
@@ -41,18 +43,21 @@ export class AdminStatsRepository {
           by: ['state'],
           _count: true,
         }),
-        // Distinct participants, via groupBy. `aggregate._count.vendorAddress`
-        // counts non-null *rows*, not distinct values, so it reported the
-        // total escrow count under the name "unique vendors".
-        this.prisma.escrow.groupBy({ by: ['vendorAddress'] }),
-        this.prisma.escrow.groupBy({ by: ['buyerAddress'] }),
+        // COUNT(DISTINCT ...) in SQL — avoids transferring one row per escrow
+        // just to count distinct addresses (issue #1055).
+        this.prisma.$queryRaw<CountRow>`
+          SELECT COUNT(DISTINCT "vendorAddress")::bigint AS count FROM "Escrow"
+        `,
+        this.prisma.$queryRaw<CountRow>`
+          SELECT COUNT(DISTINCT "buyerAddress")::bigint AS count FROM "Escrow"
+        `,
       ]);
 
     return {
       totalVolume: Number(aggregation._sum?.amount ?? 0),
       stateGroups: stateGroups,
-      uniqueVendors: vendorGroups.length,
-      uniqueBuyers: buyerGroups.length,
+      uniqueVendors: Number(vendorCountRows[0]?.count ?? 0),
+      uniqueBuyers: Number(buyerCountRows[0]?.count ?? 0),
     };
   }
 

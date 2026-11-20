@@ -17,7 +17,7 @@ import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import { THROTTLE_WINDOW_MS } from './common/security/throttle.config';
 import type { Response } from 'express';
 import { AppService } from './app.service';
-import { getAppVersion } from './common/version';
+import { getAppName, getAppVersion } from './common/version';
 import { ConfigService } from './config/config.service';
 import { PrismaService } from './prisma/prisma.service';
 import { CacheService } from './cache/cache.service';
@@ -70,6 +70,16 @@ export class AppController {
     description: 'Service welcome message.',
     type: String,
   })
+  @ApiResponse({
+    status: 429,
+    description: 'Too many requests.',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 500,
+    description: 'Internal server error.',
+    type: ErrorResponseDto,
+  })
   @Throttle({ default: { limit: 100, ttl: THROTTLE_WINDOW_MS } })
   @Get()
   getHello(): string {
@@ -99,6 +109,7 @@ export class AppController {
     description: 'Internal server error.',
     type: ErrorResponseDto,
   })
+  @SkipThrottle() // Probe endpoints must never be rate-limited (issue #970).
   @Get('health/live')
   @HttpCode(HttpStatus.OK)
   getLiveness(): LivenessResponseDto {
@@ -147,6 +158,7 @@ export class AppController {
     description: 'Internal server error.',
     type: ErrorResponseDto,
   })
+  @SkipThrottle() // Probe endpoints must never be rate-limited (issue #970).
   @Get('health/ready')
   async getReadiness(
     @Res() res: Response,
@@ -279,14 +291,26 @@ export class AppController {
     description: 'Version information returned.',
     type: VersionResponseDto,
   })
+  @ApiResponse({
+    status: 429,
+    description: 'Too many requests.',
+    type: ErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 500,
+    description: 'Internal server error.',
+    type: ErrorResponseDto,
+  })
   @Throttle({ default: { limit: 100, ttl: THROTTLE_WINDOW_MS } })
   @Get('version')
   @HttpCode(HttpStatus.OK)
   getVersion(): VersionResponseDto {
+    const commit = this.configService.get('GIT_SHA');
     return {
       version: getAppVersion(),
-      name: '@truestlink/trustlink-backend',
+      name: getAppName(),
       environment: this.configService.get('NODE_ENV'),
+      ...(commit ? { commit } : {}),
     };
   }
 

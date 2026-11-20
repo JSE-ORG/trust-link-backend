@@ -12,9 +12,7 @@ import { PrismaService } from '../prisma/prisma.service';
  */
 @Injectable()
 export class StellarWebhookRepository {
-  constructor(
-    @Inject(PrismaService) private readonly prisma: PrismaService,
-  ) {}
+  constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
   async isProcessed(operationId: string): Promise<boolean> {
     const event = await this.prisma.processedWebhookEvent.findUnique({
@@ -33,6 +31,16 @@ export class StellarWebhookRepository {
   async unmarkProcessed(operationId: string): Promise<void> {
     await this.prisma.processedWebhookEvent.delete({
       where: { operationId },
+    });
+  }
+
+  /**
+   * Deletes processed webhook event rows older than `before` (issue #962).
+   * The `@@index([processedAt])` on the model makes this a cheap index scan.
+   */
+  async pruneOlderThan(before: Date) {
+    return this.prisma.processedWebhookEvent.deleteMany({
+      where: { processedAt: { lt: before } },
     });
   }
 }

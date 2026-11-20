@@ -9,7 +9,13 @@ import { DisputeService } from './dispute.service';
 import { NotificationsModule } from '../../notifications/notifications.module';
 
 @Module({
-  imports: [EscrowModule, StellarModule, AuditLogModule, CoreDisputeModule, NotificationsModule],
+  imports: [
+    EscrowModule,
+    StellarModule,
+    AuditLogModule,
+    CoreDisputeModule,
+    NotificationsModule,
+  ],
   controllers: [DisputeController],
   providers: [DisputeService, AdminGuard],
 })

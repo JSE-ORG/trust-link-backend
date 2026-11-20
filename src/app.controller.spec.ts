@@ -365,6 +365,70 @@ describe('AppController', () => {
       expect(version.version).toBe('1.0.0');
       expect(version.environment).toBe('test');
     });
+
+    it('reads the package name from package.json (#974)', () => {
+      const version = appController.getVersion();
+      expect(version.name).toBe('trustlink-backend');
+    });
+  });
+});
+
+/**
+ * Issue #975 — `/version` reports the deployed git commit from GIT_SHA, and
+ * omits the field entirely when GIT_SHA is unset rather than sending an empty
+ * or null value.
+ */
+describe('AppController version commit (#975)', () => {
+  let appController: AppController;
+  let gitSha: string | undefined;
+
+  beforeEach(async () => {
+    gitSha = undefined;
+
+    const app: TestingModule = await Test.createTestingModule({
+      controllers: [AppController],
+      providers: [
+        { provide: TracingService, useValue: createTracingMock().service },
+        AppService,
+        {
+          provide: ConfigService,
+          useValue: {
+            get: jest.fn((key: string) => {
+              if (key === 'NODE_ENV') return 'test';
+              if (key === 'GIT_SHA') return gitSha;
+              return undefined;
+            }),
+          },
+        },
+        {
+          provide: PrismaService,
+          useValue: { escrow: { findMany: jest.fn() } },
+        },
+        { provide: CacheService, useValue: { ping: jest.fn() } },
+        HorizonService,
+        {
+          provide: SorobanHealthService,
+          useValue: { checkHealth: jest.fn() },
+        },
+      ],
+    }).compile();
+
+    appController = app.get<AppController>(AppController);
+  });
+
+  it('includes commit when GIT_SHA is set', () => {
+    gitSha = 'abc123def456';
+
+    expect(appController.getVersion()).toEqual(
+      expect.objectContaining({ commit: 'abc123def456' }),
+    );
+  });
+
+  it('omits the commit key entirely when GIT_SHA is unset', () => {
+    const version = appController.getVersion();
+
+    expect(version).not.toHaveProperty('commit');
+    expect(Object.keys(version)).toEqual(['version', 'name', 'environment']);
   });
 });
 

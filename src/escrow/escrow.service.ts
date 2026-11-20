@@ -7,6 +7,8 @@ import {
   Injectable,
   InternalServerErrorException,
   NotFoundException,
+  ServiceUnavailableException,
+  UnprocessableEntityException,
   Logger,
   Optional,
 } from '@nestjs/common';
@@ -25,7 +27,11 @@ import { EVIDENCE_FILE_EXTENSIONS } from './dto/evidence-upload-query.dto';
 import { S3PresignService } from '../common/services/s3-presign.service';
 import { EscrowRepository } from './escrow.repository';
 import { UpdateBuyerContactDto } from './dto/update-buyer-contact.dto';
-import { encryptContact } from '../common/sanitization/contact-encryption.util';
+import { VENDOR_PROFILE_PLACEHOLDER_DESCRIPTION } from '../vendor/vendor-profile.constants';
+import {
+  encryptContact,
+  isContactEncryptionConfigured,
+} from '../common/sanitization/contact-encryption.util';
 import { TracingService } from '../tracing/tracing.service';
 import { EventsResult } from './escrow.types';
 import {
@@ -40,16 +46,19 @@ export type EscrowWithPaymentUrl = EscrowRecord & {
 /** Parsed Soroban event forwarded from the blockchain listener. */
 export interface SorobanChainEvent {
   /** Soroban event name: EscrowFunded | EscrowShipped | EscrowCompleted |
-   *  DisputeRaised | DisputeResolved | AutoReleased */
+   *  DisputeRaised | DisputeResolved | AutoReleased | EscrowAutoCancelled |
+   *  EscrowExpired | RefundApproved */
   eventType: string;
   /** Trust-Link escrow ID stored in the contract. */
   escrowId: string;
   /** For EscrowShipped — on-chain tracking reference. */
   trackingId?: string;
-  /** For AutoReleased — on-chain transaction hash. */
+  /** For AutoReleased — on-chain transaction hash or event id. */
   txHash?: string;
   /** For DisputeRaised — reason/description surfaced from contract data. */
   reason?: string;
+  /** For DisputeResolved — normalized resolution outcome from contract's ResolutionType. */
+  resolution?: 'RELEASE' | 'REFUND';
 }
 
 /** States that represent a terminal escrow lifecycle — no further transitions. */
@@ -59,6 +68,36 @@ const TERMINAL_STATES = new Set<string>([
   'REFUNDED',
   'CANCELLED',
 ]);
+
+/** Cached outcome of an idempotent create, keyed by vendor and key. */
+interface IdempotencyCacheEntry {
+  /** SHA-256 of the stable serialisation of the request body. */
+  requestHash: string;
+  result: EscrowWithPaymentUrl;
+}
+
+/**
+ * JSON with object keys sorted at every level, so two bodies with the same
+ * fields hash the same regardless of property order.
+ */
+function stableStringify(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableStringify(item)).join(',')}]`;
+  }
+  if (value !== null && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    const fields = Object.keys(record)
+      .filter((key) => record[key] !== undefined)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${stableStringify(record[key])}`);
+    return `{${fields.join(',')}}`;
+  }
+  return JSON.stringify(value) ?? 'null';
+}
+
+function hashRequestBody(dto: CreateEscrowDto): string {
+  return crypto.createHash('sha256').update(stableStringify(dto)).digest('hex');
+}
 
 export type SyncResult =
   { skipped: boolean; reason?: string } | { skipped: false };
@@ -228,6 +267,12 @@ export class EscrowService {
       throw new BadRequestException('Amount must be positive');
     }
 
+    if (dto.buyerAddress === vendorAddress) {
+      throw new BadRequestException(
+        'buyerAddress must be different from the vendor address',
+      );
+    }
+
     const existing = await this.escrowRepository.findByVendorAndItem(
       vendorAddress,
       dto.itemRef,
@@ -265,7 +310,11 @@ export class EscrowService {
     if (!this.prisma) return;
     await this.prisma.vendorProfile.upsert({
       where: { address: vendorAddress },
-      create: { address: vendorAddress, businessName: vendorAddress },
+      create: {
+        address: vendorAddress,
+        businessName: vendorAddress,
+        description: VENDOR_PROFILE_PLACEHOLDER_DESCRIPTION,
+      },
       update: {},
     });
   }
@@ -281,6 +330,14 @@ export class EscrowService {
    * configured every call falls through to a fresh `createEscrow`, leaving that
    * method's duplicate-item check as the only guard against double-creation.
    * The same validation and conflict errors as `createEscrow` apply.
+   *
+   * The cache entry also stores a hash of the request body (issue #932). A
+   * retry with the same key and body gets the cached escrow; reusing the key
+   * for a different body is rejected instead of silently returning the
+   * first escrow.
+   *
+   * @throws UnprocessableEntityException if the key was already used with a
+   *   different request body.
    */
   async createIdempotent(
     idempotencyKey: string,
@@ -303,18 +360,25 @@ export class EscrowService {
     vendorAddress: string,
   ): Promise<EscrowWithPaymentUrl> {
     const cacheKey = `idempotency:${vendorAddress}:${idempotencyKey}`;
+    const requestHash = hashRequestBody(dto);
     if (this.cacheService) {
       const cached =
-        await this.cacheService.get<EscrowWithPaymentUrl>(cacheKey);
+        await this.cacheService.get<IdempotencyCacheEntry>(cacheKey);
       if (cached) {
-        return cached;
+        if (cached.requestHash !== requestHash) {
+          throw new UnprocessableEntityException(
+            'Idempotency-Key has already been used with a different request body',
+          );
+        }
+        return cached.result;
       }
     }
 
     const result = await this.createEscrow(dto, vendorAddress);
 
     if (this.cacheService) {
-      await this.cacheService.set(cacheKey, result, SECONDS_PER_DAY);
+      const entry: IdempotencyCacheEntry = { requestHash, result };
+      await this.cacheService.set(cacheKey, entry, SECONDS_PER_DAY);
     }
 
     return result;
@@ -927,6 +991,12 @@ export class EscrowService {
       );
     }
 
+    if (!isContactEncryptionConfigured()) {
+      throw new ServiceUnavailableException(
+        'Buyer contact encryption is not configured.',
+      );
+    }
+
     const encryptedEmail = dto.email ? encryptContact(dto.email) : null;
     const encryptedPhone = dto.phone ? encryptContact(dto.phone) : null;
 
@@ -1022,8 +1092,8 @@ export class EscrowService {
 
     switch (eventType) {
       case 'EscrowFunded': {
-        if (escrow.state === 'FUNDED' || escrow.state === 'SHIPPED' || TERMINAL_STATES.has(escrow.state)) {
-          return { skipped: true, reason: 'already_funded_shipped_or_terminal' };
+        if (escrow.state !== 'CREATED') {
+          return { skipped: true, reason: 'already_funded_or_terminal' };
         }
         const funded = await this.escrowRepository.updateState(
           escrowId,
@@ -1036,7 +1106,7 @@ export class EscrowService {
       }
 
       case 'EscrowShipped': {
-        if (escrow.state === 'SHIPPED' || TERMINAL_STATES.has(escrow.state)) {
+        if (escrow.state !== 'CREATED' && escrow.state !== 'FUNDED') {
           return { skipped: true, reason: 'already_shipped_or_terminal' };
         }
         const trackingId = event.trackingId ?? escrow.trackingId ?? '';
@@ -1066,10 +1136,7 @@ export class EscrowService {
         if (escrow.state === 'CANCELLED' || TERMINAL_STATES.has(escrow.state)) {
           return { skipped: true, reason: 'already_cancelled_or_terminal' };
         }
-        const cancelled = await this.escrowRepository.markCancelled(escrowId);
-        this.notificationsService
-          .notifyCancelled(cancelled)
-          .catch((err) => this.logger.error('notifyCancelled failed', err));
+        await this.escrowRepository.markCancelled(escrowId);
         return { skipped: false };
       }
 
@@ -1119,18 +1186,12 @@ export class EscrowService {
             });
           }
         }
-        const isRefund =
-          event.reason?.toLowerCase().includes('refund') ||
-          (event as any).resolution === 'refund' ||
-          (event as any).outcome === 'refund' ||
-          (event as any).winner === 'buyer';
-
-        if (isRefund) {
-          const cancelled = await this.escrowRepository.markCancelled(escrowId);
+        if (event.resolution === 'REFUND') {
+          const refunded = await this.escrowRepository.markRefunded(escrowId);
           this.notificationsService
-            .notifyCancelled(cancelled)
+            .notifyRefunded(refunded)
             .catch((err) =>
-              this.logger.error('notifyCancelled(dispute refund) failed', err),
+              this.logger.error('notifyRefunded(dispute refund) failed', err),
             );
           return { skipped: false };
         }
@@ -1160,6 +1221,40 @@ export class EscrowService {
           .notifyCompleted(released)
           .catch((err) =>
             this.logger.error('notifyCompleted(auto-released) failed', err),
+          );
+        return { skipped: false };
+      }
+
+      case 'EscrowAutoCancelled': {
+        if (escrow.state === 'CANCELLED' || TERMINAL_STATES.has(escrow.state)) {
+          return { skipped: true, reason: 'already_cancelled_or_terminal' };
+        }
+        await this.escrowRepository.markCancelled(escrowId);
+        return { skipped: false };
+      }
+
+      case 'EscrowExpired': {
+        if (escrow.state === 'REFUNDED' || TERMINAL_STATES.has(escrow.state)) {
+          return { skipped: true, reason: 'already_refunded_or_terminal' };
+        }
+        const refunded = await this.escrowRepository.markRefunded(escrowId);
+        this.notificationsService
+          .notifyRefunded(refunded)
+          .catch((err) =>
+            this.logger.error('notifyRefunded(expired) failed', err),
+          );
+        return { skipped: false };
+      }
+
+      case 'RefundApproved': {
+        if (escrow.state === 'REFUNDED' || TERMINAL_STATES.has(escrow.state)) {
+          return { skipped: true, reason: 'already_refunded_or_terminal' };
+        }
+        const refunded = await this.escrowRepository.markRefunded(escrowId);
+        this.notificationsService
+          .notifyRefunded(refunded)
+          .catch((err) =>
+            this.logger.error('notifyRefunded(refund-approved) failed', err),
           );
         return { skipped: false };
       }

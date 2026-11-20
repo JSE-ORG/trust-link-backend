@@ -79,7 +79,7 @@ function makeValidResponse(
 
 const DEFAULT_OPTS = {
   baseUrl: 'https://api.gigl.com/v1',
-  apiToken: 'tok-test-123',
+  getApiToken: () => 'tok-test-123',
 };
 
 // ── Test suite ───────────────────────────────────────────────────────────────
@@ -108,13 +108,12 @@ describe('GiglClient', () => {
   // ── Constructor: axios.create configuration ─────────────────────────────
 
   describe('constructor — axios.create configuration', () => {
-    it('configures the axios instance with the supplied base URL, bearer token, content-type header, and the default 10s timeout', () => {
+    it('configures the axios instance with the supplied base URL, content-type header, and the default 10s timeout', () => {
       expect(mockedAxios.create).toHaveBeenCalledTimes(1);
       expect(mockedAxios.create).toHaveBeenCalledWith({
         baseURL: 'https://api.gigl.com/v1',
         timeout: 10_000,
         headers: {
-          Authorization: 'Bearer tok-test-123',
           'Content-Type': 'application/json',
         },
       });
@@ -133,20 +132,22 @@ describe('GiglClient', () => {
       );
     });
 
-    it('embeds the configured bearer token in the Authorization header verbatim', () => {
+    it('sends the current bearer token in the Authorization header verbatim on each request', async () => {
       jest.clearAllMocks();
       httpInstance = { get: jest.fn() };
       mockedAxios.create.mockReturnValue(
         httpInstance as unknown as AxiosInstance,
       );
-      new GiglClient({
+      httpInstance.get.mockResolvedValue({ data: makeValidResponse() });
+      const custom = new GiglClient({
         ...DEFAULT_OPTS,
-        apiToken: 'a.b.c-with_special=chars',
+        getApiToken: () => 'a.b.c-with_special=chars',
       });
 
-      const [createArg] = mockedAxios.create.mock.calls[0] ?? [];
-      expect(createArg?.headers).toMatchObject({
-        Authorization: 'Bearer a.b.c-with_special=chars',
+      await custom.fetchTracking('TRK-001');
+
+      expect(httpInstance.get).toHaveBeenCalledWith('/tracking/TRK-001', {
+        headers: { Authorization: 'Bearer a.b.c-with_special=chars' },
       });
     });
   });
@@ -164,6 +165,7 @@ describe('GiglClient', () => {
       // encodeURIComponent('TRK 001/abc') === 'TRK%20001%2Fabc'
       expect(httpInstance.get).toHaveBeenCalledWith(
         '/tracking/TRK%20001%2Fabc',
+        { headers: { Authorization: 'Bearer tok-test-123' } },
       );
       expect(result).toEqual(payload);
     });

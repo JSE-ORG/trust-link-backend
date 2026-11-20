@@ -14,6 +14,12 @@ export interface AuditLogEntry {
 export interface AuditLogPaginationQuery {
   page?: number;
   limit?: number;
+  action?: string;
+  entityType?: string;
+  entityId?: string;
+  adminAddress?: string;
+  from?: string;
+  to?: string;
 }
 
 export interface PaginatedAuditLogResponse {
@@ -48,6 +54,7 @@ export class AuditLogService {
    * Returns a paginated list of recorded admin actions from the database.
    * Actions are ordered newest first (occurredAt: 'desc').
    * Out-of-range or non-numeric pagination parameters are clamped.
+   * Supports filtering by action, entityType, entityId, adminAddress, and date range.
    */
   async findAll(
     query?: AuditLogPaginationQuery,
@@ -67,9 +74,27 @@ export class AuditLogService {
 
     const skip = (page - 1) * limit;
 
+    // Build filters
+    const filters: Record<string, unknown> = {};
+    if (query?.action) filters.action = query.action;
+    if (query?.entityType) filters.entityType = query.entityType;
+    if (query?.entityId) filters.entityId = query.entityId;
+    if (query?.adminAddress) filters.adminAddress = query.adminAddress;
+
+    const dateFilter: Record<string, unknown> = {};
+    if (query?.from) {
+      dateFilter.gte = new Date(query.from);
+    }
+    if (query?.to) {
+      dateFilter.lte = new Date(query.to);
+    }
+    if (Object.keys(dateFilter).length > 0) {
+      filters.occurredAt = dateFilter;
+    }
+
     const [data, total] = await Promise.all([
-      this.auditLog.findPage({ skip, take: limit }),
-      this.auditLog.count(),
+      this.auditLog.findPage({ skip, take: limit, where: filters }),
+      this.auditLog.count(filters),
     ]);
 
     return {

@@ -69,16 +69,18 @@ export interface Config {
   REFRESH_TOKEN_TTL?: number;
   SENTRY_DSN?: string;
   GIT_SHA?: string;
+  /** #971 — Trusted proxy setting; see common/security/trust-proxy.config. */
+  TRUST_PROXY?: string;
   EVIDENCE_UPLOAD_LIMIT?: number;
   EVIDENCE_UPLOAD_TTL?: number;
-  GIGL_API_BASE_URL?: string;
-  GIGL_API_TOKEN?: string;
   SOROBAN_RPC_URL?: string;
   /** Always present: the config schema applies a validated default of 5000. */
   SOROBAN_POLL_INTERVAL_MS: number;
   /** Always present: the config schema applies a validated default of 4000. */
   SOROBAN_RPC_TIMEOUT_MS: number;
   SOROBAN_START_LEDGER?: number;
+  /** Always present: the config schema applies a validated default of 30. */
+  WEBHOOK_EVENT_RETENTION_DAYS: number;
   CONTRACT_ID?: string;
 }
 
@@ -169,14 +171,9 @@ export class ConfigService {
       ),
       LOG_LEVEL: this.nestConfigService.get('LOG_LEVEL', { infer: true }),
       API_BASE_URL: this.nestConfigService.get('API_BASE_URL', { infer: true }),
-      GIGL_API_BASE_URL: this.nestConfigService.get('GIGL_API_BASE_URL', {
-        infer: true,
-      }),
-      GIGL_API_TOKEN: this.nestConfigService.get('GIGL_API_TOKEN', {
-        infer: true,
-      }),
       SOROBAN_POLL_INTERVAL_MS: this.get('SOROBAN_POLL_INTERVAL_MS'),
       SOROBAN_RPC_TIMEOUT_MS: this.get('SOROBAN_RPC_TIMEOUT_MS'),
+      WEBHOOK_EVENT_RETENTION_DAYS: this.get('WEBHOOK_EVENT_RETENTION_DAYS'),
     };
   }
 
@@ -211,7 +208,9 @@ export class ConfigService {
 
   /**
    * Returns the list of allowed CORS origins parsed from the ALLOWED_ORIGINS
-   * environment variable (comma-separated). Falls back to an empty array so
+   * environment variable (comma-separated). Trailing slashes are stripped so
+   * `https://app.example.com/` and `https://app.example.com` both match the
+   * browser's `Origin` header (issue #973). Falls back to an empty array so
    * that no origin is allowed when the variable is not set in production.
    */
   getAllowedOrigins(): string[] {
@@ -219,7 +218,7 @@ export class ConfigService {
     if (!raw) return [];
     return raw
       .split(',')
-      .map((o) => o.trim())
+      .map((o) => o.trim().replace(/\/+$/, ''))
       .filter(Boolean);
   }
 

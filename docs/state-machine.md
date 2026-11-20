@@ -70,22 +70,28 @@ stateDiagram-v2
 | `CREATED` | `FUNDED` | Buyer payment confirmed on-chain | `StellarWebhookService.handlePayment` |
 | `CREATED` | `FUNDED` | Chain sync event (fallback) | `EscrowService.syncStateFromChain` (`EscrowFunded`) |
 | `CREATED` | `CANCELLED` | Buyer, seller, or admin cancels | `EscrowService.cancelPendingEscrow` |
+| `CREATED` | `CANCELLED` | Auto-cancel event after timeout | `EscrowService.syncStateFromChain` (`EscrowAutoCancelled`) |
 | `FUNDED` | `SHIPPED` | Seller marks shipped with tracking ID | `EscrowService.handleShipment` |
 | `FUNDED` | `SHIPPED` | Chain sync event (fallback) | `EscrowService.syncStateFromChain` (`EscrowShipped`) |
 | `FUNDED` | `CANCELLED` | Buyer, seller, or admin cancels | `EscrowService.cancelEscrow` |
+| `FUNDED` | `REFUNDED` | Buyer reclaims funds (expired escrow) | `EscrowService.syncStateFromChain` (`EscrowExpired`) |
 | `FUNDED` | `DISPUTED` | Chain sync event (DisputeRaised) | `EscrowService.syncStateFromChain` (`DisputeRaised`) |
 | `SHIPPED` | `DELIVERED` | Carrier API reports delivery | `TrackingPollWorker.run` |
+| `SHIPPED` | `REFUNDED` | Seller approves refund on-chain | `EscrowService.syncStateFromChain` (`RefundApproved`) |
 | `DELIVERED` | `RELEASED` | Auto-release after 48h: worker submits, `AutoReleased` event finalises | `AutoReleaseWorker.run` + `EscrowService.syncStateFromChain` (`AutoReleased`) |
 | `SHIPPED` | `DISPUTED` | Chain sync event (DisputeRaised) | `EscrowService.syncStateFromChain` (`DisputeRaised`) |
 | `DELIVERED` | `DISPUTED` | Chain sync event (DisputeRaised) | `EscrowService.syncStateFromChain` (`DisputeRaised`) |
 | `DISPUTED` | `COMPLETED` | Admin resolves with RELEASE | `DisputeService.resolve` |
 | `DISPUTED` | `REFUNDED` | Admin resolves with REFUND | `DisputeService.resolve` |
-| `DISPUTED` | `COMPLETED` | Chain sync event (DisputeResolved) | `EscrowService.syncStateFromChain` (`DisputeResolved`) |
-| any non-terminal | `FUNDED` | Chain sync event (EscrowFunded) | `EscrowService.syncStateFromChain` (`EscrowFunded`) |
-| any non-terminal | `SHIPPED` | Chain sync event (EscrowShipped) | `EscrowService.syncStateFromChain` (`EscrowShipped`) |
+| `DISPUTED` | `COMPLETED` | Chain sync event (`DisputeResolved` Release) | `EscrowService.syncStateFromChain` (`DisputeResolved`) |
+| `DISPUTED` | `REFUNDED` | Chain sync event (`DisputeResolved` Refund) | `EscrowService.syncStateFromChain` (`DisputeResolved`) |
+| `CREATED` | `SHIPPED` | Chain sync event (`EscrowShipped` after missed `EscrowFunded`) | `EscrowService.syncStateFromChain` (`EscrowShipped`) |
 | any non-terminal | `COMPLETED` | Chain sync event (EscrowCompleted) | `EscrowService.syncStateFromChain` (`EscrowCompleted`) |
 | any non-terminal | `DISPUTED` | Chain sync event (DisputeRaised) | `EscrowService.syncStateFromChain` (`DisputeRaised`) |
 | any non-terminal | `RELEASED` | Chain sync event (AutoReleased) | `EscrowService.syncStateFromChain` (`AutoReleased`) |
+| any non-terminal | `CANCELLED` | Chain sync event (EscrowAutoCancelled) | `EscrowService.syncStateFromChain` (`EscrowAutoCancelled`) |
+| any non-terminal | `REFUNDED` | Chain sync event (EscrowExpired) | `EscrowService.syncStateFromChain` (`EscrowExpired`) |
+| any non-terminal | `REFUNDED` | Chain sync event (RefundApproved) | `EscrowService.syncStateFromChain` (`RefundApproved`) |
 
 ## Terminal States
 
@@ -163,12 +169,15 @@ in a terminal state or the target state:
 
 | Event | Target state | Extra action |
 |---|---|---|
-| `EscrowFunded` | `FUNDED` | — |
-| `EscrowShipped` | `SHIPPED` | Stores `trackingId` |
+| `EscrowFunded` | `FUNDED` | Only from `CREATED`; later non-terminal states (`SHIPPED`, `DELIVERED`, `DISPUTED`) are skipped so late/redelivered events never move an escrow backwards |
+| `EscrowShipped` | `SHIPPED` | Stores `trackingId`; only from `CREATED` or `FUNDED` (`DELIVERED` and `DISPUTED` are skipped) |
 | `EscrowCompleted` | `COMPLETED` | — |
+| `EscrowAutoCancelled` | `CANCELLED` | Auto-cancel from contract (unfunded escrow timeout) |
+| `EscrowExpired` | `REFUNDED` | Buyer reclaims on expired FUNDED/SHIPPED escrow |
+| `RefundApproved` | `REFUNDED` | Seller approved refund, contract pays buyer |
 | `DisputeRaised` | `DISPUTED` | Creates a `Dispute` record |
-| `DisputeResolved` | `COMPLETED` | Updates dispute status to `RESOLVED` |
-| `AutoReleased` | `RELEASED` | Records on-chain `txHash` |
+| `DisputeResolved` | `COMPLETED` / `REFUNDED` | Updates dispute status to `RESOLVED`; transitions to `REFUNDED` when `resolution` is `REFUND`, or `COMPLETED` when `RELEASE` |
+| `AutoReleased` | `RELEASED` | Records on-chain `txHash` (from RPC event id) |
 
 ## Invariants
 

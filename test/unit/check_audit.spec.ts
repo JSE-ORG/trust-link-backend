@@ -123,4 +123,25 @@ describe('check_audit', () => {
     expect(result.status).toBe(1);
     expect(result.output).toContain('missing: reason, contact');
   });
+
+  it('validates that .github/audit-exceptions.json has no duplicate or malformed entries', () => {
+    const exceptionsPath = path.resolve(
+      __dirname,
+      '../../.github/audit-exceptions.json',
+    );
+    const { exceptions } = JSON.parse(
+      fs.readFileSync(exceptionsPath, 'utf8'),
+    ) as { exceptions: Required<Exception>[] };
+    expect(Array.isArray(exceptions)).toBe(true);
+    expect(exceptions.length).toBeGreaterThan(0);
+
+    const advisories: Advisory[] = exceptions.map((entry) => ({
+      id: entry.id,
+      name: entry.package,
+      severity: 'high',
+    }));
+    const result = runGuard(advisories, exceptions);
+    expect(result.status).toBe(0);
+    expect(result.output).toContain('npm audit check passed.');
+  });
 });
