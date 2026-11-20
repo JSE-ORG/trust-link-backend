@@ -52,6 +52,37 @@ describe('StressTestConfigDto validation', () => {
     expect(errors).toHaveLength(0);
   });
 
+  describe('testName and profiles', () => {
+    it('rejects an empty or whitespace-only name', async () => {
+      expect(
+        await validationErrors(makeConfig({ testName: '' })),
+      ).not.toHaveLength(0);
+      expect(
+        await validationErrors(makeConfig({ testName: '   ' })),
+      ).not.toHaveLength(0);
+    });
+
+    it('rejects a name longer than 100 characters', async () => {
+      expect(
+        await validationErrors(makeConfig({ testName: 'a'.repeat(101) })),
+      ).not.toHaveLength(0);
+    });
+
+    it('rejects an empty profiles list', async () => {
+      expect(
+        await validationErrors(makeConfig({ profiles: [] })),
+      ).not.toHaveLength(0);
+    });
+
+    it('accepts the maximum name length and one profile', async () => {
+      expect(
+        await validationErrors(
+          makeConfig({ testName: 'a'.repeat(100), profiles: [makeProfile()] }),
+        ),
+      ).toHaveLength(0);
+    });
+  });
+
   describe('VirtualProfile.requestsPerSecond', () => {
     it('rejects 0 (below minimum of 1)', async () => {
       const profile = makeProfile({ requestsPerSecond: 0 });

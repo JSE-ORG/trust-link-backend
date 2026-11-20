@@ -91,7 +91,7 @@ function makeWebhookRepositoryMock(): jest.Mocked<StellarWebhookRepository> {
     isProcessed: jest.fn((id: string) => Promise.resolve(processed.has(id))),
     markProcessed: jest.fn((id: string) => {
       processed.add(id);
-      return Promise.resolve();
+      return Promise.resolve(true);
     }),
     unmarkProcessed: jest.fn((id: string) => {
       processed.delete(id);
@@ -584,6 +584,28 @@ describe('StellarWebhookService — persisted replay guard (issues #734, #922)',
       // findByVendor called for op-A (first) and op-B — not for the duplicate
       expect(escrowRepository.findByVendor).toHaveBeenCalledTimes(2);
     });
+  });
+
+  it('skips a delivery that loses the atomic markProcessed race', async () => {
+    const service = makeService();
+    const dto = makePaymentDto({ id: 'op-concurrent-duplicate' });
+    webhookRepository.isProcessed.mockResolvedValue(false);
+    webhookRepository.markProcessed
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(false);
+
+    const [first, racedDelivery] = await Promise.all([
+      callHandleEvent(service, dto),
+      callHandleEvent(service, dto),
+    ]);
+
+    expect(first).toEqual({ received: true });
+    expect(racedDelivery).toEqual({
+      received: true,
+      skipped: true,
+      reason: 'duplicate',
+    });
+    expect(escrowRepository.findByVendor).toHaveBeenCalledTimes(1);
   });
 
   // ── Ported from test/unit/stellar-webhook.service.spec.ts (issue #759) ───

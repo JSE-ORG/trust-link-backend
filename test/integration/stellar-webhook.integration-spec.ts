@@ -149,6 +149,38 @@ describe('POST /webhooks/stellar (issue #294)', () => {
     expect(res2.body.reason).toBe('duplicate');
   });
 
+  it('returns 2xx for simultaneous deliveries and stores one processed id', async () => {
+    const opId = `op-concurrent-${Date.now()}`;
+    const payload = makeWebhookPayload({
+      id: opId,
+      type: 'account_created',
+      to: undefined,
+      from: 'GSENDER001',
+    });
+    const body = Buffer.from(JSON.stringify(payload), 'utf8');
+    const sig = sign(body, WEBHOOK_SECRET);
+    const deliver = () =>
+      request(app.getHttpServer())
+        .post('/webhooks/stellar')
+        .set('Content-Type', 'application/json')
+        .set('x-stellar-signature', sig)
+        .send(payload);
+
+    const [first, second] = await Promise.all([deliver(), deliver()]);
+
+    expect(
+      [first.status, second.status].every((status) => status === 200),
+    ).toBe(true);
+    expect(
+      [first.body, second.body].filter((body) => body.skipped),
+    ).toHaveLength(1);
+    expect(
+      await prisma.processedWebhookEvent.count({
+        where: { operationId: opId },
+      }),
+    ).toBe(1);
+  });
+
   it('tracks duplicate events in ProcessedWebhookEvent table', async () => {
     const opId = `op-dup-track-${Date.now()}`;
     const payload = makeWebhookPayload({ id: opId });

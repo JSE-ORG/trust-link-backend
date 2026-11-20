@@ -72,7 +72,7 @@ describe('StellarWebhookService — HMAC signature verification (issue #48)', ()
           provide: StellarWebhookRepository,
           useValue: {
             isProcessed: jest.fn().mockResolvedValue(false),
-            markProcessed: jest.fn().mockResolvedValue(undefined),
+            markProcessed: jest.fn().mockResolvedValue(true),
             unmarkProcessed: jest.fn().mockResolvedValue(undefined),
           },
         },

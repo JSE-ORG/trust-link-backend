@@ -58,9 +58,9 @@ export class AnalyticsService {
     timezone: string = 'UTC',
   ): Promise<ChartDataResponse> {
     const endDate = new Date();
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - days + 1);
-    startDate.setUTCHours(0, 0, 0, 0);
+    const endDateKey = this.formatDateInTimezone(endDate, timezone);
+    const startDateKey = this.addCalendarDays(endDateKey, -(days - 1));
+    const startDate = this.localMidnightInTimezone(startDateKey, timezone);
 
     // Use repository for database-level aggregation with proper timezone handling.
     const aggregationResult = await this.repository.aggregateDailyVolume(
@@ -97,12 +97,7 @@ export class AnalyticsService {
     }
 
     // Fill gaps for days with zero transactions
-    const filledData = this.fillDateGaps(
-      dailyMap,
-      startDate,
-      endDate,
-      timezone,
-    );
+    const filledData = this.fillDateGaps(dailyMap, startDateKey, endDateKey);
 
     // Sort by date ascending
     const sortedData = filledData.sort((a, b) => a.date.localeCompare(b.date));
@@ -119,8 +114,8 @@ export class AnalyticsService {
     return {
       data: sortedData,
       period: {
-        startDate: this.formatDate(startDate),
-        endDate: this.formatDate(endDate),
+        startDate: startDateKey,
+        endDate: endDateKey,
       },
       summary: {
         totalVolume,
@@ -136,16 +131,12 @@ export class AnalyticsService {
    */
   private fillDateGaps(
     dailyMap: Map<string, DailyVolumeDataDto>,
-    startDate: Date,
-    endDate: Date,
-    timezone: string = 'UTC',
+    startDateKey: string,
+    endDateKey: string,
   ): DailyVolumeDataDto[] {
     const result: DailyVolumeDataDto[] = [];
-    const currentDate = new Date(startDate);
-
-    while (currentDate <= endDate) {
-      const dateKey = this.formatDateInTimezone(currentDate, timezone);
-
+    let dateKey = startDateKey;
+    while (dateKey <= endDateKey) {
       if (dailyMap.has(dateKey)) {
         result.push(dailyMap.get(dateKey)!);
       } else {
@@ -159,8 +150,7 @@ export class AnalyticsService {
         });
       }
 
-      // Move to next day
-      currentDate.setDate(currentDate.getDate() + 1);
+      dateKey = this.addCalendarDays(dateKey, 1);
     }
 
     return result;
@@ -170,7 +160,14 @@ export class AnalyticsService {
    * Formats a Date object to ISO date string (YYYY-MM-DD) in a specific timezone
    */
   private formatDateInTimezone(date: Date, timezone: string): string {
-    return date.toLocaleDateString('en-CA', { timeZone: timezone });
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(date);
+    const values = new Map(parts.map(({ type, value }) => [type, value]));
+    return `${values.get('year')}-${values.get('month')}-${values.get('day')}`;
   }
 
   /**
@@ -310,10 +307,61 @@ export class AnalyticsService {
     };
   }
 
-  /**
-   * Formats a Date object to ISO date string (YYYY-MM-DD)
-   */
-  private formatDate(date: Date): string {
-    return date.toISOString().split('T')[0];
+  private addCalendarDays(dateKey: string, days: number): string {
+    const [year, month, day] = dateKey.split('-').map(Number);
+    const date = new Date(Date.UTC(year, month - 1, day + days));
+    return [
+      date.getUTCFullYear(),
+      String(date.getUTCMonth() + 1).padStart(2, '0'),
+      String(date.getUTCDate()).padStart(2, '0'),
+    ].join('-');
+  }
+
+  /** Resolves the first instant at local midnight for a calendar date. */
+  private localMidnightInTimezone(dateKey: string, timezone: string): Date {
+    const [year, month, day] = dateKey.split('-').map(Number);
+    const targetAsUtc = Date.UTC(year, month - 1, day);
+    let candidate = targetAsUtc;
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hourCycle: 'h23',
+    });
+
+    // Reconcile the UTC guess against the local wall-clock representation.
+    // This handles both positive and negative UTC offsets and DST changes.
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      const parts = new Map(
+        formatter
+          .formatToParts(new Date(candidate))
+          .map(({ type, value }) => [type, Number(value)]),
+      );
+      const part = (
+        name: keyof Intl.DateTimeFormatPartTypesRegistry,
+      ): number => {
+        const value = parts.get(name);
+        if (value === undefined) {
+          throw new Error(`Missing ${name} date part for timezone ${timezone}`);
+        }
+        return value;
+      };
+      const representedAsUtc = Date.UTC(
+        part('year'),
+        part('month') - 1,
+        part('day'),
+        part('hour'),
+        part('minute'),
+        part('second'),
+      );
+      const correction = targetAsUtc - representedAsUtc;
+      candidate += correction;
+      if (correction === 0) break;
+    }
+    return new Date(candidate);
   }
 }
