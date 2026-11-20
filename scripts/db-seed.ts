@@ -9,6 +9,9 @@
  *   npx ts-node scripts/db-seed.ts
  */
 import { PrismaClient, EscrowState, DisputeStatus } from '@prisma/client';
+// Validate the target before opening a connection or modifying records.
+import { assertLocalDatabase } from './assert-local-db.cjs';
+assertLocalDatabase();
 
 const prisma = new PrismaClient();
 
