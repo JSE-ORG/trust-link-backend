@@ -113,7 +113,8 @@ describe('AnalyticsRepository', () => {
   describe('getAverageShippingAndDeliveryTimes (issue #1154)', () => {
     it('returns nulls when no escrows have shipped or delivered', async () => {
       const vendorAddress = 'GVENDOR_ANALYTICS_1';
-      const result = await repository.getAverageShippingAndDeliveryTimes(vendorAddress);
+      const result =
+        await repository.getAverageShippingAndDeliveryTimes(vendorAddress);
       expect(result.averageHoursToShip).toBeNull();
       expect(result.averageHoursToDeliver).toBeNull();
     });
@@ -137,7 +138,8 @@ describe('AnalyticsRepository', () => {
         },
       });
 
-      const result = await repository.getAverageShippingAndDeliveryTimes(vendorAddress);
+      const result =
+        await repository.getAverageShippingAndDeliveryTimes(vendorAddress);
       expect(result.averageHoursToShip).toBe(2);
       expect(result.averageHoursToDeliver).toBe(3);
     });

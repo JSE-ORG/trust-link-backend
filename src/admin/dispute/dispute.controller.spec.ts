@@ -85,7 +85,14 @@ describe('DisputeController', () => {
     });
 
     it('passes status, page, and limit through unchanged', async () => {
-      const expected = { data: [], total: 1, page: 2, limit: 25, totalPages: 1, hasNextPage: false };
+      const expected = {
+        data: [],
+        total: 1,
+        page: 2,
+        limit: 25,
+        totalPages: 1,
+        hasNextPage: false,
+      };
       const query = Object.assign(new AdminDisputesQueryDto(), {
         status: 'OPEN',
         page: 2,

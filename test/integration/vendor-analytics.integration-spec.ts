@@ -324,7 +324,9 @@ describe('GET /vendor/analytics/chart (issue #290)', () => {
   }
 
   function mondayKey(d: Date): string {
-    const r = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+    const r = new Date(
+      Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()),
+    );
     r.setUTCDate(r.getUTCDate() - ((r.getUTCDay() + 6) % 7));
     return r.toISOString().slice(0, 10);
   }

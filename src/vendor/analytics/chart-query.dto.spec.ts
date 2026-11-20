@@ -85,7 +85,9 @@ describe('ChartQueryDto validation (#941)', () => {
     it('rejects invalid intervals', async () => {
       const errs = await errors({ interval: 'hourly' });
       expect(errs.length).toBeGreaterThan(0);
-      expect(errs.some((e) => /interval/i.test(e) || /isIn/i.test(e))).toBe(true);
+      expect(errs.some((e) => /interval/i.test(e) || /isIn/i.test(e))).toBe(
+        true,
+      );
     });
   });
 });

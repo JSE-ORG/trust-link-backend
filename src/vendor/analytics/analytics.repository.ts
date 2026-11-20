@@ -124,11 +124,13 @@ export class AnalyticsRepository {
     const row = result[0];
     return {
       averageHoursToShip:
-        row?.averageHoursToShip !== null && row?.averageHoursToShip !== undefined
+        row?.averageHoursToShip !== null &&
+        row?.averageHoursToShip !== undefined
           ? Number(row.averageHoursToShip)
           : null,
       averageHoursToDeliver:
-        row?.averageHoursToDeliver !== null && row?.averageHoursToDeliver !== undefined
+        row?.averageHoursToDeliver !== null &&
+        row?.averageHoursToDeliver !== undefined
           ? Number(row.averageHoursToDeliver)
           : null,
     };
