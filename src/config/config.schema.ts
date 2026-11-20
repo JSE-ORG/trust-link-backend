@@ -4,6 +4,7 @@ import {
   parseTrustProxy,
   TRUST_PROXY_ERROR,
 } from '../common/security/trust-proxy.config';
+import { DEFAULT_SUPPORTED_CURRENCIES } from './supported-currencies';
 
 /**
  * Single source of truth for environment validation.
@@ -224,6 +225,13 @@ export const configValidationSchema = Joi.object({
       'Config validation error: ADMIN_NOTIFICATION_EMAIL must be a valid email address',
   }),
   AUTO_RELEASE_SOURCE_ADDRESS: stellarPublicKey.optional(),
+  SUPPORTED_CURRENCIES: Joi.string()
+    .pattern(/^[A-Za-z0-9]{3,12}(\s*,\s*[A-Za-z0-9]{3,12})*$/)
+    .default(DEFAULT_SUPPORTED_CURRENCIES)
+    .messages({
+      'string.pattern.base':
+        'Config validation error: SUPPORTED_CURRENCIES must be a comma-separated list of 3 to 12 letter or digit codes',
+    }),
   NODE_ENV: Joi.string()
     .valid('development', 'production', 'test')
     .default('development'),
