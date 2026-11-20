@@ -23,7 +23,7 @@ services:
         condition: service_started
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"]
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health/live', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -122,7 +122,7 @@ services:
         max-size: 10m
         max-file: 3
     healthcheck:
-      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"]
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health/live', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"]
       interval: 30s
       timeout: 10s
       retries: 3
