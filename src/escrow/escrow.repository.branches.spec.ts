@@ -5,7 +5,7 @@
  */
 
 import { EscrowRepository } from './escrow.repository';
-import { PrismaService, EscrowRecord, toEscrowRecord } from '../prisma/prisma.service';
+import { PrismaService, EscrowRecord } from '../prisma/prisma.service';
 import { CacheService } from '../cache/cache.service';
 
 function makeRow(overrides: Partial<EscrowRecord> = {}) {
@@ -37,8 +37,14 @@ function makeRow(overrides: Partial<EscrowRecord> = {}) {
 describe('EscrowRepository.findById', () => {
   it('returns revived cached record on cache hit', async () => {
     const cached = { ...makeRow(), shippedAt: '2024-01-01T00:00:00.000Z' };
-    const cache = { get: jest.fn().mockResolvedValue(cached), set: jest.fn(), del: jest.fn() } as unknown as jest.Mocked<CacheService>;
-    const prisma = { escrow: { findUnique: jest.fn() } } as unknown as jest.Mocked<PrismaService>;
+    const cache = {
+      get: jest.fn().mockResolvedValue(cached),
+      set: jest.fn(),
+      del: jest.fn(),
+    } as unknown as jest.Mocked<CacheService>;
+    const prisma = {
+      escrow: { findUnique: jest.fn() },
+    } as unknown as jest.Mocked<PrismaService>;
     const repo = new EscrowRepository(prisma, cache);
 
     const result = await repo.findById('e-1');
@@ -49,8 +55,14 @@ describe('EscrowRepository.findById', () => {
 
   it('falls through to DB on cache miss and sets cache', async () => {
     const row = makeRow();
-    const cache = { get: jest.fn().mockResolvedValue(null), set: jest.fn().mockResolvedValue(undefined), del: jest.fn() } as unknown as jest.Mocked<CacheService>;
-    const prisma = { escrow: { findUnique: jest.fn().mockResolvedValue(row) } } as unknown as jest.Mocked<PrismaService>;
+    const cache = {
+      get: jest.fn().mockResolvedValue(null),
+      set: jest.fn().mockResolvedValue(undefined),
+      del: jest.fn(),
+    } as unknown as jest.Mocked<CacheService>;
+    const prisma = {
+      escrow: { findUnique: jest.fn().mockResolvedValue(row) },
+    } as unknown as jest.Mocked<PrismaService>;
     const repo = new EscrowRepository(prisma, cache);
 
     const result = await repo.findById('e-1');
@@ -60,8 +72,14 @@ describe('EscrowRepository.findById', () => {
   });
 
   it('returns null when DB row is absent', async () => {
-    const cache = { get: jest.fn().mockResolvedValue(null), set: jest.fn(), del: jest.fn() } as unknown as jest.Mocked<CacheService>;
-    const prisma = { escrow: { findUnique: jest.fn().mockResolvedValue(null) } } as unknown as jest.Mocked<PrismaService>;
+    const cache = {
+      get: jest.fn().mockResolvedValue(null),
+      set: jest.fn(),
+      del: jest.fn(),
+    } as unknown as jest.Mocked<CacheService>;
+    const prisma = {
+      escrow: { findUnique: jest.fn().mockResolvedValue(null) },
+    } as unknown as jest.Mocked<PrismaService>;
     const repo = new EscrowRepository(prisma, cache);
 
     const result = await repo.findById('missing');

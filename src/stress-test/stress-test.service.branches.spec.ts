@@ -10,15 +10,15 @@ import { ConfigService } from '../config/config.service';
 import { HttpService } from '@nestjs/axios';
 import { of, throwError } from 'rxjs';
 
+type Priv = Record<string, (...args: any[]) => any>;
+
 function makeConfig(url = 'http://localhost:3000'): ConfigService {
   return { get: jest.fn().mockReturnValue(url) } as unknown as ConfigService;
 }
 
 function makeHttp(statusCode = 200): HttpService {
   return {
-    request: jest.fn().mockReturnValue(
-      of({ status: statusCode, data: {} }),
-    ),
+    request: jest.fn().mockReturnValue(of({ status: statusCode, data: {} })),
   } as unknown as HttpService;
 }
 
@@ -41,12 +41,16 @@ function minimalConfig() {
 describe('StressTestService.runStressTest', () => {
   it('sets status to FAILED when executeProfile throws', async () => {
     const http = {
-      request: jest.fn().mockReturnValue(throwError(() => new Error('network down'))),
+      request: jest
+        .fn()
+        .mockReturnValue(throwError(() => new Error('network down'))),
     } as unknown as HttpService;
     const svc = new StressTestService(http, makeConfig());
 
     // Force a failure by overriding executeProfile to throw
-    jest.spyOn(svc as never, 'executeProfile' as never).mockRejectedValue(new Error('bang'));
+    jest
+      .spyOn(svc as unknown as Priv, 'executeProfile')
+      .mockRejectedValue(new Error('bang'));
 
     const result = await svc.runStressTest(minimalConfig() as never);
     expect(result.status).toBe('FAILED');
@@ -69,7 +73,12 @@ describe('StressTestService.executeProfile', () => {
       duration: 1,
       method: 'GET',
     };
-    const result = await (svc as never)['executeProfile'](profile, 0, { maxResponseTime: 1 }, false);
+    const result = await (svc as unknown as Priv)['executeProfile'](
+      profile,
+      0,
+      { maxResponseTime: 1 },
+      false,
+    );
     expect(result.alerts).toHaveLength(0);
   });
 
@@ -86,7 +95,12 @@ describe('StressTestService.executeProfile', () => {
       duration: 1,
       method: 'GET',
     };
-    const result = await (svc as never)['executeProfile'](profile, 0, { maxResponseTime: 0.001 }, true);
+    const result = await (svc as unknown as Priv)['executeProfile'](
+      profile,
+      0,
+      { maxResponseTime: 0.001 },
+      true,
+    );
     // alerts array is defined (threshold check ran)
     expect(Array.isArray(result.alerts)).toBe(true);
   });

@@ -16,20 +16,24 @@ import { createTracingMock } from '../../test/unit/tracing-mock';
 import { VendorProfileRecord } from '../prisma/prisma.service';
 import { VENDOR_PROFILE_PLACEHOLDER_DESCRIPTION } from './vendor-profile.constants';
 
-function makeProfile(overrides: Partial<VendorProfileRecord> = {}): VendorProfileRecord {
+function makeProfile(
+  overrides: Partial<VendorProfileRecord> = {},
+): VendorProfileRecord {
   return {
     address: 'VENDOR',
     businessName: 'Biz',
     description: 'A real description',
-    website: null,
-    logoUrl: null,
+    email: null,
+    phone: null,
     createdAt: new Date(),
     updatedAt: new Date(),
     ...overrides,
   };
 }
 
-function makeService(repo: Partial<jest.Mocked<VendorProfileRepository>>): VendorProfileService {
+function makeService(
+  repo: Partial<jest.Mocked<VendorProfileRepository>>,
+): VendorProfileService {
   const fullRepo = {
     findByAddress: jest.fn(),
     create: jest.fn(),
@@ -52,7 +56,9 @@ describe('VendorProfileService.createProfile', () => {
       upsert: jest.fn().mockResolvedValue(updated),
     };
     const svc = makeService(repo);
-    const result = await svc.createProfile('VENDOR', { businessName: 'Real biz' } as never);
+    const result = await svc.createProfile('VENDOR', {
+      businessName: 'Real biz',
+    });
     expect(repo.upsert).toHaveBeenCalled();
     expect(result.description).toBe('Real biz');
   });
@@ -62,14 +68,16 @@ describe('VendorProfileService.createProfile', () => {
     const repo = { findByAddress: jest.fn().mockResolvedValue(existing) };
     const svc = makeService(repo);
     await expect(
-      svc.createProfile('VENDOR', { businessName: 'New' } as never),
+      svc.createProfile('VENDOR', { businessName: 'New' }),
     ).rejects.toThrow(ConflictException);
   });
 });
 
 describe('VendorProfileService.getProfile', () => {
   it('returns description as null when stored value is the placeholder', async () => {
-    const profile = makeProfile({ description: VENDOR_PROFILE_PLACEHOLDER_DESCRIPTION });
+    const profile = makeProfile({
+      description: VENDOR_PROFILE_PLACEHOLDER_DESCRIPTION,
+    });
     const repo = { findByAddress: jest.fn().mockResolvedValue(profile) };
     const svc = makeService(repo);
     const result = await svc.getProfile('VENDOR');
@@ -86,7 +94,7 @@ describe('VendorProfileService.getProfile', () => {
 describe('VendorProfileService.updateProfile', () => {
   it('throws BadRequestException when all dto fields are undefined', async () => {
     const svc = makeService({});
-    await expect(svc.updateProfile('VENDOR', {} as never)).rejects.toThrow(
+    await expect(svc.updateProfile('VENDOR', {})).rejects.toThrow(
       BadRequestException,
     );
   });

@@ -5,41 +5,57 @@
  * simulateTransaction, submitTransaction, getEscrowStateInternal.
  */
 
-import { ContractCallFailedException } from '../stellar/contract.service';
+import { ContractCallFailedException } from '../stellar/contract-call-failed.exception';
 import { ContractService } from '../stellar/contract.service';
 
+type Priv = Record<string, (...args: any[]) => any>;
+
 function makeService(server?: object, config?: object): ContractService {
-  return new ContractService(server as never, config as never, undefined);
+  return new ContractService(server, config as never, undefined);
 }
 
 // ── isSequenceError ───────────────────────────────────────────────────────────
 
 describe('ContractService.isSequenceError', () => {
   let svc: ContractService;
-  beforeEach(() => { svc = makeService(); });
+  beforeEach(() => {
+    svc = makeService();
+  });
 
   it('returns true for a string containing "sequence"', () => {
-    expect((svc as never)['isSequenceError']('bad sequence error')).toBe(true);
+    expect(
+      (svc as unknown as Priv)['isSequenceError']('bad sequence error'),
+    ).toBe(true);
   });
 
   it('returns true for a string containing "tx_bad_seq"', () => {
-    expect((svc as never)['isSequenceError']('TX_BAD_SEQ')).toBe(true);
+    expect((svc as unknown as Priv)['isSequenceError']('TX_BAD_SEQ')).toBe(
+      true,
+    );
   });
 
   it('returns false for an unrelated string', () => {
-    expect((svc as never)['isSequenceError']('timeout error')).toBe(false);
+    expect((svc as unknown as Priv)['isSequenceError']('timeout error')).toBe(
+      false,
+    );
   });
 
   it('returns true for an Error with sequence in message', () => {
-    expect((svc as never)['isSequenceError'](new Error('tx_bad_seq'))).toBe(true);
+    expect(
+      (svc as unknown as Priv)['isSequenceError'](new Error('tx_bad_seq')),
+    ).toBe(true);
   });
 
   it('returns false for an Error without sequence', () => {
-    expect((svc as never)['isSequenceError'](new Error('connection reset'))).toBe(false);
+    expect(
+      (svc as unknown as Priv)['isSequenceError'](
+        new Error('connection reset'),
+      ),
+    ).toBe(false);
   });
 
   it('returns false for a non-string non-Error value', () => {
-    expect((svc as never)['isSequenceError'](42)).toBe(false);
+    expect((svc as unknown as Priv)['isSequenceError'](42)).toBe(false);
   });
 });
 
@@ -47,17 +63,19 @@ describe('ContractService.isSequenceError', () => {
 
 describe('ContractService.decodeSimulationError', () => {
   let svc: ContractService;
-  beforeEach(() => { svc = makeService(); });
+  beforeEach(() => {
+    svc = makeService();
+  });
 
   it('returns the error field when simResult has an error', () => {
     const simResult = { error: 'contract panic' };
-    const result = (svc as never)['decodeSimulationError'](simResult);
+    const result = (svc as unknown as Priv)['decodeSimulationError'](simResult);
     expect(result).toBe('contract panic');
   });
 
   it('returns "Unknown simulation error" when error field is absent', () => {
     const simResult = {};
-    const result = (svc as never)['decodeSimulationError'](simResult);
+    const result = (svc as unknown as Priv)['decodeSimulationError'](simResult);
     expect(result).toBe('Unknown simulation error');
   });
 });
@@ -66,17 +84,19 @@ describe('ContractService.decodeSimulationError', () => {
 
 describe('ContractService.decodeTransactionError', () => {
   let svc: ContractService;
-  beforeEach(() => { svc = makeService(); });
+  beforeEach(() => {
+    svc = makeService();
+  });
 
   it('returns resultXdr string when present', () => {
     const txResponse = { resultXdr: 'AAAAAQAAAAAAAAAAAAAAAgAAAAIAAAAA' };
-    expect((svc as never)['decodeTransactionError'](txResponse)).toBe(
+    expect((svc as unknown as Priv)['decodeTransactionError'](txResponse)).toBe(
       'AAAAAQAAAAAAAAAAAAAAAgAAAAIAAAAA',
     );
   });
 
   it('returns "Transaction failed on chain" when resultXdr is absent', () => {
-    expect((svc as never)['decodeTransactionError']({})).toBe(
+    expect((svc as unknown as Priv)['decodeTransactionError']({})).toBe(
       'Transaction failed on chain',
     );
   });
@@ -89,15 +109,20 @@ describe('ContractService.simulateTransaction', () => {
     const server = { sendTransaction: jest.fn() };
     const svc = makeService(server);
     await expect(
-      (svc as never)['simulateTransaction']({} as never, 'fn'),
+      (svc as unknown as Priv)['simulateTransaction']({}, 'fn'),
     ).rejects.toThrow(ContractCallFailedException);
   });
 
   it('calls server.simulateTransaction when available', async () => {
     const simResult = { result: {} };
-    const server = { simulateTransaction: jest.fn().mockResolvedValue(simResult) };
+    const server = {
+      simulateTransaction: jest.fn().mockResolvedValue(simResult),
+    };
     const svc = makeService(server);
-    const result = await (svc as never)['simulateTransaction']({} as never, 'fn');
+    const result = await (svc as unknown as Priv)['simulateTransaction'](
+      {},
+      'fn',
+    );
     expect(result).toBe(simResult);
     expect(server.simulateTransaction).toHaveBeenCalledTimes(1);
   });
@@ -110,7 +135,7 @@ describe('ContractService.submitTransaction', () => {
     const server = { simulateTransaction: jest.fn() };
     const svc = makeService(server);
     await expect(
-      (svc as never)['submitTransaction']({} as never, 'fn'),
+      (svc as unknown as Priv)['submitTransaction']({}, 'fn'),
     ).rejects.toThrow(ContractCallFailedException);
   });
 
@@ -118,7 +143,10 @@ describe('ContractService.submitTransaction', () => {
     const sendResult = { status: 'PENDING', hash: 'abc' };
     const server = { sendTransaction: jest.fn().mockResolvedValue(sendResult) };
     const svc = makeService(server);
-    const result = await (svc as never)['submitTransaction']({} as never, 'fn');
+    const result = await (svc as unknown as Priv)['submitTransaction'](
+      {},
+      'fn',
+    );
     expect(result).toBe(sendResult);
   });
 });

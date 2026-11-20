@@ -6,27 +6,36 @@
  * rate calculation when totalTransactions > 0.
  */
 
+import { Prisma } from '@prisma/client';
 import { AnalyticsService } from './analytics.service';
 import { AnalyticsRepository } from './analytics.repository';
 import { DEFAULT_NOTIFICATION_CHANNELS } from '../vendor.constants';
 
-function makeService(repo: Partial<jest.Mocked<AnalyticsRepository>>): AnalyticsService {
-  return new AnalyticsService(repo as AnalyticsRepository);
+type Priv = Record<string, (...args: any[]) => any>;
+
+function makeService(
+  repo: Partial<jest.Mocked<AnalyticsRepository>>,
+): AnalyticsService {
+  return new AnalyticsService(repo as unknown as AnalyticsRepository);
 }
 
 describe('AnalyticsService.toDateKey', () => {
   let svc: AnalyticsService;
   beforeEach(() => {
-    svc = makeService({ aggregateDailyVolume: jest.fn().mockResolvedValue([]) });
+    svc = makeService({
+      aggregateDailyVolume: jest.fn().mockResolvedValue([]),
+    });
   });
 
   it('slices ISO string from a Date instance', () => {
     const d = new Date('2024-03-15T12:00:00.000Z');
-    expect((svc as never)['toDateKey'](d)).toBe('2024-03-15');
+    expect((svc as unknown as Priv)['toDateKey'](d)).toBe('2024-03-15');
   });
 
   it('slices first 10 chars from a plain string', () => {
-    expect((svc as never)['toDateKey']('2024-03-15T00:00:00')).toBe('2024-03-15');
+    expect((svc as unknown as Priv)['toDateKey']('2024-03-15T00:00:00')).toBe(
+      '2024-03-15',
+    );
   });
 });
 
@@ -56,10 +65,17 @@ describe('AnalyticsService.getTransactionStats', () => {
   });
 
   it('calculates rates when there are transactions', async () => {
-    const { Decimal } = require('@prisma/client/runtime/library') as { Decimal: { new(v: number): unknown } };
     const groups = [
-      { state: 'COMPLETED', _count: 3, _sum: { amount: new Decimal(300) } },
-      { state: 'DISPUTED', _count: 1, _sum: { amount: new Decimal(100) } },
+      {
+        state: 'COMPLETED',
+        _count: 3,
+        _sum: { amount: new Prisma.Decimal(300) },
+      },
+      {
+        state: 'DISPUTED',
+        _count: 1,
+        _sum: { amount: new Prisma.Decimal(100) },
+      },
     ];
     const repo = {
       getEscrowStateGroups: jest.fn().mockResolvedValue(groups),

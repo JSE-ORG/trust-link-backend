@@ -10,6 +10,8 @@ import { NotificationsService } from './notifications.service';
 import { EscrowRecord } from '../prisma/prisma.service';
 import { NotificationRepository } from './notification.repository';
 
+type Priv = Record<string, (...args: any[]) => any>;
+
 function makeEscrow(overrides: Partial<EscrowRecord> = {}): EscrowRecord {
   return {
     id: 'e-1',
@@ -55,21 +57,28 @@ describe('NotificationsService.notifyDisputedAdmin', () => {
     );
 
     // Should not throw and should not call any send method
-    await expect(svc.notifyDisputedAdmin(makeEscrow())).resolves.toBeUndefined();
+    await expect(
+      svc.notifyDisputedAdmin(makeEscrow()),
+    ).resolves.toBeUndefined();
   });
 });
 
 describe('NotificationsService.dispatchToBuyer (no contact info)', () => {
   it('records undeliverable notification when no email or phone is set on escrow', async () => {
     const notificationCreate = jest.fn().mockResolvedValue({ id: 'n-1' });
-    const repo = { create: notificationCreate } as unknown as NotificationRepository;
+    const repo = {
+      create: notificationCreate,
+    } as unknown as NotificationRepository;
     const svc = new NotificationsService(repo, undefined, undefined, undefined);
 
-    const escrow = makeEscrow() as EscrowRecord & { buyerContactEmail?: null; buyerContactPhone?: null };
+    const escrow = makeEscrow() as EscrowRecord & {
+      buyerContactEmail?: null;
+      buyerContactPhone?: null;
+    };
     escrow.buyerContactEmail = null;
     escrow.buyerContactPhone = null;
 
-    await (svc as never)['dispatchToBuyer']('SHIPPED', escrow);
+    await (svc as unknown as Priv)['dispatchToBuyer']('SHIPPED', escrow);
 
     // recordUndeliverable is called twice (EMAIL + SMS)
     expect(notificationCreate).toHaveBeenCalledTimes(2);
@@ -81,7 +90,7 @@ describe('NotificationsService.traced', () => {
     const svc = new NotificationsService(makeNotificationRepo());
     const fn = jest.fn().mockResolvedValue('result');
 
-    const result = await (svc as never)['traced']('op', {}, fn);
+    const result = await (svc as unknown as Priv)['traced']('op', {}, fn);
     expect(fn).toHaveBeenCalledTimes(1);
     expect(result).toBe('result');
   });

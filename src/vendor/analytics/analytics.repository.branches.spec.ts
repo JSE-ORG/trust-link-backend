@@ -21,7 +21,9 @@ describe('AnalyticsRepository.findNotificationChannels', () => {
   it('returns channels when a settings row exists', async () => {
     const prisma = {
       vendorTrackingSettings: {
-        findUnique: jest.fn().mockResolvedValue({ notificationChannels: ['EMAIL', 'SMS'] }),
+        findUnique: jest
+          .fn()
+          .mockResolvedValue({ notificationChannels: ['EMAIL', 'SMS'] }),
       },
     } as unknown as jest.Mocked<PrismaService>;
     const repo = new AnalyticsRepository(prisma);

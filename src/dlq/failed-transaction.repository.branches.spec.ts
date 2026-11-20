@@ -51,7 +51,8 @@ describe('FailedTransactionRepository.claimForReplay', () => {
 
     const result = await repo.claimForReplay('ft-1', new Date());
     expect(result).not.toBeNull();
-    const whereArg = (prisma.failedTransaction.updateMany as jest.Mock).mock.calls[0][0].where;
+    const whereArg = (prisma.failedTransaction.updateMany as jest.Mock).mock
+      .calls[0][0].where;
     expect(whereArg.OR).toHaveLength(2);
   });
 
@@ -94,7 +95,8 @@ describe('FailedTransactionRepository.markAbandoned', () => {
     const repo = new FailedTransactionRepository(prisma);
 
     await repo.markAbandoned('ft-1', new Date());
-    const whereArg = (prisma.failedTransaction.updateMany as jest.Mock).mock.calls[0][0].where;
+    const whereArg = (prisma.failedTransaction.updateMany as jest.Mock).mock
+      .calls[0][0].where;
     expect(whereArg.OR).toHaveLength(2);
   });
 });

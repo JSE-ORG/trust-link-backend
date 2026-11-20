@@ -41,7 +41,9 @@ describe('StressTestController.runStressTest', () => {
     // No auditLog injected
     const controller = new StressTestController(service, undefined);
     const config = { testName: 'run', profiles: [] } as never;
-    const result = await controller.runStressTest(config, { address: 'ADMIN' } as never);
+    const result = await controller.runStressTest(config, {
+      address: 'ADMIN',
+    });
 
     expect(result.testId).toBe(testId);
     expect(service.runStressTest).toHaveBeenCalledWith(config, testId);
@@ -56,6 +58,8 @@ describe('StressTestController.getActiveTest', () => {
     } as unknown as jest.Mocked<StressTestService>;
 
     const controller = new StressTestController(service, undefined);
-    expect(() => controller.getActiveTest('missing')).toThrow(NotFoundException);
+    expect(() => controller.getActiveTest('missing')).toThrow(
+      NotFoundException,
+    );
   });
 });

@@ -37,7 +37,8 @@ describe('AdminStatsRepository.collectTotals', () => {
         aggregate: jest.fn().mockResolvedValue({ _sum: { amount: 100 } }),
         groupBy: jest.fn().mockResolvedValue([{ state: 'FUNDED', _count: 2 }]),
       },
-      $queryRaw: jest.fn()
+      $queryRaw: jest
+        .fn()
         .mockResolvedValueOnce([{ count: 3n }])
         .mockResolvedValueOnce([{ count: 5n }]),
     } as unknown as jest.Mocked<PrismaService>;
