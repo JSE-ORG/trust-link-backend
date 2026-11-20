@@ -279,8 +279,6 @@ npx prisma migrate resolve --rolled-back <migration_name>
 Always take a labelled database snapshot before applying migrations to a shared environment.
 
 
- fix/ci-container-db-safety
-
 ## Image revision and container probes
 
 CI passes the checked-out Git commit SHA to Docker with `--build-arg GIT_SHA=<sha>` and the production stage exposes it as `GIT_SHA`. Verify `GET /version` reports the matching `commit` value. For local builds, use `docker build --build-arg GIT_SHA=abc -t trustlink-backend:test .` and check the `/version` response from a running container.
@@ -359,4 +357,3 @@ The following table lists all environment variables validated by `configValidati
 | `WEBHOOK_EVENT_RETENTION_DAYS` | `30` | No | Retention window in days for processed Stellar webhook event records before daily pruning. |
 
 _Notes: "Yes (always required)" means the schema requires the value regardless of `NODE_ENV`. Some keys are conditionally required based on other variables (e.g. `SENDGRID_FROM_EMAIL` when `SENDGRID_API_KEY` is set, `TWILIO_FROM_NUMBER`/`TWILIO_AUTH_TOKEN` when `TWILIO_ACCOUNT_SID` is set, `SOROBAN_RPC_URL` when `STELLAR_NETWORK` is `MAINNET`)._
- dev
