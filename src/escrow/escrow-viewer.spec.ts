@@ -12,6 +12,7 @@ const baseEscrow = {
   currency: 'USDC',
   state: 'FUNDED' as const,
   trackingId: null,
+  carrier: null,
   shippedAt: null,
   createdAt: new Date('2026-01-01'),
   updatedAt: new Date('2026-01-02'),

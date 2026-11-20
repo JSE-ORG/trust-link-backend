@@ -126,6 +126,7 @@ describe('Auto-release batch processing with partial failures', () => {
         buyerAddress: 'buyer-1',
         vendorAddress: 'vendor-1',
         trackingId: 'TRK-001',
+        carrier: null,
       });
 
       const escrow2 = await createDeliveredEscrow({
@@ -135,6 +136,7 @@ describe('Auto-release batch processing with partial failures', () => {
         buyerAddress: 'buyer-2',
         vendorAddress: 'vendor-2',
         trackingId: 'TRK-002',
+        carrier: null,
       });
 
       const escrow3 = await createDeliveredEscrow({
@@ -144,6 +146,7 @@ describe('Auto-release batch processing with partial failures', () => {
         buyerAddress: 'buyer-3',
         vendorAddress: 'vendor-3',
         trackingId: 'TRK-003',
+        carrier: null,
       });
 
       // Second escrow fails, first and third succeed — keyed by escrow id, not
@@ -202,6 +205,7 @@ describe('Auto-release batch processing with partial failures', () => {
           buyerAddress: 'buyer-1',
           vendorAddress: 'vendor-1',
           trackingId: 'TRK-001',
+          carrier: null,
         }),
         createDeliveredEscrow({
           itemName: 'Laptop',
@@ -210,6 +214,7 @@ describe('Auto-release batch processing with partial failures', () => {
           buyerAddress: 'buyer-2',
           vendorAddress: 'vendor-2',
           trackingId: 'TRK-002',
+          carrier: null,
         }),
         createDeliveredEscrow({
           itemName: 'Phone',
@@ -218,6 +223,7 @@ describe('Auto-release batch processing with partial failures', () => {
           buyerAddress: 'buyer-3',
           vendorAddress: 'vendor-3',
           trackingId: 'TRK-003',
+          carrier: null,
         }),
         createDeliveredEscrow({
           itemName: 'Tablet',
@@ -226,6 +232,7 @@ describe('Auto-release batch processing with partial failures', () => {
           buyerAddress: 'buyer-4',
           vendorAddress: 'vendor-4',
           trackingId: 'TRK-004',
+          carrier: null,
         }),
       ]);
 
@@ -285,6 +292,7 @@ describe('Auto-release batch processing with partial failures', () => {
         buyerAddress: 'buyer-1',
         vendorAddress: 'vendor-1',
         trackingId: 'TRK-001',
+        carrier: null,
       });
 
       const escrow2 = await createDeliveredEscrow({
@@ -294,6 +302,7 @@ describe('Auto-release batch processing with partial failures', () => {
         buyerAddress: 'buyer-2',
         vendorAddress: 'vendor-2',
         trackingId: 'TRK-002',
+        carrier: null,
       });
 
       // First fails, second succeeds — keyed by escrow id, not call order.
@@ -340,6 +349,7 @@ describe('Auto-release batch processing with partial failures', () => {
           buyerAddress: 'buyer-1',
           vendorAddress: 'vendor-1',
           trackingId: 'TRK-001',
+          carrier: null,
         }),
         createDeliveredEscrow({
           itemName: 'Laptop',
@@ -348,6 +358,7 @@ describe('Auto-release batch processing with partial failures', () => {
           buyerAddress: 'buyer-2',
           vendorAddress: 'vendor-2',
           trackingId: 'TRK-002',
+          carrier: null,
         }),
         createDeliveredEscrow({
           itemName: 'Phone',
@@ -356,6 +367,7 @@ describe('Auto-release batch processing with partial failures', () => {
           buyerAddress: 'buyer-3',
           vendorAddress: 'vendor-3',
           trackingId: 'TRK-003',
+          carrier: null,
         }),
       ]);
 
@@ -394,6 +406,7 @@ describe('Auto-release batch processing with partial failures', () => {
           buyerAddress: 'buyer-1',
           vendorAddress: 'vendor-1',
           trackingId: 'TRK-001',
+          carrier: null,
         }),
         createDeliveredEscrow({
           itemName: 'Laptop',
@@ -402,6 +415,7 @@ describe('Auto-release batch processing with partial failures', () => {
           buyerAddress: 'buyer-2',
           vendorAddress: 'vendor-2',
           trackingId: 'TRK-002',
+          carrier: null,
         }),
       ]);
 
@@ -438,6 +452,7 @@ describe('Auto-release batch processing with partial failures', () => {
         buyerAddress: 'buyer-1',
         vendorAddress: 'vendor-1',
         trackingId: 'TRK-001',
+        carrier: null,
       });
 
       // First run fails

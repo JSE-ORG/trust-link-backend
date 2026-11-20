@@ -37,6 +37,7 @@ describe('EscrowService.handleShipment (issue #16)', () => {
     vendorAddress: 'vendor-address',
     state: 'FUNDED',
     trackingId: null,
+    carrier: null,
     shippedAt: null,
     deliveredAt: null,
     deliveryRecordedAt: null,
@@ -84,6 +85,7 @@ describe('EscrowService.handleShipment (issue #16)', () => {
       ...fundedEscrow,
       state: 'SHIPPED' as const,
       trackingId: 'TRK-123',
+      carrier: null,
     };
     repository.findById.mockResolvedValue(fundedEscrow);
     repository.markShipped.mockResolvedValue(shipped);
@@ -422,6 +424,7 @@ describe('EscrowService: tracking, idempotency, evidence upload, and vendor list
     vendorAddress: 'vendor-1',
     state: 'SHIPPED',
     trackingId: 'TRK-1',
+    carrier: null,
     shippedAt: new Date('2026-01-02T00:00:00.000Z'),
     deliveredAt: null,
     deliveryRecordedAt: null,
@@ -475,6 +478,7 @@ describe('EscrowService: tracking, idempotency, evidence upload, and vendor list
       repository.findById.mockResolvedValue({
         ...shippedEscrow,
         trackingId: null,
+        carrier: null,
       });
 
       await expect(service.getTracking(shippedEscrow.id)).rejects.toThrow(

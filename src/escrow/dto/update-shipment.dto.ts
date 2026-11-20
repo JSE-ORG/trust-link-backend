@@ -1,11 +1,13 @@
-import { IsString, MaxLength, MinLength, Matches } from 'class-validator';
+import { IsString, MaxLength, MinLength, Matches, IsOptional } from 'class-validator';
 import { Transform } from 'class-transformer';
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 /**
  * Request body for marking an escrow as shipped. The vendor provides a
  * carrier tracking ID which must be at least 3 characters and contain
- * only letters, numbers, hyphens and underscores.
+ * only letters, numbers, hyphens and underscores. An optional `carrier`
+ * may be specified; when omitted the carrier is auto-detected from the
+ * tracking ID format, falling back to GIGL.
  */
 export class UpdateShipmentDto {
   @ApiProperty({
@@ -24,4 +26,16 @@ export class UpdateShipmentDto {
   })
   @Transform(({ value }: { value: string }) => value?.trim())
   trackingId!: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Logistics carrier for this tracking ID (e.g. "GIGL"). When omitted the ' +
+      'carrier is auto-detected from the tracking ID format, falling back to GIGL.',
+    example: 'GIGL',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(32, { message: 'Carrier must not exceed 32 characters' })
+  @Transform(({ value }: { value: string }) => value?.trim() || undefined)
+  carrier?: string;
 }

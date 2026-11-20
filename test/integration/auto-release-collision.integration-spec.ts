@@ -149,6 +149,7 @@ describe('Auto-release collision detection (issue #277)', () => {
         buyerAddress: 'buyer-1',
         vendorAddress: 'vendor-1',
         trackingId: 'TRK-001',
+        carrier: null,
       });
 
       const result = await escrowRepository.markAutoReleaseSubmitting(
@@ -168,6 +169,7 @@ describe('Auto-release collision detection (issue #277)', () => {
         buyerAddress: 'buyer-2',
         vendorAddress: 'vendor-2',
         trackingId: 'TRK-002',
+        carrier: null,
       });
 
       // First claim succeeds
@@ -195,6 +197,7 @@ describe('Auto-release collision detection (issue #277)', () => {
         buyerAddress: 'buyer-3',
         vendorAddress: 'vendor-3',
         trackingId: 'TRK-003',
+        carrier: null,
       });
 
       // Claim
@@ -223,6 +226,7 @@ describe('Auto-release collision detection (issue #277)', () => {
         buyerAddress: 'buyer-1',
         vendorAddress: 'vendor-1',
         trackingId: 'TRK-001',
+        carrier: null,
       });
 
       contractService.submitAutoRelease.mockResolvedValue('tx-hash-1');
@@ -256,6 +260,7 @@ describe('Auto-release collision detection (issue #277)', () => {
         buyerAddress: 'buyer-4',
         vendorAddress: 'vendor-4',
         trackingId: 'TRK-004',
+        carrier: null,
       });
 
       // First call fails, second succeeds
@@ -290,6 +295,7 @@ describe('Auto-release collision detection (issue #277)', () => {
         buyerAddress: 'buyer-1',
         vendorAddress: 'vendor-1',
         trackingId: 'TRK-001',
+        carrier: null,
       });
 
       const escrow2 = await createDeliveredEscrow({
@@ -299,6 +305,7 @@ describe('Auto-release collision detection (issue #277)', () => {
         buyerAddress: 'buyer-2',
         vendorAddress: 'vendor-2',
         trackingId: 'TRK-002',
+        carrier: null,
       });
 
       // Keyed by escrow id rather than call order: the worker processes
@@ -343,6 +350,7 @@ describe('Auto-release collision detection (issue #277)', () => {
         buyerAddress: 'buyer-5',
         vendorAddress: 'vendor-5',
         trackingId: 'TRK-005',
+        carrier: null,
         autoReleaseTxHash: 'existing-tx-hash',
       });
 
@@ -359,6 +367,7 @@ describe('Auto-release collision detection (issue #277)', () => {
         buyerAddress: 'buyer-6',
         vendorAddress: 'vendor-6',
         trackingId: 'TRK-006',
+        carrier: null,
       });
 
       const dispute = await prisma.dispute.create({

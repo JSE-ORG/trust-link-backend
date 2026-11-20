@@ -220,13 +220,17 @@ export class EscrowRepository {
   }
 
   /**
-   * Transitions the escrow to SHIPPED, records the tracking ID and ship
-   * timestamp, then invalidates the cache.
+   * Transitions the escrow to SHIPPED, records the tracking ID, optional
+   * carrier, and ship timestamp, then invalidates the cache.
    */
-  async markShipped(id: string, trackingId: string): Promise<EscrowRecord> {
+  async markShipped(
+    id: string,
+    trackingId: string,
+    carrier: string | null = null,
+  ): Promise<EscrowRecord> {
     const result = await this.prisma.escrow.update({
       where: { id },
-      data: { state: 'SHIPPED', trackingId, shippedAt: new Date() },
+      data: { state: 'SHIPPED', trackingId, carrier, shippedAt: new Date() },
     });
     await this.invalidate(id);
     return toEscrowRecord(result);
