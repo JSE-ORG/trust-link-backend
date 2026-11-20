@@ -54,6 +54,74 @@ describe('GET /vendor/analytics/chart (issue #290)', () => {
     return d;
   }
 
+  function dateKeyInTimezone(date: Date, timezone: string): string {
+    const parts = new Map(
+      new Intl.DateTimeFormat('en-CA', {
+        timeZone: timezone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      })
+        .formatToParts(date)
+        .map(({ type, value }) => [type, value]),
+    );
+    return `${parts.get('year')}-${parts.get('month')}-${parts.get('day')}`;
+  }
+
+  function addCalendarDays(dateKey: string, days: number): string {
+    const [year, month, day] = dateKey.split('-').map(Number);
+    const date = new Date(Date.UTC(year, month - 1, day + days));
+    return [
+      date.getUTCFullYear(),
+      String(date.getUTCMonth() + 1).padStart(2, '0'),
+      String(date.getUTCDate()).padStart(2, '0'),
+    ].join('-');
+  }
+
+  function localMidnight(dateKey: string, timezone: string): Date {
+    const [year, month, day] = dateKey.split('-').map(Number);
+    const target = Date.UTC(year, month - 1, day);
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hourCycle: 'h23',
+    });
+    let candidate = target;
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      const parts = new Map(
+        formatter
+          .formatToParts(new Date(candidate))
+          .map(({ type, value }) => [type, Number(value)]),
+      );
+      const part = (
+        name: keyof Intl.DateTimeFormatPartTypesRegistry,
+      ): number => {
+        const value = parts.get(name);
+        if (value === undefined) {
+          throw new Error(`Missing ${name} date part for timezone ${timezone}`);
+        }
+        return value;
+      };
+      const representedAsUtc = Date.UTC(
+        part('year'),
+        part('month') - 1,
+        part('day'),
+        part('hour'),
+        part('minute'),
+        part('second'),
+      );
+      const correction = target - representedAsUtc;
+      candidate += correction;
+      if (correction === 0) break;
+    }
+    return new Date(candidate);
+  }
+
   // Escrow declares @@unique([vendorAddress, itemRef]), so every seeded escrow
   // needs its own itemRef; a fixed one only worked against the constraint-free
   // in-memory store (#475).
@@ -149,6 +217,39 @@ describe('GET /vendor/analytics/chart (issue #290)', () => {
     expect(entry2).toBeDefined();
     expect(entry2.totalVolume).toBe(300);
   });
+
+  it.each(['America/New_York', 'Asia/Tokyo'])(
+    'starts the %s chart at its local midnight boundary',
+    async (timezone) => {
+      const todayKey = dateKeyInTimezone(new Date(), timezone);
+      const firstDayKey = addCalendarDays(todayKey, -1);
+      const firstDayStart = localMidnight(firstDayKey, timezone);
+
+      // The event just before local midnight must be excluded; one just after
+      // midnight belongs to the first complete calendar day in the window.
+      await seedEscrow(VENDOR, 999, new Date(firstDayStart.getTime() - 1_000));
+      await seedEscrow(VENDOR, 25, new Date(firstDayStart.getTime() + 1_000));
+
+      const res = await request(app.getHttpServer())
+        .get('/vendor/analytics/chart')
+        .query({ days: 2, timezone })
+        .set('Authorization', AUTH)
+        .expect(200);
+
+      expect(res.body.period.startDate).toBe(firstDayKey);
+      expect(res.body.period.endDate).toBe(todayKey);
+      expect(res.body.data).toHaveLength(2);
+      expect(res.body.data[0]).toEqual(
+        expect.objectContaining({
+          date: firstDayKey,
+          totalVolume: 25,
+          transactionCount: 1,
+        }),
+      );
+      expect(res.body.summary.totalVolume).toBe(25);
+      expect(res.body.summary.totalTransactions).toBe(1);
+    },
+  );
 
   // ── Vendor data isolation ─────────────────────────────────────────────────
 

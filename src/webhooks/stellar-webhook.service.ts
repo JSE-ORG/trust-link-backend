@@ -68,7 +68,11 @@ export class StellarWebhookService {
       }
 
       // Persist before processing so concurrent Horizon retries are blocked.
-      await this.webhookRepository.markProcessed(dto.id);
+      const marked = await this.webhookRepository.markProcessed(dto.id);
+      if (!marked) {
+        this.logDuplicate(dto.id, 'stellar.webhook.duplicate');
+        return { received: true, skipped: true, reason: 'duplicate' };
+      }
 
       try {
         await this.processEvent(dto);
@@ -120,7 +124,11 @@ export class StellarWebhookService {
       return { processed: false, skipped: true };
     }
 
-    await this.webhookRepository.markProcessed(dto.id);
+    const marked = await this.webhookRepository.markProcessed(dto.id);
+    if (!marked) {
+      this.logDuplicate(dto.id, 'stellar.replay.duplicate');
+      return { processed: false, skipped: true };
+    }
     try {
       await this.processEvent(dto);
     } catch (err) {
@@ -144,6 +152,10 @@ export class StellarWebhookService {
   // ---------------------------------------------------------------------------
   // Private helpers
   // ---------------------------------------------------------------------------
+
+  private logDuplicate(operationId: string, msg: string): void {
+    this.logger.log(JSON.stringify({ msg, operationId }));
+  }
 
   /**
    * Verify HMAC-SHA256 signature.

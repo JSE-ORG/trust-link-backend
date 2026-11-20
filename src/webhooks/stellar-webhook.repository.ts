@@ -22,10 +22,21 @@ export class StellarWebhookRepository {
     return event !== null;
   }
 
-  async markProcessed(operationId: string): Promise<void> {
-    await this.prisma.processedWebhookEvent.create({
-      data: { operationId },
-    });
+  async markProcessed(operationId: string): Promise<boolean> {
+    try {
+      await this.prisma.processedWebhookEvent.create({
+        data: { operationId },
+      });
+      return true;
+    } catch (error) {
+      // The unique operationId constraint is the atomic arbiter when two
+      // Horizon deliveries race past isProcessed(). Only that conflict means
+      // another request already owns this event; other DB errors must surface.
+      if (this.isUniqueConstraintViolation(error)) {
+        return false;
+      }
+      throw error;
+    }
   }
 
   async unmarkProcessed(operationId: string): Promise<void> {
@@ -42,5 +53,14 @@ export class StellarWebhookRepository {
     return this.prisma.processedWebhookEvent.deleteMany({
       where: { processedAt: { lt: before } },
     });
+  }
+
+  private isUniqueConstraintViolation(error: unknown): boolean {
+    return (
+      typeof error === 'object' &&
+      error !== null &&
+      'code' in error &&
+      error.code === 'P2002'
+    );
   }
 }
