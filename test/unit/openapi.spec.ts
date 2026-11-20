@@ -24,9 +24,20 @@ describe('setupOpenApiUi', () => {
 
   beforeEach(() => jest.clearAllMocks());
 
-  it('serves /api/docs outside production', () => {
+  it('serves /api/docs outside production with persistAuthorization, filter, and displayRequestDuration enabled', () => {
     setupOpenApiUi(app, document, false);
-    expect(SwaggerModule.setup).toHaveBeenCalledWith('api/docs', app, document);
+    expect(SwaggerModule.setup).toHaveBeenCalledWith(
+      'api/docs',
+      app,
+      document,
+      expect.objectContaining({
+        swaggerOptions: expect.objectContaining({
+          persistAuthorization: true,
+          filter: true,
+          displayRequestDuration: true,
+        }),
+      }),
+    );
   });
 
   it('does not register /api/docs in production', () => {
