@@ -1,4 +1,5 @@
 import { PrismaService } from '../src/prisma/prisma.service';
+import { assertLocalDatabase } from '../scripts/assert-local-db.cjs';
 
 type EscrowState =
   | 'CREATED'
@@ -186,6 +187,7 @@ async function seedNotifications(
 }
 
 export async function main(p?: PrismaService) {
+  assertLocalDatabase();
   const prisma = p ?? new PrismaService();
   try {
     console.log('Starting database seed...');
