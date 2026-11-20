@@ -740,6 +740,7 @@ describe('EscrowService: tracking, idempotency, evidence upload, and vendor list
         'desc',
         1,
         20,
+        expect.any(Object),
       );
       expect(result).toEqual({
         data: [expect.objectContaining({ id: shippedEscrow.id, amount: 250 })],
@@ -767,6 +768,33 @@ describe('EscrowService: tracking, idempotency, evidence upload, and vendor list
         'asc',
         3,
         5,
+        expect.any(Object),
+      );
+    });
+
+    it('passes the date, buyer and text filters to the repository', async () => {
+      repository.findVendorEscrows.mockResolvedValue({ data: [], total: 0 });
+
+      await service.findVendorEscrows('vendor-1', {
+        from: '2026-01-01',
+        to: '2026-01-31',
+        buyerAddress: 'buyer-1',
+        q: 'cam',
+      });
+
+      expect(repository.findVendorEscrows).toHaveBeenCalledWith(
+        'vendor-1',
+        undefined,
+        'date',
+        'desc',
+        1,
+        20,
+        {
+          from: '2026-01-01',
+          to: '2026-01-31',
+          buyerAddress: 'buyer-1',
+          q: 'cam',
+        },
       );
     });
   });

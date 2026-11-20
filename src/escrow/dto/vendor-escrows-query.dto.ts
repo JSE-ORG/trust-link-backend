@@ -1,12 +1,22 @@
 import { Type } from 'class-transformer';
-import { IsEnum, IsIn, IsInt, IsOptional, Max, Min } from 'class-validator';
+import {
+  IsDateString,
+  IsEnum,
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  Max,
+  MaxLength,
+  Min,
+} from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { EscrowStateEnum } from '../../common/enums/escrow-state.enum';
 
 /**
- * Query parameters for GET /vendor/escrows. Supports filtering by state,
- * sorting by date or amount, and cursor-based pagination with page and
- * limit parameters.
+ * Query parameters for GET /vendor/escrows, GET /vendor/escrows/export and
+ * GET /buyer/escrows. Supports filtering by state, creation date, buyer and
+ * search text, sorting by date or amount, and page-based pagination.
  */
 export class VendorEscrowsQueryDto {
   @ApiPropertyOptional({
@@ -19,6 +29,42 @@ export class VendorEscrowsQueryDto {
     message: `state must be one of: ${Object.values(EscrowStateEnum).join(', ')}`,
   })
   state?: EscrowStateEnum;
+
+  @ApiPropertyOptional({
+    description: 'Earliest createdAt, inclusive (ISO 8601).',
+    example: '2026-01-01',
+  })
+  @IsOptional()
+  @IsDateString()
+  from?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Latest createdAt, inclusive (ISO 8601). A date without a time covers the whole day.',
+    example: '2026-12-31',
+  })
+  @IsOptional()
+  @IsDateString()
+  to?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Filter by buyer Stellar address. Ignored on GET /buyer/escrows, which always uses the caller.',
+    maxLength: 64,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  buyerAddress?: string;
+
+  @ApiPropertyOptional({
+    description: 'Case-insensitive search on itemName or itemRef.',
+    maxLength: 128,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  q?: string;
 
   @ApiPropertyOptional({
     description: 'Field to sort the results by.',
