@@ -509,6 +509,35 @@ describe('EscrowService.syncStateFromChain', () => {
     });
   });
 
+  describe('DisputeResolved on a terminal escrow (issue #1117)', () => {
+    const terminalStates = ['COMPLETED', 'RELEASED', 'REFUNDED', 'CANCELLED'];
+    const resolutions = ['RELEASE', 'REFUND'] as const;
+    const terminalCases = terminalStates.flatMap((state) =>
+      resolutions.map((resolution) => ({ state, resolution })),
+    );
+
+    it.each(terminalCases)(
+      'skips a $state escrow resolved with $resolution without any write',
+      async ({ state, resolution }) => {
+        repo.findById.mockResolvedValue(makeEscrow({ state }));
+        prisma.dispute.findFirst = jest
+          .fn()
+          .mockResolvedValue({ id: 'dispute-1', status: 'OPEN' });
+
+        const result = await service.syncStateFromChain(
+          makeEvent('DisputeResolved', { resolution }),
+        );
+
+        expect(result).toEqual({ skipped: true, reason: 'terminal_state' });
+        expect(prisma.dispute.update).not.toHaveBeenCalled();
+        expect(repo.markCompleted).not.toHaveBeenCalled();
+        expect(repo.markRefunded).not.toHaveBeenCalled();
+        expect(notifications.notifyCompleted).not.toHaveBeenCalled();
+        expect(notifications.notifyRefunded).not.toHaveBeenCalled();
+      },
+    );
+  });
+
   // ── AutoReleased ─────────────────────────────────────────────────────────
 
   describe('AutoReleased', () => {

@@ -415,10 +415,14 @@ export class EscrowRepository {
    * for a combination the application cannot produce, so the query matches
    * nothing and auto-release silently never fires (issue #395).
    *
+   * At most `limit` oldest-delivered records are returned, so a backlog cannot
+   * grow each worker cycle's load.
+   *
    * @returns an {@link AutoReleaseEligibleResult} of eligible escrow records.
    */
   findAutoReleaseEligible(
     referenceTime = new Date(),
+    limit = 50,
   ): Promise<AutoReleaseEligibleResult> {
     const cutoff = new Date(
       referenceTime.getTime() -
@@ -439,6 +443,7 @@ export class EscrowRepository {
         // (and therefore which is retried after a partial failure) would vary
         // between runs.
         orderBy: [{ deliveredAt: 'asc' }, { id: 'asc' }],
+        take: limit,
       })
       .then((rows) => rows.map(toEscrowRecord));
   }

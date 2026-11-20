@@ -185,4 +185,93 @@ describe('GET /admin/audit-log integration (issue #798)', () => {
   it('returns 401 for unauthenticated requests', async () => {
     await request(httpServer()).get('/admin/audit-log').expect(401);
   });
+
+  describe('filters (issue #1119)', () => {
+    async function list(query: Record<string, string | number>) {
+      const res = await request(httpServer())
+        .get('/admin/audit-log')
+        .set('Authorization', `Bearer ${adminJwt()}`)
+        .query(query)
+        .expect(200);
+      return res.body as AuditLogResponseBody;
+    }
+
+    it('filters by action', async () => {
+      const body = await list({ action: 'DLQ_REQUEUED' });
+
+      expect(body.total).toBe(1);
+      expect(body.data.map((entry) => entry.entityId)).toEqual(['job-1']);
+    });
+
+    it('filters by entityType', async () => {
+      const body = await list({ entityType: 'Dispute' });
+
+      expect(body.total).toBe(2);
+      expect(body.data.map((entry) => entry.entityId).sort()).toEqual([
+        'dispute-1',
+        'dispute-2',
+      ]);
+    });
+
+    it('filters by entityId', async () => {
+      const body = await list({ entityId: 'dispute-2' });
+
+      expect(body.total).toBe(1);
+      expect(body.data[0].entityId).toBe('dispute-2');
+    });
+
+    it('filters by adminAddress and returns nothing for an unknown admin', async () => {
+      const matching = await list({ adminAddress: adminAddress });
+      expect(matching.total).toBe(3);
+
+      const unknown = await list({ adminAddress: 'GUNKNOWNADMINADDRESS' });
+      expect(unknown.total).toBe(0);
+      expect(unknown.data).toEqual([]);
+    });
+
+    it('filters by from (inclusive lower bound on occurredAt)', async () => {
+      const body = await list({ from: '2026-01-02T00:00:00.000Z' });
+
+      expect(body.total).toBe(2);
+      expect(body.data.map((entry) => entry.entityId).sort()).toEqual([
+        'dispute-2',
+        'job-1',
+      ]);
+    });
+
+    it('filters by to (inclusive upper bound on occurredAt)', async () => {
+      const body = await list({ to: '2026-01-01T23:59:59.999Z' });
+
+      expect(body.total).toBe(1);
+      expect(body.data[0].entityId).toBe('dispute-1');
+    });
+
+    it('combines action and entityId filters', async () => {
+      const body = await list({
+        action: 'DISPUTE_RESOLVED',
+        entityId: 'dispute-1',
+      });
+
+      expect(body.total).toBe(1);
+      expect(body.data[0].entityId).toBe('dispute-1');
+    });
+
+    it('combines from and to into a date window', async () => {
+      const body = await list({
+        from: '2026-01-02T00:00:00.000Z',
+        to: '2026-01-02T23:59:59.999Z',
+      });
+
+      expect(body.total).toBe(1);
+      expect(body.data[0].entityId).toBe('dispute-2');
+    });
+
+    it('reports the filtered total, not the unfiltered count, on a paginated page', async () => {
+      const body = await list({ entityType: 'Dispute', page: 1, limit: 1 });
+
+      expect(body.total).toBe(2);
+      expect(body.data).toHaveLength(1);
+      expect(body.limit).toBe(1);
+    });
+  });
 });

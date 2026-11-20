@@ -984,4 +984,51 @@ describe('EscrowRepository', () => {
       });
     });
   });
+
+  describe('findAutoReleaseEligible() — capped batch (#1115)', () => {
+    beforeEach(async () => {
+      const escrows = await Promise.all(
+        Array.from({ length: 60 }, (_, index) =>
+          repo.create(
+            { ...makeDto(), itemRef: `auto-release-${index}` },
+            'vendor-addr',
+          ),
+        ),
+      );
+      await Promise.all(
+        escrows.map((escrow, index) =>
+          prisma.escrow.update({
+            where: { id: escrow.id },
+            data: {
+              state: 'DELIVERED',
+              deliveredAt: new Date(Date.UTC(2020, 0, 1) + index * 60_000),
+              contractEscrowId: BigInt(index + 1),
+            },
+          }),
+        ),
+      );
+    });
+
+    const referenceTime = new Date('2026-10-21T12:00:00Z');
+
+    it('returns at most 50 eligible escrows by default', async () => {
+      const result = await repo.findAutoReleaseEligible(referenceTime);
+
+      expect(result).toHaveLength(50);
+    });
+
+    it('honours an explicit limit', async () => {
+      const result = await repo.findAutoReleaseEligible(referenceTime, 5);
+
+      expect(result).toHaveLength(5);
+    });
+
+    it('returns the oldest deliveries first when capped', async () => {
+      const result = await repo.findAutoReleaseEligible(referenceTime, 5);
+
+      expect(result[0].deliveredAt).toEqual(new Date(Date.UTC(2020, 0, 1)));
+      const times = result.map((escrow) => escrow.deliveredAt!.getTime());
+      expect(times).toEqual([...times].sort((a, b) => a - b));
+    });
+  });
 });

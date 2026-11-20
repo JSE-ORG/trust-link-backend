@@ -147,6 +147,7 @@ describe('PATCH /admin/credentials/logistics (issue #776)', () => {
     ['a missing key', {}],
     ['an empty key', { key: '' }],
     ['a non-string key', { key: 12345 }],
+    ['an over long key', { key: 'k'.repeat(513) }],
   ])('rejects %s with 400 and stores nothing', async (_label, body) => {
     await request(app.getHttpServer())
       .patch(ROUTE)
@@ -155,5 +156,26 @@ describe('PATCH /admin/credentials/logistics (issue #776)', () => {
       .expect(400);
 
     expect(await storedCredential()).toBeNull();
+  });
+
+  it('trims surrounding whitespace before storing the key', async () => {
+    await request(app.getHttpServer())
+      .patch(ROUTE)
+      .set('Authorization', bearer(adminAddress, { role: 'admin' }))
+      .send({ key: `  ${NEW_KEY}  ` })
+      .expect(200);
+
+    const stored = await storedCredential();
+    expect(decryptCredential(stored!.encryptedKey, encryptionKey)).toEqual(
+      NEW_KEY,
+    );
+  });
+
+  it('accepts a key of exactly 512 characters', async () => {
+    await request(app.getHttpServer())
+      .patch(ROUTE)
+      .set('Authorization', bearer(adminAddress, { role: 'admin' }))
+      .send({ key: 'k'.repeat(512) })
+      .expect(200);
   });
 });
