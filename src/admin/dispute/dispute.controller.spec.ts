@@ -171,6 +171,8 @@ describe('DisputeController', () => {
         total: 0,
         page: 3,
         limit: 20,
+        totalPages: 0,
+        hasNextPage: false,
       };
       auditLogService.findAll.mockResolvedValue(expected);
 
@@ -187,6 +189,8 @@ describe('DisputeController', () => {
         total: 0,
         page: 1,
         limit: 15,
+        totalPages: 0,
+        hasNextPage: false,
       };
       auditLogService.findAll.mockResolvedValue(expected);
 

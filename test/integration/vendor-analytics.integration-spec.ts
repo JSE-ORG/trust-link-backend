@@ -308,43 +308,71 @@ describe('GET /vendor/analytics/chart (issue #290)', () => {
   });
   // ── Interval grouping (issue #1155) ──────────────────────────────────────
 
+  // First day of the month `monthsBack` months before the current UTC month.
+  function monthStartUtc(monthsBack: number): Date {
+    const now = new Date();
+    return new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - monthsBack, 1),
+    );
+  }
+
+  function addUtcDays(d: Date, n: number, utcHour = 12): Date {
+    const r = new Date(d);
+    r.setUTCDate(r.getUTCDate() + n);
+    r.setUTCHours(utcHour, 0, 0, 0);
+    return r;
+  }
+
+  function mondayKey(d: Date): string {
+    const r = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+    r.setUTCDate(r.getUTCDate() - ((r.getUTCDay() + 6) % 7));
+    return r.toISOString().slice(0, 10);
+  }
+
+  type Bucket = { date: string; totalVolume: number };
+
   it('aggregates by weekly interval across a month boundary', async () => {
-    const d1 = new Date('2026-05-28T12:00:00.000Z');
-    const d2 = new Date('2026-06-02T12:00:00.000Z');
-    await seedEscrow(VENDOR, 100, d1);
-    await seedEscrow(VENDOR, 200, d2);
+    const boundary = monthStartUtc(1);
+    const before = addUtcDays(boundary, -1);
+    const after = addUtcDays(boundary, 7);
+    await seedEscrow(VENDOR, 100, before);
+    await seedEscrow(VENDOR, 200, after);
 
     const res = await request(app.getHttpServer())
       .get('/vendor/analytics/chart')
-      .query({ interval: 'week', days: 60 })
+      .query({ interval: 'week', days: 90 })
       .set('Authorization', AUTH)
       .expect(200);
 
-    expect(res.body.data.length).toBeGreaterThan(1);
-    const sumVolume = res.body.data.reduce(
-      (sum: number, b: { totalVolume: number }) => sum + b.totalVolume,
-      0,
-    );
-    expect(sumVolume).toBe(300);
+    const data = res.body.data as Bucket[];
+    for (const b of data) {
+      expect(new Date(`${b.date}T00:00:00Z`).getUTCDay()).toBe(1);
+    }
+    const byDate = new Map(data.map((b) => [b.date, b.totalVolume]));
+    expect(byDate.get(mondayKey(before))).toBe(100);
+    expect(byDate.get(mondayKey(after))).toBe(200);
+    expect(data.reduce((sum, b) => sum + b.totalVolume, 0)).toBe(300);
   });
 
   it('aggregates by monthly interval across month boundaries', async () => {
-    const d1 = new Date('2026-04-15T10:00:00.000Z');
-    const d2 = new Date('2026-05-20T10:00:00.000Z');
-    await seedEscrow(VENDOR, 150, d1);
-    await seedEscrow(VENDOR, 250, d2);
+    const older = addUtcDays(monthStartUtc(2), 14);
+    const newer = addUtcDays(monthStartUtc(1), 14);
+    await seedEscrow(VENDOR, 150, older);
+    await seedEscrow(VENDOR, 250, newer);
 
     const res = await request(app.getHttpServer())
       .get('/vendor/analytics/chart')
-      .query({ interval: 'month', days: 90 })
+      .query({ interval: 'month', days: 120 })
       .set('Authorization', AUTH)
       .expect(200);
 
-    expect(res.body.data.length).toBeGreaterThan(1);
-    const sumVolume = res.body.data.reduce(
-      (sum: number, b: { totalVolume: number }) => sum + b.totalVolume,
-      0,
-    );
-    expect(sumVolume).toBe(400);
+    const data = res.body.data as Bucket[];
+    for (const b of data) {
+      expect(b.date.endsWith('-01')).toBe(true);
+    }
+    const byDate = new Map(data.map((b) => [b.date, b.totalVolume]));
+    expect(byDate.get(monthStartUtc(2).toISOString().slice(0, 10))).toBe(150);
+    expect(byDate.get(monthStartUtc(1).toISOString().slice(0, 10))).toBe(250);
+    expect(data.reduce((sum, b) => sum + b.totalVolume, 0)).toBe(400);
   });
 });

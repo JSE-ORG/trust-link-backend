@@ -80,6 +80,8 @@ describe('VendorEscrowController (issue #575)', () => {
         total: 1,
         page: 1,
         limit: 20,
+        totalPages: 1,
+        hasNextPage: false,
       }));
 
       const resA = await request(app.getHttpServer())
@@ -117,6 +119,8 @@ describe('VendorEscrowController (issue #575)', () => {
         total: 5,
         page: 1,
         limit: 20,
+        totalPages: 1,
+        hasNextPage: false,
       });
 
       const res = await request(app.getHttpServer())
@@ -133,6 +137,8 @@ describe('VendorEscrowController (issue #575)', () => {
         total: 5,
         page: 1,
         limit: 20,
+        totalPages: 1,
+        hasNextPage: false,
       });
     });
 
@@ -142,6 +148,8 @@ describe('VendorEscrowController (issue #575)', () => {
         total: 5,
         page: 2,
         limit: 2,
+        totalPages: 3,
+        hasNextPage: true,
       });
 
       const res = await request(app.getHttpServer())
@@ -163,6 +171,8 @@ describe('VendorEscrowController (issue #575)', () => {
         total: 5,
         page: 10,
         limit: 20,
+        totalPages: 1,
+        hasNextPage: false,
       });
 
       const res = await request(app.getHttpServer())
@@ -180,6 +190,8 @@ describe('VendorEscrowController (issue #575)', () => {
         total: 47,
         page: 1,
         limit: 1,
+        totalPages: 47,
+        hasNextPage: true,
       });
 
       const res = await request(app.getHttpServer())

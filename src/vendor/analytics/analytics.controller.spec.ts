@@ -62,6 +62,8 @@ describe('AnalyticsController', () => {
           disputeRate: 0,
           averageTransactionValue: 0,
           cancelledTransactions: 0,
+          averageHoursToShip: null,
+          averageHoursToDeliver: null,
         },
         channels: {
           email: { notificationsEnabled: false },

@@ -13,6 +13,8 @@ type DisputesResponseBody = {
   data: Array<{ status: string }>;
   page: number;
   limit: number;
+  totalPages: number;
+  hasNextPage: boolean;
 };
 
 describe('GET /admin/disputes filters integration (issue #53)', () => {

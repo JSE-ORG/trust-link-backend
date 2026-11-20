@@ -44,6 +44,10 @@ describe('AnalyticsService.getTransactionStats', () => {
     const repo = {
       getEscrowStateGroups: jest.fn().mockResolvedValue([]),
       findNotificationChannels: jest.fn().mockResolvedValue(['EMAIL']),
+      getAverageShippingAndDeliveryTimes: jest.fn().mockResolvedValue({
+        averageHoursToShip: null,
+        averageHoursToDeliver: null,
+      }),
     } as unknown as jest.Mocked<AnalyticsRepository>;
     const svc = makeService(repo);
 
@@ -56,6 +60,10 @@ describe('AnalyticsService.getTransactionStats', () => {
     const repo = {
       getEscrowStateGroups: jest.fn().mockResolvedValue([]),
       findNotificationChannels: jest.fn().mockResolvedValue(null),
+      getAverageShippingAndDeliveryTimes: jest.fn().mockResolvedValue({
+        averageHoursToShip: null,
+        averageHoursToDeliver: null,
+      }),
     } as unknown as jest.Mocked<AnalyticsRepository>;
     const svc = makeService(repo);
 
@@ -80,6 +88,10 @@ describe('AnalyticsService.getTransactionStats', () => {
     const repo = {
       getEscrowStateGroups: jest.fn().mockResolvedValue(groups),
       findNotificationChannels: jest.fn().mockResolvedValue(null),
+      getAverageShippingAndDeliveryTimes: jest.fn().mockResolvedValue({
+        averageHoursToShip: null,
+        averageHoursToDeliver: null,
+      }),
     } as unknown as jest.Mocked<AnalyticsRepository>;
     const svc = makeService(repo);
 

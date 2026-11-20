@@ -966,6 +966,8 @@ describe('AnalyticsService.getTransactionStats aggregation (#843)', () => {
       [
         'activeTransactions',
         'activeVolume',
+        'averageHoursToDeliver',
+        'averageHoursToShip',
         'averageTransactionValue',
         'cancelledTransactions',
         'completedTransactions',

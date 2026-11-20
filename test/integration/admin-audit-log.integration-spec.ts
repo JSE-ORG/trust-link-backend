@@ -27,6 +27,8 @@ type AuditLogResponseBody = {
   }>;
   page: number;
   limit: number;
+  totalPages: number;
+  hasNextPage: boolean;
 };
 
 describe('GET /admin/audit-log integration (issue #798)', () => {

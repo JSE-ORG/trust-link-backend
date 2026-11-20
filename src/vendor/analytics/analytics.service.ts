@@ -75,6 +75,10 @@ export class AnalyticsService {
     // Convert aggregation results to DailyVolumeData format
     const dailyMap = new Map<string, DailyVolumeDataDto>();
 
+    // A Postgres `date` column comes back from the driver as a JS Date, not
+    // a string, so it is normalised before being used as a map key —
+    // fillDateGaps looks the key up as 'YYYY-MM-DD' and would otherwise never
+    // match, silently reporting every day as zero.
     for (const row of aggregationResult) {
       const r = row;
       const dateKey = this.toDateKey(r.date);
@@ -234,25 +238,37 @@ export class AnalyticsService {
    *
    * #843 — Counts and sums are aggregated by the database with a single
    * `groupBy` on `state`, and the per-state sums are added as decimals.
-   * Speed metrics are computed in SQL (issue #1154).
+   *
+   * The previous implementation ran `findMany` over every escrow the vendor
+   * has ever created and counted and summed the rows in a JavaScript loop. The
+   * result set grew without bound with vendor history while the response
+   * stayed a fixed handful of numbers, so the cost of a dashboard page scaled
+   * with total escrows rather than with the number of states. Each amount was
+   * also pulled through `Number()` before being added: `amount` is
+   * `Decimal(18, 8)`, so converting to a double first and then summing loses
+   * precision below 2^53 minor units — exactly the small-vendor case where
+   * the total is supposed to be exact.
+   *
+   * `groupBy` narrows the transfer to one row per state and lets Postgres sum
+   * the `numeric` column exactly. Speed metrics are computed in SQL (#1154).
    */
   async getTransactionStats(
     vendorAddress: string,
   ): Promise<AnalyticsStatsResponse> {
     const [groups, speedStats, notificationChannels] = await Promise.all([
+      // One row per state, with the count and the exact `numeric` sum for that
+      // state. Uses the composite index on (vendorAddress, state).
       this.repository.getEscrowStateGroups(vendorAddress),
-      typeof this.repository.getAverageShippingAndDeliveryTimes === 'function'
-        ? this.repository.getAverageShippingAndDeliveryTimes(vendorAddress)
-        : Promise.resolve({
-            averageHoursToShip: null,
-            averageHoursToDeliver: null,
-          }),
+      this.repository.getAverageShippingAndDeliveryTimes(vendorAddress),
       this.repository.findNotificationChannels(vendorAddress),
     ]);
 
     // Active states: CREATED, FUNDED, SHIPPED, DELIVERED
     const activeStates = new Set(['CREATED', 'FUNDED', 'SHIPPED', 'DELIVERED']);
 
+    // Decimal accumulators, not floats. The running totals stay exact for the
+    // whole loop and are converted to `number` once, at the end, for the
+    // response.
     let totalVolume = decimalZero();
     let activeVolume = decimalZero();
     let totalTransactions = 0;
@@ -307,11 +323,14 @@ export class AnalyticsService {
       averageHoursToDeliver: speedStats.averageHoursToDeliver,
     };
 
+    // Calculate rates
     if (stats.totalTransactions > 0) {
       stats.completionRate =
         (stats.completedTransactions / stats.totalTransactions) * 100;
       stats.disputeRate =
         (stats.disputedTransactions / stats.totalTransactions) * 100;
+      // Divided in decimal so the average of an exact total is not itself
+      // rounded twice; converted to a number only for the response.
       stats.averageTransactionValue = decimalToNumber(
         totalVolume.div(stats.totalTransactions),
       );
@@ -362,6 +381,8 @@ export class AnalyticsService {
       hourCycle: 'h23',
     });
 
+    // Reconcile the UTC guess against the local wall-clock representation.
+    // This handles both positive and negative UTC offsets and DST changes.
     for (let attempt = 0; attempt < 4; attempt += 1) {
       const parts = new Map(
         formatter
