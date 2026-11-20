@@ -249,7 +249,7 @@ describe('DlqController', () => {
 
       await controller.replay('failed-tx-1', {
         address: 'GADMINADDRESS00000000000000000000000000000000000000',
-      } as AuthUser);
+      });
 
       expect(auditLog.append).toHaveBeenCalledTimes(1);
       expect(auditLog.append).toHaveBeenCalledWith({
@@ -375,11 +375,11 @@ describe('DlqController', () => {
       dlq.abandon.mockResolvedValue({
         ...autoReleaseRecord,
         status: 'ABANDONED',
-      } as FailedTransactionRecord);
+      });
 
       await controller.abandon('failed-tx-1', {
         address: 'GADMINADDRESS00000000000000000000000000000000000000',
-      } as AuthUser);
+      });
 
       expect(auditLog.append).toHaveBeenCalledTimes(1);
       expect(auditLog.append).toHaveBeenCalledWith({
