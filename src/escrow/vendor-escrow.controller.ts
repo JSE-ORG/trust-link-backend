@@ -1,4 +1,4 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Header, Query, Res, UseGuards } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -51,3 +51,20 @@ export class VendorEscrowController {
     return this.escrowService.findVendorEscrows(user.address, query);
   }
 }
+
+  /**
+   * Export the vendor's escrows as a CSV file (#1150).
+   * Same filters as the list; capped at 10,000 rows.
+   * Cells starting with =, +, - or @ are escaped against formula injection.
+   */
+  @ApiOperation({ summary: 'Export vendor escrows as CSV (max 10,000 rows)' })
+  @ApiResponse({ status: 200, description: 'CSV file.' })
+  @ApiResponse({ status: 401, description: 'Unauthorized.' })
+  @Throttle({ default: { limit: 5, ttl: THROTTLE_WINDOW_MS } })
+  @Header('Content-Type', 'text/csv')
+  @Header('Content-Disposition', 'attachment; filename="escrows.csv"')
+  @Get('escrows/export')
+  async exportEscrows(@Query() query: VendorEscrowsQueryDto, @CurrentUser() user: AuthUser, @Res() res: any) {
+    const csv = await this.escrowService.exportVendorEscrowsCsv(user.address, query);
+    res.send(csv);
+  }
