@@ -278,3 +278,10 @@ npx prisma migrate resolve --rolled-back <migration_name>
 
 Always take a labelled database snapshot before applying migrations to a shared environment.
 
+
+
+## Image revision and container probes
+
+CI passes the checked-out Git commit SHA to Docker with `--build-arg GIT_SHA=<sha>` and the production stage exposes it as `GIT_SHA`. Verify `GET /version` reports the matching `commit` value. For local builds, use `docker build --build-arg GIT_SHA=abc -t trustlink-backend:test .` and check the `/version` response from a running container.
+
+The Dockerfile and both Compose application services use `GET /health/live` as their **container liveness** check. Configure ingress and load balancers to use `GET /health/ready` for **readiness**. A dependency outage must not restart an otherwise healthy process.
