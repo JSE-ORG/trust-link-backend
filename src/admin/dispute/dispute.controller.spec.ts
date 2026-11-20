@@ -11,7 +11,9 @@ describe('DisputeController', () => {
   let disputeService: jest.Mocked<
     Pick<DisputeService, 'getDisputes' | 'resolve'>
   >;
-  let auditLogService: jest.Mocked<Pick<AuditLogService, 'findAll' | 'append'>>;
+  let auditLogService: jest.Mocked<
+    Pick<AuditLogService, 'findAll' | 'append' | 'exportCsv'>
+  >;
 
   beforeEach(async () => {
     disputeService = {
@@ -22,6 +24,7 @@ describe('DisputeController', () => {
     auditLogService = {
       findAll: jest.fn(),
       append: jest.fn(),
+      exportCsv: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -206,6 +209,31 @@ describe('DisputeController', () => {
 
       expect(auditLogService.findAll).toHaveBeenCalledWith(query);
       expect(result).toBe(expected);
+    });
+  });
+
+  describe('exportAuditLog', () => {
+    it('sets response headers and returns CSV content', async () => {
+      const csvData =
+        'id,action,adminAddress,entityType,entityId,details,occurredAt\n1,TEST,G1,escrow,e1,{},2026-01-01T00:00:00.000Z';
+      auditLogService.exportCsv.mockResolvedValue(csvData);
+
+      const query = new AdminAuditLogQueryDto();
+      const setHeader = jest.fn();
+      const mockRes = { setHeader } as unknown as import('express').Response;
+
+      const result = await controller.exportAuditLog(query, mockRes);
+
+      expect(auditLogService.exportCsv).toHaveBeenCalledWith(query);
+      expect(setHeader).toHaveBeenCalledWith(
+        'Content-Type',
+        'text/csv; charset=utf-8',
+      );
+      expect(setHeader).toHaveBeenCalledWith(
+        'Content-Disposition',
+        'attachment; filename="audit-log.csv"',
+      );
+      expect(result).toBe(csvData);
     });
   });
 });
