@@ -4,7 +4,6 @@ import {
   HttpCode,
   HttpStatus,
   Patch,
-  Req,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -31,7 +30,6 @@ import { AuditLogService } from '../../audit-log/audit-log.service';
 export class ApiKeysController {
   constructor(
     private readonly logisticsService: LogisticsService,
-    private readonly auditLog: AuditLogService,
     private readonly auditLog?: AuditLogService,
   ) {}
 
@@ -46,10 +44,10 @@ export class ApiKeysController {
   @ApiResponse({ status: 400, description: 'Invalid key payload.' })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   @ApiResponse({ status: 403, description: 'Admin access required.' })
+  @ApiResponse({ status: 429, description: 'Too many requests.' })
   @Throttle({ default: { limit: 5, ttl: THROTTLE_WINDOW_MS } })
   @Patch('logistics')
   @HttpCode(HttpStatus.OK)
-  async rotateLogisticsKey(@Body() dto: RotateApiKeyDto, @Req() req: any) {
   async rotateLogisticsKey(
     @Body() dto: RotateApiKeyDto,
     @CurrentUser() admin?: AuthUser,
@@ -58,17 +56,6 @@ export class ApiKeysController {
     // (issue #498), and persist it outside process memory (issue #499).
     await this.logisticsService.rotateApiKey(dto.key);
 
-    // Issue #954: Audit credential rotation (provider name only, never the key)
-    const adminAddress = req.user?.walletAddress || 'unknown';
-    await this.auditLog.append({
-      action: 'CREDENTIAL_ROTATED',
-      adminAddress,
-      entityType: 'logistics_provider',
-      entityId: 'logistics',
-      details: {
-        provider: 'logistics',
-      },
-    });
     // Issue #954 / #1051: Audit credential rotation (provider name only, never the key)
     const adminAddress = admin?.address ?? 'unknown';
     if (this.auditLog) {

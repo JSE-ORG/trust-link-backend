@@ -6,7 +6,6 @@ import {
   NotFoundException,
   Param,
   Post,
-  Req,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -58,24 +57,6 @@ export class StressTestController {
   @Post()
   async runStressTest(
     @Body() config: StressTestConfigDto,
-    @Req() req: any,
-  ): Promise<StressTestResult> {
-    this.logger.log(`Received stress test request: ${config.testName}`);
-    const result = await this.stressTestService.runStressTest(config);
-
-    // Issue #954: Audit stress test execution
-    const adminAddress = req.user?.walletAddress || 'unknown';
-    await this.auditLog.append({
-      action: 'STRESS_TEST_STARTED',
-      adminAddress,
-      entityType: 'stress_test',
-      entityId: config.testName || 'unnamed',
-      details: {
-        testName: config.testName,
-        profileCount: config.profileCount || 0,
-      },
-    });
-
     @CurrentUser() admin?: AuthUser,
   ): Promise<StressTestResult> {
     this.logger.log(`Received stress test request: ${config.testName}`);

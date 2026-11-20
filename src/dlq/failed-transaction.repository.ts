@@ -101,24 +101,6 @@ export class FailedTransactionRepository {
 
   /**
    * Atomically claims a record for replay by updating its status conditionally.
-   * Returns null if the record is not in PENDING_REVIEW status (already claimed or replayed).
-   */
-  async claimForReplay(id: string): Promise<FailedTransactionRecord | null> {
-    try {
-      const row = await this.prisma.failedTransaction.update({
-        where: {
-          id,
-          status: 'PENDING_REVIEW',
-        },
-        data: {
-          status: 'REPLAYING',
-        },
-      });
-      return toFailedTransactionRecord(row);
-    } catch {
-      // Update failed, record was not in PENDING_REVIEW
-      return null;
-    }
    * Succeeds if the record is in `PENDING_REVIEW` or stuck in `REPLAYING` past `staleBefore`.
    * Returns null if the record was already claimed or replayed.
    */

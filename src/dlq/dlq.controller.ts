@@ -6,7 +6,6 @@ import {
   Param,
   Post,
   Query,
-  Req,
   ServiceUnavailableException,
   UseGuards,
 } from '@nestjs/common';
@@ -160,7 +159,6 @@ export class DlqController {
    * Re-execute the original operation. Today the only auto-retryable operation
    * is auto-release; other operations are flagged and must be replayed by
    * hand. Either way the record is updated on the outcome.
-   * 
    *
    * Issue #953: Successful replays are logged to the audit trail.
    */
@@ -185,7 +183,6 @@ export class DlqController {
   @ApiResponse({ status: 500, description: 'Internal server error.' })
   @Throttle({ default: { limit: 5, ttl: THROTTLE_WINDOW_MS } })
   @Post(':id/replay')
-  async replay(@Param('id') id: string, @Req() req: any) {
   async replay(@Param('id') id: string, @CurrentUser() admin?: AuthUser) {
     const record = await this.dlq.get(id);
     const result = await this.dlq.replay(record.id, async (r) => {
@@ -215,7 +212,6 @@ export class DlqController {
     });
 
     // Issue #953: Audit successful replay
-    const adminAddress = req.user?.walletAddress || 'unknown';
     const adminAddress = admin?.address ?? 'unknown';
     await this.auditLog.append({
       action: 'DLQ_REPLAYED',
@@ -255,11 +251,6 @@ export class DlqController {
   @ApiResponse({ status: 500, description: 'Internal server error.' })
   @Throttle({ default: { limit: 5, ttl: THROTTLE_WINDOW_MS } })
   @Post(':id/abandon')
-  async abandon(@Param('id') id: string, @Req() req: any) {
-    const result = await this.dlq.abandon(id);
-
-    // Issue #953: Audit abandon action
-    const adminAddress = req.user?.walletAddress || 'unknown';
   async abandon(@Param('id') id: string, @CurrentUser() admin?: AuthUser) {
     const result = await this.dlq.abandon(id);
 

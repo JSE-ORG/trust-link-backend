@@ -137,12 +137,6 @@ export class DlqService {
       );
     }
 
-    // Issue #952: Atomically claim the record before replaying
-    const claimed = await this.failedTransactions.claimForReplay(id);
-    if (!claimed) {
-      throw new Error(`Failed transaction ${id} is already being replayed or was replayed`);
-    }
-
     let txHash: string;
     try {
       txHash = await replay(claimed);
