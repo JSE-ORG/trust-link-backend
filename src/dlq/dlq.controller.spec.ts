@@ -16,7 +16,6 @@ import {
 } from '../config/config.service';
 import { FailedTransactionRecord } from './dlq.types';
 import { AuditLogService } from '../audit-log/audit-log.service';
-import type { AuthUser } from '../auth/auth-user';
 
 describe('DlqController', () => {
   const autoReleaseRecord: FailedTransactionRecord = {
