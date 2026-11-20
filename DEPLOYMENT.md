@@ -278,3 +278,73 @@ npx prisma migrate resolve --rolled-back <migration_name>
 
 Always take a labelled database snapshot before applying migrations to a shared environment.
 
+
+## Configuration variable reference (from `src/config/config.schema.ts`)
+
+The following table lists all environment variables validated by `configValidationSchema`, including their default value, whether they are required in production, and a one-line description derived from the schema. Conditions such as "required when X is set" or "required when STELLAR_NETWORK is MAINNET" apply in all environments unless noted.
+
+| Variable | Default | Required in production | Description |
+|---|---|---|---|
+| `PORT` | `3000` | No | Port the HTTP server listens on. |
+| `API_BASE_URL` | `http://localhost:3000` | No | Base URL for internal HTTP calls. |
+| `FRONTEND_URL` | `http://localhost:3000` | Yes | Public frontend origin used in customer-facing payment links. |
+| `EVIDENCE_STORAGE_BASE_URL` | `http://localhost:9000` | Yes | Public base URL evidence objects are served from. |
+| `DATABASE_URL` | `—` | Yes (always required) | PostgreSQL connection string. |
+| `CONTACT_ENCRYPTION_KEY` | `—` | Yes (optional otherwise) | 64-character hex key (32 bytes) for encrypting contact data. |
+| `CREDENTIAL_ENCRYPTION_KEY` | `—` | Yes (optional otherwise) | 64-character hex key (32 bytes) for encrypting credentials. |
+| `SEP10_JWT_SECRET` | `—` | Yes (always required) | Secret used to sign SEP-10 JWT tokens; minimum 32 characters. |
+| `PRESIGN_SECRET` | `—` | Yes (always required) | HMAC secret for signing evidence pre-signed URLs; must be stable across restarts/replicas. |
+| `SYSTEM_SIGNER_SECRET` | `—` | Yes (always required) | Stellar secret key used to sign contract transactions (checksum-validated). |
+| `SEP10_SIGNING_SECRET` | `— (falls back to SYSTEM_SIGNER_SECRET)` | No | Stellar secret key for signing SEP-10 challenges; keep stable and identical across replicas when set. |
+| `CONTRACT_ID` | `—` | Yes (always required) | Soroban escrow contract identifier/address used for contract calls. |
+| `ADMIN_ADDRESS` | `—` | Yes (always required) | Stellar public key of the platform admin account. |
+| `ADMIN_NOTIFICATION_EMAIL` | `—` | No | Email address for administrative dispute alert notifications; alerts are skipped if unset. |
+| `AUTO_RELEASE_SOURCE_ADDRESS` | `—` | No | Stellar public key of the auto-release signing account; required to use the admin DLQ replay endpoint. |
+| `NODE_ENV` | `development` | No | Runtime environment (`development` \| `production` \| `test`). |
+| `SENDGRID_API_KEY` | `—` | No | SendGrid API key; enables email notifications when set. |
+| `SENDGRID_FROM_EMAIL` | `—` | Yes when SENDGRID_API_KEY is set | Verified sender email address used for outbound SendGrid emails. |
+| `SENDGRID_TEMPLATE_FUNDED` | `—` | Yes (always required) | SendGrid dynamic template id for funded notifications (`d-` + 32 hex chars). |
+| `SENDGRID_TEMPLATE_SHIPPED` | `—` | Yes (always required) | SendGrid dynamic template id for shipped notifications. |
+| `SENDGRID_TEMPLATE_DELIVERED` | `—` | Yes (always required) | SendGrid dynamic template id for delivered notifications. |
+| `SENDGRID_TEMPLATE_DISPUTED` | `—` | Yes (always required) | SendGrid dynamic template id for disputed notifications. |
+| `SENDGRID_TEMPLATE_COMPLETED` | `—` | Yes (always required) | SendGrid dynamic template id for completed notifications. |
+| `SENDGRID_TEMPLATE_REFUNDED` | `—` | Yes (always required) | SendGrid dynamic template id for refunded notifications. |
+| `TWILIO_ACCOUNT_SID` | `—` | No | Twilio account SID; enables SMS notifications when set. |
+| `TWILIO_AUTH_TOKEN` | `—` | Yes when TWILIO_ACCOUNT_SID is set (schema requires presence of related values) | Twilio auth token. |
+| `TWILIO_FROM_NUMBER` | `—` | Yes when TWILIO_ACCOUNT_SID is set | Twilio sender number in E.164 format. |
+| `STELLAR_NETWORK` | `TESTNET` | No | Target Stellar network (`TESTNET` \| `MAINNET`). |
+| `ALLOWED_ORIGINS` | `—` | No (should be set in production) | Comma-separated list of allowed CORS origins. |
+| `CSP_CONNECT_SRC` | `—` | No | Additional CSP `connect-src` origins allowed by the browser. |
+| `STELLAR_WEBHOOK_SECRET` | `—` | Yes | HMAC secret for verifying inbound Stellar webhook payloads. |
+| `LOG_LEVEL` | `info` | No | Application log level (`trace` \| `debug` \| `info` \| `warn` \| `error` \| `fatal`). |
+| `REDIS_URL` | `—` | No | Redis connection URL for caching; caching disabled when unset. |
+| `DB_POOL_CONNECTION_LIMIT` | `10` | No | Maximum number of Prisma/PostgreSQL pool connections. |
+| `DB_POOL_TIMEOUT_MS` | `10000` | No | Milliseconds to wait for a free database connection before timing out. |
+| `OTEL_ENABLED` | `true` | No | Enables OpenTelemetry tracing (`"true"` \| `"false"`). |
+| `OTEL_SERVICE_NAME` | `trustlink-backend` | No | OpenTelemetry service name. |
+| `OTEL_SERVICE_VERSION` | `1.0.0` | No | OpenTelemetry service version. |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | `—` | No (set when OTEL is enabled in production) | OTLP HTTP endpoint for exporting traces. |
+| `SENTRY_DSN` | `—` | Yes (empty allowed outside production) | Sentry DSN for error reporting. |
+| `GIT_SHA` | `—` | No | Git commit SHA of the deployed build; used for Sentry release tagging and `/version`. |
+| `TRUST_PROXY` | `—` | No | Express trusted proxy setting for correct client IP/rate limiting behind proxies/load balancers. |
+| `AUTH_CHALLENGE_LIMIT` | `10` | No | Maximum requests per window to each `/auth` route (challenge, verify, refresh). |
+| `AUTH_CHALLENGE_WINDOW` | `60000` | No | Auth challenge/verify/refresh rate-limit window in milliseconds. |
+| `PUBLIC_LIMIT` | `60` | No | Maximum requests per window for public/non-auth routes. |
+| `PUBLIC_WINDOW` | `60000` | No | Public route rate-limit window in milliseconds. |
+| `EVIDENCE_UPLOAD_LIMIT` | `10` | No | Maximum evidence upload requests per rate-limit window. |
+| `EVIDENCE_UPLOAD_TTL` | `60000` | No | Evidence upload rate-limit window in milliseconds. |
+| `REFRESH_TOKEN_TTL` | `604800` | No | Refresh token lifetime in seconds (default 7 days). |
+| `ACCESS_TOKEN_TTL` | `3600` | No | SEP-10 access (JWT) token lifetime in seconds (max 86400). |
+| `LOGISTICS_API_BASE_URL` | `—` | No | Base URL for the external logistics/tracking API integration. |
+| `LOGISTICS_API_KEY` | `—` | No | API key for the external logistics/tracking API integration. |
+| `STELLAR_HORIZON_URL` | `—` | No | Stellar Horizon base URL override. |
+| `QUERY_TIMEOUT_MS` | `30000` | No | Maximum Prisma query runtime in milliseconds before cancellation. |
+| `SLOW_QUERY_THRESHOLD_MS` | `500` | No | Threshold in milliseconds above which slow queries are logged (0 disables). |
+| `SOROBAN_RPC_URL` | `—` | Yes (and required when STELLAR_NETWORK is MAINNET) | Soroban RPC endpoint for on-chain event polling; must match `STELLAR_NETWORK`. |
+| `SOROBAN_POLLER_ENABLED` | `true` | No | Enables the Soroban event polling interval on module init. |
+| `SOROBAN_POLL_INTERVAL_MS` | `5000` | No | Soroban poll cadence in milliseconds (>= 1000). |
+| `SOROBAN_RPC_TIMEOUT_MS` | `4000` | No | Per-request timeout in milliseconds for Soroban RPC calls; must be less than `SOROBAN_POLL_INTERVAL_MS`. |
+| `SOROBAN_START_LEDGER` | `—` | No | Optional starting ledger for Soroban polling when no cursor is stored (must be within node retention). |
+| `WEBHOOK_EVENT_RETENTION_DAYS` | `30` | No | Retention window in days for processed Stellar webhook event records before daily pruning. |
+
+_Notes: "Yes (always required)" means the schema requires the value regardless of `NODE_ENV`. Some keys are conditionally required based on other variables (e.g. `SENDGRID_FROM_EMAIL` when `SENDGRID_API_KEY` is set, `TWILIO_FROM_NUMBER`/`TWILIO_AUTH_TOKEN` when `TWILIO_ACCOUNT_SID` is set, `SOROBAN_RPC_URL` when `STELLAR_NETWORK` is `MAINNET`)._
