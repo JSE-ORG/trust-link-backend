@@ -510,7 +510,7 @@ describe('EscrowService.syncStateFromChain', () => {
   });
 
   describe('DisputeResolved on a terminal escrow (issue #1117)', () => {
-    const terminalStates = ['COMPLETED', 'RELEASED', 'REFUNDED', 'CANCELLED'];
+    const terminalStates = ['COMPLETED', 'RELEASED', 'REFUNDED', 'CANCELLED'] as const;
     const resolutions = ['RELEASE', 'REFUND'] as const;
     const terminalCases = terminalStates.flatMap((state) =>
       resolutions.map((resolution) => ({ state, resolution })),
