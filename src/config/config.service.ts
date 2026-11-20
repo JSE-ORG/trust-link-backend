@@ -58,6 +58,7 @@ export interface Config {
   LOG_LEVEL?: string;
   API_BASE_URL?: string;
   REDIS_URL?: string;
+  ESCROW_CACHE_TTL_SECONDS?: number;
   OTEL_ENABLED?: string;
   OTEL_SERVICE_NAME?: string;
   OTEL_SERVICE_VERSION?: string;

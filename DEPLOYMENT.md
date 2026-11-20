@@ -318,6 +318,7 @@ The following table lists all environment variables validated by `configValidati
 | `STELLAR_WEBHOOK_SECRET` | `—` | Yes | HMAC secret for verifying inbound Stellar webhook payloads. |
 | `LOG_LEVEL` | `info` | No | Application log level (`trace` \| `debug` \| `info` \| `warn` \| `error` \| `fatal`). |
 | `REDIS_URL` | `—` | No | Redis connection URL for caching; caching disabled when unset. |
+| `ESCROW_CACHE_TTL_SECONDS` | `60` | No | Cache TTL for `GET /escrow/:id`, 1 to 60 seconds. Writes invalidate the entry immediately. |
 | `DB_POOL_CONNECTION_LIMIT` | `10` | No | Maximum number of Prisma/PostgreSQL pool connections. |
 | `DB_POOL_TIMEOUT_MS` | `10000` | No | Milliseconds to wait for a free database connection before timing out. |
 | `OTEL_ENABLED` | `true` | No | Enables OpenTelemetry tracing (`"true"` \| `"false"`). |
@@ -337,6 +338,8 @@ The following table lists all environment variables validated by `configValidati
 | `ACCESS_TOKEN_TTL` | `3600` | No | SEP-10 access (JWT) token lifetime in seconds (max 86400). |
 | `LOGISTICS_API_BASE_URL` | `—` | No | Base URL for the external logistics/tracking API integration. |
 | `LOGISTICS_API_KEY` | `—` | No | API key for the external logistics/tracking API integration. |
+| `TERMINAL_AFRICA_API_BASE_URL` | `—` | No | Base URL of the Terminal Africa API. Optional second logistics provider; GIGL stays active. |
+| `TERMINAL_AFRICA_API_KEY` | `—` | No | Terminal Africa secret key. Both Terminal Africa keys must be set to enable its client. |
 | `STELLAR_HORIZON_URL` | `—` | No | Stellar Horizon base URL override. |
 | `QUERY_TIMEOUT_MS` | `30000` | No | Maximum Prisma query runtime in milliseconds before cancellation. |
 | `SLOW_QUERY_THRESHOLD_MS` | `500` | No | Threshold in milliseconds above which slow queries are logged (0 disables). |
