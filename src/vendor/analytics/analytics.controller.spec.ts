@@ -98,6 +98,7 @@ describe('AnalyticsController', () => {
         'GVENDOR123',
         30,
         'UTC',
+        'day',
       );
 
       const emptyQuery = new ChartQueryDto();
@@ -107,6 +108,7 @@ describe('AnalyticsController', () => {
         'GVENDOR123',
         30,
         'UTC',
+        'day',
       );
     });
 
@@ -118,6 +120,7 @@ describe('AnalyticsController', () => {
         'GVENDOR123',
         7,
         'UTC',
+        'day',
       );
     });
 
@@ -131,6 +134,7 @@ describe('AnalyticsController', () => {
         'GVENDOR123',
         30,
         'America/New_York',
+        'day',
       );
     });
 
@@ -145,6 +149,7 @@ describe('AnalyticsController', () => {
         'GVENDOR123',
         14,
         'Europe/London',
+        'day',
       );
     });
   });
