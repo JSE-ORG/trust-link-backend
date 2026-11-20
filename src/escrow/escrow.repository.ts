@@ -1,10 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { Injectable, Optional } from '@nestjs/common';
 import { CacheService } from '../cache/cache.service';
+import type { Prisma } from '@prisma/client';
 import {
   EscrowRecord,
   EscrowState,
   PrismaService,
+  toDisputeRecord,
   toEscrowRecord,
 } from '../prisma/prisma.service';
 import { MILLISECONDS_PER_HOUR } from '../common/constants/time.constants';
@@ -15,6 +17,8 @@ import {
 } from './escrow.constants';
 import {
   AutoReleaseEligibleResult,
+  EscrowListFilter,
+  EscrowWithDispute,
   EventsResult,
   VendorEscrowsResult,
 } from './escrow.types';
@@ -53,6 +57,36 @@ export function reviveCachedEscrow(cached: EscrowRecord): EscrowRecord {
     record.contractEscrowId = BigInt(contractEscrowId);
   }
   return record;
+}
+
+/** A date-only `to` (YYYY-MM-DD) includes that whole day. */
+function endOfRange(to: string): { lt: Date } | { lte: Date } {
+  const date = new Date(to);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(to)) {
+    date.setUTCDate(date.getUTCDate() + 1);
+    return { lt: date };
+  }
+  return { lte: date };
+}
+
+function buildEscrowWhere(filter: EscrowListFilter): Prisma.EscrowWhereInput {
+  const where: Prisma.EscrowWhereInput = {};
+  if (filter.vendorAddress) where.vendorAddress = filter.vendorAddress;
+  if (filter.buyerAddress) where.buyerAddress = filter.buyerAddress;
+  if (filter.state) where.state = filter.state as EscrowState;
+  if (filter.from || filter.to) {
+    where.createdAt = {
+      ...(filter.from ? { gte: new Date(filter.from) } : {}),
+      ...(filter.to ? endOfRange(filter.to) : {}),
+    };
+  }
+  if (filter.q) {
+    where.OR = [
+      { itemName: { contains: filter.q, mode: 'insensitive' } },
+      { itemRef: { contains: filter.q, mode: 'insensitive' } },
+    ];
+  }
+  return where;
 }
 
 @Injectable()
@@ -200,8 +234,29 @@ export class EscrowRepository {
     order: 'asc' | 'desc',
     page: number,
     limit: number,
+    filters: Omit<EscrowListFilter, 'vendorAddress' | 'state'> = {},
   ): Promise<VendorEscrowsResult> {
-    const where = { vendorAddress, state: state as EscrowState | undefined };
+    return this.findEscrows(
+      { ...filters, vendorAddress, state },
+      sort,
+      order,
+      page,
+      limit,
+    );
+  }
+
+  /**
+   * Returns a paginated, sorted slice of escrows matching every set field of
+   * `filter`. `total` is the count of all matching rows, ignoring paging.
+   */
+  async findEscrows(
+    filter: EscrowListFilter,
+    sort: 'date' | 'amount',
+    order: 'asc' | 'desc',
+    page: number,
+    limit: number,
+  ): Promise<VendorEscrowsResult> {
+    const where = buildEscrowWhere(filter);
     const orderBy =
       sort === 'amount' ? { amount: order } : { createdAt: order };
     const skip = (page - 1) * limit;
@@ -217,6 +272,20 @@ export class EscrowRepository {
     ]);
 
     return { data: data.map(toEscrowRecord), total };
+  }
+
+  /** Returns the escrow with its dispute, or null when the id is unknown. */
+  async findByIdWithDispute(id: string): Promise<EscrowWithDispute | null> {
+    const row = await this.prisma.escrow.findUnique({
+      where: { id },
+      include: { disputes: true },
+    });
+    if (!row) return null;
+    const { disputes, ...escrow } = row;
+    return {
+      escrow: toEscrowRecord(escrow),
+      dispute: disputes[0] ? toDisputeRecord(disputes[0]) : null,
+    };
   }
 
   /**
