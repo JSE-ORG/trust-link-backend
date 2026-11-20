@@ -565,6 +565,88 @@ describe('EscrowService.syncStateFromChain', () => {
     });
   });
 
+  // ── Cancel, expiry and refund events (#1116) ─────────────────────────────
+
+  const NON_TERMINAL_STATES = [
+    'CREATED',
+    'FUNDED',
+    'SHIPPED',
+    'DELIVERED',
+    'DISPUTED',
+  ] as const;
+  const TERMINAL_STATE_SAMPLES = [
+    'COMPLETED',
+    'RELEASED',
+    'REFUNDED',
+    'CANCELLED',
+  ] as const;
+
+  describe.each(['EscrowCancelled', 'EscrowCanceled', 'EscrowAutoCancelled'])(
+    '%s',
+    (eventType) => {
+      it.each(NON_TERMINAL_STATES)(
+        'cancels an escrow in %s',
+        async (state) => {
+          repo.findById.mockResolvedValue(makeEscrow({ state }));
+
+          const result = await service.syncStateFromChain(makeEvent(eventType));
+
+          expect(result).toEqual({ skipped: false });
+          expect(repo.markCancelled).toHaveBeenCalledWith('escrow-1');
+        },
+      );
+
+      it.each(TERMINAL_STATE_SAMPLES)(
+        'skips an escrow already in %s without writing',
+        async (state) => {
+          repo.findById.mockResolvedValue(makeEscrow({ state }));
+
+          const result = await service.syncStateFromChain(makeEvent(eventType));
+
+          expect(result).toEqual({
+            skipped: true,
+            reason: 'already_cancelled_or_terminal',
+          });
+          expect(repo.markCancelled).not.toHaveBeenCalled();
+        },
+      );
+    },
+  );
+
+  describe.each(['EscrowExpired', 'RefundApproved'])('%s', (eventType) => {
+    it.each(NON_TERMINAL_STATES)(
+      'refunds an escrow in %s and sends a refund notification',
+      async (state) => {
+        const refunded = makeEscrow({ state: 'REFUNDED' });
+        repo.findById.mockResolvedValue(makeEscrow({ state }));
+        repo.markRefunded.mockResolvedValue(refunded);
+
+        const result = await service.syncStateFromChain(makeEvent(eventType));
+
+        expect(result).toEqual({ skipped: false });
+        expect(repo.markRefunded).toHaveBeenCalledWith('escrow-1');
+        await Promise.resolve();
+        expect(notifications.notifyRefunded).toHaveBeenCalledWith(refunded);
+      },
+    );
+
+    it.each(TERMINAL_STATE_SAMPLES)(
+      'skips an escrow already in %s without refunding',
+      async (state) => {
+        repo.findById.mockResolvedValue(makeEscrow({ state }));
+
+        const result = await service.syncStateFromChain(makeEvent(eventType));
+
+        expect(result).toEqual({
+          skipped: true,
+          reason: 'already_refunded_or_terminal',
+        });
+        expect(repo.markRefunded).not.toHaveBeenCalled();
+        expect(notifications.notifyRefunded).not.toHaveBeenCalled();
+      },
+    );
+  });
+
   // ── Edge cases ───────────────────────────────────────────────────────────
 
   describe('edge cases', () => {
