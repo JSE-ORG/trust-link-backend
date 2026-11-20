@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { RefreshTokenRepository } from './refresh-token.repository';
+import { MILLISECONDS_PER_DAY } from '../../common/constants/time.constants';
 
 /**
  * Daily job that purges expired SEP-10 refresh tokens (issue #961).
@@ -15,7 +16,7 @@ export class RefreshTokenCleanupService {
   private readonly logger = new Logger(RefreshTokenCleanupService.name);
 
   /** 30 days, in milliseconds. Expired rows older than this are deleted. */
-  private static readonly GRACE_PERIOD_MS = 30 * 24 * 60 * 60 * 1000;
+  private static readonly GRACE_PERIOD_MS = 30 * MILLISECONDS_PER_DAY;
 
   constructor(
     private readonly refreshTokenRepository: RefreshTokenRepository,

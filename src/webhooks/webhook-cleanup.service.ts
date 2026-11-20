@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { ConfigService } from '../config/config.service';
 import { StellarWebhookRepository } from './stellar-webhook.repository';
+import { MILLISECONDS_PER_DAY } from '../common/constants/time.constants';
 
 /**
  * Daily job that prunes processed Stellar webhook event ids past the replay
@@ -26,7 +27,7 @@ export class WebhookCleanupService {
     const retentionDays = this.configService.get<number>(
       'WEBHOOK_EVENT_RETENTION_DAYS',
     );
-    const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
+    const cutoff = new Date(Date.now() - retentionDays * MILLISECONDS_PER_DAY);
 
     this.logger.log('Starting processed webhook event prune');
 
