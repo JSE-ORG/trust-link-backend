@@ -335,4 +335,18 @@ describe('AuditLogService (Issues #816 & #817)', () => {
       expect(res.data[0].entityId).toBe('GVENDOR456');
     });
   });
+
+  describe('findAll defaults (issue #1119)', () => {
+    it('falls back to page 1 and limit 20 when no query is given', async () => {
+      prisma.auditLog.findMany.mockResolvedValue([] as never);
+      prisma.auditLog.count.mockResolvedValue(0);
+
+      const result = await service.findAll();
+
+      expect(result).toEqual({ data: [], total: 0, page: 1, limit: 20 });
+      expect(prisma.auditLog.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ skip: 0, take: 20 }),
+      );
+    });
+  });
 });
