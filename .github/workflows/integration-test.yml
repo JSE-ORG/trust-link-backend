@@ -64,7 +64,7 @@ jobs:
         run: npx prisma migrate deploy
 
       - name: Run integration tests
-        run: npm run test:integration -- --forceExit
+        run: npm run test:integration -- --detectOpenHandles --runInBand
 
       - name: Upload test artifacts on failure
         if: failure()
