@@ -645,6 +645,42 @@ describe('EscrowRepository', () => {
       expect(cancelled.cancelledAt).toBeInstanceOf(Date);
     });
 
+    it('sets fundedAt, disputedAt, and completedAt once upon respective transitions (issue #1167)', async () => {
+      const escrow = await repo.create(
+        { ...makeDto(), itemRef: 'timestamp-transitions' },
+        'vendor-addr',
+      );
+
+      expect(escrow.fundedAt).toBeNull();
+      expect(escrow.disputedAt).toBeNull();
+      expect(escrow.completedAt).toBeNull();
+
+      const funded = await repo.updateState(escrow.id, 'FUNDED');
+      expect(funded.fundedAt).toBeInstanceOf(Date);
+      const initialFundedAt = funded.fundedAt;
+
+      const fundedAgain = await repo.updateState(escrow.id, 'FUNDED');
+      expect(fundedAgain.fundedAt?.getTime()).toBe(initialFundedAt?.getTime());
+
+      const disputed = await repo.updateState(escrow.id, 'DISPUTED');
+      expect(disputed.disputedAt).toBeInstanceOf(Date);
+      const initialDisputedAt = disputed.disputedAt;
+
+      const disputedAgain = await repo.updateState(escrow.id, 'DISPUTED');
+      expect(disputedAgain.disputedAt?.getTime()).toBe(
+        initialDisputedAt?.getTime(),
+      );
+
+      const completed = await repo.markCompleted(escrow.id);
+      expect(completed.completedAt).toBeInstanceOf(Date);
+      const initialCompletedAt = completed.completedAt;
+
+      const completedAgain = await repo.markCompleted(escrow.id);
+      expect(completedAgain.completedAt?.getTime()).toBe(
+        initialCompletedAt?.getTime(),
+      );
+    });
+
     it('resolves contract ids, filters shipped tracking work, and returns null for unknown ids', async () => {
       const tracked = await repo.create(
         { ...makeDto(), itemRef: 'tracked' },

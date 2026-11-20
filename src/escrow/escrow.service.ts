@@ -655,6 +655,9 @@ export class EscrowService {
       state: escrow.state,
       trackingId: escrow.trackingId,
       shippedAt: escrow.shippedAt ?? null,
+      fundedAt: escrow.fundedAt ?? null,
+      disputedAt: escrow.disputedAt ?? null,
+      completedAt: escrow.completedAt ?? null,
       createdAt: escrow.createdAt,
       updatedAt: escrow.updatedAt,
     };
