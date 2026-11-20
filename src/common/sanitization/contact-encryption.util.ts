@@ -1,4 +1,5 @@
 import * as crypto from 'crypto';
+import { ServiceUnavailableException } from '@nestjs/common';
 
 const ALGORITHM = 'aes-256-gcm' as const;
 const IV_BYTES = 12;
@@ -6,20 +7,32 @@ const TAG_BYTES = 16;
 const SEPARATOR = ':';
 
 /**
+ * Checks whether CONTACT_ENCRYPTION_KEY is set and valid (64 hex chars = 32 bytes).
+ */
+export function isContactEncryptionConfigured(): boolean {
+  const raw = process.env.CONTACT_ENCRYPTION_KEY;
+  if (!raw) {
+    return false;
+  }
+  const key = Buffer.from(raw, 'hex');
+  return key.length === 32;
+}
+
+/**
  * Derives a 32-byte key from the CONTACT_ENCRYPTION_KEY env variable.
  * The env value is hex-encoded (64 hex chars = 32 bytes). If absent the
- * module throws at startup so the missing config is caught immediately.
+ * function throws ServiceUnavailableException so callers return 503 instead of 500.
  */
 function resolveKey(): Buffer {
   const raw = process.env.CONTACT_ENCRYPTION_KEY;
   if (!raw) {
-    throw new Error(
+    throw new ServiceUnavailableException(
       'CONTACT_ENCRYPTION_KEY environment variable is required for buyer contact encryption.',
     );
   }
   const key = Buffer.from(raw, 'hex');
   if (key.length !== 32) {
-    throw new Error(
+    throw new ServiceUnavailableException(
       `CONTACT_ENCRYPTION_KEY must be exactly 64 hex characters (32 bytes). Got ${key.length} bytes.`,
     );
   }

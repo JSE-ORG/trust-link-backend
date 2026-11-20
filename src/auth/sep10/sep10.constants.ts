@@ -11,6 +11,20 @@ import {
 /** Lifetime of a SEP-10 challenge transaction, in seconds (5 minutes). */
 export const CHALLENGE_TIMEOUT_SECONDS = 5 * 60;
 
+/**
+ * Upper bound on the signed challenge XDR accepted by `POST /auth`. A signed
+ * challenge is roughly 1 KB of base64; this leaves room for extra signatures
+ * and a client_domain operation while rejecting oversized bodies before they
+ * reach the Stellar SDK.
+ */
+export const MAX_CHALLENGE_TRANSACTION_LENGTH = 10_000;
+
+/**
+ * Upper bound on refresh tokens accepted by `POST /auth/refresh`. Issued
+ * tokens are 64 hex characters.
+ */
+export const MAX_REFRESH_TOKEN_LENGTH = 256;
+
 /** Access-token (JWT) expiry, in seconds (1 hour). */
 export const JWT_EXPIRY_SECONDS = SECONDS_PER_HOUR;
 

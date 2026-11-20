@@ -1,5 +1,6 @@
 import { Logger } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import { StrKey } from '@stellar/stellar-sdk';
 import { NotificationsService } from './notifications.service';
 import { ConfigService } from '../config/config.service';
 import { SENDGRID_CLIENT, TWILIO_CLIENT } from './notifications.tokens';
@@ -11,6 +12,7 @@ import {
 import { NotificationRepository } from './notification.repository';
 import { ensureVendors } from '../../test/prisma-helpers';
 import { VendorProfileRepository } from '../vendor/vendor-profile.repository';
+import * as contactEncryption from '../common/sanitization/contact-encryption.util';
 
 /** A syntactically valid SendGrid dynamic template id (d- + 32 hex). */
 function templateId(seed: string): string {
@@ -30,6 +32,10 @@ const EMAIL_CONFIG: Record<string, string> = {
 const VENDOR_EMAIL = 'vendor@example.test';
 const VENDOR_PHONE = '+15555550100';
 
+/** A valid 56-char base32 Stellar ed25519 public key (starts with G). */
+const VALID_STELLAR_PUBLIC_KEY =
+  'GDUI2TZ4FY7F5NQQ3GJ6ZCRKIOABSXBZWMHWMGK34LZDPNNCSYLOD4YD';
+
 /** Minimal ConfigService stand-in returning `values[key]`. */
 function emailConfig(
   values: Record<string, string | undefined>,
@@ -37,6 +43,23 @@ function emailConfig(
   return {
     get: jest.fn((key: string) => values[key]),
   } as unknown as ConfigService;
+}
+
+/**
+ * VendorProfileRepository stand-in for specs that build the service by hand.
+ * Without one, vendor notifications are recorded as undeliverable (#946).
+ */
+function vendorProfilesStub(
+  channels: Array<'EMAIL' | 'SMS'> = ['EMAIL'],
+): VendorProfileRepository {
+  return {
+    findByAddress: jest
+      .fn()
+      .mockResolvedValue({ email: VENDOR_EMAIL, phone: VENDOR_PHONE }),
+    findNotificationPreferences: jest
+      .fn()
+      .mockResolvedValue({ notificationChannels: channels }),
+  } as unknown as VendorProfileRepository;
 }
 
 describe('NotificationsService', () => {
@@ -100,6 +123,12 @@ describe('NotificationsService', () => {
     await prisma.vendorProfile.update({
       where: { address: escrow.vendorAddress },
       data: { email: VENDOR_EMAIL, phone: VENDOR_PHONE },
+    });
+    await prisma.vendorTrackingSettings.create({
+      data: {
+        vendorAddress: escrow.vendorAddress,
+        notificationChannels: ['EMAIL', 'SMS'],
+      },
     });
     escrow = toEscrowRecord(
       await prisma.escrow.create({
@@ -183,11 +212,19 @@ describe('NotificationsService', () => {
     });
 
     it('dispatches SMS via Twilio and records providerMessageId', async () => {
-      await service.notifyShipped(escrow);
+      const buyerPhone = '+15551234567';
+      jest
+        .spyOn(contactEncryption, 'decryptContact')
+        .mockReturnValue(buyerPhone);
+      const escrowWithPhone = {
+        ...escrow,
+        buyerContactPhone: 'enc-phone',
+      };
+      await service.notifyShipped(escrowWithPhone);
 
       expect(twilio.messages.create).toHaveBeenCalledTimes(1);
       expect(twilio.messages.create).toHaveBeenCalledWith(
-        expect.objectContaining({ to: escrow.buyerAddress }),
+        expect.objectContaining({ to: buyerPhone }),
       );
 
       const notifications = await prisma.notification.findMany();
@@ -307,12 +344,75 @@ describe('NotificationsService', () => {
         expect.stringContaining('No vendor phone'),
       );
     });
+  });
 
+  describe('vendor notification channel preferences (#944)', () => {
+    it('sends only EMAIL when vendor preferences specify EMAIL only', async () => {
+      await prisma.vendorTrackingSettings.update({
+        where: { vendorAddress: escrow.vendorAddress },
+        data: { notificationChannels: ['EMAIL'] },
+      });
+
+      await service.notifyFunded(escrow);
+
+      expect(sendGrid.send).toHaveBeenCalledWith(
+        expect.objectContaining({ to: VENDOR_EMAIL }),
+      );
+      expect(twilio.messages.create).not.toHaveBeenCalled();
+    });
+
+    it('sends only SMS when vendor preferences specify SMS only', async () => {
+      await prisma.vendorTrackingSettings.update({
+        where: { vendorAddress: escrow.vendorAddress },
+        data: { notificationChannels: ['SMS'] },
+      });
+
+      await service.notifyFunded(escrow);
+
+      expect(sendGrid.send).not.toHaveBeenCalled();
+      expect(twilio.messages.create).toHaveBeenCalledWith(
+        expect.objectContaining({ to: VENDOR_PHONE }),
+      );
+    });
+
+    it('sends both EMAIL and SMS when vendor preferences specify both', async () => {
+      await prisma.vendorTrackingSettings.update({
+        where: { vendorAddress: escrow.vendorAddress },
+        data: { notificationChannels: ['EMAIL', 'SMS'] },
+      });
+
+      await service.notifyFunded(escrow);
+
+      expect(sendGrid.send).toHaveBeenCalledWith(
+        expect.objectContaining({ to: VENDOR_EMAIL }),
+      );
+      expect(twilio.messages.create).toHaveBeenCalledWith(
+        expect.objectContaining({ to: VENDOR_PHONE }),
+      );
+    });
+
+    it('defaults to EMAIL only when no settings row exists', async () => {
+      await prisma.vendorTrackingSettings.deleteMany({
+        where: { vendorAddress: escrow.vendorAddress },
+      });
+
+      await service.notifyFunded(escrow);
+
+      expect(sendGrid.send).toHaveBeenCalledWith(
+        expect.objectContaining({ to: VENDOR_EMAIL }),
+      );
+      expect(twilio.messages.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('unconfigured email provider behaviour (#839)', () => {
     it('is a no-op (noop provider) when SendGrid is not configured', async () => {
       const serviceNoSendgrid = new NotificationsService(
         new NotificationRepository(prisma),
         undefined,
         twilio,
+        undefined,
+        new VendorProfileRepository(prisma),
       );
 
       await expect(
@@ -330,6 +430,8 @@ describe('NotificationsService', () => {
         new NotificationRepository(prisma),
         sendGrid,
         undefined,
+        undefined,
+        new VendorProfileRepository(prisma),
       );
 
       await expect(
@@ -354,7 +456,7 @@ describe('NotificationsService', () => {
         .mockRejectedValueOnce(new Error('upstream down'))
         .mockResolvedValueOnce({ sid: 'SM2' });
 
-      await expect(service.notifyShipped(escrow)).resolves.toBeUndefined();
+      await expect(service.notifyFunded(escrow)).resolves.toBeUndefined();
 
       expect(sendGrid.send).toHaveBeenCalledTimes(3);
       expect(twilio.messages.create).toHaveBeenCalledTimes(3);
@@ -422,6 +524,84 @@ describe('NotificationsService', () => {
       await expect(service.notifyFunded(escrow)).resolves.toBeUndefined();
       expect(Logger.prototype.error).toHaveBeenCalledTimes(2);
     });
+
+    it('does not retry non-retryable 4xx errors (e.g. 400 Bad Request) and fails after 1 attempt (#947)', async () => {
+      const badRequestError = Object.assign(new Error('bad request'), {
+        status: 400,
+      });
+      sendGrid.send.mockRejectedValue(badRequestError);
+      twilio.messages.create.mockRejectedValue(badRequestError);
+
+      await service.notifyFunded(escrow);
+
+      expect(sendGrid.send).toHaveBeenCalledTimes(1);
+      expect(twilio.messages.create).toHaveBeenCalledTimes(1);
+
+      const records = await prisma.notification.findMany();
+      expect(records).toHaveLength(2);
+      for (const r of records) {
+        expect(r.attemptCount).toBe(1);
+        expect(r.lastResponseCode).toBe(400);
+      }
+    });
+
+    it('retries 5xx server errors up to 3 times (#947)', async () => {
+      const serverError = Object.assign(new Error('service unavailable'), {
+        status: 503,
+      });
+      sendGrid.send.mockRejectedValue(serverError);
+      twilio.messages.create.mockRejectedValue(serverError);
+
+      await service.notifyFunded(escrow);
+
+      expect(sendGrid.send).toHaveBeenCalledTimes(3);
+      expect(twilio.messages.create).toHaveBeenCalledTimes(3);
+
+      const records = await prisma.notification.findMany();
+      expect(records).toHaveLength(2);
+      for (const r of records) {
+        expect(r.attemptCount).toBe(3);
+        expect(r.lastResponseCode).toBe(503);
+      }
+    });
+
+    it('retries retryable 4xx errors (408 and 429) up to 3 times (#947)', async () => {
+      const rateLimitError = Object.assign(new Error('rate limited'), {
+        status: 429,
+      });
+      sendGrid.send.mockRejectedValue(rateLimitError);
+      twilio.messages.create.mockRejectedValue(rateLimitError);
+
+      await service.notifyFunded(escrow);
+
+      expect(sendGrid.send).toHaveBeenCalledTimes(3);
+      expect(twilio.messages.create).toHaveBeenCalledTimes(3);
+
+      const records = await prisma.notification.findMany();
+      expect(records).toHaveLength(2);
+      for (const r of records) {
+        expect(r.attemptCount).toBe(3);
+        expect(r.lastResponseCode).toBe(429);
+      }
+    });
+
+    it('retries network errors with null status up to 3 times (#947)', async () => {
+      const networkError = new Error('network timeout');
+      sendGrid.send.mockRejectedValue(networkError);
+      twilio.messages.create.mockRejectedValue(networkError);
+
+      await service.notifyFunded(escrow);
+
+      expect(sendGrid.send).toHaveBeenCalledTimes(3);
+      expect(twilio.messages.create).toHaveBeenCalledTimes(3);
+
+      const records = await prisma.notification.findMany();
+      expect(records).toHaveLength(2);
+      for (const r of records) {
+        expect(r.attemptCount).toBe(3);
+        expect(r.lastResponseCode).toBeNull();
+      }
+    });
   });
 
   describe('response-code logging (#18, #288)', () => {
@@ -468,8 +648,6 @@ describe('NotificationsService', () => {
 });
 
 // ── Issue #726 — channel selection + provider error parsing ──────────────────
-
-import * as contactEncryption from '../common/sanitization/contact-encryption.util';
 
 describe('NotificationsService (#726) — channel selection', () => {
   // Uses an in-memory prisma stub — no Postgres required.
@@ -597,10 +775,12 @@ describe('NotificationsService (#726) — channel selection', () => {
 
     await service.notifyShipped(escrow);
 
-    // dispatch() sends both EMAIL and SMS to the Stellar address
+    // Records EMAIL and SMS as undeliverable without calling providers (issue #946)
     expect(created.length).toBeGreaterThanOrEqual(1);
     for (const n of created) {
       expect(n.recipientAddress).toBe('GBUYER_NO_CONTACT');
+      expect(n.attemptCount).toBe(0);
+      expect(n.providerMessageId).toBeNull();
     }
   });
 });
@@ -666,6 +846,7 @@ describe('NotificationsService (#726) — extractResponseCode shapes', () => {
       sendGrid,
       undefined,
       emailConfig(EMAIL_CONFIG),
+      vendorProfilesStub(),
     );
     jest
       .spyOn(svc, 'sleep' as keyof NotificationsService)
@@ -734,6 +915,7 @@ describe('NotificationsService SendGrid sender and template ids (#839)', () => {
     cancelledAt: null,
     createdAt: new Date('2026-01-01T00:00:00.000Z'),
     updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+    buyerContactEmail: 'enc-buyer-email',
   };
 
   function stubPrismaFor(created: unknown[]): PrismaService {
@@ -757,10 +939,14 @@ describe('NotificationsService SendGrid sender and template ids (#839)', () => {
       sendGrid,
       undefined,
       emailConfig(configValues),
+      vendorProfilesStub(),
     );
     jest
       .spyOn(svc, 'sleep' as keyof NotificationsService)
       .mockResolvedValue(undefined);
+    jest
+      .spyOn(contactEncryption, 'decryptContact')
+      .mockReturnValue('buyer@example.test');
     return { svc, sendGrid, created };
   }
 
@@ -1012,5 +1198,352 @@ describe('NotificationsService SendGrid sender and template ids (#839)', () => {
   it('does not throw at boot when no ConfigService is available', () => {
     const svc = new NotificationsService(stubPrismaFor([]));
     expect(() => svc.onModuleInit()).not.toThrow();
+  });
+});
+
+describe('NotificationsService (#946) — stop sending to Stellar addresses', () => {
+  const stubEscrow: EscrowRecord = {
+    id: 'escrow-946',
+    contractEscrowId: null,
+    itemName: 'Widget',
+    itemRef: 'ref-946',
+    amount: 100,
+    currency: 'USDC',
+    buyerAddress: 'GBUYER946_STELLAR_KEY_LONGER_THAN_50_CHARS_TEST',
+    vendorAddress: 'GVENDOR946_STELLAR_KEY_LONGER_THAN_50_CHARS_TEST',
+    state: 'DISPUTED',
+    trackingId: null,
+    shippedAt: null,
+    deliveredAt: null,
+    deliveryRecordedAt: null,
+    autoReleaseSubmittedAt: null,
+    autoReleaseTxHash: null,
+    disputeId: null,
+    cancelledAt: null,
+    createdAt: new Date('2026-01-01T00:00:00.000Z'),
+    updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+  };
+
+  function makeRepo(created: Array<Record<string, unknown>>) {
+    return {
+      create: jest.fn((data: unknown) => {
+        created.push(data as Record<string, unknown>);
+        return Promise.resolve(data);
+      }),
+    } as unknown as NotificationRepository;
+  }
+
+  it('notifies admin via SendGrid when ADMIN_NOTIFICATION_EMAIL is configured', async () => {
+    const created: Array<Record<string, unknown>> = [];
+    const sendGrid = { send: jest.fn().mockResolvedValue([{ headers: {} }]) };
+    const twilio = { messages: { create: jest.fn() } };
+    const config = emailConfig({
+      ...EMAIL_CONFIG,
+      ADMIN_NOTIFICATION_EMAIL: 'admin@trustlink.org',
+    });
+
+    const svc = new NotificationsService(
+      makeRepo(created),
+      sendGrid,
+      twilio,
+      config,
+    );
+
+    await svc.notifyDisputedAdmin(
+      stubEscrow,
+      'GADMIN_STELLAR_KEY_SHOULD_NOT_BE_SENT',
+    );
+
+    expect(sendGrid.send).toHaveBeenCalledTimes(1);
+    expect(sendGrid.send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: 'admin@trustlink.org',
+      }),
+    );
+    expect(sendGrid.send).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: expect.stringMatching(/^G/),
+      }),
+    );
+    expect(twilio.messages.create).not.toHaveBeenCalled();
+  });
+
+  it('skips admin notification with a warning when ADMIN_NOTIFICATION_EMAIL is unset', async () => {
+    const created: Array<Record<string, unknown>> = [];
+    const sendGrid = { send: jest.fn() };
+    const twilio = { messages: { create: jest.fn() } };
+    const config = emailConfig({
+      ...EMAIL_CONFIG,
+      ADMIN_NOTIFICATION_EMAIL: undefined,
+    });
+
+    const svc = new NotificationsService(
+      makeRepo(created),
+      sendGrid,
+      twilio,
+      config,
+    );
+
+    await svc.notifyDisputedAdmin(
+      stubEscrow,
+      'GADMIN_STELLAR_KEY_SHOULD_NOT_BE_SENT',
+    );
+
+    expect(sendGrid.send).not.toHaveBeenCalled();
+    expect(twilio.messages.create).not.toHaveBeenCalled();
+    expect(created).toHaveLength(0);
+  });
+
+  it('records buyer notification as undeliverable without calling providers when contact info is missing', async () => {
+    const created: Array<Record<string, unknown>> = [];
+    const sendGrid = { send: jest.fn() };
+    const twilio = { messages: { create: jest.fn() } };
+    const config = emailConfig(EMAIL_CONFIG);
+
+    const svc = new NotificationsService(
+      makeRepo(created),
+      sendGrid,
+      twilio,
+      config,
+    );
+
+    await svc.notifyCompleted(stubEscrow);
+
+    expect(sendGrid.send).not.toHaveBeenCalled();
+    expect(twilio.messages.create).not.toHaveBeenCalled();
+
+    expect(created.length).toBeGreaterThanOrEqual(1);
+    for (const row of created) {
+      expect(row.recipientAddress).toBe(stubEscrow.buyerAddress);
+      expect(row.attemptCount).toBe(0);
+      expect(row.providerMessageId).toBeNull();
+    }
+  });
+
+  it('neither SendGrid nor Twilio is called when a recipient address is a valid Stellar public key', async () => {
+    const created: Array<Record<string, unknown>> = [];
+    const sendGrid = { send: jest.fn() };
+    const twilio = { messages: { create: jest.fn() } };
+    const config = emailConfig(EMAIL_CONFIG);
+
+    const svc = new NotificationsService(
+      makeRepo(created),
+      sendGrid,
+      twilio,
+      config,
+    );
+
+    await (svc as any).dispatchEmail(
+      'SHIPPED',
+      stubEscrow,
+      VALID_STELLAR_PUBLIC_KEY,
+    );
+    await (svc as any).dispatchSms(
+      'SHIPPED',
+      stubEscrow,
+      VALID_STELLAR_PUBLIC_KEY,
+    );
+
+    expect(sendGrid.send).not.toHaveBeenCalled();
+    expect(twilio.messages.create).not.toHaveBeenCalled();
+    expect(created).toHaveLength(2);
+    expect(created[0].attemptCount).toBe(0);
+    expect(created[1].attemptCount).toBe(0);
+  });
+
+  it('does not call providers with a Stellar vendor address when VendorProfileRepository is unavailable (#946)', async () => {
+    const created: Array<Record<string, unknown>> = [];
+    const sendGrid = { send: jest.fn() };
+    const twilio = { messages: { create: jest.fn() } };
+    const config = emailConfig(EMAIL_CONFIG);
+
+    // No VendorProfileRepository argument → legacy path used to dispatch to G…
+    const svc = new NotificationsService(
+      makeRepo(created),
+      sendGrid,
+      twilio,
+      config,
+    );
+
+    await svc.notifyDisputed({
+      ...stubEscrow,
+      vendorAddress: VALID_STELLAR_PUBLIC_KEY,
+    });
+
+    expect(sendGrid.send).not.toHaveBeenCalled();
+    expect(twilio.messages.create).not.toHaveBeenCalled();
+    expect(created.length).toBeGreaterThanOrEqual(1);
+    for (const row of created) {
+      expect(row.attemptCount).toBe(0);
+      expect(row.providerMessageId).toBeNull();
+    }
+  });
+});
+
+// ── Issue #1062 — Emails starting with capital 'G' must be sent ──────────
+//
+// dispatchEmail and dispatchSms previously used `recipientAddress.startsWith('G')`
+// to detect Stellar public keys. This incorrectly flagged real email addresses
+// like `George@example.com` as Stellar keys, so they were recorded as
+// undeliverable and never sent. The fix uses `StrKey.isValidEd25519PublicKey`
+// which only returns true for valid 56-char base32-encoded ed25519 public keys.
+
+describe('NotificationsService (#1062) — emails starting with G are sent, not blocked', () => {
+  const stubEscrow: EscrowRecord = {
+    id: 'escrow-1062',
+    contractEscrowId: null,
+    itemName: 'Widget',
+    itemRef: 'ref-1062',
+    amount: 100,
+    currency: 'USDC',
+    buyerAddress: 'GBUYER1062',
+    vendorAddress: 'GVENDOR1062',
+    state: 'FUNDED',
+    trackingId: null,
+    shippedAt: null,
+    deliveredAt: null,
+    deliveryRecordedAt: null,
+    autoReleaseSubmittedAt: null,
+    autoReleaseTxHash: null,
+    disputeId: null,
+    cancelledAt: null,
+    createdAt: new Date('2026-01-01T00:00:00.000Z'),
+    updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+  };
+
+  function makeRepo(created: Array<Record<string, unknown>>) {
+    return {
+      create: jest.fn((data: unknown) => {
+        created.push(data as Record<string, unknown>);
+        return Promise.resolve(data);
+      }),
+    } as unknown as NotificationRepository;
+  }
+
+  afterEach(() => jest.restoreAllMocks());
+
+  it('sends an email to an address that starts with G but is not a Stellar key', async () => {
+    const created: Array<Record<string, unknown>> = [];
+    const sendGrid = { send: jest.fn().mockResolvedValue([{ headers: {} }]) };
+    const config = emailConfig(EMAIL_CONFIG);
+
+    const svc = new NotificationsService(
+      makeRepo(created),
+      sendGrid,
+      undefined,
+      config,
+    );
+    jest
+      .spyOn(svc, 'sleep' as keyof NotificationsService)
+      .mockResolvedValue(undefined);
+
+    // George@example.com starts with 'G' but is not a valid Stellar public key
+    await (svc as any).dispatchEmail(
+      'FUNDED',
+      stubEscrow,
+      'George@example.com',
+    );
+
+    // The email WAS sent — this is the bug: it used to be blocked
+    expect(sendGrid.send).toHaveBeenCalledTimes(1);
+    expect(sendGrid.send).toHaveBeenCalledWith(
+      expect.objectContaining({ to: 'George@example.com' }),
+    );
+
+    // An audit row was written with attemptCount=1 (the send succeeded)
+    expect(created).toHaveLength(1);
+    expect(created[0].channel).toBe('EMAIL');
+    expect(created[0].recipientAddress).toBe('George@example.com');
+    expect(created[0].attemptCount).toBe(1);
+  });
+
+  it('sends an SMS to a phone number that starts with G but is not a Stellar key', async () => {
+    const created: Array<Record<string, unknown>> = [];
+    const twilio = {
+      messages: { create: jest.fn().mockResolvedValue({ sid: 'SM1062' }) },
+    };
+    const config = emailConfig(EMAIL_CONFIG);
+
+    const svc = new NotificationsService(
+      makeRepo(created),
+      undefined,
+      twilio,
+      config,
+    );
+    jest
+      .spyOn(svc, 'sleep' as keyof NotificationsService)
+      .mockResolvedValue(undefined);
+
+    // A phone number string that starts with 'G' — not a valid Stellar key
+    await (svc as any).dispatchSms('FUNDED', stubEscrow, 'GSM-555-0199');
+
+    expect(twilio.messages.create).toHaveBeenCalledTimes(1);
+    expect(twilio.messages.create).toHaveBeenCalledWith(
+      expect.objectContaining({ to: 'GSM-555-0199' }),
+    );
+
+    expect(created).toHaveLength(1);
+    expect(created[0].channel).toBe('SMS');
+    expect(created[0].recipientAddress).toBe('GSM-555-0199');
+    expect(created[0].attemptCount).toBe(1);
+  });
+
+  it('records a real Stellar public key as undeliverable for email', async () => {
+    const created: Array<Record<string, unknown>> = [];
+    const sendGrid = { send: jest.fn() };
+    const config = emailConfig(EMAIL_CONFIG);
+
+    const svc = new NotificationsService(
+      makeRepo(created),
+      sendGrid,
+      undefined,
+      config,
+    );
+
+    // A valid 56-char Stellar ed25519 public key
+    expect(StrKey.isValidEd25519PublicKey(VALID_STELLAR_PUBLIC_KEY)).toBe(true);
+
+    await (svc as any).dispatchEmail(
+      'FUNDED',
+      stubEscrow,
+      VALID_STELLAR_PUBLIC_KEY,
+    );
+
+    // The email was NOT sent
+    expect(sendGrid.send).not.toHaveBeenCalled();
+
+    // But an undeliverable audit row was written
+    expect(created).toHaveLength(1);
+    expect(created[0].channel).toBe('EMAIL');
+    expect(created[0].recipientAddress).toBe(VALID_STELLAR_PUBLIC_KEY);
+    expect(created[0].attemptCount).toBe(0);
+    expect(created[0].providerMessageId).toBeNull();
+  });
+
+  it('records a real Stellar public key as undeliverable for SMS', async () => {
+    const created: Array<Record<string, unknown>> = [];
+    const twilio = { messages: { create: jest.fn() } };
+    const config = emailConfig(EMAIL_CONFIG);
+
+    const svc = new NotificationsService(
+      makeRepo(created),
+      undefined,
+      twilio,
+      config,
+    );
+
+    await (svc as any).dispatchSms(
+      'FUNDED',
+      stubEscrow,
+      VALID_STELLAR_PUBLIC_KEY,
+    );
+
+    expect(twilio.messages.create).not.toHaveBeenCalled();
+
+    expect(created).toHaveLength(1);
+    expect(created[0].channel).toBe('SMS');
+    expect(created[0].recipientAddress).toBe(VALID_STELLAR_PUBLIC_KEY);
+    expect(created[0].attemptCount).toBe(0);
+    expect(created[0].providerMessageId).toBeNull();
   });
 });

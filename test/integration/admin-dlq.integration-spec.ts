@@ -224,6 +224,79 @@ describe('Admin DLQ Operations (issue #297)', () => {
       );
     });
 
+    it('handles concurrent replays: exactly one succeeds with 201 and makes contract call, the loser gets 409', async () => {
+      await ensureVendors(prisma, 'vendor-replay-race');
+      await prisma.escrow.create({
+        data: {
+          id: 'escrow-replay-race',
+          contractEscrowId: 502n,
+          itemName: 'Replay Race Widget',
+          itemRef: 'replay-race',
+          amount: 100,
+          currency: 'USDC',
+          buyerAddress: 'buyer-replay-race',
+          vendorAddress: 'vendor-replay-race',
+          state: 'DELIVERED',
+        },
+      });
+
+      const entry = await seedDlqEntry({
+        operation: 'submitAutoRelease',
+        escrowId: 'escrow-replay-race',
+      });
+
+      // Launch two concurrent replay requests
+      const [res1, res2] = await Promise.all([
+        request(httpServer())
+          .post(`/admin/dlq/${entry.id}/replay`)
+          .set('Authorization', `Bearer ${adminJwt()}`),
+        request(httpServer())
+          .post(`/admin/dlq/${entry.id}/replay`)
+          .set('Authorization', `Bearer ${adminJwt()}`),
+      ]);
+
+      const statuses = [res1.status, res2.status].sort();
+      expect(statuses).toEqual([201, 409]);
+      expect(contractService.submitAutoRelease).toHaveBeenCalledTimes(1);
+    });
+
+    it('recovers and replays a record stuck in REPLAYING past the stale threshold', async () => {
+      await ensureVendors(prisma, 'vendor-replay-stale');
+      await prisma.escrow.create({
+        data: {
+          id: 'escrow-replay-stale',
+          contractEscrowId: 503n,
+          itemName: 'Replay Stale Widget',
+          itemRef: 'replay-stale',
+          amount: 100,
+          currency: 'USDC',
+          buyerAddress: 'buyer-replay-stale',
+          vendorAddress: 'vendor-replay-stale',
+          state: 'DELIVERED',
+        },
+      });
+
+      const staleTime = new Date(Date.now() - 10 * 60 * 1000);
+      const entry = await prisma.failedTransaction.create({
+        data: {
+          operation: 'submitAutoRelease',
+          escrowId: 'escrow-replay-stale',
+          errorMessage: 'Stuck in replaying',
+          ledgerFeedback: Prisma.DbNull,
+          status: 'REPLAYING',
+          updatedAt: staleTime,
+          attempts: 1,
+        },
+      });
+
+      const res = await request(httpServer())
+        .post(`/admin/dlq/${entry.id}/replay`)
+        .set('Authorization', `Bearer ${adminJwt()}`)
+        .expect(201);
+
+      expect(res.body.status).toBe('REPLAYED');
+    });
+
     it('returns 404 for non-existent entry', async () => {
       await request(httpServer())
         .post('/admin/dlq/non-existent-id/replay')
@@ -243,6 +316,28 @@ describe('Admin DLQ Operations (issue #297)', () => {
 
       expect(res.body.status).toBe('ABANDONED');
       expect(res.body.reviewedAt).not.toBeNull();
+    });
+
+    it('abandons a record stuck in REPLAYING past the stale threshold', async () => {
+      const staleTime = new Date(Date.now() - 10 * 60 * 1000);
+      const entry = await prisma.failedTransaction.create({
+        data: {
+          operation: 'submitAutoRelease',
+          escrowId: null,
+          errorMessage: 'Stuck in replaying',
+          ledgerFeedback: Prisma.DbNull,
+          status: 'REPLAYING',
+          updatedAt: staleTime,
+          attempts: 1,
+        },
+      });
+
+      const res = await request(httpServer())
+        .post(`/admin/dlq/${entry.id}/abandon`)
+        .set('Authorization', `Bearer ${adminJwt()}`)
+        .expect(201);
+
+      expect(res.body.status).toBe('ABANDONED');
     });
   });
 

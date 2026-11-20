@@ -20,6 +20,8 @@ import {
 } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { THROTTLE_WINDOW_MS } from '../common/security/throttle.config';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import type { AuthUser } from '../auth/auth-user';
 import { JwtGuard } from '../auth/guards/jwt.guard';
 import { AdminGuard } from '../admin/guards/admin.guard';
 import { DlqService } from './dlq.service';
@@ -125,6 +127,8 @@ export class DlqController {
     required: false,
     example: '9d9e2e16-0c78-4a84-9c8c-0f3a5eb2d4e3',
   })
+  @ApiResponse({ status: 429, description: 'Too many requests.' })
+  @ApiResponse({ status: 500, description: 'Internal server error.' })
   @Throttle({ default: { limit: 20, ttl: THROTTLE_WINDOW_MS } })
   @Get()
   list(@Query() query: ListFailedTransactionsQueryDto) {
@@ -144,6 +148,8 @@ export class DlqController {
     description: 'Failed transaction record not found.',
   })
   @ApiParam({ name: 'id', example: 'abc123-def4-5678-90ab-cdef12345678' })
+  @ApiResponse({ status: 429, description: 'Too many requests.' })
+  @ApiResponse({ status: 500, description: 'Internal server error.' })
   @Throttle({ default: { limit: 30, ttl: THROTTLE_WINDOW_MS } })
   @Get(':id')
   detail(@Param('id') id: string) {
@@ -155,6 +161,7 @@ export class DlqController {
    * is auto-release; other operations are flagged and must be replayed by
    * hand. Either way the record is updated on the outcome.
    * 
+   *
    * Issue #953: Successful replays are logged to the audit trail.
    */
   @ApiOperation({ summary: 'Replay a failed on-chain transaction attempt' })
@@ -169,10 +176,17 @@ export class DlqController {
     status: 404,
     description: 'Failed transaction record not found.',
   })
+  @ApiResponse({
+    status: 409,
+    description: 'Failed transaction record is not in pending review status.',
+  })
   @ApiParam({ name: 'id', example: 'abc123-def4-5678-90ab-cdef12345678' })
+  @ApiResponse({ status: 429, description: 'Too many requests.' })
+  @ApiResponse({ status: 500, description: 'Internal server error.' })
   @Throttle({ default: { limit: 5, ttl: THROTTLE_WINDOW_MS } })
   @Post(':id/replay')
   async replay(@Param('id') id: string, @Req() req: any) {
+  async replay(@Param('id') id: string, @CurrentUser() admin?: AuthUser) {
     const record = await this.dlq.get(id);
     const result = await this.dlq.replay(record.id, async (r) => {
       if (r.operation === 'submitAutoRelease' && r.escrowId) {
@@ -202,6 +216,7 @@ export class DlqController {
 
     // Issue #953: Audit successful replay
     const adminAddress = req.user?.walletAddress || 'unknown';
+    const adminAddress = admin?.address ?? 'unknown';
     await this.auditLog.append({
       action: 'DLQ_REPLAYED',
       adminAddress,
@@ -231,7 +246,13 @@ export class DlqController {
     status: 404,
     description: 'Failed transaction record not found.',
   })
+  @ApiResponse({
+    status: 409,
+    description: 'Failed transaction record is not in pending review status.',
+  })
   @ApiParam({ name: 'id', example: 'abc123-def4-5678-90ab-cdef12345678' })
+  @ApiResponse({ status: 429, description: 'Too many requests.' })
+  @ApiResponse({ status: 500, description: 'Internal server error.' })
   @Throttle({ default: { limit: 5, ttl: THROTTLE_WINDOW_MS } })
   @Post(':id/abandon')
   async abandon(@Param('id') id: string, @Req() req: any) {
@@ -239,6 +260,11 @@ export class DlqController {
 
     // Issue #953: Audit abandon action
     const adminAddress = req.user?.walletAddress || 'unknown';
+  async abandon(@Param('id') id: string, @CurrentUser() admin?: AuthUser) {
+    const result = await this.dlq.abandon(id);
+
+    // Issue #953: Audit abandon action
+    const adminAddress = admin?.address ?? 'unknown';
     await this.auditLog.append({
       action: 'DLQ_ABANDONED',
       adminAddress,

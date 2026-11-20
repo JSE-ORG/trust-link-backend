@@ -184,7 +184,7 @@ export class NotificationRetryQueueService
         'trustlink.notification.type': job.type,
         'trustlink.notification.channel': job.channel,
         'trustlink.notification.request_id': job.requestId ?? 'generated',
-        'trustlink.notification.queued': this.bullQueue !== undefined,
+        'trustlink.notification.queued': this.bullQueue !== null,
         'trustlink.notification.max_attempts': this.options.backoff.attempts,
       },
       () => this.enqueueInternal(job),

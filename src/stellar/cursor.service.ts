@@ -12,7 +12,8 @@ import { TracingService } from '../tracing/tracing.service';
 export class CursorService {
   private readonly logger = new Logger(CursorService.name);
   public static readonly DEFAULT_KEY = 'stellar-listener';
-  public static readonly SOROBAN_POLLER_KEY = 'soroban-poller';
+  public static readonly SOROBAN_POLLER_KEY = CursorService.DEFAULT_KEY;
+  public static readonly EVENT_REPLAY_KEY = 'horizon-event-replay';
 
   constructor(
     private readonly cursorRepository: CursorRepository,
@@ -38,7 +39,9 @@ export class CursorService {
    * Read the persisted cursor value. Returns `undefined` when no cursor has
    * been stored yet (first run).
    */
-  async get(key: string = CursorService.DEFAULT_KEY): Promise<string | undefined> {
+  async get(
+    key: string = CursorService.DEFAULT_KEY,
+  ): Promise<string | undefined> {
     return this.traced('stellar.cursor.get', {}, () => this.getInternal(key));
   }
 
@@ -60,7 +63,10 @@ export class CursorService {
    * batch processing so the listener can resume from the last processed
    * position after a restart.
    */
-  async set(cursorValue: string, key: string = CursorService.DEFAULT_KEY): Promise<void> {
+  async set(
+    cursorValue: string,
+    key: string = CursorService.DEFAULT_KEY,
+  ): Promise<void> {
     return this.traced('stellar.cursor.set', {}, () =>
       this.setInternal(cursorValue, key),
     );

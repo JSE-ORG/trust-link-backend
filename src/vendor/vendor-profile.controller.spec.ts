@@ -10,6 +10,7 @@ import request from 'supertest';
 import { bearer } from '../../test/auth-helper';
 import type { AuthUser } from '../auth/auth-user';
 import { JwtGuard } from '../auth/guards/jwt.guard';
+import { ConfigService } from '../config/config.service';
 import type { VendorTrackingSettingsRecord } from '../prisma/prisma.service';
 import { CreateVendorProfileDto } from './dto/create-vendor-profile.dto';
 import { UpdateNotificationPreferencesDto } from './dto/update-notification-preferences.dto';
@@ -117,6 +118,10 @@ describe('VendorProfileController', () => {
       controllers: [VendorProfileController],
       providers: [
         JwtGuard,
+        {
+          provide: ConfigService,
+          useValue: { get: jest.fn((key: string) => process.env[key]) },
+        },
         { provide: VendorProfileService, useValue: service },
       ],
     }).compile();

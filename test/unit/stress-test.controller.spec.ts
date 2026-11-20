@@ -14,6 +14,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { StressTestController } from '../../src/stress-test/stress-test.controller';
 import { StressTestService } from '../../src/stress-test/stress-test.service';
+import { AuditLogService } from '../../src/audit-log/audit-log.service';
 import { JwtGuard } from '../../src/auth/guards/jwt.guard';
 import { AdminGuard } from '../../src/admin/guards/admin.guard';
 import { ConfigService } from '../../src/config/config.service';
@@ -23,6 +24,7 @@ import { bearer } from '../auth-helper';
 describe('StressTestController (issue #576)', () => {
   let app: INestApplication;
   let stressTestService: jest.Mocked<StressTestService>;
+  let auditLogService: { append: jest.Mock };
 
   // Deliberately a real Stellar-format address that is not
   // process.env.ADMIN_ADDRESS, so the non-admin case exercises AdminGuard's
@@ -63,15 +65,19 @@ describe('StressTestController (issue #576)', () => {
 
   beforeEach(async () => {
     stressTestService = {
+      generateTestId: jest.fn().mockReturnValue('test-generated-id'),
       runStressTest: jest.fn(),
       getActiveTest: jest.fn(),
       getAllActiveTests: jest.fn(),
     } as unknown as jest.Mocked<StressTestService>;
 
+    auditLogService = { append: jest.fn().mockResolvedValue(undefined) };
+
     const moduleRef: TestingModule = await Test.createTestingModule({
       controllers: [StressTestController],
       providers: [
         { provide: StressTestService, useValue: stressTestService },
+        { provide: AuditLogService, useValue: auditLogService },
         JwtGuard,
         AdminGuard,
         {
@@ -157,6 +163,60 @@ describe('StressTestController (issue #576)', () => {
 
       expect(stressTestService.runStressTest).toHaveBeenCalledTimes(1);
       expect(res.body.testId).toBe('stress-test-1');
+    });
+
+    it('audits before the run starts with generated test id and profile count', async () => {
+      let auditCalledBeforeRun = false;
+      auditLogService.append.mockImplementation(async () => {
+        expect(stressTestService.runStressTest).not.toHaveBeenCalled();
+        auditCalledBeforeRun = true;
+      });
+      stressTestService.runStressTest.mockResolvedValue(sampleResult);
+
+      await request(app.getHttpServer())
+        .post('/stress-test')
+        .set('Authorization', bearer(process.env.ADMIN_ADDRESS!))
+        .send(validConfig)
+        .expect(201);
+
+      expect(auditCalledBeforeRun).toBe(true);
+      expect(auditLogService.append).toHaveBeenCalledWith({
+        action: 'STRESS_TEST_STARTED',
+        adminAddress: process.env.ADMIN_ADDRESS,
+        entityType: 'stress_test',
+        entityId: 'test-generated-id',
+        details: {
+          testName: validConfig.testName,
+          profileCount: validConfig.profiles.length,
+        },
+      });
+      expect(stressTestService.runStressTest).toHaveBeenCalledWith(
+        expect.anything(),
+        'test-generated-id',
+      );
+    });
+
+    it('still audits when runStressTest throws an error', async () => {
+      stressTestService.runStressTest.mockRejectedValue(
+        new Error('Run crashed'),
+      );
+
+      await request(app.getHttpServer())
+        .post('/stress-test')
+        .set('Authorization', bearer(process.env.ADMIN_ADDRESS!))
+        .send(validConfig)
+        .expect(500);
+
+      expect(auditLogService.append).toHaveBeenCalledWith({
+        action: 'STRESS_TEST_STARTED',
+        adminAddress: process.env.ADMIN_ADDRESS,
+        entityType: 'stress_test',
+        entityId: 'test-generated-id',
+        details: {
+          testName: validConfig.testName,
+          profileCount: validConfig.profiles.length,
+        },
+      });
     });
 
     it('returns 400 rather than starting a run when profiles is not an array', async () => {

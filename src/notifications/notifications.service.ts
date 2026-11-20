@@ -6,6 +6,7 @@ import {
   OnModuleInit,
   Optional,
 } from '@nestjs/common';
+import { StrKey } from '@stellar/stellar-sdk';
 import * as crypto from 'crypto';
 import { EscrowRecord, NotificationType } from '../prisma/prisma.service';
 import { ConfigService } from '../config/config.service';
@@ -16,6 +17,7 @@ import {
 import { SENDGRID_CLIENT, TWILIO_CLIENT } from './notifications.tokens';
 import { decryptContact } from '../common/sanitization/contact-encryption.util';
 import { VendorProfileRepository } from '../vendor/vendor-profile.repository';
+import { DEFAULT_NOTIFICATION_CHANNELS } from '../vendor/vendor.constants';
 
 interface SendGridClient {
   send(message: Record<string, unknown>): Promise<unknown>;
@@ -224,20 +226,25 @@ export class NotificationsService implements OnModuleInit {
   }
 
   /**
-   * Notifies an operator (`adminAddress`) that a dispute needs attention.
+   * Notifies an operator that a dispute needs attention (issue #946).
    *
-   * Identical mechanics to {@link notifyDisputed} but addressed to the
-   * caller-supplied admin address rather than the vendor, and it still
-   * writes `type: 'DISPUTED'` rows — the channel/recipient on the row is
-   * what distinguishes an admin alert from the vendor alert. The caller is
-   * responsible for passing a real configured admin address; this method
-   * does not read `ADMIN_ADDRESS` itself.
+   * Dispatches to the configured ADMIN_NOTIFICATION_EMAIL if set.
+   * If unset, skips with a warning so no provider is invoked with an
+   * invalid address and no failed notification rows are written.
    */
-  notifyDisputedAdmin(
+  async notifyDisputedAdmin(
     escrow: EscrowRecord,
-    adminAddress: string,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _adminAddress?: string,
   ): Promise<void> {
-    return this.dispatch('DISPUTED', escrow, adminAddress);
+    const adminEmail = this.config?.get<string>('ADMIN_NOTIFICATION_EMAIL');
+    if (!adminEmail) {
+      this.logger.warn(
+        `ADMIN_NOTIFICATION_EMAIL is not configured — skipping admin dispute notification for escrow ${escrow.id}`,
+      );
+      return;
+    }
+    return this.dispatchEmail('DISPUTED', escrow, adminEmail);
   }
 
   /**
@@ -265,8 +272,8 @@ export class NotificationsService implements OnModuleInit {
    * Resolution order:
    *  1. Decrypt buyerContactEmail  → send email to that address
    *  2. Decrypt buyerContactPhone  → send SMS to that number
-   *  3. Neither stored             → fall back to buyerAddress (Stellar key)
-   *     so the notification record is still written, even if undeliverable.
+   *  3. Neither stored             → record notification as undeliverable without
+   *     calling a provider (issue #946).
    *
    * Decryption failures are caught and logged rather than thrown — a bad
    * ciphertext should not block state transitions that triggered the notify.
@@ -291,20 +298,48 @@ export class NotificationsService implements OnModuleInit {
     );
 
     if (resolvedEmail) {
-      await this.dispatchEmail(type, escrow, resolvedEmail);
+      await this.traced(
+        'notification.dispatch.email',
+        {
+          'trustlink.notification.type': type,
+          'trustlink.notification.channel': 'email',
+          'trustlink.escrow.id': escrow.id,
+        },
+        () => this.dispatchEmail(type, escrow, resolvedEmail),
+      );
     }
 
     if (resolvedPhone) {
-      await this.dispatchSms(type, escrow, resolvedPhone);
+      await this.traced(
+        'notification.dispatch.sms',
+        {
+          'trustlink.notification.type': type,
+          'trustlink.notification.channel': 'sms',
+          'trustlink.escrow.id': escrow.id,
+        },
+        () => this.dispatchSms(type, escrow, resolvedPhone),
+      );
     }
 
     if (!resolvedEmail && !resolvedPhone) {
-      // No contact info stored yet — fall back to Stellar address so the
-      // notification row is still written for audit purposes.
+      // No contact info stored yet — record as undeliverable without calling a provider (issue #946)
       this.logger.warn(
-        `No buyer contact info for escrow ${escrow.id} — falling back to Stellar address`,
+        `No buyer contact info for escrow ${escrow.id} — recording notification as undeliverable without calling a provider`,
       );
-      await this.dispatch(type, escrow, escrow.buyerAddress);
+      await this.recordUndeliverable(
+        type,
+        escrow,
+        'EMAIL',
+        escrow.buyerAddress,
+        'no buyer contact details available',
+      );
+      await this.recordUndeliverable(
+        type,
+        escrow,
+        'SMS',
+        escrow.buyerAddress,
+        'no buyer contact details available',
+      );
     }
   }
 
@@ -318,33 +353,57 @@ export class NotificationsService implements OnModuleInit {
     escrow: EscrowRecord,
   ): Promise<void> {
     if (!this.vendorProfiles) {
+      // Never hand a Stellar `G…` address to SendGrid/Twilio (#946). Record
+      // undeliverable rows instead of the old legacy address dispatch.
       this.logger.warn(
-        `VendorProfileRepository unavailable; falling back to legacy vendor address dispatch for escrow ${escrow.id}`,
+        `VendorProfileRepository unavailable; recording ${type} as undeliverable for escrow ${escrow.id}`,
       );
-      await this.dispatch(type, escrow, escrow.vendorAddress);
+      await this.recordUndeliverable(
+        type,
+        escrow,
+        'EMAIL',
+        escrow.vendorAddress,
+        'vendor profile repository unavailable; cannot resolve a deliverable email',
+      );
       return;
     }
 
-    const profile = await this.vendorProfiles?.findByAddress(
-      escrow.vendorAddress,
-    );
+    const [profile, prefs] = await Promise.all([
+      this.vendorProfiles.findByAddress(escrow.vendorAddress),
+      this.vendorProfiles
+        .findNotificationPreferences(escrow.vendorAddress)
+        .catch((err) => {
+          this.logger.warn(
+            `Failed to load notification preferences for vendor ${escrow.vendorAddress}; defaulting to EMAIL: ${err instanceof Error ? err.message : String(err)}`,
+          );
+          return null;
+        }),
+    ]);
+
+    const channels = prefs?.notificationChannels ?? [
+      ...DEFAULT_NOTIFICATION_CHANNELS,
+    ];
     const email = profile?.email?.trim() || null;
     const phone = profile?.phone?.trim() || null;
 
-    if (email) {
-      await this.dispatchEmail(type, escrow, email);
-    } else {
-      this.logger.warn(
-        `No vendor email for escrow ${escrow.id} vendor ${escrow.vendorAddress}; skipping ${type} email`,
-      );
+    if (channels.includes('EMAIL')) {
+      if (email) {
+        await this.dispatchEmail(type, escrow, email);
+      } else {
+        this.logger.warn(
+          `No vendor email for escrow ${escrow.id} vendor ${escrow.vendorAddress}; skipping ${type} email`,
+        );
+      }
     }
 
-    if (phone) {
-      await this.dispatchSms(type, escrow, phone);
-    } else {
-      this.logger.warn(
-        `No vendor phone for escrow ${escrow.id} vendor ${escrow.vendorAddress}; skipping ${type} SMS`,
-      );
+    if (channels.includes('SMS')) {
+      if (phone) {
+        await this.dispatchSms(type, escrow, phone);
+      } else {
+        this.logger.warn(
+          `No vendor phone for escrow ${escrow.id} vendor ${escrow.vendorAddress}; skipping ${type} SMS`,
+        );
+      }
     }
   }
 
@@ -370,38 +429,31 @@ export class NotificationsService implements OnModuleInit {
 
   // ── Internal dispatch ─────────────────────────────────────────────────────
 
-  private async dispatch(
+  /**
+   * Records the audit row for a notification that was never attempted (issue #946),
+   * such as when recipient is an undeliverable Stellar public key or buyer contact details are missing.
+   * `attemptCount` stays 0 because no provider call was made.
+   */
+  private async recordUndeliverable(
     type: NotificationType,
     escrow: EscrowRecord,
+    channel: 'EMAIL' | 'SMS',
     recipientAddress: string,
+    reason: string,
   ): Promise<void> {
-    return this.traced(
-      'notification.dispatch',
-      {
-        'trustlink.notification.type': type,
-        'trustlink.escrow.id': escrow.id,
-      },
-      async () => {
-        await this.traced(
-          'notification.dispatch.email',
-          {
-            'trustlink.notification.type': type,
-            'trustlink.notification.channel': 'email',
-            'trustlink.escrow.id': escrow.id,
-          },
-          () => this.dispatchEmail(type, escrow, recipientAddress),
-        );
-        await this.traced(
-          'notification.dispatch.sms',
-          {
-            'trustlink.notification.type': type,
-            'trustlink.notification.channel': 'sms',
-            'trustlink.escrow.id': escrow.id,
-          },
-          () => this.dispatchSms(type, escrow, recipientAddress),
-        );
-      },
+    this.logger.warn(
+      `Cannot send ${type} ${channel} to ${recipientAddress}: ${reason}`,
     );
+    await this.createNotification({
+      escrowId: escrow.id,
+      type,
+      channel,
+      recipientAddress,
+      message: `${type}: ${escrow.itemName}`,
+      providerMessageId: null,
+      attemptCount: 0,
+      lastResponseCode: null,
+    });
   }
 
   /**
@@ -462,6 +514,17 @@ export class NotificationsService implements OnModuleInit {
     let providerMessageId: string | null = null;
     let attemptCount = 0;
     let lastResponseCode: number | null = null;
+
+    if (StrKey.isValidEd25519PublicKey(recipientAddress)) {
+      await this.recordUndeliverable(
+        type,
+        escrow,
+        'EMAIL',
+        recipientAddress,
+        `recipient address is a Stellar public key, not an email address [Request-ID: ${requestId}]`,
+      );
+      return;
+    }
 
     // #839 — Resolve the sender and the template id BEFORE the retry loop.
     //
@@ -524,6 +587,13 @@ export class NotificationsService implements OnModuleInit {
         break;
       } catch (error) {
         lastResponseCode = this.extractResponseCode(error);
+        if (!this.isRetryableProviderError(lastResponseCode)) {
+          this.logger.error(
+            `SendGrid ${type} notification failed with non-retryable status ${lastResponseCode} [Request-ID: ${requestId}]`,
+            error instanceof Error ? error : new Error(String(error)),
+          );
+          break;
+        }
         if (attemptCount < MAX_ATTEMPTS) {
           const delayMs = 1000 * Math.pow(2, attemptCount - 1);
           this.logger.warn(
@@ -563,6 +633,17 @@ export class NotificationsService implements OnModuleInit {
     let attemptCount = 0;
     let lastResponseCode: number | null = null;
 
+    if (StrKey.isValidEd25519PublicKey(recipientAddress)) {
+      await this.recordUndeliverable(
+        type,
+        escrow,
+        'SMS',
+        recipientAddress,
+        `recipient address is a Stellar public key, not a phone number [Request-ID: ${requestId}]`,
+      );
+      return;
+    }
+
     while (attemptCount < MAX_ATTEMPTS) {
       attemptCount++;
       try {
@@ -580,6 +661,13 @@ export class NotificationsService implements OnModuleInit {
         break;
       } catch (error) {
         lastResponseCode = this.extractResponseCode(error);
+        if (!this.isRetryableProviderError(lastResponseCode)) {
+          this.logger.error(
+            `Twilio ${type} notification failed with non-retryable status ${lastResponseCode} [Request-ID: ${requestId}]`,
+            error instanceof Error ? error : new Error(String(error)),
+          );
+          break;
+        }
         if (attemptCount < MAX_ATTEMPTS) {
           const delayMs = 1000 * Math.pow(2, attemptCount - 1);
           this.logger.warn(
@@ -612,6 +700,21 @@ export class NotificationsService implements OnModuleInit {
   /** Resolves after `ms` milliseconds. Extracted for test spying. */
   protected sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  /**
+   * Returns false for non-retryable 4xx client errors (e.g. 400 Bad Request,
+   * 401, 403, 404, 422). 408 (Request Timeout) and 429 (Too Many Requests)
+   * are retryable, as are 5xx server errors and network faults (null status).
+   */
+  private isRetryableProviderError(statusCode: number | null): boolean {
+    if (statusCode === null || statusCode === 408 || statusCode === 429) {
+      return true;
+    }
+    if (statusCode >= 400 && statusCode < 500) {
+      return false;
+    }
+    return true;
   }
 
   private extractProviderId(response: unknown): string | null {

@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import {
   DisputeRecord,
   DisputeState,
@@ -33,5 +34,37 @@ export class DisputeRepository {
     return this.prisma.dispute
       .findFirst({ where: { escrowId } })
       .then((row) => (row ? toDisputeRecord(row) : null));
+  }
+
+  findMany(params?: {
+    where?: Prisma.DisputeWhereInput;
+    orderBy?: Prisma.DisputeOrderByWithRelationInput;
+    skip?: number;
+    take?: number;
+  }): Promise<DisputeRecord[]> {
+    return this.prisma.dispute
+      .findMany(params)
+      .then((rows) => rows.map(toDisputeRecord));
+  }
+
+  count(where?: Prisma.DisputeWhereInput): Promise<number> {
+    return this.prisma.dispute.count({ where });
+  }
+
+  findFirst(params: {
+    where?: Prisma.DisputeWhereInput;
+  }): Promise<DisputeRecord | null> {
+    return this.prisma.dispute
+      .findFirst(params)
+      .then((row) => (row ? toDisputeRecord(row) : null));
+  }
+
+  update(params: {
+    where: Prisma.DisputeWhereUniqueInput;
+    data: Prisma.DisputeUpdateInput;
+  }): Promise<DisputeRecord> {
+    return this.prisma.dispute
+      .update(params)
+      .then((row) => toDisputeRecord(row));
   }
 }

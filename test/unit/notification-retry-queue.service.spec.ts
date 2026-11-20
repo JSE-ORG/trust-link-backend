@@ -20,6 +20,7 @@ import { EscrowRecord } from '../../src/prisma/prisma.service';
 import { NotificationRepository } from '../../src/notifications/notification.repository';
 import { Job, Queue, Worker } from 'bullmq';
 import { ConfigService } from '../../src/config/config.service';
+import { createTracingMock } from './tracing-mock';
 
 /**
  * ConfigService double for the BullMQ tests.
@@ -1350,6 +1351,36 @@ describe('NotificationRetryQueueService — retry-path persistence guards (#725)
         expect.objectContaining({
           where: { id: 'n-sms' },
         }),
+      );
+    });
+  });
+
+  describe('enqueue span telemetry (#949)', () => {
+    it('sets trustlink.notification.queued to false when Redis is not configured', async () => {
+      const tracing = createTracingMock();
+      const dispatch = jest.fn().mockResolvedValue(undefined);
+      const service = new NotificationRetryQueueService(
+        undefined,
+        undefined,
+        undefined,
+        tracing.service,
+      );
+      service.registerDispatcher('EMAIL', { dispatch });
+
+      await service.enqueue(
+        makeJob({
+          channel: 'EMAIL',
+        }),
+      );
+
+      expect(tracing.withSpan).toHaveBeenCalledWith(
+        'notification.retry.enqueue',
+        expect.objectContaining({
+          attributes: expect.objectContaining({
+            'trustlink.notification.queued': false,
+          }),
+        }),
+        expect.any(Function),
       );
     });
   });

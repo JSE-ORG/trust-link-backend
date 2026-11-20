@@ -57,7 +57,7 @@ export class LogisticsService implements OnModuleInit {
   /**
    * Loads the logistics API key at startup, preferring a previously rotated
    * value persisted in `ProviderCredential` (issue #499) over the
-   * `GIGL_API_TOKEN` environment variable. The environment variable remains
+   * `LOGISTICS_API_KEY` environment variable. The environment variable remains
    * the fallback for a first boot with nothing stored yet.
    */
   private async loadPersistedApiKey(): Promise<void> {

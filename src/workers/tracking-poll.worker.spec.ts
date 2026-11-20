@@ -21,6 +21,8 @@ import { ConfigService } from '../config/config.service';
 import { EscrowRecord } from '../prisma/prisma.service';
 import { TEN_MINUTES_MS } from '../common/constants/time.constants';
 
+import { NotificationsService } from '../notifications/notifications.service';
+
 /**
  * The admin address `record_delivery` must be called with: the contract does
  * `require_auth()` on the caller and rejects anyone who is not the admin.
@@ -63,6 +65,7 @@ interface Harness {
     Pick<
       EscrowRepository,
       | 'findShippedWithTracking'
+      | 'markTrackingChecked'
       | 'claimDelivery'
       | 'markDelivered'
       | 'clearDeliveryClaim'
@@ -71,11 +74,15 @@ interface Harness {
   logisticsService: jest.Mocked<Pick<LogisticsService, 'getStatus'>>;
   contractService: jest.Mocked<Pick<ContractService, 'recordDelivery'>>;
   configService: jest.Mocked<Pick<ConfigService, 'get'>>;
+  notificationsService: jest.Mocked<
+    Pick<NotificationsService, 'notifyDelivered'>
+  >;
 }
 
 function createHarness(): Harness {
   const escrowRepository: Harness['escrowRepository'] = {
     findShippedWithTracking: jest.fn().mockResolvedValue([]),
+    markTrackingChecked: jest.fn().mockResolvedValue(makeEscrow()),
     claimDelivery: jest.fn().mockResolvedValue(makeEscrow()),
     markDelivered: jest.fn().mockResolvedValue(makeEscrow()),
     clearDeliveryClaim: jest.fn().mockResolvedValue(makeEscrow()),
@@ -97,12 +104,17 @@ function createHarness(): Harness {
     }),
   };
 
+  const notificationsService: Harness['notificationsService'] = {
+    notifyDelivered: jest.fn().mockResolvedValue(undefined),
+  };
+
   const worker = new TrackingPollWorker(
     escrowRepository as unknown as EscrowRepository,
     logisticsService as unknown as LogisticsService,
     contractService as unknown as ContractService,
     configService as unknown as ConfigService,
     createTracingMock().service,
+    notificationsService as unknown as NotificationsService,
   );
 
   return {
@@ -111,6 +123,7 @@ function createHarness(): Harness {
     logisticsService,
     contractService,
     configService,
+    notificationsService,
   };
 }
 
@@ -327,6 +340,82 @@ describe('TrackingPollWorker', () => {
       );
     });
 
+    it('notifies the buyer with the updated EscrowRecord when delivery is recorded (#948)', async () => {
+      const escrow = makeEscrow();
+      const deliveredEscrow = makeEscrow({
+        state: 'DELIVERED',
+        deliveredAt: new Date(),
+        deliveryRecordedAt: new Date(),
+      });
+      h.escrowRepository.findShippedWithTracking.mockResolvedValue([escrow]);
+      h.logisticsService.getStatus.mockResolvedValue({
+        status: 'DELIVERED',
+        events: [],
+      });
+      h.escrowRepository.claimDelivery.mockResolvedValue(escrow);
+      h.escrowRepository.markDelivered.mockResolvedValue(deliveredEscrow);
+
+      await h.worker.run();
+
+      expect(h.notificationsService.notifyDelivered).toHaveBeenCalledTimes(1);
+      expect(h.notificationsService.notifyDelivered).toHaveBeenCalledWith(
+        deliveredEscrow,
+      );
+    });
+
+    it('catches notification failure, logs at error level, and does not undo delivery or clear claim (#948)', async () => {
+      const errorSpy = jest
+        .spyOn(loggerOf(h.worker), 'error')
+        .mockImplementation(() => undefined);
+      const escrow = makeEscrow();
+      const deliveredEscrow = makeEscrow({
+        state: 'DELIVERED',
+        deliveredAt: new Date(),
+      });
+      h.escrowRepository.findShippedWithTracking.mockResolvedValue([escrow]);
+      h.logisticsService.getStatus.mockResolvedValue({
+        status: 'DELIVERED',
+        events: [],
+      });
+      h.escrowRepository.claimDelivery.mockResolvedValue(escrow);
+      h.escrowRepository.markDelivered.mockResolvedValue(deliveredEscrow);
+      h.notificationsService.notifyDelivered.mockRejectedValue(
+        new Error('notification delivery failed'),
+      );
+
+      await expect(h.worker.run()).resolves.not.toThrow();
+
+      expect(h.escrowRepository.markDelivered).toHaveBeenCalledWith(
+        'escrow-1',
+        expect.any(Date),
+      );
+      expect(h.escrowRepository.clearDeliveryClaim).not.toHaveBeenCalled();
+      expect(errorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('tracking_poll.notification_failed'),
+        expect.anything(),
+      );
+    });
+
+    it('succeeds without error when notificationsService is omitted (#948)', async () => {
+      const workerWithoutNotifications = new TrackingPollWorker(
+        h.escrowRepository as unknown as EscrowRepository,
+        h.logisticsService as unknown as LogisticsService,
+        h.contractService as unknown as ContractService,
+        h.configService as unknown as ConfigService,
+        createTracingMock().service,
+      );
+      const escrow = makeEscrow();
+      h.escrowRepository.findShippedWithTracking.mockResolvedValue([escrow]);
+      h.logisticsService.getStatus.mockResolvedValue({
+        status: 'DELIVERED',
+        events: [],
+      });
+      h.escrowRepository.claimDelivery.mockResolvedValue(escrow);
+
+      await expect(workerWithoutNotifications.run()).resolves.not.toThrow();
+      expect(h.escrowRepository.markDelivered).toHaveBeenCalled();
+    });
+
     it('does not call recordDelivery when status is IN_TRANSIT', async () => {
       h.escrowRepository.findShippedWithTracking.mockResolvedValue([
         makeEscrow(),
@@ -429,6 +518,22 @@ describe('TrackingPollWorker', () => {
       expect(h.contractService.recordDelivery).not.toHaveBeenCalled();
     });
 
+    it('only polls shipments returned by repository query (#945)', async () => {
+      // Vendors with enableTracking = false are filtered by findShippedWithTracking in-query
+      h.escrowRepository.findShippedWithTracking.mockResolvedValue([
+        makeEscrow({ id: 'escrow-enabled', trackingId: 'TRK-ENABLED' }),
+      ]);
+      h.logisticsService.getStatus.mockResolvedValue({
+        status: 'IN_TRANSIT',
+        events: [],
+      });
+
+      await h.worker.run();
+
+      expect(h.logisticsService.getStatus).toHaveBeenCalledTimes(1);
+      expect(h.logisticsService.getStatus).toHaveBeenCalledWith('TRK-ENABLED');
+    });
+
     it('isolates a failed item so healthy shipments are still processed', async () => {
       h.escrowRepository.findShippedWithTracking.mockResolvedValue([
         makeEscrow({ id: 'escrow-fail', trackingId: 'TRK-FAIL' }),
@@ -468,6 +573,9 @@ describe('TrackingPollWorker', () => {
 
       await expect(h.worker.run()).resolves.toBeUndefined();
       expect(h.escrowRepository.claimDelivery).not.toHaveBeenCalled();
+      expect(h.escrowRepository.markTrackingChecked).toHaveBeenCalledWith(
+        'escrow-1',
+      );
       expect(h.contractService.recordDelivery).not.toHaveBeenCalled();
     });
 

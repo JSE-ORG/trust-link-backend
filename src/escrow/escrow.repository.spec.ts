@@ -559,6 +559,10 @@ describe('EscrowRepository', () => {
           'vendor-addr',
         );
         await repo.markShipped(escrow.id, 'TRACK-669');
+        await prisma.escrow.update({
+          where: { id: escrow.id },
+          data: { contractEscrowId: BigInt(669) },
+        });
 
         const rows = await repo.findShippedWithTracking();
         expect(rows).toEqual(
@@ -566,6 +570,113 @@ describe('EscrowRepository', () => {
             expect.objectContaining({ id: escrow.id, trackingId: 'TRACK-669' }),
           ]),
         );
+      });
+
+      it('excludes a SHIPPED escrow with no contract mapping (#960)', async () => {
+        const escrow = await repo.create(
+          { ...makeDto(), itemRef: 'unmapped' },
+          'vendor-addr',
+        );
+        await repo.markShipped(escrow.id, 'TRACK-UNMAPPED');
+
+        const rows = await repo.findShippedWithTracking();
+        expect(rows.map((r) => r.id)).not.toContain(escrow.id);
+      });
+
+      it('excludes escrows when the vendor has tracking disabled (#945)', async () => {
+        const vendor = 'vendor-tracking-disabled';
+        await prisma.vendorProfile.create({
+          data: {
+            address: vendor,
+            businessName: 'No Tracking Vendor',
+            trackingSettings: {
+              create: {
+                enableTracking: false,
+              },
+            },
+          },
+        });
+
+        const escrow = await repo.create(
+          { ...makeDto(), itemRef: 'ref-tracking-disabled' },
+          vendor,
+        );
+        await repo.markShipped(escrow.id, 'TRACK-DISABLED');
+        await prisma.escrow.update({
+          where: { id: escrow.id },
+          data: { contractEscrowId: BigInt(9450) },
+        });
+
+        const rows = await repo.findShippedWithTracking();
+        expect(rows.map((r) => r.id)).not.toContain(escrow.id);
+      });
+
+      it('includes escrows when the vendor has no tracking settings row (defaults to true) (#945)', async () => {
+        const vendor = 'vendor-no-settings';
+        await prisma.vendorProfile.create({
+          data: {
+            address: vendor,
+            businessName: 'No Settings Vendor',
+          },
+        });
+
+        const escrow = await repo.create(
+          { ...makeDto(), itemRef: 'ref-no-settings' },
+          vendor,
+        );
+        await repo.markShipped(escrow.id, 'TRACK-DEFAULT');
+        await prisma.escrow.update({
+          where: { id: escrow.id },
+          data: { contractEscrowId: BigInt(945) },
+        });
+
+        const rows = await repo.findShippedWithTracking();
+        expect(rows.map((r) => r.id)).toContain(escrow.id);
+      });
+
+      it('rotates a capped batch across all eligible escrows', async () => {
+        const escrows = await Promise.all(
+          Array.from({ length: 51 }, (_, index) =>
+            repo.create(
+              { ...makeDto(), itemRef: `rotation-${index}` },
+              'vendor-addr',
+            ),
+          ),
+        );
+        await Promise.all(
+          escrows.map((escrow, index) =>
+            prisma.escrow.update({
+              where: { id: escrow.id },
+              data: {
+                state: 'SHIPPED',
+                trackingId: `TRACK-ROTATION-${index}`,
+                contractEscrowId: BigInt(index + 1),
+              },
+            }),
+          ),
+        );
+
+        const firstCycle = await repo.findShippedWithTracking(50);
+        await Promise.all(
+          firstCycle.map((escrow) =>
+            repo.markTrackingChecked(
+              escrow.id,
+              new Date('2026-10-21T12:00:00Z'),
+            ),
+          ),
+        );
+        const secondCycle = await repo.findShippedWithTracking(50);
+
+        expect(
+          new Set([...firstCycle, ...secondCycle].map((escrow) => escrow.id))
+            .size,
+        ).toBe(51);
+        expect(
+          firstCycle.every((escrow) => escrow.trackingCheckedAt === null),
+        ).toBe(true);
+        expect(
+          secondCycle.filter((escrow) => escrow.trackingCheckedAt === null),
+        ).toHaveLength(1);
       });
     });
 

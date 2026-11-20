@@ -18,7 +18,7 @@ import { PrismaService } from './prisma.service';
     {
       provide: PrismaService,
       useFactory: (tracing: TracingService, config: ConfigService) => {
-        const prisma = new PrismaService(config.getDatabaseUrl());
+        const prisma = new PrismaService(config.getDatabaseUrl(), config);
         return tracing.isEnabled()
           ? wrapPrismaWithTracing(prisma, tracing)
           : prisma;

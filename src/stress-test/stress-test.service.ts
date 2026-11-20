@@ -40,8 +40,11 @@ export class StressTestService {
    * that is still in progress. State is per-process and in-memory — nothing
    * is persisted and a restart loses in-flight runs.
    */
-  async runStressTest(config: StressTestConfigDto): Promise<StressTestResult> {
-    const testId = this.generateTestId();
+  async runStressTest(
+    config: StressTestConfigDto,
+    existingTestId?: string,
+  ): Promise<StressTestResult> {
+    const testId = existingTestId || this.generateTestId();
     this.logger.log(`Starting stress test: ${config.testName} (ID: ${testId})`);
 
     const result: StressTestResult = {
@@ -374,7 +377,7 @@ export class StressTestService {
     return Array.from(this.activeTests.values());
   }
 
-  private generateTestId(): string {
+  generateTestId(): string {
     return `test_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   }
 }

@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Param,
+  ParseUUIDPipe,
   Patch,
   Query,
   UseGuards,
@@ -67,7 +68,7 @@ export class DisputeController {
   @Throttle({ default: { limit: 10, ttl: THROTTLE_WINDOW_MS } })
   @Patch('dispute/:id/resolve')
   async resolve(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: ResolveDisputeDto,
     @CurrentUser() admin: AuthUser,
   ) {

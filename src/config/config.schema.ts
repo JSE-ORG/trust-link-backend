@@ -1,5 +1,9 @@
 import * as Joi from 'joi';
 import { Keypair } from '@stellar/stellar-sdk';
+import {
+  parseTrustProxy,
+  TRUST_PROXY_ERROR,
+} from '../common/security/trust-proxy.config';
 
 /**
  * Single source of truth for environment validation.
@@ -213,13 +217,13 @@ export const configValidationSchema = Joi.object({
     'any.required': 'Config validation error: CONTRACT_ID is required',
   }),
   ADMIN_ADDRESS: stellarPublicKey.required(),
-  AUTO_RELEASE_SOURCE_ADDRESS: Joi.string()
-    .pattern(/^G[A-Z2-7]{55}$/)
-    .optional()
-    .messages({
-      'string.pattern.base':
-        'Config validation error: AUTO_RELEASE_SOURCE_ADDRESS must be a valid Stellar public key (starts with G)',
-    }),
+  // Optional email address for admin dispute notifications (issue #946).
+  // If unset, admin dispute alerts are skipped with a warning.
+  ADMIN_NOTIFICATION_EMAIL: Joi.string().email().optional().messages({
+    'string.email':
+      'Config validation error: ADMIN_NOTIFICATION_EMAIL must be a valid email address',
+  }),
+  AUTO_RELEASE_SOURCE_ADDRESS: stellarPublicKey.optional(),
   NODE_ENV: Joi.string()
     .valid('development', 'production', 'test')
     .default('development'),
@@ -291,6 +295,15 @@ export const configValidationSchema = Joi.object({
     otherwise: Joi.string().uri().allow('').optional(),
   }),
   GIT_SHA: Joi.string().optional(),
+  // #971 — Behind a load balancer, req.ip is the balancer's address and every
+  // client shares one throttle bucket. Off unless set; see trust-proxy.config.
+  TRUST_PROXY: Joi.string()
+    .custom((value: string, helpers) =>
+      parseTrustProxy(value) === null
+        ? helpers.message({ custom: TRUST_PROXY_ERROR })
+        : value,
+    )
+    .optional(),
   AUTH_CHALLENGE_LIMIT: Joi.number().integer().min(1).default(10),
   AUTH_CHALLENGE_WINDOW: Joi.number().integer().min(1000).default(60000),
   PUBLIC_LIMIT: Joi.number().integer().min(1).default(60),
@@ -298,6 +311,18 @@ export const configValidationSchema = Joi.object({
   EVIDENCE_UPLOAD_LIMIT: Joi.number().integer().min(1).default(10),
   EVIDENCE_UPLOAD_TTL: Joi.number().integer().min(1000).default(60000),
   REFRESH_TOKEN_TTL: Joi.number().integer().min(60).default(604800),
+  // Lifetime of the SEP-10 access (JWT) token, in seconds. Operators can
+  // shorten it below the 1-hour default for higher-security deployments.
+  // Must be a positive integer. Default: 3600 (1 hour).
+  ACCESS_TOKEN_TTL: Joi.number()
+    .integer()
+    .min(1)
+    .max(86400)
+    .default(3600)
+    .messages({
+      'number.max':
+        'Config validation error: ACCESS_TOKEN_TTL must not exceed 86400 seconds (24 hours)',
+    }),
   LOGISTICS_API_BASE_URL: Joi.string().uri().optional(),
   LOGISTICS_API_KEY: Joi.string().optional(),
   STELLAR_HORIZON_URL: Joi.string().uri().optional(),
@@ -344,9 +369,22 @@ export const configValidationSchema = Joi.object({
     }),
   // Per-request timeout for Soroban RPC calls. Keep it below
   // SOROBAN_POLL_INTERVAL_MS so a hung request cannot span poll cycles.
-  SOROBAN_RPC_TIMEOUT_MS: Joi.number().integer().min(100).default(4000),
+  // Validated at startup: equal or greater values are rejected.
+  SOROBAN_RPC_TIMEOUT_MS: Joi.number()
+    .integer()
+    .min(100)
+    .default(4000)
+    .less(Joi.ref('SOROBAN_POLL_INTERVAL_MS'))
+    .messages({
+      'number.less':
+        'Config validation error: SOROBAN_RPC_TIMEOUT_MS must be less than ' +
+        'SOROBAN_POLL_INTERVAL_MS so a hung RPC request cannot span poll cycles',
+    }),
   // Optional replay point: with no stored cursor the poller starts a small
   // margin behind the current ledger. Set this to replay from a known ledger
   // after an outage instead.
   SOROBAN_START_LEDGER: Joi.number().integer().min(1).optional(),
+  // Retention window (days) for processed webhook event ids. A daily job
+  // deletes `ProcessedWebhookEvent` rows older than this. Default: 30.
+  WEBHOOK_EVENT_RETENTION_DAYS: Joi.number().integer().min(1).default(30),
 });

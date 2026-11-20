@@ -155,8 +155,8 @@ describe('FailedTransactionRepository', () => {
 
       const updated = await repo.markAbandoned(record.id);
 
-      expect(updated.status).toBe('ABANDONED');
-      expect(updated.reviewedAt).toBeInstanceOf(Date);
+      expect(updated?.status).toBe('ABANDONED');
+      expect(updated?.reviewedAt).toBeInstanceOf(Date);
     });
   });
 

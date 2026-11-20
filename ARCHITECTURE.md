@@ -23,7 +23,7 @@ Trust-Link Backend is a NestJS application that manages escrow transactions on t
 │                                                                          │
 │  Global Middleware          Global Guards          Global Filters         │
 │  ┌──────────────────┐   ┌────────────────────┐   ┌──────────────────┐   │
-│  │ SecurityMiddleware│   │  RateLimitGuard    │   │GlobalException   │   │
+│  │ SecurityMiddleware│   │  ThrottlerGuard    │   │GlobalException   │   │
 │  │ LoggerMiddleware  │   │  (per-route caps)  │   │Filter            │   │
 │  └──────────────────┘   └────────────────────┘   └──────────────────┘   │
 └──────────────────────────────────────────────────────────────────────────┘
@@ -209,7 +209,7 @@ HTTP Request
   │
   ├─ SecurityMiddleware          Sets CSP / HSTS headers
   ├─ LoggerMiddleware            Emits structured request log
-  ├─ RateLimitGuard (global)     Enforces per-route + per-IP limits (in-process Map)
+  ├─ ThrottlerGuard (global)     Enforces per-route + per-IP limits (Redis storage when REDIS_URL is set, else in-memory)
   ├─ JwtGuard (route-level)      Validates SEP-10 JWT, injects AuthUser
   │
   ├─ Controller                  Parses + validates DTO (ValidationPipe)
@@ -401,7 +401,7 @@ Protected endpoints use `@UseGuards(JwtGuard)` + `@CurrentUser()` to extract the
 | Headers           | SecurityMiddleware: CSP, HSTS, X-Frame-Options                 |
 | CORS              | `ALLOWED_ORIGINS` allowlist; blocks all in production if unset |
 | Auth              | SEP-10 JWT on protected routes                                 |
-| Rate limiting     | `RateLimitGuard` with per-route limits (5–100 req/min)         |
+| Rate limiting     | `ThrottlerGuard` (`@nestjs/throttler`) with per-route `@Throttle` limits; Redis-backed storage when `REDIS_URL` is set |
 | Webhook integrity | HMAC-SHA256 signature verification (`X-Stellar-Signature`)     |
 | Input validation  | `ValidationPipe` (whitelist, transform, forbid extra fields)   |
 | SQL injection     | Parameterised queries via Prisma ORM                           |

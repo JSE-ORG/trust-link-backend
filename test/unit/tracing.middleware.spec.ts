@@ -79,7 +79,7 @@ describe('resolveWorkflow (issue #79)', () => {
     expect(resolveWorkflow('GET', '/admin/stats')).toBe('admin.stats');
     expect(resolveWorkflow('GET', '/admin/queues')).toBe('admin.queues');
     expect(resolveWorkflow('GET', '/admin/disputes')).toBe('admin.disputes');
-    expect(resolveWorkflow('GET', '/admin/api-keys')).toBe('admin.api_keys');
+    expect(resolveWorkflow('GET', '/admin/credentials')).toBe('admin.api_keys');
   });
 
   it('maps health and version', () => {
@@ -87,8 +87,58 @@ describe('resolveWorkflow (issue #79)', () => {
     expect(resolveWorkflow('GET', '/version')).toBe('version.check');
   });
 
+  it('maps the liveness and readiness probes separately (#972)', () => {
+    expect(resolveWorkflow('GET', '/health/live')).toBe('health.live');
+    expect(resolveWorkflow('GET', '/health/ready')).toBe('health.ready');
+  });
+
+  it('maps the admin DLQ, audit log and credentials routes (#972)', () => {
+    expect(resolveWorkflow('GET', '/admin/dlq')).toBe('admin.dlq');
+    expect(resolveWorkflow('GET', '/admin/audit-log')).toBe('admin.audit_log');
+    expect(resolveWorkflow('POST', '/admin/credentials')).toBe(
+      'admin.api_keys',
+    );
+  });
+
+  it('maps the stress-test route (#972)', () => {
+    expect(resolveWorkflow('POST', '/stress-test')).toBe('stress_test.post');
+  });
+
+  /**
+   * #972 — one case per controller prefix, so a renamed or added controller
+   * that is missing from the map shows up as a failing case here.
+   */
+  it.each([
+    ['GET', '/auth', 'sep10.get'],
+    ['POST', '/auth/challenge', 'sep10.post'],
+    ['POST', '/auth/refresh', 'sep10.post'],
+    ['GET', '/escrow', 'escrow.get'],
+    ['GET', '/vendor/escrows', 'vendor.get'],
+    ['POST', '/webhooks/stellar', 'webhook.stellar'],
+    ['GET', '/admin/queues', 'admin.queues'],
+    ['GET', '/admin/disputes', 'admin.disputes'],
+    ['GET', '/admin/stats', 'admin.stats'],
+    ['GET', '/admin/audit-log', 'admin.audit_log'],
+    ['GET', '/admin/dlq', 'admin.dlq'],
+    ['GET', '/admin/credentials', 'admin.api_keys'],
+    ['POST', '/stress-test', 'stress_test.post'],
+    ['GET', '/health', 'health.check'],
+    ['GET', '/health/live', 'health.live'],
+    ['GET', '/health/ready', 'health.ready'],
+    ['GET', '/version', 'version.check'],
+  ])('maps %s %s to %s', (method, url, workflow) => {
+    expect(resolveWorkflow(method, url)).toBe(workflow);
+  });
+
+  it('no longer maps the removed /admin/api-keys prefix (#972)', () => {
+    expect(resolveWorkflow('GET', '/admin/api-keys')).toBe('http.get');
+  });
+
   it('strips query strings', () => {
     expect(resolveWorkflow('GET', '/escrow?page=1')).toBe('escrow.get');
+    expect(resolveWorkflow('GET', '/health/ready?verbose=1')).toBe(
+      'health.ready',
+    );
   });
 
   it('returns http.method for unknown routes', () => {
@@ -204,30 +254,35 @@ describe('TracingMiddleware.use (issue #79, issue #463)', () => {
       );
     });
 
-    it('prefers req.route.path for the http.route attribute', () => {
+    /**
+     * #972 — the middleware runs before routing, so it must never set
+     * http.route. Setting it from originalUrl overwrote the route template
+     * with raw ids and query strings.
+     */
+    it('does not set http.route, so the instrumentation template is kept', () => {
       const { req, res, next } = buildReqRes(
-        '/escrow/list',
+        '/escrow/abc-123?page=2',
         {},
-        '/escrow/list',
+        '/escrow/:id',
       );
 
       middleware.use(req, res, next);
 
-      expect(mockSpan.setAttribute).toHaveBeenCalledWith(
-        'http.route',
-        '/escrow/list',
+      const attributeNames = mockSpan.setAttribute.mock.calls.map(
+        ([name]) => name,
       );
+      expect(attributeNames).not.toContain('http.route');
     });
 
-    it('falls back to originalUrl when req.route.path is absent', () => {
+    it('does not set http.route when no route descriptor is present', () => {
       const { req, res, next } = buildReqRes('/vendor/escrows');
 
       middleware.use(req, res, next);
 
-      expect(mockSpan.setAttribute).toHaveBeenCalledWith(
-        'http.route',
-        '/vendor/escrows',
+      const attributeNames = mockSpan.setAttribute.mock.calls.map(
+        ([name]) => name,
       );
+      expect(attributeNames).not.toContain('http.route');
     });
 
     it('records trustlink.request_id when x-request-id is provided', () => {

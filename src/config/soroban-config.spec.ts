@@ -198,4 +198,44 @@ describe('Soroban configuration validation', () => {
       expect(value.SOROBAN_POLL_INTERVAL_MS).toBe(10000);
     });
   });
+
+  describe('SOROBAN_RPC_TIMEOUT_MS', () => {
+    it('defaults to 4000 when unset (below the 5000ms poll interval default)', () => {
+      const { error, value } = validate(BASE_ENV);
+      expect(error).toBeUndefined();
+      expect(value.SOROBAN_RPC_TIMEOUT_MS).toBe(4000);
+    });
+
+    it('passes when timeout is less than poll interval', () => {
+      const { error, value } = validate({
+        ...BASE_ENV,
+        SOROBAN_POLL_INTERVAL_MS: '10000',
+        SOROBAN_RPC_TIMEOUT_MS: '3000',
+      });
+      expect(error).toBeUndefined();
+      expect(value.SOROBAN_RPC_TIMEOUT_MS).toBe(3000);
+    });
+
+    it('rejects when timeout equals poll interval', () => {
+      const { error } = validate({
+        ...BASE_ENV,
+        SOROBAN_POLL_INTERVAL_MS: '5000',
+        SOROBAN_RPC_TIMEOUT_MS: '5000',
+      });
+      expect(error).toBeDefined();
+      expect(error?.message).toContain('SOROBAN_RPC_TIMEOUT_MS');
+      expect(error?.message).toContain('SOROBAN_POLL_INTERVAL_MS');
+    });
+
+    it('rejects when timeout is greater than poll interval', () => {
+      const { error } = validate({
+        ...BASE_ENV,
+        SOROBAN_POLL_INTERVAL_MS: '5000',
+        SOROBAN_RPC_TIMEOUT_MS: '8000',
+      });
+      expect(error).toBeDefined();
+      expect(error?.message).toContain('SOROBAN_RPC_TIMEOUT_MS');
+      expect(error?.message).toContain('SOROBAN_POLL_INTERVAL_MS');
+    });
+  });
 });

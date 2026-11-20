@@ -9,6 +9,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { bearer } from '../../test/auth-helper';
 import { JwtGuard } from '../auth/guards/jwt.guard';
+import { ConfigService } from '../config/config.service';
 import { BuyerDisputeService } from './buyer-dispute.service';
 import { DisputeReasonCategory } from './dto/open-dispute.dto';
 import { EscrowController } from './escrow.controller';
@@ -51,6 +52,10 @@ describe('EscrowController', () => {
       controllers: [EscrowController],
       providers: [
         JwtGuard,
+        {
+          provide: ConfigService,
+          useValue: { get: jest.fn((key: string) => process.env[key]) },
+        },
         { provide: EscrowService, useValue: escrowService },
         { provide: BuyerDisputeService, useValue: buyerDisputeService },
       ],

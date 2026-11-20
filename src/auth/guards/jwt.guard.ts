@@ -127,9 +127,6 @@ export class JwtGuard implements CanActivate {
    * constant.
    */
   private getJwtSecret(): string | undefined {
-    return (
-      this.configService?.get<string>('SEP10_JWT_SECRET') ??
-      process.env.SEP10_JWT_SECRET
-    );
+    return this.configService?.get<string>('SEP10_JWT_SECRET');
   }
 }
