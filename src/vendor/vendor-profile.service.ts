@@ -13,6 +13,8 @@ import { UpdateVendorProfileDto } from './dto/update-vendor-profile.dto';
 import { UpdateNotificationPreferencesDto } from './dto/update-notification-preferences.dto';
 import { NotificationPreferencesResponseDto } from './dto/notification-preferences-response.dto';
 import { VendorProfileRepository } from './vendor-profile.repository';
+import { NotificationRepository } from '../notifications/notification.repository';
+import { VendorNotificationsQueryDto } from './dto/vendor-notifications-query.dto';
 import { TracingService } from '../tracing/tracing.service';
 import { VENDOR_PROFILE_PLACEHOLDER_DESCRIPTION } from './vendor-profile.constants';
 
@@ -21,6 +23,7 @@ export class VendorProfileService {
   constructor(
     private readonly repository: VendorProfileRepository,
     private readonly tracing: TracingService,
+    private readonly notificationRepo: NotificationRepository,
   ) {}
 
   /**
@@ -191,6 +194,19 @@ export class VendorProfileService {
   ): Promise<NotificationPreferencesResponseDto> {
     return this.traced('profile.notify_prefs.get', address, () =>
       this.repository.findNotificationPreferences(address),
+    );
+  }
+
+  /**
+   * Returns a paginated history of notifications sent for the vendor's escrows.
+   * Field allowlist is enforced: recipientAddress, message, and lastError are never returned.
+   */
+  async getNotificationHistory(
+    address: string,
+    query?: VendorNotificationsQueryDto,
+  ) {
+    return this.traced('notifications.history', address, () =>
+      this.notificationRepo.findVendorHistory(address, query),
     );
   }
 }
