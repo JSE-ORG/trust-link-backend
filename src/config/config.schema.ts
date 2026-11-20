@@ -283,6 +283,7 @@ export const configValidationSchema = Joi.object({
     .valid('trace', 'debug', 'info', 'warn', 'error', 'fatal')
     .default('info'),
   REDIS_URL: Joi.string().uri().optional(),
+  ESCROW_CACHE_TTL_SECONDS: Joi.number().integer().min(1).max(60).default(60),
   DB_POOL_CONNECTION_LIMIT: Joi.number().integer().min(1).default(10),
   DB_POOL_TIMEOUT_MS: Joi.number().integer().min(0).default(10000),
   OTEL_ENABLED: Joi.string().valid('true', 'false').default('true'),
@@ -325,6 +326,8 @@ export const configValidationSchema = Joi.object({
     }),
   LOGISTICS_API_BASE_URL: Joi.string().uri().optional(),
   LOGISTICS_API_KEY: Joi.string().optional(),
+  TERMINAL_AFRICA_API_BASE_URL: Joi.string().uri().optional(),
+  TERMINAL_AFRICA_API_KEY: Joi.string().optional(),
   STELLAR_HORIZON_URL: Joi.string().uri().optional(),
   QUERY_TIMEOUT_MS: Joi.number().integer().min(1000).default(30000),
   SLOW_QUERY_THRESHOLD_MS: Joi.number().integer().min(0).default(500),

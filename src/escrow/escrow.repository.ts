@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { Injectable, Optional } from '@nestjs/common';
 import { CacheService } from '../cache/cache.service';
+import { ConfigService } from '../config/config.service';
 import {
   EscrowRecord,
   EscrowState,
@@ -61,7 +62,18 @@ export class EscrowRepository {
     private readonly prisma: PrismaService,
     @Optional()
     private readonly cache?: CacheService,
+    @Optional()
+    private readonly config?: ConfigService,
   ) {}
+
+  /** `ESCROW_CACHE_TTL_SECONDS`, defaulting to and capped at 60 (R-CA-03). */
+  private cacheTtlSeconds(): number {
+    const configured = this.config?.get<number>('ESCROW_CACHE_TTL_SECONDS');
+    return Math.min(
+      configured ?? ESCROW_CACHE_TTL_SECONDS,
+      ESCROW_CACHE_TTL_SECONDS,
+    );
+  }
 
   private cacheKey(id: string): string {
     return `escrow:${id}`;
@@ -113,7 +125,8 @@ export class EscrowRepository {
   }
 
   /**
-   * Returns a cached escrow by ID (60-second Redis TTL) or falls through
+   * Returns a cached escrow by ID (TTL from `ESCROW_CACHE_TTL_SECONDS`, at
+   * most 60 seconds) or falls through
    * to the database on a cache miss. Cached records are revived so callers
    * get the same field types on a hit as on a miss.
    */
@@ -123,7 +136,7 @@ export class EscrowRepository {
     const row = await this.prisma.escrow.findUnique({ where: { id } });
     if (!row) return null;
     const record = toEscrowRecord(row);
-    await this.cache?.set(this.cacheKey(id), record, ESCROW_CACHE_TTL_SECONDS);
+    await this.cache?.set(this.cacheKey(id), record, this.cacheTtlSeconds());
     return record;
   }
 
