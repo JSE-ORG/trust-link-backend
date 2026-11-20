@@ -584,17 +584,14 @@ describe('EscrowService.syncStateFromChain', () => {
   describe.each(['EscrowCancelled', 'EscrowCanceled', 'EscrowAutoCancelled'])(
     '%s',
     (eventType) => {
-      it.each(NON_TERMINAL_STATES)(
-        'cancels an escrow in %s',
-        async (state) => {
-          repo.findById.mockResolvedValue(makeEscrow({ state }));
+      it.each(NON_TERMINAL_STATES)('cancels an escrow in %s', async (state) => {
+        repo.findById.mockResolvedValue(makeEscrow({ state }));
 
-          const result = await service.syncStateFromChain(makeEvent(eventType));
+        const result = await service.syncStateFromChain(makeEvent(eventType));
 
-          expect(result).toEqual({ skipped: false });
-          expect(repo.markCancelled).toHaveBeenCalledWith('escrow-1');
-        },
-      );
+        expect(result).toEqual({ skipped: false });
+        expect(repo.markCancelled).toHaveBeenCalledWith('escrow-1');
+      });
 
       it.each(TERMINAL_STATE_SAMPLES)(
         'skips an escrow already in %s without writing',

@@ -180,7 +180,7 @@ describe('Admin DLQ Operations (issue #297)', () => {
 
     it('returns 404 for non-existent entry', async () => {
       await request(httpServer())
-        .get('/admin/dlq/non-existent-id')
+        .get('/admin/dlq/00000000-0000-4000-8000-000000000000')
         .set('Authorization', `Bearer ${adminJwt()}`)
         .expect(404);
     });
@@ -299,7 +299,7 @@ describe('Admin DLQ Operations (issue #297)', () => {
 
     it('returns 404 for non-existent entry', async () => {
       await request(httpServer())
-        .post('/admin/dlq/non-existent-id/replay')
+        .post('/admin/dlq/00000000-0000-4000-8000-000000000000/replay')
         .set('Authorization', `Bearer ${adminJwt()}`)
         .expect(404);
     });
