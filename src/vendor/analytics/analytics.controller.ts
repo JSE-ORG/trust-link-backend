@@ -6,6 +6,7 @@ import {
   HttpCode,
   HttpStatus,
   UnauthorizedException,
+  Optional,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -23,13 +24,18 @@ import { AnalyticsService } from './analytics.service';
 import { ChartDataResponse } from './analytics.dto';
 import { AnalyticsStatsResponse } from './analytics-stats.dto';
 import { ChartQueryDto } from './chart-query.dto';
+import { VendorAccountDetailsRepository } from '../vendor-account-details.repository';
 
 @ApiTags('Vendor')
 @ApiBearerAuth()
 @Controller('vendor/analytics')
 @UseGuards(JwtGuard)
 export class AnalyticsController {
-  constructor(private readonly analyticsService: AnalyticsService) {}
+  constructor(
+    private readonly analyticsService: AnalyticsService,
+    @Optional()
+    private readonly accountDetailsRepo?: VendorAccountDetailsRepository,
+  ) {}
 
   /**
    * Returns overall transaction statistics for the authenticated vendor.
@@ -123,8 +129,20 @@ export class AnalyticsController {
     }
 
     const days = query?.days ?? 30;
-    const timezone = query?.timezone ?? 'UTC';
     const interval = query?.interval ?? 'day';
+
+    let timezone = query?.timezone;
+    if (!timezone && this.accountDetailsRepo) {
+      const details = await this.accountDetailsRepo.findByVendorAddress(
+        user.address,
+      );
+      if (details?.timezone) {
+        timezone = details.timezone;
+      }
+    }
+    if (!timezone) {
+      timezone = 'UTC';
+    }
 
     return this.analyticsService.getDailyVolumeChart(
       user.address,
