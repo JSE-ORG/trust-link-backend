@@ -8,10 +8,16 @@ import { VendorAccountDetailsController } from './vendor-account-details.control
 import { VendorAccountDetailsRepository } from './vendor-account-details.repository';
 import { VendorAccountDetailsService } from './vendor-account-details.service';
 import { AnalyticsModule } from './analytics/analytics.module';
+import { PublicVendorController } from './public-vendor.controller';
+import { EscrowModule } from '../escrow/escrow.module';
 
 @Module({
-  imports: [PrismaModule, AnalyticsModule],
-  controllers: [VendorProfileController, VendorAccountDetailsController],
+  imports: [PrismaModule, AnalyticsModule, EscrowModule],
+  controllers: [
+    VendorProfileController,
+    VendorAccountDetailsController,
+    PublicVendorController,
+  ],
   providers: [
     VendorProfileService,
     VendorProfileRepository,
