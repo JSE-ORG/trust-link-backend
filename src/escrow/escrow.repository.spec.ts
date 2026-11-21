@@ -446,6 +446,144 @@ describe('EscrowRepository', () => {
     });
   });
 
+  describe('findVendorEscrows() filters', () => {
+    beforeEach(async () => {
+      const rows = [
+        {
+          itemName: 'Red Kettle',
+          itemRef: 'KIT-001',
+          buyer: 'buyer-a',
+          day: '2026-03-01',
+        },
+        {
+          itemName: 'Blue Lamp',
+          itemRef: 'LMP-002',
+          buyer: 'buyer-b',
+          day: '2026-03-15',
+        },
+        {
+          itemName: 'Green Rug',
+          itemRef: 'RUG-kettle',
+          buyer: 'buyer-a',
+          day: '2026-03-31',
+        },
+      ];
+      for (const row of rows) {
+        const escrow = await repo.create(
+          {
+            ...makeDto(),
+            itemName: row.itemName,
+            itemRef: row.itemRef,
+            buyerAddress: row.buyer,
+          },
+          'v1',
+        );
+        await prisma.escrow.update({
+          where: { id: escrow.id },
+          data: { createdAt: new Date(`${row.day}T12:00:00Z`) },
+        });
+      }
+      await repo.create(
+        { ...makeDto(), itemName: 'Red Kettle', itemRef: 'OTHER' },
+        'v-page',
+      );
+    });
+
+    const find = (
+      filters: Parameters<EscrowRepository['findVendorEscrows']>[6],
+    ) => repo.findVendorEscrows('v1', undefined, 'date', 'asc', 1, 10, filters);
+
+    it('filters by from (inclusive)', async () => {
+      const { data, total } = await find({ from: '2026-03-15' });
+      expect(total).toBe(2);
+      expect(data.map((e) => e.itemRef)).toEqual(['LMP-002', 'RUG-kettle']);
+    });
+
+    it('filters by a date-only to, including that whole day', async () => {
+      const { data, total } = await find({ to: '2026-03-15' });
+      expect(total).toBe(2);
+      expect(data.map((e) => e.itemRef)).toEqual(['KIT-001', 'LMP-002']);
+    });
+
+    it('filters by buyerAddress', async () => {
+      const { data, total } = await find({ buyerAddress: 'buyer-b' });
+      expect(total).toBe(1);
+      expect(data[0].itemRef).toBe('LMP-002');
+    });
+
+    it('matches q case-insensitively on itemName or itemRef', async () => {
+      const { data, total } = await find({ q: 'KETTLE' });
+      expect(total).toBe(2);
+      expect(data.map((e) => e.itemRef)).toEqual(['KIT-001', 'RUG-kettle']);
+    });
+
+    it('combines filters and keeps total equal to the filtered count', async () => {
+      const { data, total } = await repo.findVendorEscrows(
+        'v1',
+        undefined,
+        'date',
+        'asc',
+        1,
+        1,
+        {
+          buyerAddress: 'buyer-a',
+          q: 'kettle',
+        },
+      );
+      expect(total).toBe(2);
+      expect(data).toHaveLength(1);
+    });
+  });
+
+  describe('findEscrows() and findByIdWithDispute()', () => {
+    it('scopes a buyer query to that buyer only', async () => {
+      await repo.create(
+        { ...makeDto(), itemRef: 'B1', buyerAddress: 'buyer-1' },
+        'v1',
+      );
+      await repo.create(
+        { ...makeDto(), itemRef: 'B2', buyerAddress: 'buyer-2' },
+        'v1',
+      );
+      await repo.create(
+        { ...makeDto(), itemRef: 'B3', buyerAddress: 'buyer-1' },
+        'v-page',
+      );
+
+      const { data, total } = await repo.findEscrows(
+        { buyerAddress: 'buyer-1' },
+        'date',
+        'asc',
+        1,
+        10,
+      );
+
+      expect(total).toBe(2);
+      expect(data.every((e) => e.buyerAddress === 'buyer-1')).toBe(true);
+    });
+
+    it('returns the escrow with its dispute, or null dispute when there is none', async () => {
+      const withDispute = await repo.create(
+        { ...makeDto(), itemRef: 'D1' },
+        'v1',
+      );
+      const without = await repo.create({ ...makeDto(), itemRef: 'D2' }, 'v1');
+      await prisma.dispute.create({
+        data: { escrowId: withDispute.id, reason: 'ITEM_NOT_RECEIVED' },
+      });
+
+      const a = await repo.findByIdWithDispute(withDispute.id);
+      const b = await repo.findByIdWithDispute(without.id);
+
+      expect(a?.escrow.id).toBe(withDispute.id);
+      expect(a?.dispute?.reason).toBe('ITEM_NOT_RECEIVED');
+      expect(b?.dispute).toBeNull();
+      expect(
+        await repo.findByIdWithDispute('00000000-0000-0000-0000-000000000000'),
+      ).toBeNull();
+    });
+  });
+
   describe('lifecycle writes and lookup helpers', () => {
     it.each([
       ['updateState', (id: string) => repo.updateState(id, 'FUNDED'), 'FUNDED'],
@@ -506,6 +644,42 @@ describe('EscrowRepository', () => {
       const cancelled = await repo.markCancelled(escrow.id);
       expect(cancelled.state).toBe('CANCELLED');
       expect(cancelled.cancelledAt).toBeInstanceOf(Date);
+    });
+
+    it('sets fundedAt, disputedAt, and completedAt once upon respective transitions (issue #1167)', async () => {
+      const escrow = await repo.create(
+        { ...makeDto(), itemRef: 'timestamp-transitions' },
+        'vendor-addr',
+      );
+
+      expect(escrow.fundedAt).toBeNull();
+      expect(escrow.disputedAt).toBeNull();
+      expect(escrow.completedAt).toBeNull();
+
+      const funded = await repo.updateState(escrow.id, 'FUNDED');
+      expect(funded.fundedAt).toBeInstanceOf(Date);
+      const initialFundedAt = funded.fundedAt;
+
+      const fundedAgain = await repo.updateState(escrow.id, 'FUNDED');
+      expect(fundedAgain.fundedAt?.getTime()).toBe(initialFundedAt?.getTime());
+
+      const disputed = await repo.updateState(escrow.id, 'DISPUTED');
+      expect(disputed.disputedAt).toBeInstanceOf(Date);
+      const initialDisputedAt = disputed.disputedAt;
+
+      const disputedAgain = await repo.updateState(escrow.id, 'DISPUTED');
+      expect(disputedAgain.disputedAt?.getTime()).toBe(
+        initialDisputedAt?.getTime(),
+      );
+
+      const completed = await repo.markCompleted(escrow.id);
+      expect(completed.completedAt).toBeInstanceOf(Date);
+      const initialCompletedAt = completed.completedAt;
+
+      const completedAgain = await repo.markCompleted(escrow.id);
+      expect(completedAgain.completedAt?.getTime()).toBe(
+        initialCompletedAt?.getTime(),
+      );
     });
 
     it('resolves contract ids, filters shipped tracking work, and returns null for unknown ids', async () => {
@@ -988,6 +1162,53 @@ describe('EscrowRepository', () => {
         where: { escrowId: escrow.id },
         orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
       });
+    });
+  });
+
+  describe('findAutoReleaseEligible() — capped batch (#1115)', () => {
+    beforeEach(async () => {
+      const escrows = await Promise.all(
+        Array.from({ length: 60 }, (_, index) =>
+          repo.create(
+            { ...makeDto(), itemRef: `auto-release-${index}` },
+            'vendor-addr',
+          ),
+        ),
+      );
+      await Promise.all(
+        escrows.map((escrow, index) =>
+          prisma.escrow.update({
+            where: { id: escrow.id },
+            data: {
+              state: 'DELIVERED',
+              deliveredAt: new Date(Date.UTC(2020, 0, 1) + index * 60_000),
+              contractEscrowId: BigInt(index + 1),
+            },
+          }),
+        ),
+      );
+    });
+
+    const referenceTime = new Date('2026-10-21T12:00:00Z');
+
+    it('returns at most 50 eligible escrows by default', async () => {
+      const result = await repo.findAutoReleaseEligible(referenceTime);
+
+      expect(result).toHaveLength(50);
+    });
+
+    it('honours an explicit limit', async () => {
+      const result = await repo.findAutoReleaseEligible(referenceTime, 5);
+
+      expect(result).toHaveLength(5);
+    });
+
+    it('returns the oldest deliveries first when capped', async () => {
+      const result = await repo.findAutoReleaseEligible(referenceTime, 5);
+
+      expect(result[0].deliveredAt).toEqual(new Date(Date.UTC(2020, 0, 1)));
+      const times = result.map((escrow) => escrow.deliveredAt!.getTime());
+      expect(times).toEqual([...times].sort((a, b) => a - b));
     });
   });
 });

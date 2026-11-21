@@ -675,3 +675,10 @@ Helpful resources:
 ---
 
 > The backend is the quiet engine that makes the promise of trustless commerce actually work. Thank you for helping keep it reliable.
+
+
+### Database reset and seed safety
+
+`npm run db:reset`, `npm run db:seed`, and `npx prisma db seed` refuse to run when `NODE_ENV=production`, the database URL is missing/invalid, or its host is not `localhost`, `127.0.0.1`, `db`, or `db-prod` (the Compose service names). This prevents accidentally resetting or populating a remote database. The guard loads `.env` without overriding environment variables.
+
+For a deliberately authorized exceptional operation, set `ALLOW_DB_RESET=1` explicitly. **This bypasses all checks and can destroy production data; only use it after confirming the target URL and taking a backup.**

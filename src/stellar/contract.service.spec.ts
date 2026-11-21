@@ -1,4 +1,4 @@
-import { Account, Keypair } from '@stellar/stellar-sdk';
+import { Account, Keypair, rpc } from '@stellar/stellar-sdk';
 import { ContractService } from './contract.service';
 import { ContractCallFailedException } from './contract-call-failed.exception';
 import {
@@ -687,6 +687,173 @@ describe('ContractService', () => {
           contractEscrowId: '42',
         }),
       );
+    });
+  });
+
+  // ── Issue #1124 — 15 uncovered branches ──────────────────────────────────
+
+  describe('fetchAccount — uncovered branches (issue #1124)', () => {
+    function makeSorobanServer() {
+      return {
+        getAccount: jest.fn().mockResolvedValue({
+          sequenceNumber: () => '10',
+          accountId: () => SOURCE,
+        }),
+        simulateTransaction: jest
+          .fn()
+          .mockResolvedValue({ transactionData: {} }),
+        prepareTransaction: jest
+          .fn()
+          .mockImplementation((tx) => Promise.resolve(tx)),
+        sendTransaction: jest.fn().mockResolvedValue({
+          status: 'PENDING',
+          hash: 'fetch-acct-hash',
+        }),
+        pollTransaction: jest.fn().mockResolvedValue({ status: 'SUCCESS' }),
+      };
+    }
+
+    function makeConfig() {
+      const SIGNER = Keypair.random();
+      return {
+        signer: SIGNER,
+        config: {
+          get: jest.fn((key: string) => {
+            if (key === 'CONTRACT_ID')
+              return 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4';
+            if (key === 'STELLAR_NETWORK') return 'TESTNET';
+            if (key === 'SYSTEM_SIGNER_SECRET') return SIGNER.secret();
+            return undefined;
+          }),
+        } as unknown as import('../config/config.service').ConfigService,
+      };
+    }
+
+    it('fetchAccount reads .sequence property when sequenceNumber() is absent', async () => {
+      const server = makeSorobanServer();
+      // Return an object with .sequence (not .sequenceNumber()) — hits branch D in fetchAccount.
+      server.getAccount.mockResolvedValue({ sequence: '77' });
+
+      const { config } = makeConfig();
+      const svc = new ContractService(server, config);
+      const hash = await svc.resolveDispute(ESCROW, 'RELEASE', ADMIN);
+
+      expect(hash).toBe('fetch-acct-hash');
+    });
+
+    it('fetchAccount falls back to loadAccount when getAccount is absent', async () => {
+      // Server without getAccount — fetchAccount must use loadAccount (branch E).
+      const { config } = makeConfig();
+      const serverWithLoad = {
+        loadAccount: jest.fn().mockResolvedValue({ sequence: '55' }),
+        simulateTransaction: jest
+          .fn()
+          .mockResolvedValue({ transactionData: {} }),
+        prepareTransaction: jest
+          .fn()
+          .mockImplementation((tx) => Promise.resolve(tx)),
+        sendTransaction: jest.fn().mockResolvedValue({
+          status: 'PENDING',
+          hash: 'loadaccount-hash',
+        }),
+        pollTransaction: jest.fn().mockResolvedValue({ status: 'SUCCESS' }),
+      };
+
+      const svc = new ContractService(serverWithLoad, config);
+      const hash = await svc.resolveDispute(ESCROW, 'RELEASE', ADMIN);
+
+      expect(hash).toBe('loadaccount-hash');
+      expect(serverWithLoad.loadAccount).toHaveBeenCalled();
+    });
+  });
+
+  describe('prepareTransaction — uncovered branches (issue #1124)', () => {
+    function makeServerNoPrepare() {
+      return {
+        getAccount: jest.fn().mockResolvedValue({
+          sequenceNumber: () => '10',
+        }),
+        simulateTransaction: jest
+          .fn()
+          .mockResolvedValue({ transactionData: {} }),
+        // No prepareTransaction — exercises the rpc.assembleTransaction / fallback paths.
+        sendTransaction: jest.fn().mockResolvedValue({
+          status: 'PENDING',
+          hash: 'no-prepare-hash',
+        }),
+        pollTransaction: jest.fn().mockResolvedValue({ status: 'SUCCESS' }),
+      };
+    }
+
+    function makeConfig() {
+      const SIGNER = Keypair.random();
+      return {
+        get: jest.fn((key: string) => {
+          if (key === 'CONTRACT_ID')
+            return 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4';
+          if (key === 'STELLAR_NETWORK') return 'TESTNET';
+          if (key === 'SYSTEM_SIGNER_SECRET') return SIGNER.secret();
+          return undefined;
+        }),
+      } as unknown as import('../config/config.service').ConfigService;
+    }
+
+    it('assembles the transaction via rpc.assembleTransaction when server has no prepareTransaction', async () => {
+      const server = makeServerNoPrepare();
+      const assembleSpy = jest
+        .spyOn(rpc, 'assembleTransaction')
+        .mockImplementation((tx: any) => ({ build: () => tx }) as any);
+
+      const svc = new ContractService(server, makeConfig());
+      const hash = await svc.resolveDispute(ESCROW, 'RELEASE', ADMIN);
+
+      expect(hash).toBe('no-prepare-hash');
+      expect(assembleSpy).toHaveBeenCalled();
+      assembleSpy.mockRestore();
+    });
+  });
+
+  describe('invokeContractInternal — missing hash after send (issue #1124)', () => {
+    function makeServerMissingHash() {
+      return {
+        getAccount: jest.fn().mockResolvedValue({
+          sequenceNumber: () => '10',
+        }),
+        simulateTransaction: jest
+          .fn()
+          .mockResolvedValue({ transactionData: {} }),
+        prepareTransaction: jest
+          .fn()
+          .mockImplementation((tx) => Promise.resolve(tx)),
+        // sendTransaction returns PENDING but no hash — exercises the missing-hash branch.
+        sendTransaction: jest.fn().mockResolvedValue({ status: 'PENDING' }),
+        pollTransaction: jest.fn().mockResolvedValue({ status: 'SUCCESS' }),
+      };
+    }
+
+    function makeConfig() {
+      const SIGNER = Keypair.random();
+      return {
+        get: jest.fn((key: string) => {
+          if (key === 'CONTRACT_ID')
+            return 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4';
+          if (key === 'STELLAR_NETWORK') return 'TESTNET';
+          if (key === 'SYSTEM_SIGNER_SECRET') return SIGNER.secret();
+          return undefined;
+        }),
+      } as unknown as import('../config/config.service').ConfigService;
+    }
+
+    it('throws ContractCallFailedException when sendTransaction returns no hash', async () => {
+      const server = makeServerMissingHash();
+      const svc = new ContractService(server, makeConfig());
+
+      await expect(
+        svc.resolveDispute(ESCROW, 'RELEASE', ADMIN),
+      ).rejects.toThrow(ContractCallFailedException);
+      await expect(
+        svc.resolveDispute(ESCROW, 'RELEASE', ADMIN),
+      ).rejects.toThrow('Missing transaction hash');
     });
   });
 });

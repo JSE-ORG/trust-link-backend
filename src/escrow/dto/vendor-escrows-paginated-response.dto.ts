@@ -4,7 +4,7 @@ import { EscrowSummaryDto } from './escrow-summary.dto';
 /**
  * Paginated wrapper returned by GET /vendor/escrows. Contains the single
  * page of escrow summaries plus the total record count, requested page
- * number, and page size so clients can render pagination controls.
+ * number, page size, total pages, and next-page indicator so clients can render pagination controls.
  *
  * The data array holds the compact EscrowSummaryDto representation rather
  * than the full escrow record, matching what the service returns.
@@ -38,4 +38,17 @@ export class VendorEscrowsPaginatedResponseDto {
     maximum: 100,
   })
   limit!: number;
+
+  @ApiProperty({
+    description: 'Total number of pages available.',
+    example: 7,
+    minimum: 0,
+  })
+  totalPages!: number;
+
+  @ApiProperty({
+    description: 'Whether there is a subsequent page available.',
+    example: true,
+  })
+  hasNextPage!: boolean;
 }

@@ -49,6 +49,7 @@ describe('AppController', () => {
         };
         return config[key];
       }),
+      isProduction: jest.fn().mockReturnValue(false),
     };
 
     const mockPrismaService = {
@@ -84,8 +85,17 @@ describe('AppController', () => {
   });
 
   describe('root', () => {
-    it('returns Hello World!', () => {
-      expect(appController.getHello()).toBe('Hello World!');
+    it('returns the service name, version and docs path', () => {
+      expect(appController.getInfo()).toEqual({
+        name: 'trustlink-backend',
+        version: expect.stringMatching(/^\d+\.\d+\.\d+/),
+        docsPath: '/api/docs',
+      });
+    });
+
+    it('returns a null docs path in production', () => {
+      const service = new AppService();
+      expect(service.getInfo(true).docsPath).toBeNull();
     });
   });
 

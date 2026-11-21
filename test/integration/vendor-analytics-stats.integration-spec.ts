@@ -267,6 +267,8 @@ describe('GET /vendor/analytics (issue #289)', () => {
       [
         'activeTransactions',
         'activeVolume',
+        'averageHoursToDeliver',
+        'averageHoursToShip',
         'averageTransactionValue',
         'cancelledTransactions',
         'completedTransactions',
@@ -287,5 +289,63 @@ describe('GET /vendor/analytics (issue #289)', () => {
 
   it('returns 401 for unauthenticated requests', async () => {
     await request(app.getHttpServer()).get('/vendor/analytics').expect(401);
+  });
+  // ── Shipping and delivery speed metrics (issue #1154) ────────────────────
+
+  it('reports null averageHoursToShip and averageHoursToDeliver when no escrows have shipped or delivered', async () => {
+    await seedEscrow(VENDOR_A, 100, 'FUNDED');
+
+    const res = await request(app.getHttpServer())
+      .get('/vendor/analytics')
+      .set('Authorization', AUTH_A)
+      .expect(200);
+
+    expect(res.body.stats.averageHoursToShip).toBeNull();
+    expect(res.body.stats.averageHoursToDeliver).toBeNull();
+  });
+
+  it('computes averageHoursToShip and averageHoursToDeliver with known timestamps', async () => {
+    const baseTime = new Date('2026-05-01T10:00:00.000Z');
+    // Escrow 1: shipped in 2 hours, delivered in 4 hours after shipment
+    await prisma.escrow.create({
+      data: {
+        itemName: 'Speed test 1',
+        itemRef: `ref-speed-1-${Date.now()}`,
+        amount: 100,
+        currency: 'USDC',
+        buyerAddress: BUYER,
+        vendorAddress: VENDOR_A,
+        state: 'DELIVERED',
+        createdAt: baseTime,
+        shippedAt: new Date(baseTime.getTime() + 2 * 3600 * 1000),
+        deliveredAt: new Date(baseTime.getTime() + 6 * 3600 * 1000),
+      },
+    });
+
+    // Escrow 2: shipped in 4 hours, delivered in 6 hours after shipment
+    await prisma.escrow.create({
+      data: {
+        itemName: 'Speed test 2',
+        itemRef: `ref-speed-2-${Date.now()}`,
+        amount: 200,
+        currency: 'USDC',
+        buyerAddress: BUYER,
+        vendorAddress: VENDOR_A,
+        state: 'DELIVERED',
+        createdAt: baseTime,
+        shippedAt: new Date(baseTime.getTime() + 4 * 3600 * 1000),
+        deliveredAt: new Date(baseTime.getTime() + 10 * 3600 * 1000),
+      },
+    });
+
+    const res = await request(app.getHttpServer())
+      .get('/vendor/analytics')
+      .set('Authorization', AUTH_A)
+      .expect(200);
+
+    // (2 + 4) / 2 = 3 hours to ship
+    expect(res.body.stats.averageHoursToShip).toBeCloseTo(3, 1);
+    // (4 + 6) / 2 = 5 hours to deliver
+    expect(res.body.stats.averageHoursToDeliver).toBeCloseTo(5, 1);
   });
 });

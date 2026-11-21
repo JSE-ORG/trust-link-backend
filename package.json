@@ -4,6 +4,9 @@
     "description": "",
     "author": "",
     "license": "ISC",
+    "engines": {
+        "node": ">=22 <23"
+    },
     "scripts": {
         "build": "nest build",
         "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
@@ -29,7 +32,7 @@
         "db:migrate": "prisma migrate deploy",
         "db:studio": "prisma studio",
         "db:seed": "ts-node scripts/db-seed.ts",
-        "db:reset": "prisma migrate reset --force && npm run db:seed",
+        "db:reset": "node scripts/assert-local-db.cjs && prisma migrate reset --force && npm run db:seed",
         "typecheck": "tsc --noEmit",
         "validate": "npm run typecheck && npm run lint:check && npm run test",
         "docker:build": "docker build -t trustlink-backend .",
@@ -52,6 +55,7 @@
         "@opentelemetry/api": "^1.9.1",
         "@opentelemetry/auto-instrumentations-node": "^0.77.0",
         "@opentelemetry/core": "^2.10.0",
+        "@opentelemetry/exporter-metrics-otlp-http": "^0.219.0",
         "@opentelemetry/exporter-trace-otlp-http": "^0.219.0",
         "@opentelemetry/resources": "^2.8.0",
         "@opentelemetry/sdk-node": "^0.219.0",

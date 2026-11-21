@@ -1,5 +1,6 @@
 import type { INestApplication } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { API_DOCS_PATH } from './app.service';
 import { ErrorResponseDto } from './common/dto/error-response.dto';
 import { LivenessResponseDto } from './common/dto/liveness-response.dto';
 import {
@@ -13,7 +14,13 @@ export function setupOpenApiUi(
   isProduction: boolean,
 ): void {
   if (!isProduction) {
-    SwaggerModule.setup('api/docs', app, document);
+    SwaggerModule.setup(API_DOCS_PATH.slice(1), app, document, {
+      swaggerOptions: {
+        persistAuthorization: true,
+        filter: true,
+        displayRequestDuration: true,
+      },
+    });
   }
 }
 

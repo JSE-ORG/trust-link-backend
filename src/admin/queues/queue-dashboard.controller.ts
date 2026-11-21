@@ -54,6 +54,7 @@ export class QueueDashboardController {
   })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   @ApiResponse({ status: 403, description: 'Admin access required.' })
+  @ApiResponse({ status: 429, description: 'Too many requests.' })
   @Throttle({ default: { limit: 20, ttl: THROTTLE_WINDOW_MS } })
   @Get()
   getDashboard(): Promise<QueuesDashboardDto> {

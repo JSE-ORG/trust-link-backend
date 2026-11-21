@@ -1,10 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import { Injectable, Optional } from '@nestjs/common';
 import { CacheService } from '../cache/cache.service';
+import { ConfigService } from '../config/config.service';
+import type { Prisma } from '@prisma/client';
 import {
   EscrowRecord,
   EscrowState,
   PrismaService,
+  toDisputeRecord,
   toEscrowRecord,
 } from '../prisma/prisma.service';
 import { MILLISECONDS_PER_HOUR } from '../common/constants/time.constants';
@@ -15,6 +18,8 @@ import {
 } from './escrow.constants';
 import {
   AutoReleaseEligibleResult,
+  EscrowListFilter,
+  EscrowWithDispute,
   EventsResult,
   VendorEscrowsResult,
 } from './escrow.types';
@@ -27,6 +32,9 @@ const ESCROW_DATE_FIELDS = [
   'deliveryRecordedAt',
   'autoReleaseSubmittedAt',
   'cancelledAt',
+  'fundedAt',
+  'disputedAt',
+  'completedAt',
   'createdAt',
   'updatedAt',
 ] as const;
@@ -55,13 +63,54 @@ export function reviveCachedEscrow(cached: EscrowRecord): EscrowRecord {
   return record;
 }
 
+/** A date-only `to` (YYYY-MM-DD) includes that whole day. */
+function endOfRange(to: string): { lt: Date } | { lte: Date } {
+  const date = new Date(to);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(to)) {
+    date.setUTCDate(date.getUTCDate() + 1);
+    return { lt: date };
+  }
+  return { lte: date };
+}
+
+function buildEscrowWhere(filter: EscrowListFilter): Prisma.EscrowWhereInput {
+  const where: Prisma.EscrowWhereInput = {};
+  if (filter.vendorAddress) where.vendorAddress = filter.vendorAddress;
+  if (filter.buyerAddress) where.buyerAddress = filter.buyerAddress;
+  if (filter.state) where.state = filter.state as EscrowState;
+  if (filter.from || filter.to) {
+    where.createdAt = {
+      ...(filter.from ? { gte: new Date(filter.from) } : {}),
+      ...(filter.to ? endOfRange(filter.to) : {}),
+    };
+  }
+  if (filter.q) {
+    where.OR = [
+      { itemName: { contains: filter.q, mode: 'insensitive' } },
+      { itemRef: { contains: filter.q, mode: 'insensitive' } },
+    ];
+  }
+  return where;
+}
+
 @Injectable()
 export class EscrowRepository {
   constructor(
     private readonly prisma: PrismaService,
     @Optional()
     private readonly cache?: CacheService,
+    @Optional()
+    private readonly config?: ConfigService,
   ) {}
+
+  /** `ESCROW_CACHE_TTL_SECONDS`, defaulting to and capped at 60 (R-CA-03). */
+  private cacheTtlSeconds(): number {
+    const configured = this.config?.get<number>('ESCROW_CACHE_TTL_SECONDS');
+    return Math.min(
+      configured ?? ESCROW_CACHE_TTL_SECONDS,
+      ESCROW_CACHE_TTL_SECONDS,
+    );
+  }
 
   private cacheKey(id: string): string {
     return `escrow:${id}`;
@@ -113,7 +162,8 @@ export class EscrowRepository {
   }
 
   /**
-   * Returns a cached escrow by ID (60-second Redis TTL) or falls through
+   * Returns a cached escrow by ID (TTL from `ESCROW_CACHE_TTL_SECONDS`, at
+   * most 60 seconds) or falls through
    * to the database on a cache miss. Cached records are revived so callers
    * get the same field types on a hit as on a miss.
    */
@@ -123,7 +173,7 @@ export class EscrowRepository {
     const row = await this.prisma.escrow.findUnique({ where: { id } });
     if (!row) return null;
     const record = toEscrowRecord(row);
-    await this.cache?.set(this.cacheKey(id), record, ESCROW_CACHE_TTL_SECONDS);
+    await this.cache?.set(this.cacheKey(id), record, this.cacheTtlSeconds());
     return record;
   }
 
@@ -169,9 +219,18 @@ export class EscrowRepository {
 
   /** Updates the escrow state and invalidates its cache entry. */
   async updateState(id: string, state: EscrowState): Promise<EscrowRecord> {
+    const existing = await this.findById(id);
+    const data: Prisma.EscrowUpdateInput = { state };
+    if (state === 'FUNDED' && !existing?.fundedAt) {
+      data.fundedAt = new Date();
+    } else if (state === 'DISPUTED' && !existing?.disputedAt) {
+      data.disputedAt = new Date();
+    } else if (state === 'COMPLETED' && !existing?.completedAt) {
+      data.completedAt = new Date();
+    }
     const result = await this.prisma.escrow.update({
       where: { id },
-      data: { state },
+      data,
     });
     await this.invalidate(id);
     return toEscrowRecord(result);
@@ -200,8 +259,29 @@ export class EscrowRepository {
     order: 'asc' | 'desc',
     page: number,
     limit: number,
+    filters: Omit<EscrowListFilter, 'vendorAddress' | 'state'> = {},
   ): Promise<VendorEscrowsResult> {
-    const where = { vendorAddress, state: state as EscrowState | undefined };
+    return this.findEscrows(
+      { ...filters, vendorAddress, state },
+      sort,
+      order,
+      page,
+      limit,
+    );
+  }
+
+  /**
+   * Returns a paginated, sorted slice of escrows matching every set field of
+   * `filter`. `total` is the count of all matching rows, ignoring paging.
+   */
+  async findEscrows(
+    filter: EscrowListFilter,
+    sort: 'date' | 'amount',
+    order: 'asc' | 'desc',
+    page: number,
+    limit: number,
+  ): Promise<VendorEscrowsResult> {
+    const where = buildEscrowWhere(filter);
     const orderBy =
       sort === 'amount' ? { amount: order } : { createdAt: order };
     const skip = (page - 1) * limit;
@@ -217,6 +297,20 @@ export class EscrowRepository {
     ]);
 
     return { data: data.map(toEscrowRecord), total };
+  }
+
+  /** Returns the escrow with its dispute, or null when the id is unknown. */
+  async findByIdWithDispute(id: string): Promise<EscrowWithDispute | null> {
+    const row = await this.prisma.escrow.findUnique({
+      where: { id },
+      include: { disputes: true },
+    });
+    if (!row) return null;
+    const { disputes, ...escrow } = row;
+    return {
+      escrow: toEscrowRecord(escrow),
+      dispute: disputes[0] ? toDisputeRecord(disputes[0]) : null,
+    };
   }
 
   /**
@@ -286,9 +380,14 @@ export class EscrowRepository {
 
   /** Transitions the escrow to COMPLETED and invalidates the cache. */
   async markCompleted(id: string): Promise<EscrowRecord> {
+    const existing = await this.findById(id);
+    const data: Prisma.EscrowUpdateInput = { state: 'COMPLETED' };
+    if (!existing?.completedAt) {
+      data.completedAt = new Date();
+    }
     const result = await this.prisma.escrow.update({
       where: { id },
-      data: { state: 'COMPLETED' },
+      data,
     });
     await this.invalidate(id);
     return toEscrowRecord(result);
@@ -419,10 +518,14 @@ export class EscrowRepository {
    * for a combination the application cannot produce, so the query matches
    * nothing and auto-release silently never fires (issue #395).
    *
+   * At most `limit` oldest-delivered records are returned, so a backlog cannot
+   * grow each worker cycle's load.
+   *
    * @returns an {@link AutoReleaseEligibleResult} of eligible escrow records.
    */
   findAutoReleaseEligible(
     referenceTime = new Date(),
+    limit = 50,
   ): Promise<AutoReleaseEligibleResult> {
     const cutoff = new Date(
       referenceTime.getTime() -
@@ -443,6 +546,7 @@ export class EscrowRepository {
         // (and therefore which is retried after a partial failure) would vary
         // between runs.
         orderBy: [{ deliveredAt: 'asc' }, { id: 'asc' }],
+        take: limit,
       })
       .then((rows) => rows.map(toEscrowRecord));
   }
@@ -567,5 +671,36 @@ export class EscrowRepository {
     });
     await this.invalidate(id);
     return toEscrowRecord(result);
+  }
+
+  /**
+   * Returns completed escrow count and dispute rate percentage (0-100) for public vendor profile (#1153).
+   */
+  async getVendorPublicStats(
+    vendorAddress: string,
+  ): Promise<{ completedEscrows: number; disputeRate: number }> {
+    const groups = await this.prisma.escrow.groupBy({
+      by: ['state'],
+      where: { vendorAddress },
+      _count: { _all: true },
+    });
+
+    let total = 0;
+    let completed = 0;
+    let disputed = 0;
+
+    for (const g of groups) {
+      const count = g._count._all;
+      total += count;
+      if (g.state === 'COMPLETED' || g.state === 'RELEASED') {
+        completed += count;
+      }
+      if (g.state === 'DISPUTED') {
+        disputed += count;
+      }
+    }
+
+    const disputeRate = total > 0 ? (disputed / total) * 100 : 0;
+    return { completedEscrows: completed, disputeRate };
   }
 }

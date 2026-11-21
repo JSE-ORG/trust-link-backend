@@ -7,6 +7,7 @@ import {
   Patch,
   Post,
   Put,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -26,6 +27,8 @@ import { UpdateNotificationPreferencesDto } from './dto/update-notification-pref
 import { VendorProfileResponseDto } from './dto/vendor-profile-response.dto';
 import { NotificationPreferencesResponseDto } from './dto/notification-preferences-response.dto';
 import { UpdateNotificationPreferencesResponseDto } from './dto/update-notification-preferences-response.dto';
+import { VendorNotificationsQueryDto } from './dto/vendor-notifications-query.dto';
+import { VendorNotificationHistoryPaginatedResponseDto } from './dto/vendor-notification-history-response.dto';
 import { VendorProfileService } from './vendor-profile.service';
 
 @ApiTags('Vendor')
@@ -194,6 +197,26 @@ export class VendorProfileController {
     return this.vendorProfileService.updateNotificationPreferences(
       user.address,
       dto,
+    );
+  }
+
+  @ApiOperation({ summary: 'Get vendor notification history' })
+  @ApiResponse({
+    status: 200,
+    description: 'Paginated notification history for the authenticated vendor.',
+    type: VendorNotificationHistoryPaginatedResponseDto,
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized.' })
+  @ApiResponse({ status: 429, description: 'Too many requests.' })
+  @Throttle({ default: { limit: 20, ttl: THROTTLE_WINDOW_MS } })
+  @Get('notifications/history')
+  getNotificationHistory(
+    @CurrentUser() user: AuthUser,
+    @Query() query: VendorNotificationsQueryDto,
+  ) {
+    return this.vendorProfileService.getNotificationHistory(
+      user.address,
+      query,
     );
   }
 }

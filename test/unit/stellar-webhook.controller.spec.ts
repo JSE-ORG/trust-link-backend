@@ -89,7 +89,7 @@ describe('StellarWebhookController (issue #574)', () => {
       isProcessed: jest.fn((id: string) => Promise.resolve(processed.has(id))),
       markProcessed: jest.fn((id: string) => {
         processed.add(id);
-        return Promise.resolve();
+        return Promise.resolve(true);
       }),
       unmarkProcessed: jest.fn((id: string) => {
         processed.delete(id);

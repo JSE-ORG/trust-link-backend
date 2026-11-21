@@ -2,6 +2,7 @@ import {
   IsNumber,
   IsString,
   IsArray,
+  ArrayMinSize,
   IsOptional,
   Min,
   Max,
@@ -9,6 +10,7 @@ import {
   IsIn,
   Matches,
   ArrayMaxSize,
+  MaxLength,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -112,6 +114,8 @@ export class StressTestConfigDto {
     example: 'escrow-create-peak-load',
   })
   @IsString()
+  @MaxLength(100)
+  @Matches(/\S/, { message: 'testName must not be blank' })
   testName!: string;
 
   @ApiProperty({
@@ -120,6 +124,7 @@ export class StressTestConfigDto {
     maxItems: 10,
   })
   @IsArray()
+  @ArrayMinSize(1)
   @ArrayMaxSize(10)
   profiles!: VirtualProfile[];
 

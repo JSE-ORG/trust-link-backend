@@ -1,5 +1,6 @@
 import { Type } from 'class-transformer';
 import {
+  IsIn,
   IsInt,
   IsOptional,
   IsString,
@@ -11,7 +12,7 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
 
 /**
  * Query parameters for GET /vendor/analytics/chart.
- * Validates days (integer 1-365) and timezone (valid IANA timezone).
+ * Validates days (integer 1-365), timezone (valid IANA timezone), and interval (day|week|month).
  */
 export class ChartQueryDto {
   @ApiPropertyOptional({
@@ -37,4 +38,14 @@ export class ChartQueryDto {
   @IsString()
   @IsTimeZone()
   timezone: string = 'UTC';
+
+  @ApiPropertyOptional({
+    description: 'Aggregation interval for grouping: day, week, or month.',
+    enum: ['day', 'week', 'month'],
+    default: 'day',
+    example: 'day',
+  })
+  @IsOptional()
+  @IsIn(['day', 'week', 'month'])
+  interval: 'day' | 'week' | 'month' = 'day';
 }

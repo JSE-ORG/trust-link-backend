@@ -7,6 +7,7 @@ import { StellarModule } from '../stellar/stellar.module';
 import { S3PresignService } from '../common/services/s3-presign.service';
 import { EscrowController } from './escrow.controller';
 import { VendorEscrowController } from './vendor-escrow.controller';
+import { BuyerEscrowController } from './buyer-escrow.controller';
 import { EscrowRepository } from './escrow.repository';
 import { EscrowService } from './escrow.service';
 import { BuyerDisputeService } from './buyer-dispute.service';
@@ -18,7 +19,11 @@ import { BuyerDisputeService } from './buyer-dispute.service';
     DisputeModule,
     forwardRef(() => StellarModule),
   ],
-  controllers: [EscrowController, VendorEscrowController],
+  controllers: [
+    EscrowController,
+    VendorEscrowController,
+    BuyerEscrowController,
+  ],
   providers: [
     EscrowService,
     EscrowRepository,

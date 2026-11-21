@@ -157,6 +157,19 @@ export class PaginatedFailedTransactions {
     maximum: 100,
   })
   limit!: number;
+
+  @ApiProperty({
+    description: 'Total number of pages available.',
+    example: 1,
+    minimum: 0,
+  })
+  totalPages!: number;
+
+  @ApiProperty({
+    description: 'Whether there is a subsequent page available.',
+    example: false,
+  })
+  hasNextPage!: boolean;
 }
 
 /**

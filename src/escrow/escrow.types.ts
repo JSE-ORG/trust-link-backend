@@ -1,4 +1,5 @@
-import { EscrowRecord } from '../prisma/prisma.service';
+import { DisputeRecord, EscrowRecord } from '../prisma/prisma.service';
+import type { EscrowSummaryDto } from './dto/escrow-summary.dto';
 
 /**
  * Named return-type interfaces for {@link EscrowRepository} methods (issue #237).
@@ -45,3 +46,43 @@ export interface EscrowEventEntry {
  * history derived from an escrow's timestamp fields.
  */
 export type EventsResult = EscrowEventEntry[];
+
+/** Optional filters for escrow list queries. Unset fields are ignored. */
+export interface EscrowListFilter {
+  vendorAddress?: string;
+  buyerAddress?: string;
+  state?: string;
+  /** Earliest `createdAt`, inclusive (ISO 8601). */
+  from?: string;
+  /** Latest `createdAt`, inclusive. A date-only value covers the whole day. */
+  to?: string;
+  /** Case-insensitive match on `itemName` or `itemRef`. */
+  q?: string;
+}
+
+/** Result of {@link EscrowRepository.findByIdWithDispute}. */
+export interface EscrowWithDispute {
+  escrow: EscrowRecord;
+  dispute: DisputeRecord | null;
+}
+
+/** Query accepted by the vendor and buyer escrow lists. */
+export interface EscrowListQuery extends Omit<
+  EscrowListFilter,
+  'vendorAddress'
+> {
+  sort?: 'date' | 'amount';
+  order?: 'asc' | 'desc';
+  page?: number;
+  limit?: number;
+}
+
+/** One page of escrow summaries plus the unpaginated total. */
+export interface EscrowListPage {
+  data: EscrowSummaryDto[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+  hasNextPage: boolean;
+}

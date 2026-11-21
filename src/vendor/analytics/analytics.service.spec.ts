@@ -797,15 +797,11 @@ describe('AnalyticsService', () => {
         averageTransactionValue: 100,
       });
 
-      const startDate = new Date('2024-01-01');
-      const endDate = new Date('2024-01-05');
-
       // Access private method using bracket notation
       const filledData = service['fillDateGaps'](
         dailyMap,
-        startDate,
-        endDate,
-        'UTC',
+        '2024-01-01',
+        '2024-01-05',
       );
 
       expect(filledData.length).toBe(5);
@@ -970,6 +966,8 @@ describe('AnalyticsService.getTransactionStats aggregation (#843)', () => {
       [
         'activeTransactions',
         'activeVolume',
+        'averageHoursToDeliver',
+        'averageHoursToShip',
         'averageTransactionValue',
         'cancelledTransactions',
         'completedTransactions',

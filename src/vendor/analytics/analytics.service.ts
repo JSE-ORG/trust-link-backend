@@ -47,27 +47,29 @@ export class AnalyticsService {
   constructor(private readonly repository: AnalyticsRepository) {}
 
   /**
-   * Retrieves daily transaction volume data for a vendor.
+   * Retrieves transaction volume data for a vendor.
    * Uses database-level aggregation with raw SQL for optimal performance on large datasets.
-   * Handles timezone boundaries correctly and fills gaps for days with zero transactions.
-   * Returns time-series data grouped by date with aggregated metrics.
+   * Handles timezone boundaries correctly, groups by interval (day, week, month), and fills gaps.
+   * Returns time-series data grouped by date with aggregated metrics (issues #942, #1155).
    */
   async getDailyVolumeChart(
     vendorAddress: string,
     days: number = 30,
     timezone: string = 'UTC',
+    interval: 'day' | 'week' | 'month' = 'day',
   ): Promise<ChartDataResponse> {
     const endDate = new Date();
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - days + 1);
-    startDate.setUTCHours(0, 0, 0, 0);
+    const endDateKey = this.formatDateInTimezone(endDate, timezone);
+    const startDateKey = this.addCalendarDays(endDateKey, -(days - 1));
+    const startDate = this.localMidnightInTimezone(startDateKey, timezone);
 
-    // Use repository for database-level aggregation with proper timezone handling.
+    // Use repository for database-level aggregation with proper timezone handling and interval.
     const aggregationResult = await this.repository.aggregateDailyVolume(
       vendorAddress,
       startDate,
       endDate,
       timezone,
+      interval,
     );
 
     // Convert aggregation results to DailyVolumeData format
@@ -96,12 +98,12 @@ export class AnalyticsService {
       });
     }
 
-    // Fill gaps for days with zero transactions
+    // Fill gaps for intervals with zero transactions
     const filledData = this.fillDateGaps(
       dailyMap,
-      startDate,
-      endDate,
-      timezone,
+      startDateKey,
+      endDateKey,
+      interval,
     );
 
     // Sort by date ascending
@@ -119,8 +121,8 @@ export class AnalyticsService {
     return {
       data: sortedData,
       period: {
-        startDate: this.formatDate(startDate),
-        endDate: this.formatDate(endDate),
+        startDate: startDateKey,
+        endDate: endDateKey,
       },
       summary: {
         totalVolume,
@@ -131,46 +133,89 @@ export class AnalyticsService {
   }
 
   /**
-   * Fills gaps in the date range with zero-transaction entries
-   * Ensures consistent time-series data even for days with no activity
+   * Fills gaps in the date range with zero-transaction entries for day, week, or month intervals.
    */
   private fillDateGaps(
     dailyMap: Map<string, DailyVolumeDataDto>,
-    startDate: Date,
-    endDate: Date,
-    timezone: string = 'UTC',
+    startDateKey: string,
+    endDateKey: string,
+    interval: 'day' | 'week' | 'month' = 'day',
   ): DailyVolumeDataDto[] {
     const result: DailyVolumeDataDto[] = [];
-    const currentDate = new Date(startDate);
 
-    while (currentDate <= endDate) {
-      const dateKey = this.formatDateInTimezone(currentDate, timezone);
+    if (interval === 'week') {
+      const [year, month, day] = startDateKey.split('-').map(Number);
+      const d = new Date(Date.UTC(year, month - 1, day));
+      const dayOfWeek = d.getUTCDay();
+      const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+      d.setUTCDate(d.getUTCDate() + diff);
 
-      if (dailyMap.has(dateKey)) {
-        result.push(dailyMap.get(dateKey)!);
-      } else {
-        result.push({
-          date: dateKey,
-          totalVolume: 0,
-          transactionCount: 0,
-          completedCount: 0,
-          disputedCount: 0,
-          averageTransactionValue: 0,
-        });
+      const [endYear, endMonth, endDay] = endDateKey.split('-').map(Number);
+      const endD = new Date(Date.UTC(endYear, endMonth - 1, endDay));
+      const endDayOfWeek = endD.getUTCDay();
+      const endDiff = endDayOfWeek === 0 ? -6 : 1 - endDayOfWeek;
+      endD.setUTCDate(endD.getUTCDate() + endDiff);
+      const lastWeekKey = endD.toISOString().slice(0, 10);
+
+      let dateKey = d.toISOString().slice(0, 10);
+      while (dateKey <= lastWeekKey) {
+        this.pushBucket(result, dailyMap, dateKey);
+        const next = new Date(dateKey + 'T00:00:00Z');
+        next.setUTCDate(next.getUTCDate() + 7);
+        dateKey = next.toISOString().slice(0, 10);
       }
+    } else if (interval === 'month') {
+      let dateKey = startDateKey.slice(0, 7) + '-01';
+      const endMonthKey = endDateKey.slice(0, 7) + '-01';
 
-      // Move to next day
-      currentDate.setDate(currentDate.getDate() + 1);
+      while (dateKey <= endMonthKey) {
+        this.pushBucket(result, dailyMap, dateKey);
+        const [y, m] = dateKey.split('-').map(Number);
+        const next = new Date(Date.UTC(y, m, 1));
+        dateKey = next.toISOString().slice(0, 10);
+      }
+    } else {
+      let dateKey = startDateKey;
+      while (dateKey <= endDateKey) {
+        this.pushBucket(result, dailyMap, dateKey);
+        dateKey = this.addCalendarDays(dateKey, 1);
+      }
     }
 
     return result;
+  }
+
+  private pushBucket(
+    result: DailyVolumeDataDto[],
+    dailyMap: Map<string, DailyVolumeDataDto>,
+    dateKey: string,
+  ): void {
+    if (dailyMap.has(dateKey)) {
+      result.push(dailyMap.get(dateKey)!);
+    } else {
+      result.push({
+        date: dateKey,
+        totalVolume: 0,
+        transactionCount: 0,
+        completedCount: 0,
+        disputedCount: 0,
+        averageTransactionValue: 0,
+      });
+    }
   }
 
   /**
    * Formats a Date object to ISO date string (YYYY-MM-DD) in a specific timezone
    */
   private formatDateInTimezone(date: Date, timezone: string): string {
-    return date.toLocaleDateString('en-CA', { timeZone: timezone });
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(date);
+    const values = new Map(parts.map(({ type, value }) => [type, value]));
+    return `${values.get('year')}-${values.get('month')}-${values.get('day')}`;
   }
 
   /**
@@ -189,7 +234,7 @@ export class AnalyticsService {
 
   /**
    * Retrieves overall transaction statistics for a vendor.
-   * Includes conversion metrics and channel preferences.
+   * Includes conversion metrics, speed metrics, and channel preferences.
    *
    * #843 — Counts and sums are aggregated by the database with a single
    * `groupBy` on `state`, and the per-state sums are added as decimals.
@@ -205,14 +250,18 @@ export class AnalyticsService {
    * the total is supposed to be exact.
    *
    * `groupBy` narrows the transfer to one row per state and lets Postgres sum
-   * the `numeric` column exactly.
+   * the `numeric` column exactly. Speed metrics are computed in SQL (#1154).
    */
   async getTransactionStats(
     vendorAddress: string,
   ): Promise<AnalyticsStatsResponse> {
-    // One row per state, with the count and the exact `numeric` sum for that
-    // state. Uses the composite index on (vendorAddress, state).
-    const groups = await this.repository.getEscrowStateGroups(vendorAddress);
+    const [groups, speedStats, notificationChannels] = await Promise.all([
+      // One row per state, with the count and the exact `numeric` sum for that
+      // state. Uses the composite index on (vendorAddress, state).
+      this.repository.getEscrowStateGroups(vendorAddress),
+      this.repository.getAverageShippingAndDeliveryTimes(vendorAddress),
+      this.repository.findNotificationChannels(vendorAddress),
+    ]);
 
     // Active states: CREATED, FUNDED, SHIPPED, DELIVERED
     const activeStates = new Set(['CREATED', 'FUNDED', 'SHIPPED', 'DELIVERED']);
@@ -229,8 +278,6 @@ export class AnalyticsService {
     let cancelledTransactions = 0;
 
     for (const group of groups) {
-      // Narrowed explicitly: `groupBy` infers a wide union here, and a null
-      // `_sum` is what an empty state group returns.
       const { state, _count, _sum } = group;
       const count = Number(
         typeof _count === 'object' ? _count?._all : (_count ?? 0),
@@ -258,8 +305,6 @@ export class AnalyticsService {
       }
     }
 
-    // The response contract is numeric, so the exact decimals are converted
-    // once here rather than being carried as floats through the additions.
     const totalVolumeNumber = decimalToNumber(totalVolume);
     const activeVolumeNumber = decimalToNumber(activeVolume);
 
@@ -274,6 +319,8 @@ export class AnalyticsService {
       disputeRate: 0,
       averageTransactionValue: 0,
       cancelledTransactions,
+      averageHoursToShip: speedStats.averageHoursToShip,
+      averageHoursToDeliver: speedStats.averageHoursToDeliver,
     };
 
     // Calculate rates
@@ -289,17 +336,15 @@ export class AnalyticsService {
       );
     }
 
-    // Fetch vendor tracking settings for channel preferences (defaults to platform defaults)
-    const notificationChannels =
-      (await this.repository.findNotificationChannels(vendorAddress)) ??
-      DEFAULT_NOTIFICATION_CHANNELS;
+    const activeChannels =
+      notificationChannels ?? DEFAULT_NOTIFICATION_CHANNELS;
 
     const channels: ChannelMetricsDto = {
       email: {
-        notificationsEnabled: notificationChannels.includes('EMAIL'),
+        notificationsEnabled: activeChannels.includes('EMAIL'),
       },
       sms: {
-        notificationsEnabled: notificationChannels.includes('SMS'),
+        notificationsEnabled: activeChannels.includes('SMS'),
       },
     };
 
@@ -310,10 +355,61 @@ export class AnalyticsService {
     };
   }
 
-  /**
-   * Formats a Date object to ISO date string (YYYY-MM-DD)
-   */
-  private formatDate(date: Date): string {
-    return date.toISOString().split('T')[0];
+  private addCalendarDays(dateKey: string, days: number): string {
+    const [year, month, day] = dateKey.split('-').map(Number);
+    const date = new Date(Date.UTC(year, month - 1, day + days));
+    return [
+      date.getUTCFullYear(),
+      String(date.getUTCMonth() + 1).padStart(2, '0'),
+      String(date.getUTCDate()).padStart(2, '0'),
+    ].join('-');
+  }
+
+  /** Resolves the first instant at local midnight for a calendar date. */
+  private localMidnightInTimezone(dateKey: string, timezone: string): Date {
+    const [year, month, day] = dateKey.split('-').map(Number);
+    const targetAsUtc = Date.UTC(year, month - 1, day);
+    let candidate = targetAsUtc;
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hourCycle: 'h23',
+    });
+
+    // Reconcile the UTC guess against the local wall-clock representation.
+    // This handles both positive and negative UTC offsets and DST changes.
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      const parts = new Map(
+        formatter
+          .formatToParts(new Date(candidate))
+          .map(({ type, value }) => [type, Number(value)]),
+      );
+      const part = (
+        name: keyof Intl.DateTimeFormatPartTypesRegistry,
+      ): number => {
+        const value = parts.get(name);
+        if (value === undefined) {
+          throw new Error(`Missing ${name} date part for timezone ${timezone}`);
+        }
+        return value;
+      };
+      const representedAsUtc = Date.UTC(
+        part('year'),
+        part('month') - 1,
+        part('day'),
+        part('hour'),
+        part('minute'),
+        part('second'),
+      );
+      const correction = targetAsUtc - representedAsUtc;
+      candidate += correction;
+      if (correction === 0) break;
+    }
+    return new Date(candidate);
   }
 }

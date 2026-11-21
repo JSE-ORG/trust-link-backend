@@ -68,6 +68,24 @@ export class TransactionStatsDto {
     example: 9,
   })
   cancelledTransactions!: number;
+
+  @ApiProperty({
+    description:
+      'Average hours taken from escrow creation to shipment (createdAt to shippedAt), null when no shipped escrows exist.',
+    example: 24.5,
+    nullable: true,
+    type: Number,
+  })
+  averageHoursToShip!: number | null;
+
+  @ApiProperty({
+    description:
+      'Average hours taken from shipment to delivery (shippedAt to deliveredAt), null when no delivered escrows exist.',
+    example: 48.2,
+    nullable: true,
+    type: Number,
+  })
+  averageHoursToDeliver!: number | null;
 }
 
 /**

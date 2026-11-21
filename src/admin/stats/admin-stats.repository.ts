@@ -7,9 +7,27 @@ export interface EscrowStateGroup {
   _count: number;
 }
 
+/** One row returned by the daily admin stats raw aggregation query. */
+export interface DailyAdminStatsRow {
+  date: Date | string;
+  escrowsCreated: bigint | number | string;
+  volume: number | string;
+  completed: bigint | number | string;
+  disputed: bigint | number | string;
+}
+
+/** Escrow volume for one currency. */
+export interface CurrencyVolume {
+  currency: string;
+  total: number;
+  count: number;
+  average: number;
+}
+
 /** Raw aggregates behind the admin dashboard response. */
 export interface AdminStatsTotals {
   totalVolume: number;
+  volumeByCurrency: CurrencyVolume[];
   stateGroups: EscrowStateGroup[];
   uniqueVendors: number;
   uniqueBuyers: number;
@@ -53,8 +71,21 @@ export class AdminStatsRepository {
         `,
       ]);
 
+    const byCurrency = await this.prisma.escrow.groupBy({
+      by: ['currency'],
+      _sum: { amount: true },
+      _count: true,
+    });
+
     return {
       totalVolume: Number(aggregation._sum?.amount ?? 0),
+      volumeByCurrency: byCurrency.map((row) => ({
+        currency: row.currency,
+        total: Number(row._sum?.amount ?? 0),
+        count: row._count,
+        average:
+          row._count > 0 ? Number(row._sum?.amount ?? 0) / row._count : 0,
+      })),
       stateGroups: stateGroups,
       uniqueVendors: Number(vendorCountRows[0]?.count ?? 0),
       uniqueBuyers: Number(buyerCountRows[0]?.count ?? 0),
@@ -76,5 +107,27 @@ export class AdminStatsRepository {
         status: { in: [...openStatuses] },
       },
     });
+  }
+
+  /**
+   * Aggregates daily platform stats (escrows created, volume, completed, disputed)
+   * grouped by calendar day between startDate and endDate.
+   */
+  async aggregateDailyStats(
+    startDate: Date,
+    endDate: Date,
+  ): Promise<DailyAdminStatsRow[]> {
+    return this.prisma.$queryRaw<DailyAdminStatsRow[]>`
+      SELECT
+        DATE_TRUNC('day', "createdAt")::date AS date,
+        COUNT(*)::bigint AS "escrowsCreated",
+        COALESCE(SUM("amount"), 0)::float AS volume,
+        SUM(CASE WHEN "state" IN ('COMPLETED', 'RELEASED') THEN 1 ELSE 0 END)::bigint AS completed,
+        SUM(CASE WHEN "state" = 'DISPUTED' OR "disputeId" IS NOT NULL THEN 1 ELSE 0 END)::bigint AS disputed
+      FROM "Escrow"
+      WHERE "createdAt" >= ${startDate} AND "createdAt" <= ${endDate}
+      GROUP BY DATE_TRUNC('day', "createdAt")::date
+      ORDER BY date ASC
+    `;
   }
 }

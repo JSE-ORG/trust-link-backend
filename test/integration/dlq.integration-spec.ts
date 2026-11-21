@@ -153,6 +153,39 @@ describe('DLQ endpoints (issue #640)', () => {
     });
   });
 
+  // ── Id validation (issue #1113) ────────────────────────────────────────
+
+  describe('non-UUID ids', () => {
+    it('GET /admin/dlq/:id returns 400', async () => {
+      await request(app.getHttpServer())
+        .get('/admin/dlq/nope')
+        .set('Authorization', `Bearer ${adminJwt()}`)
+        .expect(400);
+    });
+
+    it('POST /admin/dlq/:id/replay returns 400', async () => {
+      await request(app.getHttpServer())
+        .post('/admin/dlq/nope/replay')
+        .set('Authorization', `Bearer ${adminJwt()}`)
+        .expect(400);
+    });
+
+    it('POST /admin/dlq/:id/abandon returns 400', async () => {
+      await request(app.getHttpServer())
+        .post('/admin/dlq/nope/abandon')
+        .set('Authorization', `Bearer ${adminJwt()}`)
+        .expect(400);
+    });
+
+    it('GET /admin/dlq rejects a non-UUID escrowId with 400', async () => {
+      await request(app.getHttpServer())
+        .get('/admin/dlq')
+        .set('Authorization', `Bearer ${adminJwt()}`)
+        .query({ escrowId: 'nope' })
+        .expect(400);
+    });
+  });
+
   // ── GET /admin/dlq/:id ─────────────────────────────────────────────────
 
   describe('GET /admin/dlq/:id', () => {
@@ -171,7 +204,7 @@ describe('DLQ endpoints (issue #640)', () => {
 
     it('returns 404 for non-existent entry', async () => {
       await request(app.getHttpServer())
-        .get('/admin/dlq/non-existent-id')
+        .get('/admin/dlq/00000000-0000-4000-8000-000000000000')
         .set('Authorization', `Bearer ${adminJwt()}`)
         .expect(404);
     });
@@ -211,7 +244,7 @@ describe('DLQ endpoints (issue #640)', () => {
 
     it('returns 404 for non-existent entry', async () => {
       await request(app.getHttpServer())
-        .post('/admin/dlq/non-existent-id/abandon')
+        .post('/admin/dlq/00000000-0000-4000-8000-000000000000/abandon')
         .set('Authorization', `Bearer ${adminJwt()}`)
         .expect(404);
     });
@@ -239,7 +272,7 @@ describe('DLQ endpoints (issue #640)', () => {
   describe('POST /admin/dlq/:id/replay', () => {
     it('returns 404 for non-existent entry', async () => {
       await request(app.getHttpServer())
-        .post('/admin/dlq/non-existent-id/replay')
+        .post('/admin/dlq/00000000-0000-4000-8000-000000000000/replay')
         .set('Authorization', `Bearer ${adminJwt()}`)
         .expect(404);
     });

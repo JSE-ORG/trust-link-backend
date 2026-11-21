@@ -29,6 +29,7 @@ export interface Config {
   CREDENTIAL_ENCRYPTION_KEY?: string;
   DB_POOL_CONNECTION_LIMIT?: number;
   DB_POOL_TIMEOUT_MS?: number;
+  REQUEST_TIMEOUT_MS?: number;
   SEP10_JWT_SECRET: string;
   /** Secret used to sign simulated S3 pre-signed evidence URLs (required). */
   PRESIGN_SECRET: string;
@@ -58,6 +59,7 @@ export interface Config {
   LOG_LEVEL?: string;
   API_BASE_URL?: string;
   REDIS_URL?: string;
+  ESCROW_CACHE_TTL_SECONDS?: number;
   OTEL_ENABLED?: string;
   OTEL_SERVICE_NAME?: string;
   OTEL_SERVICE_VERSION?: string;

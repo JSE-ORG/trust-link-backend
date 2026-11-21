@@ -1,4 +1,4 @@
-import { Controller, Get, UseGuards } from '@nestjs/common';
+import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -11,6 +11,8 @@ import { JwtGuard } from '../../auth/guards/jwt.guard';
 import { AdminGuard } from '../guards/admin.guard';
 import { AdminStatsService } from './admin-stats.service';
 import { AdminStatsDto } from './dto/admin-stats.dto';
+import { AdminChartQueryDto } from './dto/admin-chart-query.dto';
+import { AdminStatsChartBucketDto } from './dto/admin-stats-chart-bucket.dto';
 
 @ApiTags('Admin')
 @ApiBearerAuth()
@@ -18,6 +20,22 @@ import { AdminStatsDto } from './dto/admin-stats.dto';
 @UseGuards(JwtGuard, AdminGuard)
 export class AdminStatsController {
   constructor(private readonly adminStatsService: AdminStatsService) {}
+
+  @ApiOperation({ summary: 'Get daily platform stats chart (admin only)' })
+  @ApiResponse({
+    status: 200,
+    description: 'Daily aggregated platform stats returned.',
+    type: [AdminStatsChartBucketDto],
+  })
+  @ApiResponse({ status: 400, description: 'Invalid query parameters.' })
+  @ApiResponse({ status: 401, description: 'Unauthorized.' })
+  @ApiResponse({ status: 403, description: 'Admin access required.' })
+  @ApiResponse({ status: 429, description: 'Too many requests.' })
+  @Throttle({ default: { limit: 20, ttl: THROTTLE_WINDOW_MS } })
+  @Get('chart')
+  getChart(@Query() query: AdminChartQueryDto) {
+    return this.adminStatsService.getChart(query?.days);
+  }
 
   @ApiOperation({ summary: 'Get platform-wide statistics (admin only)' })
   @ApiResponse({
@@ -27,6 +45,7 @@ export class AdminStatsController {
   })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   @ApiResponse({ status: 403, description: 'Admin access required.' })
+  @ApiResponse({ status: 429, description: 'Too many requests.' })
   @Throttle({ default: { limit: 20, ttl: THROTTLE_WINDOW_MS } })
   @Get()
   getStats() {

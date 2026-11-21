@@ -6,10 +6,25 @@ import {
   MinLength,
   MaxLength,
   Matches,
+  Validate,
+  ValidatorConstraint,
+  type ValidatorConstraintInterface,
 } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
 import { IsStellarAddress } from '../../common/validators/stellar-address.validator';
+import { supportedCurrencies } from '../../config/supported-currencies';
+
+@ValidatorConstraint({ name: 'supportedCurrency' })
+class SupportedCurrencyConstraint implements ValidatorConstraintInterface {
+  validate(value: unknown): boolean {
+    return typeof value === 'string' && supportedCurrencies().includes(value);
+  }
+
+  defaultMessage(): string {
+    return 'Currency is not supported by this platform';
+  }
+}
 import { MaxDecimalPlaces } from '../../common/validators/max-decimal-places.validator';
 
 /** Decimal places stored by `Escrow.amount` (`Decimal(18, 8)`). */
@@ -82,6 +97,7 @@ export class CreateEscrowDto {
   @Matches(/^[A-Z0-9]+$/, {
     message: 'Currency must contain only uppercase letters and numbers',
   })
+  @Validate(SupportedCurrencyConstraint)
   @Transform(({ value }: { value: string }) => value?.toUpperCase().trim())
   currency!: string;
 

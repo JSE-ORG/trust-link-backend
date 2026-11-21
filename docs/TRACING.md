@@ -26,14 +26,29 @@ Client / Gateway
 
 ## Configuration
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `OTEL_ENABLED` | `true` | Set to `false` to disable tracing |
-| `OTEL_SERVICE_NAME` | `trustlink-backend` | Service name in trace backend |
-| `OTEL_SERVICE_VERSION` | `1.0.0` | Service version attribute |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | _(none)_ | OTLP collector base URL (e.g. `http://jaeger:4318`) |
+| Variable                      | Default             | Description                                                                     |
+| ----------------------------- | ------------------- | ------------------------------------------------------------------------------- |
+| `OTEL_ENABLED`                | `true`              | Set to `false` to disable tracing                                               |
+| `OTEL_SERVICE_NAME`           | `trustlink-backend` | Service name in trace backend                                                   |
+| `OTEL_SERVICE_VERSION`        | `1.0.0`             | Service version attribute                                                       |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | _(none)_            | OTLP base URL (e.g. `http://jaeger:4318`), exports `/v1/traces` & `/v1/metrics` |
 
-Tracing is automatically disabled when `NODE_ENV=test`.
+Tracing and metrics export are automatically disabled when `NODE_ENV=test`.
+
+## Metrics (Issue #1166)
+
+When `OTEL_EXPORTER_OTLP_ENDPOINT` is configured, application metrics are periodically pushed via OTLP HTTP (`PeriodicExportingMetricReader` with `OTLPMetricExporter`).
+
+The following instruments are exported:
+
+| Metric Name                | Type          | Unit      | Description                                                        | Attributes                  |
+| -------------------------- | ------------- | --------- | ------------------------------------------------------------------ | --------------------------- |
+| `http_requests_total`      | Counter       | -         | Total number of HTTP requests processed                            | `route`, `method`, `status` |
+| `http_request_duration_ms` | Histogram     | `ms`      | Duration of HTTP requests                                          | `route`, `method`, `status` |
+| `worker_cycle_total`       | Counter       | -         | Total number of completed worker cycles                            | `worker`, `outcome`         |
+| `worker_cycle_duration_ms` | Histogram     | `ms`      | Duration of worker cycles                                          | `worker`, `outcome`         |
+| `dlq_size`                 | UpDownCounter | -         | Current size of the dead-letter queue (net pending transactions)   | -                           |
+| `poller_ledger_lag`        | Histogram     | `ledgers` | Difference between latest chain ledger and processed cursor ledger | -                           |
 
 ## Local Development
 
@@ -47,12 +62,12 @@ Open the Jaeger UI at [http://localhost:16686](http://localhost:16686) and searc
 
 ## Span Types
 
-| Span name pattern | Description |
-|-------------------|-------------|
-| `GET /escrow/...` | HTTP span (auto-instrumentation) |
-| `workflow.escrow.get` | API workflow span (grouped by route family) |
-| `handler.EscrowController.findOne` | NestJS handler span |
-| `db.escrow.findUnique` | Database operation with duration |
+| Span name pattern                  | Description                                 |
+| ---------------------------------- | ------------------------------------------- |
+| `GET /escrow/...`                  | HTTP span (auto-instrumentation)            |
+| `workflow.escrow.get`              | API workflow span (grouped by route family) |
+| `handler.EscrowController.findOne` | NestJS handler span                         |
+| `db.escrow.findUnique`             | Database operation with duration            |
 
 ### Database attributes
 
@@ -75,10 +90,10 @@ Incoming requests with a `traceparent` header continue the parent trace. Outboun
 
 ## Key Source Files
 
-| File | Role |
-|------|------|
-| `src/tracing/tracing.bootstrap.ts` | SDK initialization (imported first in `main.ts`) |
-| `src/tracing/tracing.service.ts` | Span helpers |
-| `src/tracing/tracing.middleware.ts` | Workflow metadata on HTTP spans |
-| `src/tracing/tracing.interceptor.ts` | Per-handler workflow spans |
-| `src/tracing/prisma-tracing.wrapper.ts` | Database operation spans |
+| File                                    | Role                                             |
+| --------------------------------------- | ------------------------------------------------ |
+| `src/tracing/tracing.bootstrap.ts`      | SDK initialization (imported first in `main.ts`) |
+| `src/tracing/tracing.service.ts`        | Span helpers                                     |
+| `src/tracing/tracing.middleware.ts`     | Workflow metadata on HTTP spans                  |
+| `src/tracing/tracing.interceptor.ts`    | Per-handler workflow spans                       |
+| `src/tracing/prisma-tracing.wrapper.ts` | Database operation spans                         |

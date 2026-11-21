@@ -603,4 +603,101 @@ describe('SorobanPollerService', () => {
       expect(mocks.cursorService.set).toHaveBeenCalledWith('token-1');
     });
   });
+
+  describe('event field parsing (issue #1117)', () => {
+    let mocks: Mocks;
+    let service: SorobanPollerService;
+
+    function respondWith(events: ReturnType<typeof rawEvent>[]) {
+      global.fetch = jest.fn().mockResolvedValue(
+        jsonResponse({
+          result: { events, latestLedger: 200, sequence: 200 },
+        }),
+      );
+    }
+
+    function parsed(topics: [string, string], data: Record<string, unknown>) {
+      return {
+        contractId: 'CONTRACT',
+        type: 'contract',
+        ledger: 100,
+        name: topics[1],
+        topics,
+        data: { escrow_id: 1n, ...data },
+      };
+    }
+
+    beforeEach(() => {
+      mocks = makeMocks();
+      mocks.cursorService.get.mockResolvedValue('ledger:900');
+      mocks.escrowService.syncStateFromChain.mockResolvedValue({
+        skipped: false,
+      });
+      ({ service } = makeService(makeConfig(), mocks));
+    });
+
+    it('passes tracking_id from EscrowShipped to syncStateFromChain', async () => {
+      respondWith([rawEvent('evt-ship', 'token-ship')]);
+      mocks.blockchainListener.parseEvent.mockReturnValueOnce(
+        parsed(['Escrow', 'Shipped'], { tracking_id: 'TRK-123' }),
+      );
+
+      await service.poll();
+
+      expect(mocks.escrowService.syncStateFromChain).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventType: 'EscrowShipped',
+          escrowId: 'escrow-1',
+          trackingId: 'TRK-123',
+        }),
+      );
+    });
+
+    it('falls back to trackingId when tracking_id is absent', async () => {
+      respondWith([rawEvent('evt-ship-2', 'token-ship-2')]);
+      mocks.blockchainListener.parseEvent.mockReturnValueOnce(
+        parsed(['Escrow', 'Shipped'], { trackingId: 'TRK-456' }),
+      );
+
+      await service.poll();
+
+      expect(mocks.escrowService.syncStateFromChain).toHaveBeenCalledWith(
+        expect.objectContaining({ trackingId: 'TRK-456' }),
+      );
+    });
+
+    it.each([
+      { variant: 'Release', expected: 'RELEASE' },
+      { variant: 'Refund', expected: 'REFUND' },
+    ])(
+      'maps the ResolutionType variant $variant to $expected',
+      async ({ variant, expected }) => {
+        respondWith([rawEvent('evt-resolve', 'token-resolve')]);
+        mocks.blockchainListener.parseEvent.mockReturnValueOnce(
+          parsed(['Dispute', 'Resolved'], { resolution: [variant] }),
+        );
+
+        await service.poll();
+
+        expect(mocks.escrowService.syncStateFromChain).toHaveBeenCalledWith(
+          expect.objectContaining({
+            eventType: 'DisputeResolved',
+            resolution: expected,
+          }),
+        );
+      },
+    );
+
+    it('omits resolution for an unknown ResolutionType variant', async () => {
+      respondWith([rawEvent('evt-unknown', 'token-unknown')]);
+      mocks.blockchainListener.parseEvent.mockReturnValueOnce(
+        parsed(['Dispute', 'Resolved'], { resolution: ['Split'] }),
+      );
+
+      await service.poll();
+
+      const payload = mocks.escrowService.syncStateFromChain.mock.calls[0][0];
+      expect(payload).not.toHaveProperty('resolution');
+    });
+  });
 });

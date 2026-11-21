@@ -26,6 +26,7 @@ import { SorobanHealthService } from './stellar/soroban-health.service';
 import { LivenessResponseDto } from './common/dto/liveness-response.dto';
 import { ReadinessResponseDto } from './common/dto/readiness-response.dto';
 import { VersionResponseDto } from './common/dto/version-response.dto';
+import { ServiceInfoResponseDto } from './common/dto/service-info-response.dto';
 import { ErrorResponseDto } from './common/dto/error-response.dto';
 
 type ComponentStatus = 'ok' | 'down';
@@ -64,11 +65,12 @@ export class AppController {
     private readonly sorobanHealthService?: SorobanHealthService,
   ) {}
 
-  @ApiOperation({ summary: 'Root endpoint — welcome message' })
-  @ApiResponse({
-    status: 200,
-    description: 'Service welcome message.',
-    type: String,
+  @ApiOperation({
+    summary: 'Root endpoint — service name, version and docs path',
+  })
+  @ApiOkResponse({
+    description: 'Service identity.',
+    type: ServiceInfoResponseDto,
   })
   @ApiResponse({
     status: 429,
@@ -82,8 +84,8 @@ export class AppController {
   })
   @Throttle({ default: { limit: 100, ttl: THROTTLE_WINDOW_MS } })
   @Get()
-  getHello(): string {
-    return this.appService.getHello();
+  getInfo(): ServiceInfoResponseDto {
+    return this.appService.getInfo(this.configService.isProduction());
   }
 
   /**

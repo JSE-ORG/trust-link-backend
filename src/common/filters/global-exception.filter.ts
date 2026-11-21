@@ -14,6 +14,12 @@ interface PrismaLikeError {
   message?: string;
 }
 
+interface BodyParserError {
+  status: number;
+  type: string;
+  message?: string;
+}
+
 @Catch()
 export class GlobalExceptionFilter implements ExceptionFilter {
   private readonly logger = new Logger(GlobalExceptionFilter.name);
@@ -61,6 +67,20 @@ export class GlobalExceptionFilter implements ExceptionFilter {
               ? exceptionResponse
               : undefined,
         }),
+      };
+    }
+
+    if (this.isBodyParserError(exception)) {
+      return {
+        statusCode: exception.status,
+        message:
+          typeof exception.message === 'string'
+            ? exception.message
+            : 'Invalid request body',
+        error: exception.status === 413 ? 'Payload Too Large' : 'Bad Request',
+        timestamp,
+        path,
+        requestId,
       };
     }
 
@@ -161,6 +181,27 @@ export class GlobalExceptionFilter implements ExceptionFilter {
 
   private isValidationError(exception: unknown): boolean {
     return exception instanceof Error && exception.name === 'ValidationError';
+  }
+
+  private isBodyParserError(exception: unknown): exception is BodyParserError {
+    if (
+      typeof exception !== 'object' ||
+      exception === null ||
+      !('status' in exception) ||
+      !('type' in exception)
+    ) {
+      return false;
+    }
+
+    const { status, type } = exception;
+    return (
+      typeof status === 'number' &&
+      Number.isInteger(status) &&
+      status >= 400 &&
+      status < 500 &&
+      typeof type === 'string' &&
+      (type.startsWith('entity.') || type.startsWith('request.'))
+    );
   }
 
   private logError(

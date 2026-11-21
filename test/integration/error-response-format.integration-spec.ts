@@ -65,6 +65,29 @@ describe('Standard error response format (issue #235)', () => {
     expectStandardError(res.body, 400, '/auth/challenge');
   });
 
+  it('preserves the 413 status for oversized JSON request bodies', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/auth/challenge')
+      .set('Content-Type', 'application/json')
+      .send(
+        Buffer.from(JSON.stringify({ payload: 'x'.repeat(2 * 1024 * 1024) })),
+      )
+      .expect(413);
+
+    expectStandardError(res.body, 413, '/auth/challenge');
+    expect(res.body.error).toBe('Payload Too Large');
+  });
+
+  it('preserves the 400 status for malformed JSON request bodies', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/auth/challenge')
+      .set('Content-Type', 'application/json')
+      .send('{"invalid":')
+      .expect(400);
+
+    expectStandardError(res.body, 400, '/auth/challenge');
+  });
+
   it('uses the standard envelope for unauthorized protected endpoints', async () => {
     const res = await request(app.getHttpServer())
       .get('/vendor/profile')

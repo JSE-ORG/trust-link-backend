@@ -1,4 +1,4 @@
-import { Logger, Module } from '@nestjs/common';
+import { forwardRef, Logger, Module } from '@nestjs/common';
 import { MailService } from '@sendgrid/mail';
 import twilio from 'twilio';
 import { PrismaModule } from '../prisma/prisma.module';
@@ -48,7 +48,7 @@ export function createTwilioClient(config: ConfigService) {
 }
 
 @Module({
-  imports: [PrismaModule, ConfigModule, VendorModule],
+  imports: [PrismaModule, ConfigModule, forwardRef(() => VendorModule)],
   providers: [
     NotificationsService,
     // Issue #845: both the dispatch paths and the retry workers write

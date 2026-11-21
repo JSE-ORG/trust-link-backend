@@ -7,6 +7,8 @@ import { GiglClient } from './gigl/gigl.client';
 import { LogisticsService } from './logistics.service';
 import { LogisticsProviderRegistry } from './logistics-provider.registry';
 import { ProviderCredentialRepository } from './provider-credential.repository';
+import { TerminalAfricaClient } from './terminal-africa/terminal-africa.client';
+import { TerminalAfricaLogisticsService } from './terminal-africa/terminal-africa-logistics.service';
 
 @Global()
 @Module({
@@ -39,12 +41,24 @@ import { ProviderCredentialRepository } from './provider-credential.repository';
       },
       inject: [ConfigService, ModuleRef],
     },
+    TerminalAfricaLogisticsService,
+    {
+      provide: TerminalAfricaClient,
+      useFactory: (config: ConfigService) => {
+        const baseUrl = config.get<string>('TERMINAL_AFRICA_API_BASE_URL');
+        const apiKey = config.get<string>('TERMINAL_AFRICA_API_KEY');
+        return baseUrl && apiKey
+          ? new TerminalAfricaClient({ baseUrl, apiKey })
+          : null;
+      },
+      inject: [ConfigService],
+    },
   ],
   exports: [
     GiglClient,
     GiglLogisticsService,
     LogisticsService,
-    LogisticsProviderRegistry,
+    TerminalAfricaLogisticsService,
   ],
 })
 export class LogisticsModule {}

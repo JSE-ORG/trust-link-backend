@@ -39,6 +39,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Concurrent duplicate Stellar webhook deliveries now return the normal duplicate response instead of failing on the unique event-id constraint; invalid oversized or malformed JSON bodies preserve their 4xx status, analytics chart windows begin at local midnight, and stress-test configurations reject blank names or empty profile lists.
+
 - Vendor account details now require ISO 4217 preferred currency codes and limit each payment method to 50 characters (#1064).
 - Legacy vendor placeholder profiles can be completed through `POST /vendor/profile`, and the placeholder description is reserved (#1061).
 - Auto-release transactions reload the Stellar account sequence before retrying and use an atomic claim to prevent duplicate submissions.
