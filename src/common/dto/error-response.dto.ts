@@ -48,6 +48,7 @@ export class ErrorResponseDto implements StandardErrorResponse {
   @ApiProperty({
     required: false,
     description: 'Development-only diagnostic details.',
+    example: { field: 'amount', reason: 'must be a positive number' },
   })
   details?: unknown;
 }

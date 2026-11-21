@@ -37,6 +37,7 @@ export class AdminStatsDto {
     description:
       'Total, count and average volume per currency. totalVolume and averageEscrowAmount still sum across currencies.',
     type: [CurrencyVolumeDto],
+    example: [{ currency: 'USDC', total: 2450.5, count: 12, average: 204.21 }],
   })
   volumeByCurrency!: CurrencyVolumeDto[];
 

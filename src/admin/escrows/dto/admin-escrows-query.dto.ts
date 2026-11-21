@@ -26,6 +26,7 @@ export class AdminEscrowsQueryDto {
     enum: EscrowStateEnum,
     description:
       'One or more lifecycle states (comma-separated, e.g. "FUNDED,SHIPPED"). A single value behaves as before.',
+    example: 'FUNDED,SHIPPED',
   })
   @IsOptional()
   @Transform(splitCommaList)
@@ -35,13 +36,19 @@ export class AdminEscrowsQueryDto {
   })
   state?: EscrowStateEnum | EscrowStateEnum[];
 
-  @ApiPropertyOptional({ maxLength: 64 })
+  @ApiPropertyOptional({
+    maxLength: 64,
+    example: 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
+  })
   @IsOptional()
   @IsString()
   @MaxLength(64)
   vendorAddress?: string;
 
-  @ApiPropertyOptional({ maxLength: 64 })
+  @ApiPropertyOptional({
+    maxLength: 64,
+    example: 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
+  })
   @IsOptional()
   @IsString()
   @MaxLength(64)
@@ -64,23 +71,28 @@ export class AdminEscrowsQueryDto {
   @IsDateString()
   to?: string;
 
-  @ApiPropertyOptional({ maxLength: 200 })
+  @ApiPropertyOptional({ maxLength: 200, example: 'SKU-CAM-A7IV-001' })
   @IsOptional()
   @IsString()
   @MaxLength(200)
   q?: string;
 
-  @ApiPropertyOptional({ enum: ['date', 'amount'] })
+  @ApiPropertyOptional({ enum: ['date', 'amount'], example: 'date' })
   @IsOptional()
   @IsEnum(['date', 'amount'])
   sort?: 'date' | 'amount';
 
-  @ApiPropertyOptional({ enum: ['asc', 'desc'] })
+  @ApiPropertyOptional({ enum: ['asc', 'desc'], example: 'desc' })
   @IsOptional()
   @IsEnum(['asc', 'desc'])
   order?: 'asc' | 'desc';
 
-  @ApiPropertyOptional({ minimum: 1, maximum: 1_000_000, default: 1 })
+  @ApiPropertyOptional({
+    minimum: 1,
+    maximum: 1_000_000,
+    default: 1,
+    example: 1,
+  })
   @Type(() => Number)
   @IsOptional()
   @IsInt()
@@ -88,7 +100,7 @@ export class AdminEscrowsQueryDto {
   @Max(1_000_000)
   page?: number;
 
-  @ApiPropertyOptional({ minimum: 1, maximum: 100, default: 20 })
+  @ApiPropertyOptional({ minimum: 1, maximum: 100, default: 20, example: 20 })
   @Type(() => Number)
   @IsOptional()
   @IsInt()

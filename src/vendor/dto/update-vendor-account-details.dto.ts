@@ -82,61 +82,91 @@ export class UpdateVendorAccountDetailsDto {
   @IsISO4217CurrencyCode()
   preferredCurrency?: string;
 
-  @ApiPropertyOptional({ description: 'Billing street address.' })
+  @ApiPropertyOptional({
+    description: 'Billing street address.',
+    example: '123 Market Street',
+  })
   @IsOptional()
   @IsString()
   @MaxLength(200)
   billingAddress?: string;
 
-  @ApiPropertyOptional({ description: 'Billing city.' })
+  @ApiPropertyOptional({
+    description: 'Billing city.',
+    example: 'San Francisco',
+  })
   @IsOptional()
   @IsString()
   @MaxLength(100)
   billingCity?: string;
 
-  @ApiPropertyOptional({ description: 'Billing state / province.' })
+  @ApiPropertyOptional({
+    description: 'Billing state / province.',
+    example: 'CA',
+  })
   @IsOptional()
   @IsString()
   @MaxLength(100)
   billingState?: string;
 
-  @ApiPropertyOptional({ description: 'Billing country code (ISO 3166-1).' })
+  @ApiPropertyOptional({
+    description: 'Billing country code (ISO 3166-1).',
+    example: 'US',
+  })
   @IsOptional()
   @IsString()
   @IsISO31661Alpha2()
   billingCountry?: string;
 
-  @ApiPropertyOptional({ description: 'Billing postal / ZIP code.' })
+  @ApiPropertyOptional({
+    description: 'Billing postal / ZIP code.',
+    example: '94105',
+  })
   @IsOptional()
   @IsString()
   @MaxLength(20)
   billingPostalCode?: string;
 
-  @ApiPropertyOptional({ description: 'Shipping street address.' })
+  @ApiPropertyOptional({
+    description: 'Shipping street address.',
+    example: '456 Mission Street',
+  })
   @IsOptional()
   @IsString()
   @MaxLength(200)
   shippingAddress?: string;
 
-  @ApiPropertyOptional({ description: 'Shipping city.' })
+  @ApiPropertyOptional({
+    description: 'Shipping city.',
+    example: 'San Francisco',
+  })
   @IsOptional()
   @IsString()
   @MaxLength(100)
   shippingCity?: string;
 
-  @ApiPropertyOptional({ description: 'Shipping state / province.' })
+  @ApiPropertyOptional({
+    description: 'Shipping state / province.',
+    example: 'CA',
+  })
   @IsOptional()
   @IsString()
   @MaxLength(100)
   shippingState?: string;
 
-  @ApiPropertyOptional({ description: 'Shipping country code (ISO 3166-1).' })
+  @ApiPropertyOptional({
+    description: 'Shipping country code (ISO 3166-1).',
+    example: 'US',
+  })
   @IsOptional()
   @IsString()
   @IsISO31661Alpha2()
   shippingCountry?: string;
 
-  @ApiPropertyOptional({ description: 'Shipping postal / ZIP code.' })
+  @ApiPropertyOptional({
+    description: 'Shipping postal / ZIP code.',
+    example: '94105',
+  })
   @IsOptional()
   @IsString()
   @MaxLength(20)
@@ -190,7 +220,10 @@ export class UpdateVendorAccountDetailsDto {
   @MaxLength(10)
   language?: string;
 
-  @ApiPropertyOptional({ description: 'Free-form compliance notes.' })
+  @ApiPropertyOptional({
+    description: 'Free-form compliance notes.',
+    example: 'KYC documents verified on 2026-05-27.',
+  })
   @IsOptional()
   @IsString()
   @MaxLength(2000)
