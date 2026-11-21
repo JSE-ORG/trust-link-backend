@@ -205,11 +205,13 @@ export class NotificationsService implements OnModuleInit {
   }
 
   /**
-   * Notifies the buyer that delivery has been recorded for the escrow.
+   * Notifies the buyer and vendor that delivery has been recorded for the escrow (#1159).
    * Prefers stored buyer contact over Stellar address.
+   * Honours vendor's notifyOnDelivery preference.
    */
-  notifyDelivered(escrow: EscrowRecord): Promise<void> {
-    return this.dispatchToBuyer('DELIVERED', escrow);
+  async notifyDelivered(escrow: EscrowRecord): Promise<void> {
+    await this.dispatchToBuyer('DELIVERED', escrow);
+    await this.dispatchToVendor('DELIVERED', escrow);
   }
 
   /**
@@ -379,6 +381,10 @@ export class NotificationsService implements OnModuleInit {
           return null;
         }),
     ]);
+
+    if (type === 'DELIVERED' && prefs?.notifyOnDelivery === false) {
+      return;
+    }
 
     const channels = prefs?.notificationChannels ?? [
       ...DEFAULT_NOTIFICATION_CHANNELS,

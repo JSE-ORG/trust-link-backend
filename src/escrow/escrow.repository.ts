@@ -668,4 +668,35 @@ export class EscrowRepository {
     await this.invalidate(id);
     return toEscrowRecord(result);
   }
+
+  /**
+   * Returns completed escrow count and dispute rate percentage (0-100) for public vendor profile (#1153).
+   */
+  async getVendorPublicStats(
+    vendorAddress: string,
+  ): Promise<{ completedEscrows: number; disputeRate: number }> {
+    const groups = await this.prisma.escrow.groupBy({
+      by: ['state'],
+      where: { vendorAddress },
+      _count: { _all: true },
+    });
+
+    let total = 0;
+    let completed = 0;
+    let disputed = 0;
+
+    for (const g of groups) {
+      const count = g._count._all;
+      total += count;
+      if (g.state === 'COMPLETED' || g.state === 'RELEASED') {
+        completed += count;
+      }
+      if (g.state === 'DISPUTED') {
+        disputed += count;
+      }
+    }
+
+    const disputeRate = total > 0 ? (disputed / total) * 100 : 0;
+    return { completedEscrows: completed, disputeRate };
+  }
 }

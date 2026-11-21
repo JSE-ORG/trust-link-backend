@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import {
   PrismaService,
   VendorProfileRecord,
@@ -137,6 +138,116 @@ export class VendorProfileRepository {
       deliveryConfirmation: settings?.deliveryConfirmation ?? true,
       trackingHistoryRetentionDays:
         settings?.trackingHistoryRetentionDays ?? 90,
+    };
+  }
+
+  /**
+   * Paged list of vendors for admin dashboard with escrow counts (#1152).
+   * Aggregates escrow, completed, and disputed counts in a single query across all returned vendors.
+   */
+  async listVendorsForAdmin(params: {
+    page?: number;
+    limit?: number;
+    search?: string;
+  }): Promise<{
+    data: Array<{
+      address: string;
+      businessName: string | null;
+      createdAt: Date;
+      escrowCount: number;
+      completedCount: number;
+      disputedCount: number;
+    }>;
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+  }> {
+    const page = Math.max(1, params.page ?? 1);
+    const limit = Math.max(1, Math.min(100, params.limit ?? 20));
+    const skip = (page - 1) * limit;
+
+    const where: Prisma.VendorProfileWhereInput = {};
+    if (params.search?.trim()) {
+      const q = params.search.trim();
+      where.OR = [
+        { address: { contains: q, mode: 'insensitive' } },
+        { businessName: { contains: q, mode: 'insensitive' } },
+      ];
+    }
+
+    const [vendors, total] = await Promise.all([
+      this.prisma.vendorProfile.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.vendorProfile.count({ where }),
+    ]);
+
+    const vendorAddresses = vendors.map((v) => v.address);
+
+    const countsMap = new Map<
+      string,
+      { escrowCount: number; completedCount: number; disputedCount: number }
+    >();
+    for (const addr of vendorAddresses) {
+      countsMap.set(addr, {
+        escrowCount: 0,
+        completedCount: 0,
+        disputedCount: 0,
+      });
+    }
+
+    if (vendorAddresses.length > 0) {
+      const grouped = await this.prisma.escrow.groupBy({
+        by: ['vendorAddress', 'state'],
+        where: {
+          vendorAddress: { in: vendorAddresses },
+        },
+        _count: { _all: true },
+      });
+
+      for (const row of grouped) {
+        const stats = countsMap.get(row.vendorAddress);
+        if (stats) {
+          const count = row._count._all;
+          stats.escrowCount += count;
+          if (row.state === 'COMPLETED' || row.state === 'RELEASED') {
+            stats.completedCount += count;
+          }
+          if (row.state === 'DISPUTED') {
+            stats.disputedCount += count;
+          }
+        }
+      }
+    }
+
+    const data = vendors.map((v) => {
+      const stats = countsMap.get(v.address) ?? {
+        escrowCount: 0,
+        completedCount: 0,
+        disputedCount: 0,
+      };
+      return {
+        address: v.address,
+        businessName: v.businessName,
+        createdAt: v.createdAt,
+        escrowCount: stats.escrowCount,
+        completedCount: stats.completedCount,
+        disputedCount: stats.disputedCount,
+      };
+    });
+
+    const totalPages = Math.ceil(total / limit);
+
+    return {
+      data,
+      total,
+      page,
+      limit,
+      totalPages,
     };
   }
 }

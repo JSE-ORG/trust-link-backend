@@ -256,7 +256,7 @@ describe('NotificationsService', () => {
       await service.notifyRefunded(escrow);
 
       const records = await prisma.notification.findMany();
-      expect(records).toHaveLength(12);
+      expect(records).toHaveLength(14);
       expect(records).toEqual(
         expect.arrayContaining([
           expect.objectContaining({ type: 'DELIVERED' }),
@@ -265,6 +265,51 @@ describe('NotificationsService', () => {
           expect.objectContaining({ type: 'REFUNDED' }),
         ]),
       );
+    });
+
+    describe('notifyOnDelivery setting (#1159)', () => {
+      it('when notifyOnDelivery is false, vendor receives no delivered notification while buyer still does', async () => {
+        await prisma.vendorTrackingSettings.update({
+          where: { vendorAddress: escrow.vendorAddress },
+          data: { notifyOnDelivery: false },
+        });
+
+        await service.notifyDelivered(escrow);
+
+        const records = await prisma.notification.findMany({
+          where: { type: 'DELIVERED' },
+        });
+        expect(records.length).toBeGreaterThan(0);
+        expect(
+          records.some(
+            (r) =>
+              r.recipientAddress === VENDOR_EMAIL ||
+              r.recipientAddress === VENDOR_PHONE,
+          ),
+        ).toBe(false);
+      });
+
+      it('when notifyOnDelivery is true, vendor receives delivered notification and buyer does too', async () => {
+        await prisma.vendorTrackingSettings.update({
+          where: { vendorAddress: escrow.vendorAddress },
+          data: { notifyOnDelivery: true },
+        });
+
+        await service.notifyDelivered(escrow);
+
+        const records = await prisma.notification.findMany({
+          where: { type: 'DELIVERED' },
+        });
+        expect(records.some((r) => r.recipientAddress === VENDOR_EMAIL)).toBe(
+          true,
+        );
+        expect(records.some((r) => r.recipientAddress === VENDOR_PHONE)).toBe(
+          true,
+        );
+        expect(
+          records.some((r) => r.recipientAddress === escrow.buyerAddress),
+        ).toBe(true);
+      });
     });
 
     it('uses vendor for funded notifications and buyer for shipped notifications', async () => {

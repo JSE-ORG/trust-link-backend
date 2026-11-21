@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { JwtGuard } from '../auth/guards/jwt.guard';
 import { PrismaModule } from '../prisma/prisma.module';
 import { NotificationRepository } from '../notifications/notification.repository';
@@ -10,6 +10,8 @@ import { VendorAccountDetailsController } from './vendor-account-details.control
 import { VendorAccountDetailsRepository } from './vendor-account-details.repository';
 import { VendorAccountDetailsService } from './vendor-account-details.service';
 import { AnalyticsModule } from './analytics/analytics.module';
+import { PublicVendorController } from './public-vendor.controller';
+import { EscrowModule } from '../escrow/escrow.module';
 
 @Module({
   imports: [PrismaModule, AnalyticsModule],

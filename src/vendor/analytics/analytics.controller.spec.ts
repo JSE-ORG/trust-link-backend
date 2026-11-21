@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { UnauthorizedException } from '@nestjs/common';
 import { AnalyticsController } from './analytics.controller';
 import { AnalyticsService } from './analytics.service';
+import { VendorAccountDetailsRepository } from '../vendor-account-details.repository';
 import type { AuthUser } from '../../auth/auth-user';
 import type { AnalyticsStatsResponse } from './analytics-stats.dto';
 import { ChartQueryDto } from './chart-query.dto';
@@ -151,6 +152,81 @@ describe('AnalyticsController', () => {
         'Europe/London',
         'day',
       );
+    });
+
+    describe('time zone resolution order (#1156)', () => {
+      it('uses query timezone first even if vendor has a saved timezone', async () => {
+        const accountDetailsRepo = {
+          findByVendorAddress: jest.fn().mockResolvedValue({
+            vendorAddress: 'GVENDOR123',
+            timezone: 'Asia/Tokyo',
+          }),
+        };
+        const c = new AnalyticsController(
+          service as unknown as AnalyticsService,
+          accountDetailsRepo as unknown as VendorAccountDetailsRepository,
+        );
+        const query = Object.assign(new ChartQueryDto(), {
+          timezone: 'America/Chicago',
+        });
+
+        await c.getDailyVolumeChart(query, mockUser);
+
+        expect(service.getDailyVolumeChart).toHaveBeenCalledWith(
+          'GVENDOR123',
+          30,
+          'America/Chicago',
+          'day',
+        );
+        expect(accountDetailsRepo.findByVendorAddress).not.toHaveBeenCalled();
+      });
+
+      it('uses saved timezone when query timezone is omitted', async () => {
+        const accountDetailsRepo = {
+          findByVendorAddress: jest.fn().mockResolvedValue({
+            vendorAddress: 'GVENDOR123',
+            timezone: 'Asia/Tokyo',
+          }),
+        };
+        const c = new AnalyticsController(
+          service as unknown as AnalyticsService,
+          accountDetailsRepo as unknown as VendorAccountDetailsRepository,
+        );
+
+        await c.getDailyVolumeChart(undefined, mockUser);
+
+        expect(accountDetailsRepo.findByVendorAddress).toHaveBeenCalledWith(
+          'GVENDOR123',
+        );
+        expect(service.getDailyVolumeChart).toHaveBeenCalledWith(
+          'GVENDOR123',
+          30,
+          'Asia/Tokyo',
+          'day',
+        );
+      });
+
+      it('defaults to UTC when query timezone is omitted and vendor has no saved timezone', async () => {
+        const accountDetailsRepo = {
+          findByVendorAddress: jest.fn().mockResolvedValue(null),
+        };
+        const c = new AnalyticsController(
+          service as unknown as AnalyticsService,
+          accountDetailsRepo as unknown as VendorAccountDetailsRepository,
+        );
+
+        await c.getDailyVolumeChart(undefined, mockUser);
+
+        expect(accountDetailsRepo.findByVendorAddress).toHaveBeenCalledWith(
+          'GVENDOR123',
+        );
+        expect(service.getDailyVolumeChart).toHaveBeenCalledWith(
+          'GVENDOR123',
+          30,
+          'UTC',
+          'day',
+        );
+      });
     });
   });
 });
