@@ -43,6 +43,7 @@ describe('Admin Stats (issue #639)', () => {
   async function seedEscrow(overrides?: {
     vendorAddress?: string;
     amount?: number;
+    currency?: string;
   }) {
     const vendorAddress = overrides?.vendorAddress ?? 'GVENDORSTATS001';
     await prisma.vendorProfile.upsert({
@@ -59,7 +60,7 @@ describe('Admin Stats (issue #639)', () => {
         itemName: 'Test Item',
         itemRef: `ref-stats-${Date.now()}-${Math.random().toString(36).slice(2)}`,
         amount: overrides?.amount ?? 250,
-        currency: 'USDC',
+        currency: overrides?.currency ?? 'USDC',
         buyerAddress: 'GBUYER001',
         vendorAddress,
         state: 'FUNDED',
@@ -89,6 +90,27 @@ describe('Admin Stats (issue #639)', () => {
     expect(typeof res.body.averageEscrowAmount).toBe('number');
   });
 
+  it('reports volume per currency without changing the summed totals', async () => {
+    await seedEscrow({ amount: 10 });
+    await seedEscrow({ amount: 30 });
+    await seedEscrow({ amount: 10, currency: 'XLM' });
+
+    const res = await request(app.getHttpServer())
+      .get('/admin/stats')
+      .set('Authorization', bearer(adminAddress, { role: 'admin' }))
+      .expect(200);
+
+    expect(res.body.totalVolume).toBe(50);
+    const byCurrency = [...res.body.volumeByCurrency].sort(
+      (a: { currency: string }, b: { currency: string }) =>
+        a.currency.localeCompare(b.currency),
+    );
+    expect(byCurrency).toEqual([
+      { currency: 'USDC', total: 40, count: 2, average: 20 },
+      { currency: 'XLM', total: 10, count: 1, average: 10 },
+    ]);
+  });
+
   it('returns zero stats when no data exists', async () => {
     const res = await request(app.getHttpServer())
       .get('/admin/stats')
@@ -102,6 +124,7 @@ describe('Admin Stats (issue #639)', () => {
     expect(res.body.totalDisputes).toBe(0);
     expect(res.body.openDisputes).toBe(0);
     expect(res.body.averageEscrowAmount).toBe(0);
+    expect(res.body.volumeByCurrency).toEqual([]);
   });
 
   // ── Authentication and authorisation ─────────────────────────────────────

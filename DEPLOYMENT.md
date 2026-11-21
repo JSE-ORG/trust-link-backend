@@ -298,6 +298,7 @@ The following table lists all environment variables validated by `configValidati
 | `DATABASE_URL` | `—` | Yes (always required) | PostgreSQL connection string. |
 | `CONTACT_ENCRYPTION_KEY` | `—` | Yes (optional otherwise) | 64-character hex key (32 bytes) for encrypting contact data. |
 | `CREDENTIAL_ENCRYPTION_KEY` | `—` | Yes (optional otherwise) | 64-character hex key (32 bytes) for encrypting credentials. |
+| `SUPPORTED_CURRENCIES` | `USDC` | No | Comma-separated list of currency codes the platform accepts for escrows. |
 | `SEP10_JWT_SECRET` | `—` | Yes (always required) | Secret used to sign SEP-10 JWT tokens; minimum 32 characters. |
 | `PRESIGN_SECRET` | `—` | Yes (always required) | HMAC secret for signing evidence pre-signed URLs; must be stable across restarts/replicas. |
 | `SYSTEM_SIGNER_SECRET` | `—` | Yes (always required) | Stellar secret key used to sign contract transactions (checksum-validated). |

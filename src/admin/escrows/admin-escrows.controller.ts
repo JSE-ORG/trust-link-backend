@@ -1,4 +1,12 @@
-import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Header,
+  Param,
+  ParseUUIDPipe,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -31,6 +39,18 @@ export class AdminEscrowsController {
     return this.adminEscrows.list(query);
   }
 
+  @ApiOperation({ summary: 'Export escrows as CSV (admin only)' })
+  @ApiResponse({ status: 200, description: 'CSV of matching escrows.' })
+  @ApiResponse({ status: 403, description: 'Admin access required.' })
+  @ApiResponse({ status: 429, description: 'Too many requests.' })
+  @Throttle({ default: { limit: 5, ttl: THROTTLE_WINDOW_MS } })
+  @Header('Content-Type', 'text/csv; charset=utf-8')
+  @Header('Content-Disposition', 'attachment; filename="escrows.csv"')
+  @Get('escrows/export')
+  async exportCsv(@Query() query: AdminEscrowsQueryDto): Promise<string> {
+    return this.adminEscrows.exportCsv(query);
+  }
+
   @ApiOperation({ summary: 'Get one escrow with its dispute (admin only)' })
   @ApiResponse({ status: 200, description: 'Escrow and its dispute, if any.' })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
@@ -39,7 +59,7 @@ export class AdminEscrowsController {
   @ApiResponse({ status: 429, description: 'Too many requests.' })
   @Throttle({ default: { limit: 20, ttl: THROTTLE_WINDOW_MS } })
   @Get('escrows/:id')
-  async get(@Param('id') id: string) {
+  async get(@Param('id', new ParseUUIDPipe()) id: string) {
     return this.adminEscrows.get(id);
   }
 }

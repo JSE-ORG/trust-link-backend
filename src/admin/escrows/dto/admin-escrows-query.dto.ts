@@ -47,6 +47,22 @@ export class AdminEscrowsQueryDto {
   @IsDateString()
   to?: string;
 
+  @ApiPropertyOptional({ maxLength: 200 })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  q?: string;
+
+  @ApiPropertyOptional({ enum: ['date', 'amount'] })
+  @IsOptional()
+  @IsEnum(['date', 'amount'])
+  sort?: 'date' | 'amount';
+
+  @ApiPropertyOptional({ enum: ['asc', 'desc'] })
+  @IsOptional()
+  @IsEnum(['asc', 'desc'])
+  order?: 'asc' | 'desc';
+
   @ApiPropertyOptional({ minimum: 1, maximum: 1_000_000, default: 1 })
   @Type(() => Number)
   @IsOptional()

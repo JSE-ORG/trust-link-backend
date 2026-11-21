@@ -1,5 +1,20 @@
 import { ApiProperty } from '@nestjs/swagger';
 
+/** Escrow volume for one currency. */
+export class CurrencyVolumeDto {
+  @ApiProperty({ example: 'USDC' })
+  currency!: string;
+
+  @ApiProperty({ example: 2450.5 })
+  total!: number;
+
+  @ApiProperty({ example: 12 })
+  count!: number;
+
+  @ApiProperty({ example: 204.21 })
+  average!: number;
+}
+
 /**
  * Response shape for GET /admin/stats containing platform-wide
  * aggregate statistics. Includes escrow counts by state, volume
@@ -17,6 +32,13 @@ export class AdminStatsDto {
     example: 3245900.5,
   })
   totalVolume!: number;
+
+  @ApiProperty({
+    description:
+      'Total, count and average volume per currency. totalVolume and averageEscrowAmount still sum across currencies.',
+    type: [CurrencyVolumeDto],
+  })
+  volumeByCurrency!: CurrencyVolumeDto[];
 
   @ApiProperty({
     description: 'Count of escrows grouped by their current state.',

@@ -16,9 +16,18 @@ export interface DailyAdminStatsRow {
   disputed: bigint | number | string;
 }
 
+/** Escrow volume for one currency. */
+export interface CurrencyVolume {
+  currency: string;
+  total: number;
+  count: number;
+  average: number;
+}
+
 /** Raw aggregates behind the admin dashboard response. */
 export interface AdminStatsTotals {
   totalVolume: number;
+  volumeByCurrency: CurrencyVolume[];
   stateGroups: EscrowStateGroup[];
   uniqueVendors: number;
   uniqueBuyers: number;
@@ -62,8 +71,21 @@ export class AdminStatsRepository {
         `,
       ]);
 
+    const byCurrency = await this.prisma.escrow.groupBy({
+      by: ['currency'],
+      _sum: { amount: true },
+      _count: true,
+    });
+
     return {
       totalVolume: Number(aggregation._sum?.amount ?? 0),
+      volumeByCurrency: byCurrency.map((row) => ({
+        currency: row.currency,
+        total: Number(row._sum?.amount ?? 0),
+        count: row._count,
+        average:
+          row._count > 0 ? Number(row._sum?.amount ?? 0) / row._count : 0,
+      })),
       stateGroups: stateGroups,
       uniqueVendors: Number(vendorCountRows[0]?.count ?? 0),
       uniqueBuyers: Number(buyerCountRows[0]?.count ?? 0),
