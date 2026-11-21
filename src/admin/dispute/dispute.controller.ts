@@ -6,8 +6,10 @@ import {
   ParseUUIDPipe,
   Patch,
   Query,
+  Res,
   UseGuards,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -83,6 +85,30 @@ export class DisputeController {
       details: { resolution: dto.resolution },
     });
     return result;
+  }
+
+  @ApiOperation({ summary: 'Export admin audit log as CSV' })
+  @ApiResponse({
+    status: 200,
+    description: 'CSV export of admin audit log returned.',
+    content: { 'text/csv': {} },
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized.' })
+  @ApiResponse({ status: 403, description: 'Admin access required.' })
+  @ApiResponse({ status: 429, description: 'Too many requests.' })
+  @Throttle({ default: { limit: 10, ttl: THROTTLE_WINDOW_MS } })
+  @Get('audit-log/export')
+  async exportAuditLog(
+    @Query() query: AdminAuditLogQueryDto,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const csv = await this.auditLogService.exportCsv(query);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader(
+      'Content-Disposition',
+      'attachment; filename="audit-log.csv"',
+    );
+    return csv;
   }
 
   @ApiOperation({ summary: 'Get admin audit log entries' })

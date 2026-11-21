@@ -14,7 +14,13 @@ export function setupOpenApiUi(
   isProduction: boolean,
 ): void {
   if (!isProduction) {
-    SwaggerModule.setup(API_DOCS_PATH.slice(1), app, document);
+    SwaggerModule.setup(API_DOCS_PATH.slice(1), app, document, {
+      swaggerOptions: {
+        persistAuthorization: true,
+        filter: true,
+        displayRequestDuration: true,
+      },
+    });
   }
 }
 

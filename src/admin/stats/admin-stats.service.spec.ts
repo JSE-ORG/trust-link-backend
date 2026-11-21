@@ -336,4 +336,62 @@ describe('AdminStatsService', () => {
     expect(stats.totalDisputes).toBe(1);
     expect(stats.openDisputes).toBe(1);
   });
+
+  describe('getChart', () => {
+    it('returns 30 buckets with zeros when database is empty', async () => {
+      const chart = await service.getChart();
+
+      expect(chart).toHaveLength(30);
+      for (const bucket of chart) {
+        expect(bucket).toMatchObject({
+          escrowsCreated: 0,
+          volume: 0,
+          completed: 0,
+          disputed: 0,
+        });
+        expect(bucket.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      }
+    });
+
+    it('aggregates daily stats and fills missing days with zeros', async () => {
+      const now = new Date();
+      await prisma.escrow.create({
+        data: {
+          itemName: 'Item 1',
+          itemRef: 'ref-chart-1',
+          amount: 250,
+          currency: 'USDC',
+          buyerAddress: 'GBUYER1',
+          vendorAddress: 'GVENDOR1',
+          state: 'COMPLETED',
+          createdAt: now,
+        },
+      });
+
+      await prisma.escrow.create({
+        data: {
+          itemName: 'Item 2',
+          itemRef: 'ref-chart-2',
+          amount: 150,
+          currency: 'USDC',
+          buyerAddress: 'GBUYER1',
+          vendorAddress: 'GVENDOR1',
+          state: 'DISPUTED',
+          createdAt: now,
+        },
+      });
+
+      const chart = await service.getChart(7);
+
+      expect(chart).toHaveLength(7);
+      const todayKey = now.toISOString().slice(0, 10);
+      const todayBucket = chart.find((b) => b.date === todayKey);
+
+      expect(todayBucket).toBeDefined();
+      expect(todayBucket?.escrowsCreated).toBe(2);
+      expect(todayBucket?.volume).toBe(400);
+      expect(todayBucket?.completed).toBe(1);
+      expect(todayBucket?.disputed).toBe(1);
+    });
+  });
 });
