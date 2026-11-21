@@ -63,6 +63,7 @@ export class VendorEscrowsQueryDto {
     description:
       'Filter by buyer Stellar address. Ignored on GET /buyer/escrows, which always uses the caller.',
     maxLength: 64,
+    example: 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
   })
   @IsOptional()
   @IsString()
@@ -73,6 +74,7 @@ export class VendorEscrowsQueryDto {
     description:
       'Filter by vendor Stellar address. Only meaningful on GET /buyer/escrows; ignored on vendor routes, which always scope to the caller.',
     maxLength: 64,
+    example: 'GAIGZHHWK3REZQPLQX5DNFRYDUPFGG6VY4PSWSL53N2OY3Z3H3CE5TMK',
   })
   @IsOptional()
   @IsString()
@@ -82,6 +84,7 @@ export class VendorEscrowsQueryDto {
   @ApiPropertyOptional({
     description: 'Case-insensitive search on itemName or itemRef.',
     maxLength: 128,
+    example: 'Sony A7 IV',
   })
   @IsOptional()
   @IsString()

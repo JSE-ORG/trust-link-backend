@@ -63,6 +63,14 @@ export class TrackingResponseDto {
   @ApiProperty({
     description: 'Chronological list of tracking events for the shipment.',
     type: [TrackingEventDto],
+    example: [
+      {
+        timestamp: '2026-05-22T10:45:00.000Z',
+        status: 'IN_TRANSIT',
+        location: 'Memphis, TN, US',
+        description: 'Package arrived at destination facility.',
+      },
+    ],
   })
   events!: TrackingEventDto[];
 }
