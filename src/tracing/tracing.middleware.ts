@@ -16,28 +16,12 @@ export class TracingMiddleware implements NestMiddleware {
   ) {}
 
   use(req: Request, res: Response, next: NextFunction): void {
-    const startTime = Date.now();
-
-    res.on('finish', () => {
-      const durationMs = Date.now() - startTime;
-      const workflow = resolveWorkflow(req.method, req.originalUrl);
-      const routeObj = req.route as { path?: unknown } | undefined;
-      const routePath =
-        typeof routeObj?.path === 'string' ? routeObj.path : undefined;
-      const route = routePath ? `${req.baseUrl || ''}${routePath}` : workflow;
-      this.metrics?.recordHttpRequest(
-        route,
-        req.method,
-        res.statusCode,
-        durationMs,
-      );
-    });
-
     if (!isTracingEnabled()) {
       next();
       return;
     }
 
+    const startTime = Date.now();
     const parentContext = propagation.extract(context.active(), req.headers);
 
     context.with(parentContext, () => {
@@ -59,6 +43,18 @@ export class TracingMiddleware implements NestMiddleware {
       }
 
       res.on('finish', () => {
+        const durationMs = Date.now() - startTime;
+        const routeObj = req.route as { path?: unknown } | undefined;
+        const routePath =
+          typeof routeObj?.path === 'string' ? routeObj.path : undefined;
+        const route = routePath ? `${req.baseUrl || ''}${routePath}` : workflow;
+        this.metrics?.recordHttpRequest(
+          route,
+          req.method,
+          res.statusCode,
+          durationMs,
+        );
+
         if (span) {
           span.setAttribute('http.response.status_code', res.statusCode);
         }
