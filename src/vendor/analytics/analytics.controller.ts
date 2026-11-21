@@ -124,6 +124,7 @@ export class AnalyticsController {
   async getDailyVolumeChart(
     @Query() query?: ChartQueryDto,
     @CurrentUser() user?: AuthUser,
+    @Query('days') rawDays?: string,
   ): Promise<ChartDataResponse> {
     if (!user) {
       throw new UnauthorizedException();
@@ -131,10 +132,10 @@ export class AnalyticsController {
 
     const hasRange = Boolean(query?.from || query?.to);
     if (hasRange) {
-      if (query?.days !== undefined) {
-        throw new BadRequestException(
-          'from/to cannot be combined with days',
-        );
+      // `query.days` always carries a value (defaults to 30), so presence is
+      // checked against the raw query string instead.
+      if (rawDays !== undefined) {
+        throw new BadRequestException('from/to cannot be combined with days');
       }
       if (!query?.from || !query?.to) {
         throw new BadRequestException('from and to must both be provided');
@@ -167,12 +168,20 @@ export class AnalyticsController {
       timezone = 'UTC';
     }
 
+    if (hasRange) {
+      return this.analyticsService.getDailyVolumeChart(
+        user.address,
+        days,
+        timezone,
+        interval,
+        { from: query!.from!, to: query!.to! },
+      );
+    }
     return this.analyticsService.getDailyVolumeChart(
       user.address,
       days,
       timezone,
       interval,
-      hasRange ? { from: query!.from!, to: query!.to! } : undefined,
     );
   }
 }

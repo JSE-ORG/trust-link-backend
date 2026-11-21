@@ -31,7 +31,7 @@ export class ChartQueryDto {
   @IsInt()
   @Min(1)
   @Max(365)
-  days?: number;
+  days: number = 30;
 
   @ApiPropertyOptional({
     description:

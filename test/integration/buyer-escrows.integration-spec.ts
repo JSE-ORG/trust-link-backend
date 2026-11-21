@@ -1,5 +1,6 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import { EscrowState } from '@prisma/client';
 import request from 'supertest';
 import { AppModule } from '../../src/app.module';
 import { PrismaService } from '../../src/prisma/prisma.service';
@@ -38,13 +39,19 @@ describe('GET /buyer/escrows and GET /vendor/escrows/export', () => {
   beforeEach(async () => {
     await prisma.reset();
     await ensureVendors(prisma, VENDOR, VENDOR_2);
-    const rows: Array<[string, string, string, string, string]> = [
+    const rows: Array<[string, string, string, string, EscrowState]> = [
       ['A-1', 'Camera', BUYER_A, VENDOR, 'FUNDED'],
       ['A-2', 'Lens', BUYER_A, VENDOR, 'FUNDED'],
       ['A-3', 'Tripod', BUYER_A, VENDOR_2, 'SHIPPED'],
       ['B-1', '=HYPERLINK("http://x")', BUYER_B, VENDOR, 'FUNDED'],
     ];
-    for (const [itemRef, itemName, buyerAddress, vendorAddress, state] of rows) {
+    for (const [
+      itemRef,
+      itemName,
+      buyerAddress,
+      vendorAddress,
+      state,
+    ] of rows) {
       await prisma.escrow.create({
         data: {
           itemRef,
