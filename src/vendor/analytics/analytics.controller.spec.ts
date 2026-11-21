@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { UnauthorizedException } from '@nestjs/common';
 import { AnalyticsController } from './analytics.controller';
 import { AnalyticsService } from './analytics.service';
+import { VendorAccountDetailsRepository } from '../vendor-account-details.repository';
 import type { AuthUser } from '../../auth/auth-user';
 import type { AnalyticsStatsResponse } from './analytics-stats.dto';
 import { ChartQueryDto } from './chart-query.dto';
