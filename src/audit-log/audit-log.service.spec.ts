@@ -358,4 +358,108 @@ describe('AuditLogService (Issues #816 & #817)', () => {
       );
     });
   });
+
+  describe('exportCsv (issue #1164)', () => {
+    it('generates CSV with header and serialises details as JSON in one column', async () => {
+      const now = new Date('2026-11-20T10:00:00.000Z');
+      repo.findPage.mockResolvedValue([
+        {
+          id: 'log-1',
+          action: 'DISPUTE_RESOLVED',
+          adminAddress: 'GADMIN123',
+          entityType: 'escrow',
+          entityId: 'escrow-456',
+          details: { resolution: 'RELEASE', reason: 'Delivered' },
+          occurredAt: now,
+        },
+      ]);
+
+      const csv = await service.exportCsv();
+      const lines = csv.split('\n');
+
+      expect(lines[0]).toBe(
+        'id,action,adminAddress,entityType,entityId,details,occurredAt',
+      );
+      expect(lines[1]).toBe(
+        'log-1,DISPUTE_RESOLVED,GADMIN123,escrow,escrow-456,"{""resolution"":""RELEASE"",""reason"":""Delivered""}",2026-11-20T10:00:00.000Z',
+      );
+      expect(repo.findPage).toHaveBeenCalledWith({
+        skip: 0,
+        take: 50000,
+        where: {},
+      });
+    });
+
+    it('passes filters (action, entityType, entityId, adminAddress, date range) to the query', async () => {
+      repo.findPage.mockResolvedValue([]);
+
+      await service.exportCsv({
+        action: 'VENDOR_SUSPENDED',
+        entityType: 'vendor',
+        entityId: 'GVENDOR1',
+        adminAddress: 'GADMIN1',
+        from: '2026-11-01T00:00:00.000Z',
+        to: '2026-11-20T23:59:59.999Z',
+      });
+
+      expect(repo.findPage).toHaveBeenCalledWith({
+        skip: 0,
+        take: 50000,
+        where: {
+          action: 'VENDOR_SUSPENDED',
+          entityType: 'vendor',
+          entityId: 'GVENDOR1',
+          adminAddress: 'GADMIN1',
+          occurredAt: {
+            gte: new Date('2026-11-01T00:00:00.000Z'),
+            lte: new Date('2026-11-20T23:59:59.999Z'),
+          },
+        },
+      });
+    });
+
+    it('escapes formula injection characters (=, +, -, @, \\t, \\r)', async () => {
+      const now = new Date('2026-11-20T10:00:00.000Z');
+      repo.findPage.mockResolvedValue([
+        {
+          id: '=cmd|',
+          action: '+SUM(A1:A10)',
+          adminAddress: '-MALICIOUS',
+          entityType: '@EVIL',
+          entityId: '\tTABBED',
+          details: { field: 'normal' },
+          occurredAt: now,
+        },
+      ]);
+
+      const csv = await service.exportCsv();
+      const lines = csv.split('\n');
+
+      expect(lines[1]).toBe(
+        `'=cmd|,'+SUM(A1:A10),'-MALICIOUS,'@EVIL,'\tTABBED,"{""field"":""normal""}",2026-11-20T10:00:00.000Z`,
+      );
+    });
+
+    it('properly quotes cells with commas and double quotes', async () => {
+      const now = new Date('2026-11-20T10:00:00.000Z');
+      repo.findPage.mockResolvedValue([
+        {
+          id: 'log-quote',
+          action: 'ACTION,WITH,COMMA',
+          adminAddress: 'ADDR"WITH"QUOTES',
+          entityType: 'escrow',
+          entityId: 'id-1',
+          details: {},
+          occurredAt: now,
+        },
+      ]);
+
+      const csv = await service.exportCsv();
+      const lines = csv.split('\n');
+
+      expect(lines[1]).toBe(
+        'log-quote,"ACTION,WITH,COMMA","ADDR""WITH""QUOTES",escrow,id-1,"{}",2026-11-20T10:00:00.000Z',
+      );
+    });
+  });
 });

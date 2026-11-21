@@ -51,6 +51,9 @@ export interface EscrowRecord {
   autoReleaseTxHash: string | null;
   disputeId: string | null;
   cancelledAt?: Date | null;
+  fundedAt?: Date | null;
+  disputedAt?: Date | null;
+  completedAt?: Date | null;
   buyerContactEmail?: string | null;
   buyerContactPhone?: string | null;
   createdAt: Date;

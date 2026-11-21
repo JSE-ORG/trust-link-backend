@@ -1,4 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import type { EscrowState } from '../../prisma/prisma.service';
 
 /**
@@ -69,6 +69,36 @@ export class EscrowResponseDto {
     example: '2026-05-20T14:32:00.000Z',
   })
   shippedAt!: Date | null;
+
+  @ApiPropertyOptional({
+    description:
+      'Timestamp the escrow was funded on-chain, or null if not yet funded.',
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    example: '2026-05-19T10:00:00.000Z',
+  })
+  fundedAt?: Date | null;
+
+  @ApiPropertyOptional({
+    description:
+      'Timestamp the escrow entered dispute, or null if never disputed.',
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    example: '2026-05-21T11:00:00.000Z',
+  })
+  disputedAt?: Date | null;
+
+  @ApiPropertyOptional({
+    description:
+      'Timestamp the escrow was completed, or null if not yet completed.',
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    example: '2026-05-22T12:00:00.000Z',
+  })
+  completedAt?: Date | null;
 
   @ApiProperty({
     description: 'Timestamp the escrow was created.',

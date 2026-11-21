@@ -32,6 +32,9 @@ const ESCROW_DATE_FIELDS = [
   'deliveryRecordedAt',
   'autoReleaseSubmittedAt',
   'cancelledAt',
+  'fundedAt',
+  'disputedAt',
+  'completedAt',
   'createdAt',
   'updatedAt',
 ] as const;
@@ -216,9 +219,18 @@ export class EscrowRepository {
 
   /** Updates the escrow state and invalidates its cache entry. */
   async updateState(id: string, state: EscrowState): Promise<EscrowRecord> {
+    const existing = await this.findById(id);
+    const data: Prisma.EscrowUpdateInput = { state };
+    if (state === 'FUNDED' && !existing?.fundedAt) {
+      data.fundedAt = new Date();
+    } else if (state === 'DISPUTED' && !existing?.disputedAt) {
+      data.disputedAt = new Date();
+    } else if (state === 'COMPLETED' && !existing?.completedAt) {
+      data.completedAt = new Date();
+    }
     const result = await this.prisma.escrow.update({
       where: { id },
-      data: { state },
+      data,
     });
     await this.invalidate(id);
     return toEscrowRecord(result);
@@ -364,9 +376,14 @@ export class EscrowRepository {
 
   /** Transitions the escrow to COMPLETED and invalidates the cache. */
   async markCompleted(id: string): Promise<EscrowRecord> {
+    const existing = await this.findById(id);
+    const data: Prisma.EscrowUpdateInput = { state: 'COMPLETED' };
+    if (!existing?.completedAt) {
+      data.completedAt = new Date();
+    }
     const result = await this.prisma.escrow.update({
       where: { id },
-      data: { state: 'COMPLETED' },
+      data,
     });
     await this.invalidate(id);
     return toEscrowRecord(result);

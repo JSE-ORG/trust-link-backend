@@ -6,6 +6,7 @@ import {
   Optional,
 } from '@nestjs/common';
 import { TracingService } from '../tracing/tracing.service';
+import { MetricsService } from '../tracing/metrics.service';
 import { EscrowRepository } from '../escrow/escrow.repository';
 import { LogisticsService } from '../logistics/logistics.service';
 import { ContractService } from '../stellar/contract.service';
@@ -48,6 +49,8 @@ export class TrackingPollWorker implements OnModuleInit, OnApplicationShutdown {
     private readonly tracing: TracingService,
     @Optional()
     private readonly notificationsService?: NotificationsService,
+    @Optional()
+    private readonly metrics?: MetricsService,
   ) {}
 
   /**
@@ -112,10 +115,17 @@ export class TrackingPollWorker implements OnModuleInit, OnApplicationShutdown {
       return;
     }
     this.running = true;
+    const startTime = Date.now();
+    let outcome: 'success' | 'error' = 'success';
 
     try {
       await this.runCycle();
+    } catch (err) {
+      outcome = 'error';
+      throw err;
     } finally {
+      const durationMs = Date.now() - startTime;
+      this.metrics?.recordWorkerCycle('tracking-poll', outcome, durationMs);
       // Cleared even when the cycle throws, or the worker would refuse every
       // subsequent tick and silently stop recording deliveries.
       this.running = false;

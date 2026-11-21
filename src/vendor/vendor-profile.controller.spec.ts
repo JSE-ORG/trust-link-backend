@@ -112,6 +112,7 @@ describe('VendorProfileController', () => {
       updateProfile: jest.fn(),
       getNotificationPreferences: jest.fn(),
       updateNotificationPreferences: jest.fn(),
+      getNotificationHistory: jest.fn(),
     } as unknown as jest.Mocked<VendorProfileService>;
 
     const module: TestingModule = await Test.createTestingModule({
@@ -605,6 +606,55 @@ describe('VendorProfileController', () => {
           .set('Authorization', AUTH_A)
           .send({ notifyOnDelivery: false })
           .expect(404);
+      });
+
+      it('GET /vendor/profile/notifications/history enforces ownership and returns allowlisted fields', async () => {
+        const mockHistory = {
+          data: [
+            {
+              id: 'notif-1',
+              escrowId: '123e4567-e89b-12d3-a456-426614174000',
+              type: 'FUNDED',
+              channel: 'EMAIL',
+              status: 'SENT',
+              attemptCount: 1,
+              sentAt: new Date('2026-11-20T10:00:00.000Z'),
+              failedAt: null,
+              createdAt: new Date('2026-11-20T09:59:00.000Z'),
+            },
+          ],
+          total: 1,
+          page: 1,
+          limit: 20,
+          totalPages: 1,
+          hasNextPage: false,
+        };
+        service.getNotificationHistory.mockResolvedValue(mockHistory as never);
+
+        const res = await request(app.getHttpServer())
+          .get('/vendor/profile/notifications/history')
+          .set('Authorization', AUTH_A)
+          .expect(200);
+
+        expect(service.getNotificationHistory).toHaveBeenCalledWith(
+          VENDOR_A,
+          expect.anything(),
+        );
+        expect(res.body.data[0]).toMatchObject({
+          id: 'notif-1',
+          type: 'FUNDED',
+          channel: 'EMAIL',
+          status: 'SENT',
+        });
+        expect(res.body.data[0].recipientAddress).toBeUndefined();
+        expect(res.body.data[0].message).toBeUndefined();
+        expect(res.body.data[0].lastError).toBeUndefined();
+      });
+
+      it('GET /vendor/profile/notifications/history rejects unauthorized caller with 401', async () => {
+        await request(app.getHttpServer())
+          .get('/vendor/profile/notifications/history')
+          .expect(401);
       });
     });
   });

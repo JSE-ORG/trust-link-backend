@@ -92,7 +92,7 @@ export function buildThrottlerOptions(
     AdminStatsModule,
     AdminDisputeModule,
     AdminEscrowsModule,
-    AdminVendorsModule,
+    AdminNotificationsModule,
     QueueDashboardModule, // issue #75 – BullMQ dashboard at GET /admin/queues
     ApiKeysModule,
 

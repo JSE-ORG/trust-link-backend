@@ -294,6 +294,7 @@ export const configValidationSchema = Joi.object({
   ESCROW_CACHE_TTL_SECONDS: Joi.number().integer().min(1).max(60).default(60),
   DB_POOL_CONNECTION_LIMIT: Joi.number().integer().min(1).default(10),
   DB_POOL_TIMEOUT_MS: Joi.number().integer().min(0).default(10000),
+  REQUEST_TIMEOUT_MS: Joi.number().integer().min(1).default(30000),
   OTEL_ENABLED: Joi.string().valid('true', 'false').default('true'),
   OTEL_SERVICE_NAME: Joi.string().default('trustlink-backend'),
   OTEL_SERVICE_VERSION: Joi.string().default('1.0.0'),

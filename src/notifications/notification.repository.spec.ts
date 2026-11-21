@@ -144,4 +144,126 @@ describe('NotificationRepository', () => {
       expect(row?.status).toBe('FAILED');
     });
   });
+
+  describe('findVendorHistory() (issue #1168)', () => {
+    it('enforces field allowlist and ownership isolation', async () => {
+      await ensureVendors(prisma, 'vendor-other');
+      const otherEscrow = await prisma.escrow.create({
+        data: {
+          itemName: 'Other Widget',
+          itemRef: 'REF-OTHER-1',
+          amount: 50,
+          currency: 'USDC',
+          buyerAddress: 'buyer-other',
+          vendorAddress: 'vendor-other',
+        },
+      });
+
+      // Notification for vendor-notif
+      await repo.create({
+        ...base,
+        escrowId,
+        channel: 'EMAIL',
+      });
+
+      // Notification for vendor-other
+      await repo.create({
+        ...base,
+        escrowId: otherEscrow.id,
+        channel: 'SMS',
+      });
+
+      const result = await repo.findVendorHistory('vendor-notif');
+
+      expect(result.total).toBe(1);
+      expect(result.data).toHaveLength(1);
+      const row = result.data[0] as Record<string, unknown>;
+
+      // Field allowlist: allowed fields are present
+      expect(row.id).toBeDefined();
+      expect(row.escrowId).toBe(escrowId);
+      expect(row.type).toBe('FUNDED');
+      expect(row.channel).toBe('EMAIL');
+      expect(row.status).toBe('PENDING');
+      expect(row.attemptCount).toBe(0);
+      expect(row.createdAt).toBeInstanceOf(Date);
+
+      // Sensitive fields MUST NEVER be returned
+      expect(row.recipientAddress).toBeUndefined();
+      expect(row.message).toBeUndefined();
+      expect(row.lastError).toBeUndefined();
+    });
+
+    it('filters by status and escrowId', async () => {
+      const n1 = await repo.create({
+        ...base,
+        escrowId,
+        channel: 'EMAIL',
+      });
+      await repo.markSent(n1.id, 0);
+
+      const n2 = await repo.create({
+        ...base,
+        escrowId,
+        channel: 'SMS',
+      });
+      await repo.markFailed(n2.id);
+
+      const sentOnly = await repo.findVendorHistory('vendor-notif', {
+        status: 'SENT',
+      });
+      expect(sentOnly.total).toBe(1);
+      expect(sentOnly.data[0].status).toBe('SENT');
+
+      const byEscrow = await repo.findVendorHistory('vendor-notif', {
+        escrowId,
+      });
+      expect(byEscrow.total).toBe(2);
+    });
+  });
+
+  describe('findAdminNotifications() (issue #1169)', () => {
+    it('returns lastError and lastResponseCode but never recipientAddress or message', async () => {
+      const n1 = await repo.create({
+        ...base,
+        escrowId,
+        channel: 'EMAIL',
+        lastResponseCode: 500,
+      });
+      await repo.markAttemptFailed(n1.id, 1, 'Provider connection error');
+
+      const result = await repo.findAdminNotifications();
+
+      expect(result.total).toBeGreaterThanOrEqual(1);
+      const row = result.data.find((r) => r.id === n1.id) as unknown as Record<
+        string,
+        unknown
+      >;
+
+      expect(row).toBeDefined();
+      expect(row.lastError).toBe('Provider connection error');
+      expect(row.lastResponseCode).toBe(500);
+
+      // Sensitive fields MUST NEVER be returned
+      expect(row.recipientAddress).toBeUndefined();
+      expect(row.message).toBeUndefined();
+    });
+
+    it('filters by status, channel, type, and date range', async () => {
+      await repo.create({
+        ...base,
+        escrowId,
+        channel: 'SMS',
+        type: 'SHIPPED',
+      });
+
+      const filtered = await repo.findAdminNotifications({
+        channel: 'SMS',
+        type: 'SHIPPED',
+      });
+      expect(filtered.total).toBe(1);
+      expect(filtered.data[0].channel).toBe('SMS');
+      expect(filtered.data[0].type).toBe('SHIPPED');
+    });
+  });
 });

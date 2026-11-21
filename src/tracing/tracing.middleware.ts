@@ -1,7 +1,8 @@
-import { Injectable, NestMiddleware } from '@nestjs/common';
+import { Injectable, NestMiddleware, Optional } from '@nestjs/common';
 import { context, propagation, trace } from '@opentelemetry/api';
 import { Request, Response, NextFunction } from 'express';
 import { isTracingEnabled } from './tracing.bootstrap';
+import { MetricsService } from './metrics.service';
 
 /**
  * Enriches the active HTTP span with Trust-Link workflow metadata and
@@ -9,12 +10,18 @@ import { isTracingEnabled } from './tracing.bootstrap';
  */
 @Injectable()
 export class TracingMiddleware implements NestMiddleware {
+  constructor(
+    @Optional()
+    private readonly metrics?: MetricsService,
+  ) {}
+
   use(req: Request, res: Response, next: NextFunction): void {
     if (!isTracingEnabled()) {
       next();
       return;
     }
 
+    const startTime = Date.now();
     const parentContext = propagation.extract(context.active(), req.headers);
 
     context.with(parentContext, () => {
@@ -36,6 +43,18 @@ export class TracingMiddleware implements NestMiddleware {
       }
 
       res.on('finish', () => {
+        const durationMs = Date.now() - startTime;
+        const routeObj = req.route as { path?: unknown } | undefined;
+        const routePath =
+          typeof routeObj?.path === 'string' ? routeObj.path : undefined;
+        const route = routePath ? `${req.baseUrl || ''}${routePath}` : workflow;
+        this.metrics?.recordHttpRequest(
+          route,
+          req.method,
+          res.statusCode,
+          durationMs,
+        );
+
         if (span) {
           span.setAttribute('http.response.status_code', res.statusCode);
         }

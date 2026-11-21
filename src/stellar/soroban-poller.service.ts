@@ -3,9 +3,11 @@ import {
   Logger,
   OnModuleDestroy,
   OnModuleInit,
+  Optional,
 } from '@nestjs/common';
 import { ConfigService } from '../config/config.service';
 import { TracingService } from '../tracing/tracing.service';
+import { MetricsService } from '../tracing/metrics.service';
 import {
   BlockchainListenerService,
   RawSorobanEvent,
@@ -176,6 +178,8 @@ export class SorobanPollerService implements OnModuleInit, OnModuleDestroy {
     private readonly escrowService: EscrowService,
     private readonly dlqService: DlqService,
     private readonly tracing: TracingService,
+    @Optional()
+    private readonly metrics?: MetricsService,
   ) {
     this.rpcUrl = this.resolveRpcUrl();
     this.contractId = this.config.get('CONTRACT_ID') ?? '';
@@ -360,6 +364,19 @@ export class SorobanPollerService implements OnModuleInit, OnModuleDestroy {
         : { cursor }),
       limit: 100,
     });
+
+    if (result?.latestLedger) {
+      let currentLedger: number | undefined;
+      if (cursor.startsWith(LEDGER_CURSOR_PREFIX)) {
+        currentLedger = Number(cursor.slice(LEDGER_CURSOR_PREFIX.length));
+      } else if (result.events?.length) {
+        currentLedger = result.events[result.events.length - 1].ledger;
+      }
+      if (typeof currentLedger === 'number' && Number.isFinite(currentLedger)) {
+        const lag = Math.max(0, result.latestLedger - currentLedger);
+        this.metrics?.recordPollerLag(lag);
+      }
+    }
 
     return result?.events ?? [];
   }

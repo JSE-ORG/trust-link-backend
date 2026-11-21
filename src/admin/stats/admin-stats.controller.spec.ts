@@ -5,8 +5,11 @@ import { AdminStatsService } from './admin-stats.service';
 import { AdminStatsController } from './admin-stats.controller';
 
 describe('AdminStatsController', () => {
-  const adminStatsService: jest.Mocked<Pick<AdminStatsService, 'getStats'>> = {
+  const adminStatsService: jest.Mocked<
+    Pick<AdminStatsService, 'getStats' | 'getChart'>
+  > = {
     getStats: jest.fn(),
+    getChart: jest.fn(),
   };
   const controller = new AdminStatsController(
     adminStatsService as unknown as AdminStatsService,
@@ -27,5 +30,21 @@ describe('AdminStatsController', () => {
 
     await expect(controller.getStats()).resolves.toBe(expected);
     expect(adminStatsService.getStats).toHaveBeenCalledWith();
+  });
+
+  it('returns the chart service result unchanged', async () => {
+    const expected = [
+      {
+        date: '2026-11-20',
+        escrowsCreated: 5,
+        volume: 1200,
+        completed: 4,
+        disputed: 0,
+      },
+    ];
+    adminStatsService.getChart.mockResolvedValue(expected);
+
+    await expect(controller.getChart({ days: 14 })).resolves.toBe(expected);
+    expect(adminStatsService.getChart).toHaveBeenCalledWith(14);
   });
 });

@@ -7,6 +7,15 @@ export interface EscrowStateGroup {
   _count: number;
 }
 
+/** One row returned by the daily admin stats raw aggregation query. */
+export interface DailyAdminStatsRow {
+  date: Date | string;
+  escrowsCreated: bigint | number | string;
+  volume: number | string;
+  completed: bigint | number | string;
+  disputed: bigint | number | string;
+}
+
 /** Raw aggregates behind the admin dashboard response. */
 export interface AdminStatsTotals {
   totalVolume: number;
@@ -76,5 +85,27 @@ export class AdminStatsRepository {
         status: { in: [...openStatuses] },
       },
     });
+  }
+
+  /**
+   * Aggregates daily platform stats (escrows created, volume, completed, disputed)
+   * grouped by calendar day between startDate and endDate.
+   */
+  async aggregateDailyStats(
+    startDate: Date,
+    endDate: Date,
+  ): Promise<DailyAdminStatsRow[]> {
+    return this.prisma.$queryRaw<DailyAdminStatsRow[]>`
+      SELECT
+        DATE_TRUNC('day', "createdAt")::date AS date,
+        COUNT(*)::bigint AS "escrowsCreated",
+        COALESCE(SUM("amount"), 0)::float AS volume,
+        SUM(CASE WHEN "state" IN ('COMPLETED', 'RELEASED') THEN 1 ELSE 0 END)::bigint AS completed,
+        SUM(CASE WHEN "state" = 'DISPUTED' OR "disputeId" IS NOT NULL THEN 1 ELSE 0 END)::bigint AS disputed
+      FROM "Escrow"
+      WHERE "createdAt" >= ${startDate} AND "createdAt" <= ${endDate}
+      GROUP BY DATE_TRUNC('day', "createdAt")::date
+      ORDER BY date ASC
+    `;
   }
 }
