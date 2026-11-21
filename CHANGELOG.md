@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Optional `ADMIN_NOTIFICATION_EMAIL` configuration to receive email alerts when disputes are opened.
 - Optional `WEBHOOK_EVENT_RETENTION_DAYS` configuration to set the retention window (default: 30 days) for daily cleanup of processed Stellar webhook events.
 - Optional `GIT_SHA` configuration to record the deployed commit SHA in Sentry releases and `GET /version` responses.
+- Optional `SENTRY_TRACES_SAMPLE_RATE` configuration (0 to 1) to override the Sentry trace sample rate, which otherwise defaults to 0.2 in production and 1.0 elsewhere.
 
 ### Changed
 

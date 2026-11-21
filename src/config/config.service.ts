@@ -70,6 +70,8 @@ export interface Config {
   PUBLIC_LIMIT?: number;
   REFRESH_TOKEN_TTL?: number;
   SENTRY_DSN?: string;
+  /** #1175 — Optional validated Sentry trace sample-rate override (0 to 1). */
+  SENTRY_TRACES_SAMPLE_RATE?: number;
   GIT_SHA?: string;
   /** #971 — Trusted proxy setting; see common/security/trust-proxy.config. */
   TRUST_PROXY?: string;
