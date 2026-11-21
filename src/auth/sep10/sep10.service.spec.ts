@@ -1092,7 +1092,7 @@ describe('Sep10Service', () => {
   });
 
   describe('ACCESS_TOKEN_TTL', () => {
-    let mockNonce: any;
+    let mockNonce: Nonce;
 
     beforeEach(() => {
       mockNonce = {
@@ -1119,7 +1119,7 @@ describe('Sep10Service', () => {
     it('exp - iat equals the ACCESS_TOKEN_TTL setting', async () => {
       const customTtl = 7200; // 2 hours
       (configService.get as jest.Mock).mockImplementation((key: string) => {
-        const configMap: Record<string, any> = {
+        const configMap: Record<string, unknown> = {
           STELLAR_NETWORK: 'TESTNET',
           SYSTEM_SIGNER_SECRET:
             'SAIJDXETR5B7YFPH7SUOISWVBHHSI46JLYFDCWDMEV2L46XAHASPP35C',
