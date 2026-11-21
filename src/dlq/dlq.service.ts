@@ -4,7 +4,9 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
+import { MetricsService } from '../tracing/metrics.service';
 import {
   FailedTransactionFilter,
   FailedTransactionRepository,
@@ -32,6 +34,8 @@ export class DlqService {
 
   constructor(
     private readonly failedTransactions: FailedTransactionRepository,
+    @Optional()
+    private readonly metrics?: MetricsService,
   ) {}
 
   /**
@@ -47,13 +51,15 @@ export class DlqService {
   async enqueue(
     input: EnqueueFailedTransactionInput,
   ): Promise<FailedTransactionRecord> {
-    return this.failedTransactions.create({
+    const record = await this.failedTransactions.create({
       operation: input.operation,
       escrowId: input.escrowId,
       errorMessage: input.errorMessage,
       ledgerFeedback: input.ledgerFeedback,
       attempts: input.attempts,
     });
+    this.metrics?.recordDlqSize(1);
+    return record;
   }
 
   /**
@@ -155,7 +161,9 @@ export class DlqService {
       throw err;
     }
 
-    return this.failedTransactions.markReplayed(id, txHash);
+    const replayed = await this.failedTransactions.markReplayed(id, txHash);
+    this.metrics?.recordDlqSize(-1);
+    return replayed;
   }
 
   /**
@@ -189,6 +197,7 @@ export class DlqService {
         `Failed transaction ${id} cannot be abandoned (status: ${record.status})`,
       );
     }
+    this.metrics?.recordDlqSize(-1);
     return abandoned;
   }
 
