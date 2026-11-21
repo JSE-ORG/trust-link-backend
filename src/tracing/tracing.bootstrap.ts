@@ -7,6 +7,8 @@
 import { propagation } from '@opentelemetry/api';
 import { W3CTraceContextPropagator } from '@opentelemetry/core';
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
+import { OTLPMetricExporter } from '@opentelemetry/exporter-metrics-otlp-http';
+import { PeriodicExportingMetricReader } from '@opentelemetry/sdk-metrics';
 import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentations-node';
 import { resourceFromAttributes } from '@opentelemetry/resources';
 import { NodeSDK } from '@opentelemetry/sdk-node';
@@ -41,6 +43,13 @@ if (isEnabled) {
     traceExporter: otlpEndpoint
       ? new OTLPTraceExporter({
           url: `${otlpEndpoint}/v1/traces`,
+        })
+      : undefined,
+    metricReader: otlpEndpoint
+      ? new PeriodicExportingMetricReader({
+          exporter: new OTLPMetricExporter({
+            url: `${otlpEndpoint}/v1/metrics`,
+          }),
         })
       : undefined,
     instrumentations: [

@@ -3,8 +3,10 @@ import {
   Logger,
   OnApplicationShutdown,
   OnModuleInit,
+  Optional,
 } from '@nestjs/common';
 import { TracingService } from '../tracing/tracing.service';
+import { MetricsService } from '../tracing/metrics.service';
 import { DisputeRepository } from '../dispute/dispute.repository';
 import { EscrowRepository } from '../escrow/escrow.repository';
 import { ContractService } from '../stellar/contract.service';
@@ -50,6 +52,8 @@ export class AutoReleaseWorker implements OnModuleInit, OnApplicationShutdown {
     private readonly contractService: ContractService,
     private readonly configService: ConfigService,
     private readonly tracing: TracingService,
+    @Optional()
+    private readonly metrics?: MetricsService,
   ) {}
 
   /**
@@ -114,12 +118,19 @@ export class AutoReleaseWorker implements OnModuleInit, OnApplicationShutdown {
       return;
     }
     this.running = true;
+    const startTime = Date.now();
+    let outcome: 'success' | 'error' = 'success';
 
     try {
       await this.traced('worker.auto_release.run', {}, () =>
         this.runCycle(referenceTime),
       );
+    } catch (err) {
+      outcome = 'error';
+      throw err;
     } finally {
+      const durationMs = Date.now() - startTime;
+      this.metrics?.recordWorkerCycle('auto-release', outcome, durationMs);
       // Cleared even when the cycle throws, or the worker would refuse every
       // subsequent tick and silently stop releasing escrows for the lifetime
       // of the process.

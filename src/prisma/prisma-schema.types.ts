@@ -49,6 +49,9 @@ export interface EscrowSchemaShape {
   buyerContactEmail?: string | null;
   buyerContactPhone?: string | null;
   cancelledAt?: Date | null;
+  fundedAt?: Date | null;
+  disputedAt?: Date | null;
+  completedAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }

@@ -1,5 +1,7 @@
 import { Injectable } from '@nestjs/common';
+import { NotificationStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { buildPaginatedEnvelope } from '../common/pagination/pagination.helper';
 
 export interface CreateNotificationInput {
   escrowId: string;
@@ -87,5 +89,150 @@ export class NotificationRepository {
         status: 'FAILED',
       },
     });
+  }
+
+  /**
+   * Returns a paginated list of notification history for a vendor's escrows.
+   * Deliberately excludes recipientAddress, message, and lastError to protect privacy.
+   */
+  async findVendorHistory(
+    vendorAddress: string,
+    query?: {
+      page?: number;
+      limit?: number;
+      status?: NotificationStatus;
+      escrowId?: string;
+    },
+  ) {
+    const rawPage = query?.page;
+    const rawLimit = query?.limit;
+
+    const page =
+      typeof rawPage === 'number' && Number.isFinite(rawPage)
+        ? Math.max(1, Math.floor(rawPage))
+        : 1;
+
+    const limit =
+      typeof rawLimit === 'number' && Number.isFinite(rawLimit)
+        ? Math.min(100, Math.max(1, Math.floor(rawLimit)))
+        : 20;
+
+    const skip = (page - 1) * limit;
+
+    const where: Prisma.NotificationWhereInput = {
+      escrow: {
+        vendorAddress,
+      },
+    };
+
+    if (query?.status) {
+      where.status = query.status;
+    }
+    if (query?.escrowId) {
+      where.escrowId = query.escrowId;
+    }
+
+    const [rows, total] = await Promise.all([
+      this.prisma.notification.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          escrowId: true,
+          type: true,
+          channel: true,
+          status: true,
+          attemptCount: true,
+          sentAt: true,
+          failedAt: true,
+          createdAt: true,
+        },
+      }),
+      this.prisma.notification.count({ where }),
+    ]);
+
+    return buildPaginatedEnvelope(rows, total, page, limit);
+  }
+
+  /**
+   * Returns a paginated list of notifications for administrators.
+   * Returns lastError and lastResponseCode, but never recipientAddress or message.
+   */
+  async findAdminNotifications(query?: {
+    page?: number;
+    limit?: number;
+    status?: NotificationStatus;
+    channel?: string;
+    type?: string;
+    from?: string;
+    to?: string;
+  }) {
+    const rawPage = query?.page;
+    const rawLimit = query?.limit;
+
+    const page =
+      typeof rawPage === 'number' && Number.isFinite(rawPage)
+        ? Math.max(1, Math.floor(rawPage))
+        : 1;
+
+    const limit =
+      typeof rawLimit === 'number' && Number.isFinite(rawLimit)
+        ? Math.min(100, Math.max(1, Math.floor(rawLimit)))
+        : 20;
+
+    const skip = (page - 1) * limit;
+
+    const where: Prisma.NotificationWhereInput = {};
+
+    if (query?.status) {
+      where.status = query.status;
+    }
+    if (query?.channel) {
+      where.channel = query.channel;
+    }
+    if (query?.type) {
+      where.type = query.type;
+    }
+
+    const dateFilter: Prisma.DateTimeFilter = {};
+    if (query?.from) {
+      dateFilter.gte = new Date(query.from);
+    }
+    if (query?.to) {
+      dateFilter.lte = new Date(query.to);
+    }
+    if (Object.keys(dateFilter).length > 0) {
+      where.createdAt = dateFilter;
+    }
+
+    const [rows, total] = await Promise.all([
+      this.prisma.notification.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          escrowId: true,
+          type: true,
+          channel: true,
+          status: true,
+          retryCount: true,
+          attemptCount: true,
+          lastError: true,
+          lastResponseCode: true,
+          providerMessageId: true,
+          sentAt: true,
+          failedAt: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      }),
+      this.prisma.notification.count({ where }),
+    ]);
+
+    return buildPaginatedEnvelope(rows, total, page, limit);
   }
 }
