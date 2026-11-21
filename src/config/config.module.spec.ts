@@ -1024,8 +1024,8 @@ describe('ConfigModule (#946) — ADMIN_NOTIFICATION_EMAIL validation', () => {
   });
 
   it('accepts an unset ADMIN_NOTIFICATION_EMAIL (optional)', () => {
-    const env = { ...VALID_ENV };
-    delete (env as any).ADMIN_NOTIFICATION_EMAIL;
+    const env: Record<string, unknown> = { ...VALID_ENV };
+    delete env.ADMIN_NOTIFICATION_EMAIL;
 
     const { error } = configValidationSchema.validate(env, VALIDATE_OPTIONS);
 

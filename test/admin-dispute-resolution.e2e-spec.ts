@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
@@ -8,6 +8,7 @@ import { ContractService } from '../src/stellar/contract.service';
 import { NotificationsService } from '../src/notifications/notifications.service';
 import { ConfigService } from '../src/config/config.service';
 import { bearer } from './auth-helper';
+import { createGlobalPipes } from '../src/common/pipes/global-pipes';
 
 const VENDOR_ADDRESS =
   'GA36PERSXWPBG7HYKNBVT5PFLTOFYO4Q3CWGJZTYH5GU5OLTKHW7SJHE';
@@ -29,9 +30,7 @@ describe('Admin Dispute Resolution Flow E2E (issue #299)', () => {
     }).compile();
 
     app = moduleFixture.createNestApplication();
-    app.useGlobalPipes(
-      new ValidationPipe({ whitelist: true, transform: true }),
-    );
+    app.useGlobalPipes(...createGlobalPipes());
     await app.init();
 
     prisma = app.get(PrismaService);

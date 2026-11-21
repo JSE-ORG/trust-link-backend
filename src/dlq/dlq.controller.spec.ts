@@ -188,7 +188,7 @@ describe('DlqController', () => {
 
       dlq.get.mockResolvedValue(autoReleaseRecord);
       contract.submitAutoRelease.mockResolvedValue('tx-hash-abc');
-      dlq.replay.mockImplementation(async (id, replay) => {
+      dlq.replay.mockImplementation(async (_id, replay) => {
         const txHash = await replay(autoReleaseRecord);
         return {
           ...autoReleaseRecord,

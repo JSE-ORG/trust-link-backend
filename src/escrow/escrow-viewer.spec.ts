@@ -24,7 +24,7 @@ function makeService(escrow = baseEscrow): Partial<EscrowService> {
     findById: jest.fn().mockResolvedValue(escrow),
     getEscrowForViewer: jest
       .fn()
-      .mockImplementation(async (id: string, callerAddress?: string) => {
+      .mockImplementation(async (_id: string, callerAddress?: string) => {
         const record = escrow;
         const base = {
           id: record.id,
