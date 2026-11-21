@@ -377,4 +377,83 @@ describe('GET /vendor/analytics/chart (issue #290)', () => {
     expect(byDate.get(monthStartUtc(1).toISOString().slice(0, 10))).toBe(250);
     expect(data.reduce((sum, b) => sum + b.totalVolume, 0)).toBe(400);
   });
+
+  // ── Non-UTC week and month boundaries (issue #1219) ───────────────────────
+
+  it.each(['Asia/Tokyo', 'America/New_York'])(
+    'places week-edge escrows near UTC midnight into their local %s bucket',
+    async (timezone) => {
+      const todayKey = dateKeyInTimezone(new Date(), timezone);
+      const todayDow = new Date(`${todayKey}T00:00:00Z`).getUTCDay();
+      const daysSinceMonday = (todayDow + 6) % 7;
+      const prevWeekMondayKey = addCalendarDays(todayKey, -daysSinceMonday - 7);
+      const prevPrevWeekMondayKey = addCalendarDays(prevWeekMondayKey, -7);
+      const mondayStart = localMidnight(prevWeekMondayKey, timezone);
+
+      // One hour before local Monday midnight (already Monday in UTC for
+      // America/New_York) and one hour after (still Sunday in UTC for
+      // Asia/Tokyo).
+      await seedEscrow(
+        VENDOR,
+        111,
+        new Date(mondayStart.getTime() - 3_600_000),
+      );
+      await seedEscrow(
+        VENDOR,
+        222,
+        new Date(mondayStart.getTime() + 3_600_000),
+      );
+
+      const res = await request(app.getHttpServer())
+        .get('/vendor/analytics/chart')
+        .query({ interval: 'week', days: 90, timezone })
+        .set('Authorization', AUTH)
+        .expect(200);
+
+      const data = res.body.data as Bucket[];
+      for (const b of data) {
+        expect(new Date(`${b.date}T00:00:00Z`).getUTCDay()).toBe(1);
+      }
+      const byDate = new Map(data.map((b) => [b.date, b.totalVolume]));
+      expect(byDate.get(prevPrevWeekMondayKey)).toBe(111);
+      expect(byDate.get(prevWeekMondayKey)).toBe(222);
+      expect(data.reduce((sum, b) => sum + b.totalVolume, 0)).toBe(333);
+    },
+  );
+
+  it.each(['Asia/Tokyo', 'America/New_York'])(
+    'places month-edge escrows near UTC midnight into their local %s bucket',
+    async (timezone) => {
+      const todayKey = dateKeyInTimezone(new Date(), timezone);
+      const [year, month] = todayKey.split('-').map(Number);
+      const prevMonthFirstKey = new Date(Date.UTC(year, month - 2, 1))
+        .toISOString()
+        .slice(0, 10);
+      const prevPrevMonthFirstKey = new Date(Date.UTC(year, month - 3, 1))
+        .toISOString()
+        .slice(0, 10);
+      const monthStart = localMidnight(prevMonthFirstKey, timezone);
+
+      // One hour before local 1st-of-month midnight (already the 1st in UTC
+      // for America/New_York) and one hour after (still the previous month in
+      // UTC for Asia/Tokyo).
+      await seedEscrow(VENDOR, 130, new Date(monthStart.getTime() - 3_600_000));
+      await seedEscrow(VENDOR, 240, new Date(monthStart.getTime() + 3_600_000));
+
+      const res = await request(app.getHttpServer())
+        .get('/vendor/analytics/chart')
+        .query({ interval: 'month', days: 120, timezone })
+        .set('Authorization', AUTH)
+        .expect(200);
+
+      const data = res.body.data as Bucket[];
+      for (const b of data) {
+        expect(b.date.endsWith('-01')).toBe(true);
+      }
+      const byDate = new Map(data.map((b) => [b.date, b.totalVolume]));
+      expect(byDate.get(prevPrevMonthFirstKey)).toBe(130);
+      expect(byDate.get(prevMonthFirstKey)).toBe(240);
+      expect(data.reduce((sum, b) => sum + b.totalVolume, 0)).toBe(370);
+    },
+  );
 });
