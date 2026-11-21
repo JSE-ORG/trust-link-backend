@@ -1,4 +1,4 @@
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   IsDateString,
   IsEnum,
@@ -13,6 +13,15 @@ import {
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { EscrowStateEnum } from '../../common/enums/escrow-state.enum';
 
+/** Splits a comma-separated query value into a trimmed, non-empty list; a single value behaves as before. */
+function splitCommaList({ value }: { value: unknown }): unknown {
+  if (typeof value !== 'string') return value;
+  return value
+    .split(',')
+    .map((v) => v.trim())
+    .filter(Boolean);
+}
+
 /**
  * Query parameters for GET /vendor/escrows, GET /vendor/escrows/export and
  * GET /buyer/escrows. Supports filtering by state, creation date, buyer and
@@ -20,15 +29,18 @@ import { EscrowStateEnum } from '../../common/enums/escrow-state.enum';
  */
 export class VendorEscrowsQueryDto {
   @ApiPropertyOptional({
-    description: 'Filter escrows by lifecycle state.',
+    description:
+      'Filter by one or more lifecycle states (comma-separated, e.g. "FUNDED,SHIPPED"). A single value behaves as before.',
     enum: EscrowStateEnum,
     example: EscrowStateEnum.SHIPPED,
   })
   @IsOptional()
+  @Transform(splitCommaList)
   @IsEnum(EscrowStateEnum, {
+    each: true,
     message: `state must be one of: ${Object.values(EscrowStateEnum).join(', ')}`,
   })
-  state?: EscrowStateEnum;
+  state?: EscrowStateEnum | EscrowStateEnum[];
 
   @ApiPropertyOptional({
     description: 'Earliest createdAt, inclusive (ISO 8601).',
@@ -56,6 +68,16 @@ export class VendorEscrowsQueryDto {
   @IsString()
   @MaxLength(64)
   buyerAddress?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Filter by vendor Stellar address. Only meaningful on GET /buyer/escrows; ignored on vendor routes, which always scope to the caller.',
+    maxLength: 64,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  vendorAddress?: string;
 
   @ApiPropertyOptional({
     description: 'Case-insensitive search on itemName or itemRef.',

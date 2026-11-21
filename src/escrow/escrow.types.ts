@@ -51,7 +51,8 @@ export type EventsResult = EscrowEventEntry[];
 export interface EscrowListFilter {
   vendorAddress?: string;
   buyerAddress?: string;
-  state?: string;
+  /** One state, or several (matches any) — same shape the DTOs normalize to. */
+  state?: string | string[];
   /** Earliest `createdAt`, inclusive (ISO 8601). */
   from?: string;
   /** Latest `createdAt`, inclusive. A date-only value covers the whole day. */
@@ -66,11 +67,12 @@ export interface EscrowWithDispute {
   dispute: DisputeRecord | null;
 }
 
-/** Query accepted by the vendor and buyer escrow lists. */
-export interface EscrowListQuery extends Omit<
-  EscrowListFilter,
-  'vendorAddress'
-> {
+/**
+ * Query accepted by the vendor and buyer escrow lists. `vendorAddress` is
+ * only meaningful on the buyer list (ignored on the vendor list, which
+ * always scopes to the caller, the same way `buyerAddress` is ignored there).
+ */
+export interface EscrowListQuery extends EscrowListFilter {
   sort?: 'date' | 'amount';
   order?: 'asc' | 'desc';
   page?: number;

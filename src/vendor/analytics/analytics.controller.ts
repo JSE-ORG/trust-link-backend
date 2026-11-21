@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Controller,
   Get,
   Query,
@@ -123,9 +124,32 @@ export class AnalyticsController {
   async getDailyVolumeChart(
     @Query() query?: ChartQueryDto,
     @CurrentUser() user?: AuthUser,
+    @Query('days') rawDays?: string,
   ): Promise<ChartDataResponse> {
     if (!user) {
       throw new UnauthorizedException();
+    }
+
+    const hasRange = Boolean(query?.from || query?.to);
+    if (hasRange) {
+      // `query.days` always carries a value (defaults to 30), so presence is
+      // checked against the raw query string instead.
+      if (rawDays !== undefined) {
+        throw new BadRequestException('from/to cannot be combined with days');
+      }
+      if (!query?.from || !query?.to) {
+        throw new BadRequestException('from and to must both be provided');
+      }
+      if (query.from > query.to) {
+        throw new BadRequestException('from must not be after to');
+      }
+      const spanDays =
+        Math.round(
+          (Date.parse(query.to) - Date.parse(query.from)) / 86_400_000,
+        ) + 1;
+      if (spanDays > 366) {
+        throw new BadRequestException('from/to must span at most 366 days');
+      }
     }
 
     const days = query?.days ?? 30;
@@ -144,6 +168,15 @@ export class AnalyticsController {
       timezone = 'UTC';
     }
 
+    if (hasRange) {
+      return this.analyticsService.getDailyVolumeChart(
+        user.address,
+        days,
+        timezone,
+        interval,
+        { from: query!.from!, to: query!.to! },
+      );
+    }
     return this.analyticsService.getDailyVolumeChart(
       user.address,
       days,

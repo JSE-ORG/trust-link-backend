@@ -13,6 +13,20 @@ export const ESCROW_CSV_COLUMNS = [
   'deliveredAt',
 ] as const;
 
+/** The buyer already knows their own address; vendorAddress is the useful column instead. */
+export const BUYER_ESCROW_CSV_COLUMNS = [
+  'id',
+  'itemName',
+  'itemRef',
+  'amount',
+  'currency',
+  'state',
+  'vendorAddress',
+  'createdAt',
+  'shippedAt',
+  'deliveredAt',
+] as const;
+
 /** Admin exports span every vendor, so they also carry `vendorAddress`. */
 export const ADMIN_ESCROW_CSV_COLUMNS = [
   'id',
