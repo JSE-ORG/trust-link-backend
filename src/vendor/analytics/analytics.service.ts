@@ -272,12 +272,33 @@ export class AnalyticsService {
    */
   async getTransactionStats(
     vendorAddress: string,
+    range?: { from?: string; to?: string },
   ): Promise<AnalyticsStatsResponse> {
+    const createdAtRange: { gte?: Date; lte?: Date; lt?: Date } | undefined =
+      range
+        ? {
+            ...(range.from ? { gte: new Date(range.from) } : {}),
+            ...(range.to
+              ? range.to.length === 10
+                ? {
+                    // A date-only `to` includes the full UTC calendar day.
+                    lt: new Date(
+                      new Date(`${range.to}T00:00:00.000Z`).getTime() +
+                        86_400_000,
+                    ),
+                  }
+                : { lte: new Date(range.to) }
+              : {}),
+          }
+        : undefined;
     const [groups, speedStats, notificationChannels] = await Promise.all([
       // One row per state, with the count and the exact `numeric` sum for that
       // state. Uses the composite index on (vendorAddress, state).
-      this.repository.getEscrowStateGroups(vendorAddress),
-      this.repository.getAverageShippingAndDeliveryTimes(vendorAddress),
+      this.repository.getEscrowStateGroups(vendorAddress, createdAtRange),
+      this.repository.getAverageShippingAndDeliveryTimes(
+        vendorAddress,
+        createdAtRange,
+      ),
       this.repository.findNotificationChannels(vendorAddress),
     ]);
 

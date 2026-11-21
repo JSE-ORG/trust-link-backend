@@ -103,6 +103,7 @@ export class AnalyticsRepository {
    */
   async getAverageShippingAndDeliveryTimes(
     vendorAddress: string,
+    createdAt?: { gte?: Date; lte?: Date; lt?: Date },
   ): Promise<ShippingAndDeliveryTimes> {
     const result = await this.prisma.$queryRaw<
       Array<{
@@ -119,6 +120,9 @@ export class AnalyticsRepository {
             ELSE NULL END) as "averageHoursToDeliver"
       FROM "Escrow"
       WHERE "vendorAddress" = ${vendorAddress}
+        ${createdAt?.gte ? Prisma.sql`AND "createdAt" >= ${createdAt.gte}` : Prisma.empty}
+        ${createdAt?.lte ? Prisma.sql`AND "createdAt" <= ${createdAt.lte}` : Prisma.empty}
+        ${createdAt?.lt ? Prisma.sql`AND "createdAt" < ${createdAt.lt}` : Prisma.empty}
     `;
 
     const row = result[0];
@@ -141,10 +145,11 @@ export class AnalyticsRepository {
    */
   async getEscrowStateGroups(
     vendorAddress: string,
+    createdAt?: { gte?: Date; lte?: Date; lt?: Date },
   ): Promise<AnalyticsEscrowStateGroup[]> {
     const groups = await this.prisma.escrow.groupBy({
       by: ['state'],
-      where: { vendorAddress },
+      where: { vendorAddress, ...(createdAt ? { createdAt } : {}) },
       _count: true,
       _sum: { amount: true },
     });
