@@ -15,6 +15,7 @@ import {
 } from '@nestjs/common';
 import { createTracingMock } from '../../test/unit/tracing-mock';
 import { EscrowService } from './escrow.service';
+import { ESCROW_EXPORT_MAX_ROWS } from './escrow.constants';
 import { EscrowRepository } from './escrow.repository';
 import { NotificationsService } from '../notifications/notifications.service';
 import { S3PresignService } from '../common/services/s3-presign.service';
@@ -447,5 +448,57 @@ describe('EscrowService.handleShipment', () => {
     await expect(svc.handleShipment('e-1', 'V', 'NEW123')).rejects.toThrow(
       ConflictException,
     );
+  });
+});
+
+describe('EscrowService CSV export row cap (issue #1218)', () => {
+  it('caps vendor export at ESCROW_EXPORT_MAX_ROWS', async () => {
+    const findEscrows = jest
+      .fn()
+      .mockResolvedValue({ data: [makeEscrow()], total: 1 });
+    const repo = { findEscrows } as unknown as jest.Mocked<EscrowRepository>;
+    const svc = makeService({ repo });
+
+    const csv = await svc.exportVendorEscrowsCsv('GVENDOR', {
+      page: 4,
+      limit: ESCROW_EXPORT_MAX_ROWS + 500,
+      state: 'FUNDED',
+    });
+
+    expect(findEscrows).toHaveBeenCalledWith(
+      expect.objectContaining({
+        vendorAddress: 'GVENDOR',
+        state: 'FUNDED',
+      }),
+      'date',
+      'desc',
+      1,
+      ESCROW_EXPORT_MAX_ROWS,
+    );
+    expect(csv).toContain('id,itemName,itemRef');
+  });
+
+  it('caps buyer export at ESCROW_EXPORT_MAX_ROWS', async () => {
+    const findEscrows = jest
+      .fn()
+      .mockResolvedValue({ data: [makeEscrow()], total: 1 });
+    const repo = { findEscrows } as unknown as jest.Mocked<EscrowRepository>;
+    const svc = makeService({ repo });
+
+    const csv = await svc.exportBuyerEscrowsCsv('GBUYER', {
+      page: 2,
+      limit: ESCROW_EXPORT_MAX_ROWS + 1,
+    });
+
+    expect(findEscrows).toHaveBeenCalledWith(
+      expect.objectContaining({
+        buyerAddress: 'GBUYER',
+      }),
+      'date',
+      'desc',
+      1,
+      ESCROW_EXPORT_MAX_ROWS,
+    );
+    expect(csv).toContain('id,itemName,itemRef');
   });
 });
