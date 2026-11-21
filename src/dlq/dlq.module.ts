@@ -6,6 +6,7 @@ import { EscrowModule } from '../escrow/escrow.module';
 import { DlqService } from './dlq.service';
 import { DlqController } from './dlq.controller';
 import { FailedTransactionRepository } from './failed-transaction.repository';
+import { DlqCleanupService } from './dlq-cleanup.service';
 
 @Module({
   // Issue #554: SorobanPollerService (in StellarModule) now depends on
@@ -21,7 +22,7 @@ import { FailedTransactionRepository } from './failed-transaction.repository';
     forwardRef(() => EscrowModule),
   ],
   controllers: [DlqController],
-  providers: [DlqService, FailedTransactionRepository],
+  providers: [DlqService, FailedTransactionRepository, DlqCleanupService],
   exports: [DlqService, FailedTransactionRepository],
 })
 export class DlqModule {}

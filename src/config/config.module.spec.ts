@@ -1140,3 +1140,29 @@ describe('ACCESS_TOKEN_TTL — configurable JWT lifetime (#976)', () => {
     expect(error?.message).toContain('ACCESS_TOKEN_TTL');
   });
 });
+
+describe('DLQ_RETENTION_DAYS (#1214)', () => {
+  it('defaults to 90 days', () => {
+    const { error, value } = configValidationSchema.validate(
+      VALID_ENV,
+      VALIDATE_OPTIONS,
+    );
+    expect(error).toBeUndefined();
+    expect(value.DLQ_RETENTION_DAYS).toBe(90);
+  });
+
+  it('accepts a positive integer and rejects zero', () => {
+    const valid = configValidationSchema.validate(
+      { ...VALID_ENV, DLQ_RETENTION_DAYS: '30' },
+      VALIDATE_OPTIONS,
+    );
+    expect(valid.error).toBeUndefined();
+    expect(valid.value.DLQ_RETENTION_DAYS).toBe(30);
+
+    const invalid = configValidationSchema.validate(
+      { ...VALID_ENV, DLQ_RETENTION_DAYS: '0' },
+      VALIDATE_OPTIONS,
+    );
+    expect(invalid.error?.message).toContain('DLQ_RETENTION_DAYS');
+  });
+});

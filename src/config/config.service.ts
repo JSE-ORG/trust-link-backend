@@ -85,6 +85,8 @@ export interface Config {
   SOROBAN_START_LEDGER?: number;
   /** Always present: the config schema applies a validated default of 30. */
   WEBHOOK_EVENT_RETENTION_DAYS: number;
+  /** Always present: the config schema applies a validated default of 90. */
+  DLQ_RETENTION_DAYS: number;
   CONTRACT_ID?: string;
 }
 
@@ -178,6 +180,7 @@ export class ConfigService {
       SOROBAN_POLL_INTERVAL_MS: this.get('SOROBAN_POLL_INTERVAL_MS'),
       SOROBAN_RPC_TIMEOUT_MS: this.get('SOROBAN_RPC_TIMEOUT_MS'),
       WEBHOOK_EVENT_RETENTION_DAYS: this.get('WEBHOOK_EVENT_RETENTION_DAYS'),
+      DLQ_RETENTION_DAYS: this.get('DLQ_RETENTION_DAYS'),
     };
   }
 

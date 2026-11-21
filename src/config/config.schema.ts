@@ -411,4 +411,6 @@ export const configValidationSchema = Joi.object({
   // Retention window (days) for processed webhook event ids. A daily job
   // deletes `ProcessedWebhookEvent` rows older than this. Default: 30.
   WEBHOOK_EVENT_RETENTION_DAYS: Joi.number().integer().min(1).default(30),
+  // Retention window for resolved DLQ records. Default: 90 days.
+  DLQ_RETENTION_DAYS: Joi.number().integer().min(1).default(90),
 });

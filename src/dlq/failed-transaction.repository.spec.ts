@@ -125,6 +125,62 @@ describe('FailedTransactionRepository', () => {
     });
   });
 
+  describe('pruneResolvedOlderThan()', () => {
+    it.each(['REPLAYED', 'ABANDONED'] as const)(
+      'deletes old %s records',
+      async (status) => {
+        const record = await seed();
+        const oldDate = new Date('2025-01-01T00:00:00.000Z');
+        await prisma.failedTransaction.update({
+          where: { id: record.id },
+          data: { status, updatedAt: oldDate },
+        });
+
+        const result = await repo.pruneResolvedOlderThan(
+          new Date('2025-04-01T00:00:00.000Z'),
+        );
+
+        expect(result.count).toBe(1);
+        expect(await repo.findById(record.id)).toBeNull();
+      },
+    );
+
+    it.each(['PENDING_REVIEW', 'REPLAYING'] as const)(
+      'preserves old %s records',
+      async (status) => {
+        const record = await seed();
+        await prisma.failedTransaction.update({
+          where: { id: record.id },
+          data: {
+            status,
+            updatedAt: new Date('2025-01-01T00:00:00.000Z'),
+          },
+        });
+
+        const result = await repo.pruneResolvedOlderThan(
+          new Date('2025-04-01T00:00:00.000Z'),
+        );
+
+        expect(result.count).toBe(0);
+        expect((await repo.findById(record.id))?.status).toBe(status);
+      },
+    );
+
+    it('preserves resolved records exactly on the cutoff boundary', async () => {
+      const record = await seed();
+      const cutoff = new Date('2025-04-01T00:00:00.000Z');
+      await prisma.failedTransaction.update({
+        where: { id: record.id },
+        data: { status: 'REPLAYED', updatedAt: cutoff },
+      });
+
+      const result = await repo.pruneResolvedOlderThan(cutoff);
+
+      expect(result.count).toBe(0);
+      expect((await repo.findById(record.id))?.status).toBe('REPLAYED');
+    });
+  });
+
   describe('incrementAttempts()', () => {
     it('bumps attempts, records the error, and leaves the status alone', async () => {
       const record = await seed();
