@@ -11,6 +11,14 @@ export class AdminDisputesPaginatedResponseDto {
     description:
       'Dispute records for this page, with full escrow and reason context.',
     type: [DisputeResponseDto],
+    example: [
+      {
+        id: '2b8b9e44-bb2e-4e9b-9c31-0a7d9cf4a788',
+        escrowId: '6f9619ff-8b86-d011-b42d-00cf4fc964ff',
+        reason: 'DAMAGED_ITEM',
+        status: 'UNDER_REVIEW',
+      },
+    ],
   })
   data!: DisputeResponseDto[];
 
