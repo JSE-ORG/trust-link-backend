@@ -17,9 +17,11 @@ concurrency:
 
 # contents:read for checkout. actions:write is required for the GHA build
 # cache (cache-from/cache-to type=gha). push: false, so no packages:write (#768).
+# security-events:write lets upload-sarif publish the Trivy report (#1179).
 permissions:
   contents: read
   actions: write
+  security-events: write
 
 jobs:
   docker-build:
@@ -61,6 +63,23 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      # Scan the image that was just loaded into the local Docker daemon.
+      # Limit to vulnerabilities with fixes at CRITICAL severity; secrets have
+      # no fix and should not gate this job. SARIF otherwise reports every
+      # severity, so opt into the filter before failing. The report is still
+      # written on a non-zero exit so the upload step can publish it (#1179).
+      - name: Scan image with Trivy
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: trust-link-backend:ci
+          format: sarif
+          output: trivy-results.sarif
+          scanners: vuln
+          severity: CRITICAL
+          limit-severities-for-sarif: true
+          ignore-unfixed: true
+          exit-code: 1
+
       - name: Verify image starts and answers health check
         run: |
           docker run -d \
@@ -78,3 +97,12 @@ jobs:
           sleep 10
           docker inspect --format='{{.State.Status}}' trustlink-ci
           docker rm -f trustlink-ci
+
+      # Fork PRs only get a read-only token, so GitHub rejects SARIF uploads;
+      # keep that from masking the scan result. The report is still generated.
+      - name: Upload Trivy results to GitHub Security tab
+        if: always() && hashFiles('trivy-results.sarif') != ''
+        continue-on-error: ${{ github.event.pull_request.head.repo.fork }}
+        uses: github/codeql-action/upload-sarif@1bd86f2fdb4b86187fa4059f16f31a3202acc9ea # v4.39.4
+        with:
+          sarif_file: trivy-results.sarif
