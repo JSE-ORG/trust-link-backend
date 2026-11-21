@@ -16,10 +16,18 @@ export interface DailyAdminStatsRow {
   disputed: bigint | number | string;
 }
 
+/** Escrow volume for one currency. */
+export interface CurrencyVolume {
+  currency: string;
+  total: number;
+  count: number;
+  average: number;
+}
+
 /** Raw aggregates behind the admin dashboard response. */
 export interface AdminStatsTotals {
   totalVolume: number;
-  volumeByCurrency: { currency: string; total: number; count: number; average: number }[];
+  volumeByCurrency: CurrencyVolume[];
   stateGroups: EscrowStateGroup[];
   uniqueVendors: number;
   uniqueBuyers: number;

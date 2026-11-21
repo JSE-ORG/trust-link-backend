@@ -6,7 +6,11 @@ import {
   buildPaginatedEnvelope,
   PaginatedEnvelope,
 } from '../../common/pagination/pagination.helper';
-import { escrowsToCsv } from '../../escrow/escrow-csv';
+import {
+  ADMIN_ESCROW_CSV_COLUMNS,
+  escrowsToCsv,
+} from '../../escrow/escrow-csv';
+import { ESCROW_EXPORT_MAX_ROWS } from '../../escrow/escrow.constants';
 
 /** An escrow as admins see it: every column except the encrypted contact fields. */
 export type AdminEscrowView = Omit<
@@ -54,7 +58,7 @@ export class AdminEscrowsService {
     return buildPaginatedEnvelope(data.map(toAdminView), total, page, limit);
   }
 
-  /** Same filters as {@link list}, capped at 10,000 rows, ignoring paging. */
+  /** Same filters as {@link list}, capped at {@link ESCROW_EXPORT_MAX_ROWS} rows, ignoring paging. */
   async exportCsv(query: AdminEscrowsQueryDto): Promise<string> {
     const { data } = await this.escrowRepository.findEscrows(
       {
@@ -68,9 +72,9 @@ export class AdminEscrowsService {
       query.sort ?? 'date',
       query.order ?? 'desc',
       1,
-      10_000,
+      ESCROW_EXPORT_MAX_ROWS,
     );
-    return escrowsToCsv(data);
+    return escrowsToCsv(data, ADMIN_ESCROW_CSV_COLUMNS);
   }
 
   async get(

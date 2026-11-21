@@ -1,4 +1,8 @@
-import { csvCell, escrowsToCsv } from '../../src/escrow/escrow-csv';
+import {
+  ADMIN_ESCROW_CSV_COLUMNS,
+  csvCell,
+  escrowsToCsv,
+} from '../../src/escrow/escrow-csv';
 import { EscrowService } from '../../src/escrow/escrow.service';
 import { EscrowRepository } from '../../src/escrow/escrow.repository';
 import { ESCROW_EXPORT_MAX_ROWS } from '../../src/escrow/escrow.constants';
@@ -40,6 +44,17 @@ describe('escrowsToCsv', () => {
     expect(csv.split('\r\n')).toEqual([
       'id,itemName,itemRef,amount,currency,state,buyerAddress,createdAt,shippedAt,deliveredAt',
       'e-1,Camera,SKU-1,2499.99,USDC,SHIPPED,GBUYER,2026-03-01T09:00:00.000Z,2026-03-02T10:00:00.000Z,',
+      '',
+    ]);
+    expect(csv).not.toContain('secret');
+  });
+
+  it('adds vendorAddress for the admin column list', () => {
+    const csv = escrowsToCsv([escrow()], ADMIN_ESCROW_CSV_COLUMNS);
+
+    expect(csv.split('\r\n')).toEqual([
+      'id,itemName,itemRef,amount,currency,state,buyerAddress,vendorAddress,createdAt,shippedAt,deliveredAt',
+      'e-1,Camera,SKU-1,2499.99,USDC,SHIPPED,GBUYER,GVENDOR,2026-03-01T09:00:00.000Z,2026-03-02T10:00:00.000Z,',
       '',
     ]);
     expect(csv).not.toContain('secret');
