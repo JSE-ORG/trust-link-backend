@@ -5,6 +5,7 @@ import { ConfigService } from '../config/config.service';
 import { GiglLogisticsService } from './gigl/gigl-logistics.service';
 import { GiglClient } from './gigl/gigl.client';
 import { LogisticsService } from './logistics.service';
+import { LogisticsProviderRegistry } from './logistics-provider.registry';
 import { ProviderCredentialRepository } from './provider-credential.repository';
 import { TerminalAfricaClient } from './terminal-africa/terminal-africa.client';
 import { TerminalAfricaLogisticsService } from './terminal-africa/terminal-africa-logistics.service';
@@ -15,6 +16,7 @@ import { TerminalAfricaLogisticsService } from './terminal-africa/terminal-afric
   providers: [
     ProviderCredentialRepository,
     GiglLogisticsService,
+    LogisticsProviderRegistry,
     {
       provide: LogisticsService,
       useExisting: GiglLogisticsService,

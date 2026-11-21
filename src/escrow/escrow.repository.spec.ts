@@ -620,6 +620,7 @@ describe('EscrowRepository', () => {
       expect(shipped).toMatchObject({
         state: 'SHIPPED',
         trackingId: 'TRACK-2',
+        carrier: null,
       });
       expect(shipped.shippedAt).toBeInstanceOf(Date);
 
@@ -695,6 +696,7 @@ describe('EscrowRepository', () => {
         data: {
           state: 'SHIPPED',
           trackingId: 'TRACK-3',
+          carrier: null,
           contractEscrowId: 99n,
         },
       });
@@ -1033,6 +1035,7 @@ describe('EscrowRepository', () => {
           buyerAddress: 'buyer-1',
           vendorAddress: 'vendor-1',
           trackingId: 'TRK-1-ported',
+          carrier: null,
         },
         new Date('2026-01-01T00:00:00.000Z'),
       );
@@ -1044,6 +1047,7 @@ describe('EscrowRepository', () => {
           buyerAddress: 'buyer-2',
           vendorAddress: 'vendor-2',
           trackingId: 'TRK-2-ported',
+          carrier: null,
         },
         new Date('2026-05-25T23:00:00.000Z'),
       );
@@ -1055,6 +1059,7 @@ describe('EscrowRepository', () => {
           buyerAddress: 'buyer-3',
           vendorAddress: 'vendor-1',
           trackingId: 'TRK-3-ported',
+          carrier: null,
         },
         new Date('2026-05-20T00:00:00.000Z'),
       );
@@ -1089,6 +1094,7 @@ describe('EscrowRepository', () => {
           buyerAddress: 'buyer-1',
           vendorAddress: 'vendor-1',
           trackingId: 'TRK-1-ported',
+          carrier: null,
         },
         new Date('2026-01-01T00:00:00.000Z'),
       );

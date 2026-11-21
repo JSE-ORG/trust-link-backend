@@ -58,6 +58,7 @@ describe('Logistics Webhook Delivery Update E2E (issue #61)', () => {
         state: 'SHIPPED',
         contractEscrowId: nextContractEscrowId++,
         trackingId: 'TRK-WEBHOOK-001',
+        carrier: null,
         shippedAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000),
       },
     });
@@ -95,6 +96,7 @@ describe('Logistics Webhook Delivery Update E2E (issue #61)', () => {
         state: 'SHIPPED',
         contractEscrowId: nextContractEscrowId++,
         trackingId: 'TRK-DELIVERED-001',
+        carrier: null,
         shippedAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000),
       },
     });
@@ -110,6 +112,7 @@ describe('Logistics Webhook Delivery Update E2E (issue #61)', () => {
         state: 'SHIPPED',
         contractEscrowId: nextContractEscrowId++,
         trackingId: 'TRK-IN-TRANSIT-001',
+        carrier: null,
         shippedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
       },
     });
@@ -150,6 +153,7 @@ describe('Logistics Webhook Delivery Update E2E (issue #61)', () => {
         state: 'SHIPPED',
         contractEscrowId: nextContractEscrowId++,
         trackingId: 'TRK-ERROR-001',
+        carrier: null,
         shippedAt: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000),
       },
     });
@@ -175,6 +179,7 @@ describe('Logistics Webhook Delivery Update E2E (issue #61)', () => {
         state: 'SHIPPED',
         contractEscrowId: nextContractEscrowId++,
         trackingId: null,
+        carrier: null,
         shippedAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000),
       },
     });
@@ -198,6 +203,7 @@ describe('Logistics Webhook Delivery Update E2E (issue #61)', () => {
         state: 'SHIPPED',
         contractEscrowId: nextContractEscrowId++,
         trackingId: 'TRK-INSTANT-001',
+        carrier: null,
         shippedAt: new Date(Date.now() - 6 * 24 * 60 * 60 * 1000),
       },
     });

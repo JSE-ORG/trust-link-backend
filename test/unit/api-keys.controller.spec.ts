@@ -2,7 +2,7 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { ApiKeysController } from '../../src/admin/api-keys/api-keys.controller';
-import { LogisticsService } from '../../src/logistics/logistics.service';
+import { LogisticsService, TrackingDetails } from '../../src/logistics/logistics.service';
 import { AuditLogService } from '../../src/audit-log/audit-log.service';
 import { JwtGuard } from '../../src/auth/guards/jwt.guard';
 import { AdminGuard } from '../../src/admin/guards/admin.guard';
@@ -14,6 +14,22 @@ const encryptionKeyConfig = {
   get: (key: string) =>
     key === 'CREDENTIAL_ENCRYPTION_KEY' ? 'a'.repeat(64) : undefined,
 } as ConfigService;
+
+/**
+ * Concrete subclass for unit-testing the shared API-key management logic.
+ * LogisticsService is abstract (issue #1143), so this minimal implementation
+ * is constructed in place of a real provider.
+ */
+class TestLogisticsService extends LogisticsService {
+  override getStatus(trackingId: string): Promise<TrackingDetails> {
+    return Promise.reject(
+      new Error(`Logistics service is not configured for ${trackingId}`),
+    );
+  }
+  override getTrackingDetails(trackingId: string): Promise<TrackingDetails> {
+    return this.getStatus(trackingId);
+  }
+}
 
 describe('ApiKeysController (issue #410)', () => {
   let app: INestApplication;
@@ -28,7 +44,7 @@ describe('ApiKeysController (issue #410)', () => {
     'GA7QYNF7SOWQ3GLR2BGMZEHXAVIRZA4KVWLTJJFC7MGXUA74P7UJVSGZ';
 
   beforeEach(async () => {
-    logisticsService = new LogisticsService(undefined, encryptionKeyConfig);
+    logisticsService = new TestLogisticsService(undefined, encryptionKeyConfig);
     auditLogService = { append: jest.fn().mockResolvedValue(undefined) };
 
     const moduleRef: TestingModule = await Test.createTestingModule({
@@ -134,7 +150,7 @@ describe('ApiKeysController (issue #498)', () => {
   }
 
   it('rotates to the submitted key on first set (no key previously configured)', async () => {
-    const logisticsService = new LogisticsService(
+    const logisticsService = new TestLogisticsService(
       undefined,
       encryptionKeyConfig,
     );
@@ -153,7 +169,7 @@ describe('ApiKeysController (issue #498)', () => {
   });
 
   it('rotates to the submitted key when a key already exists, instead of re-encrypting the old one', async () => {
-    const logisticsService = new LogisticsService(
+    const logisticsService = new TestLogisticsService(
       undefined,
       encryptionKeyConfig,
     );
@@ -172,7 +188,7 @@ describe('ApiKeysController (issue #498)', () => {
   });
 
   it('does not echo the submitted key (or any part of it) in the response', async () => {
-    const logisticsService = new LogisticsService(
+    const logisticsService = new TestLogisticsService(
       undefined,
       encryptionKeyConfig,
     );

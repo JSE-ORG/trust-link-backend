@@ -49,6 +49,7 @@ function makeEscrow(overrides: Partial<EscrowRecord> = {}): EscrowRecord {
     itemName: 'Widget',
     itemRef: 'REF-001',
     trackingId: null,
+    carrier: null,
     shippedAt: null,
     deliveredAt: null,
     deliveryRecordedAt: null,

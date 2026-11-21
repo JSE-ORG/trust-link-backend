@@ -17,7 +17,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { ConfigService } from '../config/config.service';
 import { EscrowRecord } from '../prisma/prisma.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { LogisticsService } from '../logistics/logistics.service';
+import { LogisticsProviderRegistry } from '../logistics/logistics-provider.registry';
 import { CacheService } from '../cache/cache.service';
 import { ContractService } from '../stellar/contract.service';
 import { EscrowResponseDto } from './dto/escrow-response.dto';
@@ -120,7 +120,7 @@ export class EscrowService {
     private readonly s3PresignService: S3PresignService,
     private readonly contractService: ContractService,
     @Optional()
-    private readonly logisticsService?: LogisticsService,
+    private readonly logisticsRegistry?: LogisticsProviderRegistry,
     @Optional()
     private readonly cacheService?: CacheService,
     @Optional()
@@ -197,7 +197,7 @@ export class EscrowService {
     }
 
     const key = `tracking:${escrow.trackingId}`;
-    if (!this.logisticsService) {
+    if (!this.logisticsRegistry) {
       throw new NotFoundException('Tracking service not available');
     }
 
@@ -217,7 +217,10 @@ export class EscrowService {
     }
 
     try {
-      const status = await this.logisticsService.getStatus(escrow.trackingId);
+      const status = await this.logisticsRegistry.getStatus(
+        escrow.carrier,
+        escrow.trackingId,
+      );
 
       const details = {
         status: status.status,
@@ -915,6 +918,7 @@ export class EscrowService {
     vendorAddress: string,
     trackingId: string,
     isAdmin = false,
+    carrier?: string,
   ): Promise<EscrowRecord> {
     return this.traced(
       'handle_shipment',
@@ -928,6 +932,7 @@ export class EscrowService {
           vendorAddress,
           trackingId,
           isAdmin,
+          carrier,
         ),
     );
   }
@@ -937,6 +942,7 @@ export class EscrowService {
     vendorAddress: string,
     trackingId: string,
     isAdmin = false,
+    carrier?: string,
   ): Promise<EscrowRecord> {
     try {
       if (!trackingId?.trim()) {
@@ -978,9 +984,19 @@ export class EscrowService {
         `Shipping escrow ${escrowId} with tracking ID: ${trackingId}`,
       );
 
+      // Auto-detect the carrier from the tracking ID when the caller does not
+      // supply one, falling back to the default carrier (GIGL). The resolved
+      // carrier is persisted on the escrow so subsequent tracking polls and
+      // lookups route to the correct provider (issue #1146).
+      const resolvedCarrier =
+        carrier?.trim() ||
+        this.logisticsRegistry?.detectCarrier(trackingId.trim()) ||
+        null;
+
       const shipped = await this.escrowRepository.markShipped(
         escrow.id,
         trackingId.trim(),
+        resolvedCarrier,
       );
 
       await this.cacheService?.del(`tracking:${trackingId.trim()}`);
