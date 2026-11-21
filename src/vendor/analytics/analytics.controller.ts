@@ -25,6 +25,7 @@ import { AnalyticsService } from './analytics.service';
 import { ChartDataResponse } from './analytics.dto';
 import { AnalyticsStatsResponse } from './analytics-stats.dto';
 import { ChartQueryDto } from './chart-query.dto';
+import { AnalyticsStatsQueryDto } from './analytics-stats-query.dto';
 import { VendorAccountDetailsRepository } from '../vendor-account-details.repository';
 
 @ApiTags('Vendor')
@@ -56,6 +57,9 @@ export class AnalyticsController {
     description: 'Vendor transaction statistics returned.',
     type: AnalyticsStatsResponse,
   })
+  @ApiQuery({ name: 'from', required: false, description: 'Inclusive createdAt lower bound (ISO 8601).' })
+  @ApiQuery({ name: 'to', required: false, description: 'Inclusive createdAt upper bound (ISO 8601).' })
+  @ApiResponse({ status: 400, description: 'Invalid date range.' })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   @ApiResponse({ status: 403, description: 'Forbidden.' })
   @ApiResponse({ status: 429, description: 'Too many requests.' })
@@ -65,6 +69,7 @@ export class AnalyticsController {
   @HttpCode(HttpStatus.OK)
   async getTransactionStats(
     @CurrentUser() user?: AuthUser,
+    @Query() query?: AnalyticsStatsQueryDto,
   ): Promise<AnalyticsStatsResponse> {
     // `CurrentUser` really can be undefined; assert-and-hope (`user!`) turned
     // a missing user into a 500 if `JwtGuard` were ever removed or reordered.
@@ -72,7 +77,14 @@ export class AnalyticsController {
     if (!user) {
       throw new UnauthorizedException();
     }
-    return this.analyticsService.getTransactionStats(user.address);
+    if (
+      query?.from &&
+      query?.to &&
+      new Date(query.from).getTime() > new Date(query.to).getTime()
+    ) {
+      throw new BadRequestException('from must not be after to');
+    }
+    return this.analyticsService.getTransactionStats(user.address, query);
   }
 
   /**
