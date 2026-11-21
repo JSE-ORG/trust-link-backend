@@ -14,6 +14,7 @@ export class AdminAuditLogQueryDto {
     minimum: 1,
     maximum: 1_000_000,
     default: 1,
+    description: 'Page number to return.',
     example: 1,
   })
   @Type(() => Number)
@@ -23,7 +24,13 @@ export class AdminAuditLogQueryDto {
   @Max(1_000_000)
   page?: number;
 
-  @ApiPropertyOptional({ minimum: 1, maximum: 100, default: 20, example: 20 })
+  @ApiPropertyOptional({
+    minimum: 1,
+    maximum: 100,
+    default: 20,
+    description: 'Number of audit log entries to return per page.',
+    example: 20,
+  })
   @Type(() => Number)
   @IsOptional()
   @IsInt()
