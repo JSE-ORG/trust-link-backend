@@ -455,6 +455,7 @@ export class EscrowService {
   }
 
   private async getEventsInternal(id: string): Promise<EventsResult> {
+    await this.findById(id);
     return this.escrowRepository.findEvents(id);
   }
 
