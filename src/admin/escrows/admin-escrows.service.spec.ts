@@ -2,6 +2,7 @@ import { NotFoundException } from '@nestjs/common';
 import { AdminEscrowsService } from './admin-escrows.service';
 import { EscrowRepository } from '../../escrow/escrow.repository';
 import { ESCROW_EXPORT_MAX_ROWS } from '../../escrow/escrow.constants';
+import { EscrowStateEnum } from '../../common/enums/escrow-state.enum';
 import type { DisputeRecord, EscrowRecord } from '../../prisma/prisma.service';
 
 function makeEscrow(overrides: Partial<EscrowRecord> = {}): EscrowRecord {
@@ -96,7 +97,7 @@ describe('AdminEscrowsService', () => {
         1,
         20,
       );
-      expect(result.meta).toMatchObject({
+      expect(result).toMatchObject({
         total: 0,
         page: 1,
         limit: 20,
@@ -104,12 +105,12 @@ describe('AdminEscrowsService', () => {
     });
 
     it('forwards explicit filters, sort, order, page, and limit', async () => {
-      const from = new Date('2026-01-01T00:00:00.000Z');
-      const to = new Date('2026-02-01T00:00:00.000Z');
+      const from = '2026-01-01T00:00:00.000Z';
+      const to = '2026-02-01T00:00:00.000Z';
       repo.findEscrows.mockResolvedValue({ data: [], total: 0 });
 
       await service.list({
-        state: 'FUNDED',
+        state: EscrowStateEnum.FUNDED,
         vendorAddress: 'GVENDOR',
         buyerAddress: 'GBUYER',
         from,
@@ -123,7 +124,7 @@ describe('AdminEscrowsService', () => {
 
       expect(repo.findEscrows).toHaveBeenCalledWith(
         {
-          state: 'FUNDED',
+          state: EscrowStateEnum.FUNDED,
           vendorAddress: 'GVENDOR',
           buyerAddress: 'GBUYER',
           from,

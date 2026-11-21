@@ -386,10 +386,7 @@ describe('GET /vendor/analytics/chart (issue #290)', () => {
       const todayKey = dateKeyInTimezone(new Date(), timezone);
       const todayDow = new Date(`${todayKey}T00:00:00Z`).getUTCDay();
       const daysSinceMonday = (todayDow + 6) % 7;
-      const prevWeekMondayKey = addCalendarDays(
-        todayKey,
-        -daysSinceMonday - 7,
-      );
+      const prevWeekMondayKey = addCalendarDays(todayKey, -daysSinceMonday - 7);
       const prevPrevWeekMondayKey = addCalendarDays(prevWeekMondayKey, -7);
       const mondayStart = localMidnight(prevWeekMondayKey, timezone);
 
@@ -440,16 +437,8 @@ describe('GET /vendor/analytics/chart (issue #290)', () => {
       // One hour before local 1st-of-month midnight (already the 1st in UTC
       // for America/New_York) and one hour after (still the previous month in
       // UTC for Asia/Tokyo).
-      await seedEscrow(
-        VENDOR,
-        130,
-        new Date(monthStart.getTime() - 3_600_000),
-      );
-      await seedEscrow(
-        VENDOR,
-        240,
-        new Date(monthStart.getTime() + 3_600_000),
-      );
+      await seedEscrow(VENDOR, 130, new Date(monthStart.getTime() - 3_600_000));
+      await seedEscrow(VENDOR, 240, new Date(monthStart.getTime() + 3_600_000));
 
       const res = await request(app.getHttpServer())
         .get('/vendor/analytics/chart')

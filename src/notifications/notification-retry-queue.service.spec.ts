@@ -4,9 +4,7 @@ import {
   NotificationDeadLetterSink,
   NotificationRetryQueueService,
 } from './notification-retry-queue.service';
-import type {
-  NotificationRetryJobData,
-} from './notification-retry-queue.types';
+import type { NotificationRetryJobData } from './notification-retry-queue.types';
 import { NotificationRepository } from './notification.repository';
 import { ConfigService } from '../config/config.service';
 
