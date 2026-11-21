@@ -1,4 +1,4 @@
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
@@ -7,6 +7,7 @@ import { ContractService } from '../src/stellar/contract.service';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { bearer } from './auth-helper';
 import { ensureVendors } from './prisma-helpers';
+import { createGlobalPipes } from '../src/common/pipes/global-pipes';
 
 const VENDOR_ADDRESS = 'GADMINVENDOR001';
 const BUYER_ADDRESS = 'GADMINBUYER001';
@@ -24,9 +25,7 @@ describe('Admin dashboard E2E', () => {
     }).compile();
 
     app = moduleFixture.createNestApplication();
-    app.useGlobalPipes(
-      new ValidationPipe({ whitelist: true, transform: true }),
-    );
+    app.useGlobalPipes(...createGlobalPipes());
     await app.init();
 
     prisma = app.get(PrismaService);
