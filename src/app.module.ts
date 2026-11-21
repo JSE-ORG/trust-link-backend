@@ -12,6 +12,7 @@ import { DisputeModule as AdminDisputeModule } from './admin/dispute/dispute.mod
 import { QueueDashboardModule } from './admin/queues/queue-dashboard.module';
 import { ApiKeysModule } from './admin/api-keys/api-keys.module';
 import { AdminEscrowsModule } from './admin/escrows/admin-escrows.module';
+import { AdminNotificationsModule } from './admin/notifications/admin-notifications.module';
 import { AdminVendorsModule } from './admin/vendors/admin-vendors.module';
 import { AuditLogModule } from './audit-log/audit-log.module';
 import { LogisticsModule } from './logistics/logistics.module';
@@ -93,6 +94,7 @@ export function buildThrottlerOptions(
     AdminDisputeModule,
     AdminEscrowsModule,
     AdminNotificationsModule,
+    AdminVendorsModule,
     QueueDashboardModule, // issue #75 – BullMQ dashboard at GET /admin/queues
     ApiKeysModule,
 
