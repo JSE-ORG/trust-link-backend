@@ -28,6 +28,7 @@ import { DlqService } from './dlq.service';
 import {
   FailedTransactionRecord,
   PaginatedFailedTransactions,
+  DlqSummary,
 } from './dlq.types';
 import { ContractService } from '../stellar/contract.service';
 import {
@@ -133,6 +134,14 @@ export class DlqController {
   @Get()
   list(@Query() query: ListFailedTransactionsQueryDto) {
     return this.dlq.list(query);
+  }
+
+  @ApiOperation({ summary: 'Get DLQ status summary counts (admin)' })
+  @ApiResponse({ status: 200, description: 'DLQ summary counts.', type: DlqSummary })
+  @Throttle({ default: { limit: 30, ttl: THROTTLE_WINDOW_MS } })
+  @Get('summary')
+  summary() {
+    return this.dlq.summary();
   }
 
   @ApiOperation({ summary: 'Get details for a failed transaction record' })

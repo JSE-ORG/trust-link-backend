@@ -73,6 +73,30 @@ export class FailedTransactionRepository {
     return this.prisma.failedTransaction.count({ where });
   }
 
+  async summary(): Promise<{
+    PENDING_REVIEW: number;
+    REPLAYING: number;
+    REPLAYED: number;
+    ABANDONED: number;
+  }> {
+    const counts = await this.prisma.failedTransaction.groupBy({
+      by: ['status'],
+      _count: { _all: true },
+    });
+    const result = {
+      PENDING_REVIEW: 0,
+      REPLAYING: 0,
+      REPLAYED: 0,
+      ABANDONED: 0,
+    };
+    for (const row of counts) {
+      if (row.status in result) {
+        result[row.status as keyof typeof result] = row._count._all;
+      }
+    }
+    return result;
+  }
+
   /** Returns one dead-letter row, or null when the id is unknown. */
   async findById(id: string): Promise<FailedTransactionRecord | null> {
     const row = await this.prisma.failedTransaction.findUnique({

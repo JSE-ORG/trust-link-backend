@@ -64,6 +64,9 @@ const TEMPLATE_ID_CONFIG_KEYS: Record<
   | 'SENDGRID_TEMPLATE_DISPUTED'
   | 'SENDGRID_TEMPLATE_COMPLETED'
   | 'SENDGRID_TEMPLATE_REFUNDED'
+  | 'SENDGRID_TEMPLATE_CANCELLED'
+  | 'SENDGRID_TEMPLATE_DELAYED'
+  | 'SENDGRID_TEMPLATE_EXCEPTION'
 > = {
   FUNDED: 'SENDGRID_TEMPLATE_FUNDED',
   SHIPPED: 'SENDGRID_TEMPLATE_SHIPPED',
@@ -71,6 +74,9 @@ const TEMPLATE_ID_CONFIG_KEYS: Record<
   DISPUTED: 'SENDGRID_TEMPLATE_DISPUTED',
   COMPLETED: 'SENDGRID_TEMPLATE_COMPLETED',
   REFUNDED: 'SENDGRID_TEMPLATE_REFUNDED',
+  CANCELLED: 'SENDGRID_TEMPLATE_CANCELLED',
+  DELAYED: 'SENDGRID_TEMPLATE_DELAYED',
+  EXCEPTION: 'SENDGRID_TEMPLATE_EXCEPTION',
 };
 
 @Injectable()
@@ -265,6 +271,22 @@ export class NotificationsService implements OnModuleInit {
     return this.dispatchToBuyer('REFUNDED', escrow);
   }
 
+  /** Notifies the buyer and vendor that the escrow was cancelled. */
+  async notifyCancelled(escrow: EscrowRecord): Promise<void> {
+    await this.dispatchToBuyer('CANCELLED', escrow);
+    await this.dispatchToVendor('CANCELLED', escrow);
+  }
+
+  /** Notifies the vendor about a shipment delay according to their preferences. */
+  notifyShipmentDelay(escrow: EscrowRecord): Promise<void> {
+    return this.dispatchToVendor('DELAYED', escrow);
+  }
+
+  /** Notifies the vendor about a shipment exception according to their preferences. */
+  notifyShipmentException(escrow: EscrowRecord): Promise<void> {
+    return this.dispatchToVendor('EXCEPTION', escrow);
+  }
+
   // ── Issue #28 ─────────────────────────────────────────────────────────────
 
   /**
@@ -383,6 +405,12 @@ export class NotificationsService implements OnModuleInit {
     ]);
 
     if (type === 'DELIVERED' && prefs?.notifyOnDelivery === false) {
+      return;
+    }
+    if (type === 'DELAYED' && prefs?.notifyOnDelay === false) {
+      return;
+    }
+    if (type === 'EXCEPTION' && prefs?.notifyOnException === false) {
       return;
     }
 
