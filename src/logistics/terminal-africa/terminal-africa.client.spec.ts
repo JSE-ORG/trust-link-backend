@@ -108,12 +108,34 @@ describe('TerminalAfricaClient', () => {
     },
   );
 
+  it('respects a custom timeoutMs option when provided', () => {
+    mockedAxios.create.mockClear();
+    new TerminalAfricaClient({
+      baseUrl: 'https://api.terminal.africa/v1',
+      apiKey: 'sk_test_123',
+      timeoutMs: 5_000,
+    });
+    expect(mockedAxios.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        baseURL: 'https://api.terminal.africa/v1',
+        timeout: 5_000,
+      }),
+    );
+  });
+
   it('maps other network failures to TerminalAfricaNetworkError', async () => {
     get.mockRejectedValue(
       axiosError({ code: 'ECONNREFUSED', message: 'connect ECONNREFUSED' }),
     );
     await expect(client.fetchTracking('SH1')).rejects.toThrow(
       'connect ECONNREFUSED',
+    );
+  });
+
+  it('falls back to "unknown network error" when an axios network error has no message', async () => {
+    get.mockRejectedValue(axiosError({ code: 'ENOTFOUND', message: '' }));
+    await expect(client.fetchTracking('SH1')).rejects.toThrow(
+      new TerminalAfricaNetworkError('SH1', 'unknown network error'),
     );
   });
 
@@ -129,6 +151,7 @@ describe('TerminalAfricaClient', () => {
       { ...validBody, status: false, message: 'Shipment not found' },
     ],
     ['missing events', { ...validBody, data: { status: 'delivered' } }],
+    ['null data', { ...validBody, message: '', data: null }],
     ['empty body', ''],
   ])('rejects a 2xx with %s', async (_name, body) => {
     get.mockResolvedValue({ data: body });

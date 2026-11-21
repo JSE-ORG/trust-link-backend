@@ -210,3 +210,90 @@ describe('StressTestController.getActiveTest', () => {
     expect(controller.getActiveTest('abc')).toBe(result);
   });
 });
+
+describe('StressTestController.runStressTest and getAllActiveTests (#1227)', () => {
+  let stressTestService: {
+    generateTestId: jest.Mock;
+    runStressTest: jest.Mock;
+    getAllActiveTests: jest.Mock;
+  };
+  let auditLog: { append: jest.Mock };
+
+  beforeEach(() => {
+    stressTestService = {
+      generateTestId: jest.fn().mockReturnValue('test-id-1'),
+      runStressTest: jest
+        .fn()
+        .mockResolvedValue({ testId: 'test-id-1', status: 'COMPLETED' }),
+      getAllActiveTests: jest.fn().mockReturnValue([]),
+    };
+    auditLog = { append: jest.fn().mockResolvedValue(undefined) };
+  });
+
+  it('audits with admin address and profile count when auditLog and admin are provided', async () => {
+    const controller = new StressTestController(
+      stressTestService as unknown as StressTestService,
+      auditLog as unknown as AuditLogService,
+    );
+    const config = makeConfig();
+    const result = await controller.runStressTest(config, {
+      address: 'GADMIN123',
+    });
+
+    expect(auditLog.append).toHaveBeenCalledWith({
+      action: 'STRESS_TEST_STARTED',
+      adminAddress: 'GADMIN123',
+      entityType: 'stress_test',
+      entityId: 'test-id-1',
+      details: {
+        testName: 'test-run',
+        profileCount: 1,
+      },
+    });
+    expect(result).toEqual({ testId: 'test-id-1', status: 'COMPLETED' });
+  });
+
+  it('falls back to "unknown" adminAddress and 0 profileCount when admin and profiles are omitted', async () => {
+    const controller = new StressTestController(
+      stressTestService as unknown as StressTestService,
+      auditLog as unknown as AuditLogService,
+    );
+    const config = { testName: 'no-profiles' } as StressTestConfigDto;
+    await controller.runStressTest(config, undefined);
+
+    expect(auditLog.append).toHaveBeenCalledWith({
+      action: 'STRESS_TEST_STARTED',
+      adminAddress: 'unknown',
+      entityType: 'stress_test',
+      entityId: 'test-id-1',
+      details: {
+        testName: 'no-profiles',
+        profileCount: 0,
+      },
+    });
+  });
+
+  it('skips audit logging when auditLog service is not provided', async () => {
+    const controller = new StressTestController(
+      stressTestService as unknown as StressTestService,
+      undefined,
+    );
+    const config = makeConfig();
+    const result = await controller.runStressTest(config);
+
+    expect(auditLog.append).not.toHaveBeenCalled();
+    expect(stressTestService.runStressTest).toHaveBeenCalledWith(
+      config,
+      'test-id-1',
+    );
+    expect(result).toEqual({ testId: 'test-id-1', status: 'COMPLETED' });
+  });
+
+  it('delegates getAllActiveTests to stressTestService', () => {
+    const controller = new StressTestController(
+      stressTestService as unknown as StressTestService,
+    );
+    expect(controller.getAllActiveTests()).toEqual([]);
+    expect(stressTestService.getAllActiveTests).toHaveBeenCalledTimes(1);
+  });
+});

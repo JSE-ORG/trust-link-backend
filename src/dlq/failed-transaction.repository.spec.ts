@@ -137,6 +137,20 @@ describe('FailedTransactionRepository', () => {
     });
   });
 
+  describe('releaseClaim() (#1229)', () => {
+    it('returns a claimed REPLAYING row back to PENDING_REVIEW against Postgres', async () => {
+      const record = await seed();
+      const claimed = await repo.claimForReplay(record.id);
+      expect(claimed?.status).toBe('REPLAYING');
+
+      const released = await repo.releaseClaim(record.id);
+
+      expect(released.status).toBe('PENDING_REVIEW');
+      const reloaded = await repo.findById(record.id);
+      expect(reloaded?.status).toBe('PENDING_REVIEW');
+    });
+  });
+
   describe('markReplayed()', () => {
     it('marks the row REPLAYED with the tx hash and a replayedAt stamp', async () => {
       const record = await seed();

@@ -141,4 +141,26 @@ describe('UpdateVendorAccountDetailsDto validation (#940)', () => {
       ).toBe(true);
     });
   });
+
+  describe('businessLicense and taxId @Transform (#1228)', () => {
+    it('trims surrounding whitespace from businessLicense and taxId', async () => {
+      const dto = toDto({
+        businessLicense: '  LIC-98765  ',
+        taxId: '  TAX-1234  ',
+      });
+      expect(dto.businessLicense).toBe('LIC-98765');
+      expect(dto.taxId).toBe('TAX-1234');
+      expect(await validate(dto)).toHaveLength(0);
+    });
+
+    it('validates max length after trimming whitespace', async () => {
+      const dto = toDto({
+        businessLicense: `  ${'L'.repeat(100)}  `,
+        taxId: `  ${'T'.repeat(50)}  `,
+      });
+      expect(dto.businessLicense).toHaveLength(100);
+      expect(dto.taxId).toHaveLength(50);
+      expect(await validate(dto)).toHaveLength(0);
+    });
+  });
 });

@@ -242,6 +242,14 @@ describe('StressTestService', () => {
   it('getAllActiveTests returns empty array when none running', () => {
     expect(service.getAllActiveTests()).toEqual([]);
   });
+
+  it('generateTestId returns a unique test_<timestamp>_<random> identifier (#1229)', () => {
+    const id1 = service.generateTestId();
+    const id2 = service.generateTestId();
+    expect(id1).toMatch(/^test_\d+_[a-z0-9]+$/);
+    expect(id2).toMatch(/^test_\d+_[a-z0-9]+$/);
+    expect(id1).not.toBe(id2);
+  });
 });
 
 describe('StressTestService (#729)', () => {

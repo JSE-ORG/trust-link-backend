@@ -1026,6 +1026,36 @@ describe('Sep10Service', () => {
     });
   });
 
+  describe('revokeTokenFamily (#1229)', () => {
+    it('directly revokes all refresh tokens belonging to the token owner', async () => {
+      (prisma.refreshToken.findUnique as jest.Mock).mockResolvedValueOnce({
+        id: 'rt-direct-1',
+        userId: TEST_ACCOUNT_ID,
+      });
+      (prisma.refreshToken.updateMany as jest.Mock).mockResolvedValueOnce({
+        count: 2,
+      });
+
+      await service.revokeTokenFamily('rt-direct-1');
+
+      expect(prisma.refreshToken.findUnique).toHaveBeenCalledWith({
+        where: { id: 'rt-direct-1' },
+      });
+      expect(prisma.refreshToken.updateMany).toHaveBeenCalledWith({
+        where: { userId: TEST_ACCOUNT_ID },
+        data: { revoked: true },
+      });
+    });
+
+    it('is a no-op when the token id does not exist', async () => {
+      (prisma.refreshToken.findUnique as jest.Mock).mockResolvedValueOnce(null);
+
+      await service.revokeTokenFamily('unknown-token-id');
+
+      expect(prisma.refreshToken.updateMany).not.toHaveBeenCalled();
+    });
+  });
+
   describe('jwtSecret guard and TTL default', () => {
     it('throws when SEP10_JWT_SECRET is not configured and produces no token', async () => {
       (configService.get as jest.Mock).mockImplementation((key: string) => {

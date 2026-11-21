@@ -426,6 +426,33 @@ describe('LogisticsService & LogisticsModule (issue #479)', () => {
       expect(logisticsService).toBeInstanceOf(GiglLogisticsService);
       expect(giglService).toBeInstanceOf(GiglLogisticsService);
       expect(giglClient).toBeInstanceOf(GiglClient);
+      expect(
+        (giglClient as unknown as { getApiToken: () => string | null }).getApiToken(),
+      ).toBe('test-token-123');
+    });
+
+    it('provides TerminalAfricaClient when TERMINAL_AFRICA_API_BASE_URL and TERMINAL_AFRICA_API_KEY are set (#1227)', async () => {
+      const { TerminalAfricaClient } = await import(
+        './terminal-africa/terminal-africa.client'
+      );
+      const mockConfigService = {
+        get: (key: string) => {
+          if (key === 'TERMINAL_AFRICA_API_BASE_URL')
+            return 'https://api.terminal.africa/v1';
+          if (key === 'TERMINAL_AFRICA_API_KEY') return 'sk_test_terminal';
+          return undefined;
+        },
+      };
+
+      const moduleRef = await Test.createTestingModule({
+        imports: [LogisticsModule],
+      })
+        .overrideProvider(ConfigService)
+        .useValue(mockConfigService)
+        .compile();
+
+      const terminalClient = moduleRef.get(TerminalAfricaClient);
+      expect(terminalClient).toBeInstanceOf(TerminalAfricaClient);
     });
 
     it('performs successful tracking lookup with complete details including events', async () => {

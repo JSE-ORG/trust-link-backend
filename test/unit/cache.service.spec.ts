@@ -149,6 +149,38 @@ describe('CacheService (issue #285) — Redis mode', () => {
     });
   });
 
+  describe('connection error handling (#1227)', () => {
+    it('logs Redis connection error and connect() rejection without throwing', async () => {
+      const onHandlers: Record<string, (err: Error) => void> = {};
+      const failingInstance = {
+        get: jest.fn(),
+        set: jest.fn(),
+        del: jest.fn(),
+        ping: jest.fn(),
+        quit: jest.fn(),
+        on: jest.fn((event: string, cb: (err: Error) => void) => {
+          onHandlers[event] = cb;
+        }),
+        connect: jest.fn().mockRejectedValue(new Error('initial connect failed')),
+      };
+      MockRedis.mockImplementationOnce(() => failingInstance as unknown as Redis);
+
+      const svc = new CacheService(
+        mockConfigService({ REDIS_URL: 'redis://localhost:6379' }),
+      );
+      await Promise.resolve();
+
+      expect(failingInstance.on).toHaveBeenCalledWith(
+        'error',
+        expect.any(Function),
+      );
+      expect(() =>
+        onHandlers['error'](new Error('socket hung up')),
+      ).not.toThrow();
+      expect(svc).toBeDefined();
+    });
+  });
+
   describe('onModuleDestroy()', () => {
     it('calls quit() on the Redis client', async () => {
       redisMock.quit.mockResolvedValue('OK');
@@ -224,9 +256,16 @@ describe('CacheService (issue #285) — in-memory fallback mode', () => {
   });
 
   describe('set()', () => {
+    it('defaults to in-memory fallback when constructed without a ConfigService (#1227)', async () => {
+      const standalone = new CacheService();
+      await standalone.set('k', 'v');
+      expect(await standalone.get('k')).toBe('v');
+      await standalone.onModuleDestroy();
+    });
+
     it('uses a default TTL of 60 seconds when none is supplied', async () => {
       jest.useFakeTimers();
-      await service.set('default-ttl', 'val', 60); // default TTL
+      await service.set('default-ttl', 'val'); // omit ttlSeconds to hit default argument
       jest.advanceTimersByTime(59_000);
       expect(await service.get('default-ttl')).toBe('val');
       jest.advanceTimersByTime(1001);

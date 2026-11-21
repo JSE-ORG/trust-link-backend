@@ -53,4 +53,40 @@ describe('StellarWebhookRepository', () => {
       databaseError,
     );
   });
+
+  describe('pruneOlderThan() against Postgres (#1229)', () => {
+    let realPrisma: PrismaService;
+    let realRepo: StellarWebhookRepository;
+
+    beforeEach(async () => {
+      realPrisma = new PrismaService();
+      await realPrisma.reset();
+      realRepo = new StellarWebhookRepository(realPrisma);
+    });
+
+    afterEach(async () => {
+      await realPrisma?.$disconnect();
+    });
+
+    it('deletes processed webhook events older than the cutoff and keeps newer ones', async () => {
+      const oldDate = new Date('2025-01-01T00:00:00.000Z');
+      const cutoff = new Date('2025-06-01T00:00:00.000Z');
+      const newDate = new Date('2025-12-01T00:00:00.000Z');
+
+      await realPrisma.processedWebhookEvent.createMany({
+        data: [
+          { operationId: 'op-old-1', processedAt: oldDate },
+          { operationId: 'op-old-2', processedAt: oldDate },
+          { operationId: 'op-new-1', processedAt: newDate },
+        ],
+      });
+
+      const deleted = await realRepo.pruneOlderThan(cutoff);
+
+      expect(deleted.count).toBe(2);
+      await expect(realRepo.isProcessed('op-old-1')).resolves.toBe(false);
+      await expect(realRepo.isProcessed('op-old-2')).resolves.toBe(false);
+      await expect(realRepo.isProcessed('op-new-1')).resolves.toBe(true);
+    });
+  });
 });

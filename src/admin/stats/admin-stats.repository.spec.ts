@@ -128,4 +128,51 @@ describe('AdminStatsRepository', () => {
       expect(open).toBe(2);
     });
   });
+
+  describe('collectTotals() fallback branches and aggregateDailyStats() (#1227)', () => {
+    it('handles null _sum, zero row._count, and empty count rows in collectTotals', async () => {
+      const mockPrisma = {
+        escrow: {
+          aggregate: jest.fn().mockResolvedValue({ _sum: { amount: null } }),
+          groupBy: jest
+            .fn()
+            .mockResolvedValueOnce([{ state: 'FUNDED', _count: 1 }])
+            .mockResolvedValueOnce([
+              { currency: 'USDC', _sum: { amount: null }, _count: 0 },
+              { currency: 'XLM', _sum: { amount: 200 }, _count: 2 },
+            ]),
+        },
+        $queryRaw: jest
+          .fn()
+          .mockResolvedValueOnce([])
+          .mockResolvedValueOnce([]),
+      } as unknown as PrismaService;
+
+      const mockedRepo = new AdminStatsRepository(mockPrisma);
+      const totals = await mockedRepo.collectTotals();
+
+      expect(totals.totalVolume).toBe(0);
+      expect(totals.uniqueVendors).toBe(0);
+      expect(totals.uniqueBuyers).toBe(0);
+      expect(totals.volumeByCurrency).toEqual([
+        { currency: 'USDC', total: 0, count: 0, average: 0 },
+        { currency: 'XLM', total: 200, count: 2, average: 100 },
+      ]);
+    });
+
+    it('aggregates daily platform stats across date range against Postgres', async () => {
+      await createEscrow({ itemRef: 'ref-d1', amount: 150, state: 'COMPLETED' });
+      await createEscrow({ itemRef: 'ref-d2', amount: 50, state: 'DISPUTED' });
+
+      const start = new Date(Date.now() - 86_400_000);
+      const end = new Date(Date.now() + 86_400_000);
+      const rows = await repo.aggregateDailyStats(start, end);
+
+      expect(rows.length).toBeGreaterThanOrEqual(1);
+      expect(Number(rows[0].escrowsCreated)).toBe(2);
+      expect(Number(rows[0].volume)).toBeCloseTo(200, 5);
+      expect(Number(rows[0].completed)).toBe(1);
+      expect(Number(rows[0].disputed)).toBe(1);
+    });
+  });
 });

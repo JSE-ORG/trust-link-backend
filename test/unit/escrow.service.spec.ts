@@ -438,6 +438,7 @@ describe('EscrowService: tracking, idempotency, evidence upload, and vendor list
       findByVendorAndItem: jest.fn(),
       create: jest.fn(),
       findVendorEscrows: jest.fn(),
+      findEscrows: jest.fn(),
     } as unknown as jest.Mocked<EscrowRepository>;
     s3Presign = {
       presign: jest.fn(),
@@ -798,6 +799,50 @@ describe('EscrowService: tracking, idempotency, evidence upload, and vendor list
           q: 'cam',
         },
       );
+    });
+  });
+
+  describe('findBuyerEscrows (#1229)', () => {
+    it('returns a paginated envelope of the buyer escrows scoped to buyerAddress', async () => {
+      repository.findEscrows.mockResolvedValue({
+        data: [shippedEscrow],
+        total: 1,
+      });
+
+      const result = await service.findBuyerEscrows('buyer-1', {
+        state: 'SHIPPED',
+        from: '2026-01-01',
+        to: '2026-01-31',
+        q: 'Camera',
+        vendorAddress: 'vendor-1',
+        sort: 'amount',
+        order: 'asc',
+        page: 2,
+        limit: 10,
+      });
+
+      expect(repository.findEscrows).toHaveBeenCalledWith(
+        {
+          state: 'SHIPPED',
+          from: '2026-01-01',
+          to: '2026-01-31',
+          q: 'Camera',
+          buyerAddress: 'buyer-1',
+          vendorAddress: 'vendor-1',
+        },
+        'amount',
+        'asc',
+        2,
+        10,
+      );
+      expect(result).toEqual({
+        data: [expect.objectContaining({ id: shippedEscrow.id, amount: 250 })],
+        total: 1,
+        page: 2,
+        limit: 10,
+        totalPages: 1,
+        hasNextPage: false,
+      });
     });
   });
 });
