@@ -172,6 +172,23 @@ export class PaginatedFailedTransactions {
   hasNextPage!: boolean;
 }
 
+export class DlqSummary {
+  @ApiProperty({ description: 'Transactions waiting for review.', example: 12 })
+  pendingReview!: number;
+
+  @ApiProperty({ description: 'Transactions currently being replayed.', example: 2 })
+  replaying!: number;
+
+  @ApiProperty({ description: 'Transactions successfully replayed.', example: 35 })
+  replayed!: number;
+
+  @ApiProperty({ description: 'Transactions abandoned by an operator.', example: 4 })
+  abandoned!: number;
+
+  @ApiProperty({ description: 'Total failed transaction records.', example: 53 })
+  total!: number;
+}
+
 /**
  * Callable that re-executes the original operation. Returns the new tx hash on
  * success; throwing surfaces as a replay failure that bumps `attempts` and

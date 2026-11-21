@@ -15,7 +15,12 @@ import { ConfigService } from '../config/config.service';
 /** Key used to identify the logistics provider's row in `ProviderCredential`. */
 export const LOGISTICS_CREDENTIAL_PROVIDER = 'logistics';
 
-export type LogisticsStatus = 'PENDING' | 'IN_TRANSIT' | 'DELIVERED';
+export type LogisticsStatus =
+  | 'PENDING'
+  | 'IN_TRANSIT'
+  | 'DELIVERED'
+  | 'DELAYED'
+  | 'EXCEPTION';
 
 export interface TrackingEvent {
   timestamp: Date;

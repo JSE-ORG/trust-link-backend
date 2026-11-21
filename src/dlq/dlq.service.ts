@@ -16,6 +16,7 @@ import {
   FailedTransactionRecord,
   ListFailedTransactionsQuery,
   PaginatedFailedTransactions,
+  DlqSummary,
   ReplayFn,
   REPLAYING_STALE_THRESHOLD_MS,
 } from './dlq.types';
@@ -90,6 +91,21 @@ export class DlqService {
     ]);
 
     return buildPaginatedEnvelope(records, total, page, limit);
+  }
+
+  async summary(): Promise<DlqSummary> {
+    const counts = await this.failedTransactions.summary();
+    return {
+      pendingReview: counts.PENDING_REVIEW,
+      replaying: counts.REPLAYING,
+      replayed: counts.REPLAYED,
+      abandoned: counts.ABANDONED,
+      total:
+        counts.PENDING_REVIEW +
+        counts.REPLAYING +
+        counts.REPLAYED +
+        counts.ABANDONED,
+    };
   }
 
   /**

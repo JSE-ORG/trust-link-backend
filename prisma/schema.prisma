@@ -298,6 +298,22 @@ model ProviderCredential {
   updatedAt    DateTime @updatedAt
 }
 
+// Persistent stress-test run history. Active runs remain in process memory,
+// while completed and failed runs are stored here for later retrieval.
+model StressTestRun {
+  testId       String   @id
+  testName     String
+  status       String
+  result       Json
+  startedAt    DateTime
+  completedAt  DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([createdAt])
+  @@index([status])
+}
+
 // Issue #816 - Persistent database-backed audit log for administrative actions
 model AuditLog {
   id           String   @id @default(cuid())

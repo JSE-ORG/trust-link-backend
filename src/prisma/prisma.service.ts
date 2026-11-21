@@ -22,7 +22,15 @@ export type EscrowState =
   | 'REFUNDED'
   | 'CANCELLED';
 export type NotificationType =
-  'FUNDED' | 'SHIPPED' | 'DELIVERED' | 'DISPUTED' | 'COMPLETED' | 'REFUNDED';
+  | 'FUNDED'
+  | 'SHIPPED'
+  | 'DELIVERED'
+  | 'DISPUTED'
+  | 'COMPLETED'
+  | 'REFUNDED'
+  | 'CANCELLED'
+  | 'DELAYED'
+  | 'EXCEPTION';
 export type DisputeState =
   'OPEN' | 'UNDER_REVIEW' | 'RESOLVED' | 'CANCELLED' | 'ABANDONED';
 
