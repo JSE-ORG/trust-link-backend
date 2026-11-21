@@ -14,11 +14,12 @@ import { PublicVendorController } from './public-vendor.controller';
 import { EscrowModule } from '../escrow/escrow.module';
 
 @Module({
-  imports: [PrismaModule, AnalyticsModule],
+  imports: [PrismaModule, AnalyticsModule, forwardRef(() => EscrowModule)],
   controllers: [
     VendorProfileController,
     VendorNotificationsController,
     VendorAccountDetailsController,
+    PublicVendorController,
   ],
   providers: [
     VendorProfileService,
