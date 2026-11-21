@@ -304,6 +304,18 @@ export const configValidationSchema = Joi.object({
     then: Joi.string().uri().required(),
     otherwise: Joi.string().uri().allow('').optional(),
   }),
+  // #1175 — Optional Sentry trace sample-rate override. The environment-specific
+  // defaults (0.2 in production, 1.0 elsewhere) are applied by the Sentry
+  // bootstrap, which runs before Nest config is available; this key only
+  // validates an operator-supplied override. Out-of-range values fail boot.
+  SENTRY_TRACES_SAMPLE_RATE: Joi.number().min(0).max(1).optional().messages({
+    'number.base':
+      'Config validation error: SENTRY_TRACES_SAMPLE_RATE must be a number between 0 and 1',
+    'number.min':
+      'Config validation error: SENTRY_TRACES_SAMPLE_RATE must be at least 0',
+    'number.max':
+      'Config validation error: SENTRY_TRACES_SAMPLE_RATE must not exceed 1',
+  }),
   GIT_SHA: Joi.string().optional(),
   // #971 — Behind a load balancer, req.ip is the balancer's address and every
   // client shares one throttle bucket. Off unless set; see trust-proxy.config.
