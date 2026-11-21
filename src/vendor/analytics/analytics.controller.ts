@@ -57,8 +57,16 @@ export class AnalyticsController {
     description: 'Vendor transaction statistics returned.',
     type: AnalyticsStatsResponse,
   })
-  @ApiQuery({ name: 'from', required: false, description: 'Inclusive createdAt lower bound (ISO 8601).' })
-  @ApiQuery({ name: 'to', required: false, description: 'Inclusive createdAt upper bound (ISO 8601).' })
+  @ApiQuery({
+    name: 'from',
+    required: false,
+    description: 'Inclusive createdAt lower bound (ISO 8601).',
+  })
+  @ApiQuery({
+    name: 'to',
+    required: false,
+    description: 'Inclusive createdAt upper bound (ISO 8601).',
+  })
   @ApiResponse({ status: 400, description: 'Invalid date range.' })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   @ApiResponse({ status: 403, description: 'Forbidden.' })

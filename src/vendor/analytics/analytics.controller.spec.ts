@@ -76,8 +76,19 @@ describe('AnalyticsController', () => {
 
       const result = await controller.getTransactionStats(mockUser);
 
-      expect(service.getTransactionStats).toHaveBeenCalledWith('GVENDOR123');
+      expect(service.getTransactionStats).toHaveBeenCalledWith(
+        'GVENDOR123',
+        undefined,
+      );
       expect(result).toBe(statsResponse);
+
+      const range = { from: '2026-10-01', to: '2026-10-31' };
+      await controller.getTransactionStats(mockUser, range);
+
+      expect(service.getTransactionStats).toHaveBeenLastCalledWith(
+        'GVENDOR123',
+        range,
+      );
     });
   });
 

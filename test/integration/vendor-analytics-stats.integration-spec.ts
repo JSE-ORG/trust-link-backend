@@ -101,7 +101,12 @@ describe('GET /vendor/analytics (issue #289)', () => {
   });
 
   it('filters all stats and speed metrics by the inclusive createdAt date range', async () => {
-    await seedEscrow(VENDOR_A, 100, 'COMPLETED', new Date('2026-10-10T10:00:00Z'));
+    await seedEscrow(
+      VENDOR_A,
+      100,
+      'COMPLETED',
+      new Date('2026-10-10T10:00:00Z'),
+    );
     await prisma.escrow.create({
       data: {
         vendorAddress: VENDOR_A,
