@@ -81,4 +81,16 @@ describe('GlobalExceptionFilter body parser errors (#1110)', () => {
       expect.objectContaining({ statusCode: 500 }),
     );
   });
+
+  it.each([
+    ['P2002', 409, 'ConflictError'],
+    ['P2025', 404, 'NotFoundError'],
+    ['P9999', 500, 'DatabaseError'],
+  ])('maps Prisma code %s to the expected response', (code, status, error) => {
+    const response = dispatch({ code, message: 'database failure' });
+    expect(response.status).toHaveBeenCalledWith(status);
+    expect(response.json).toHaveBeenCalledWith(
+      expect.objectContaining({ statusCode: status, error }),
+    );
+  });
 });
