@@ -1,6 +1,7 @@
 import { Injectable, NestMiddleware } from '@nestjs/common';
 import { Request, Response, NextFunction } from 'express';
 import { JsonLoggerService } from '../logger/json-logger.service';
+import type { AuthUser } from '../../auth/auth-user';
 
 const HEALTH_PROBE_PATH = /^\/health(?:\/live|\/ready)?\/?$/;
 
@@ -36,6 +37,9 @@ export class LoggerMiddleware implements NestMiddleware {
     const startTime = Date.now();
 
     res.on('finish', () => {
+      // JwtGuard executes after the middleware is registered. Read the user
+      // here, on finish, so the authenticated claim is present when available.
+      const user = (req as Request & { user?: AuthUser }).user;
       const { statusCode } = res;
       const contentLength = Number(res.get('Content-Length') ?? 0);
       const responseTime = Date.now() - startTime;
@@ -64,6 +68,12 @@ export class LoggerMiddleware implements NestMiddleware {
           contentLength,
           ip,
           userAgent,
+          ...(user
+            ? {
+                userAddress: user.address,
+                ...(user.role === 'admin' ? { role: 'admin' } : {}),
+              }
+            : {}),
         },
         'HTTP',
       );
