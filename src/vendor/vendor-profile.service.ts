@@ -3,6 +3,7 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import {
   VendorProfileRecord,
@@ -23,7 +24,8 @@ export class VendorProfileService {
   constructor(
     private readonly repository: VendorProfileRepository,
     private readonly tracing: TracingService,
-    private readonly notificationRepo: NotificationRepository,
+    @Optional()
+    private readonly notificationRepo?: NotificationRepository,
   ) {}
 
   /**
@@ -205,8 +207,11 @@ export class VendorProfileService {
     address: string,
     query?: VendorNotificationsQueryDto,
   ) {
+    if (!this.notificationRepo) {
+      throw new Error('NotificationRepository is not configured');
+    }
     return this.traced('notifications.history', address, () =>
-      this.notificationRepo.findVendorHistory(address, query),
+      this.notificationRepo!.findVendorHistory(address, query),
     );
   }
 }

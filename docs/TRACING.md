@@ -26,12 +26,12 @@ Client / Gateway
 
 ## Configuration
 
-| Variable                      | Default             | Description                                                                                                                      |
-| ----------------------------- | ------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `OTEL_ENABLED`                | `true`              | Set to `false` to disable tracing                                                                                                |
-| `OTEL_SERVICE_NAME`           | `trustlink-backend` | Service name in trace backend                                                                                                    |
-| `OTEL_SERVICE_VERSION`        | `1.0.0`             | Service version attribute                                                                                                        |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | _(none)_            | OTLP collector base URL (e.g. `http://jaeger:4318`), exports traces to `/v1/traces` and metrics to `/v1/metrics` when configured |
+| Variable                      | Default             | Description                                                                     |
+| ----------------------------- | ------------------- | ------------------------------------------------------------------------------- |
+| `OTEL_ENABLED`                | `true`              | Set to `false` to disable tracing                                               |
+| `OTEL_SERVICE_NAME`           | `trustlink-backend` | Service name in trace backend                                                   |
+| `OTEL_SERVICE_VERSION`        | `1.0.0`             | Service version attribute                                                       |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | _(none)_            | OTLP base URL (e.g. `http://jaeger:4318`), exports `/v1/traces` & `/v1/metrics` |
 
 Tracing and metrics export are automatically disabled when `NODE_ENV=test`.
 
