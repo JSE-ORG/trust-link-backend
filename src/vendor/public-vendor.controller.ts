@@ -1,7 +1,9 @@
 import {
   BadRequestException,
   Controller,
+  forwardRef,
   Get,
+  Inject,
   NotFoundException,
   Param,
 } from '@nestjs/common';
@@ -16,6 +18,7 @@ import { PublicVendorProfileDto } from './dto/public-vendor-profile.dto';
 export class PublicVendorController {
   constructor(
     private readonly vendorProfileRepository: VendorProfileRepository,
+    @Inject(forwardRef(() => EscrowRepository))
     private readonly escrowRepository: EscrowRepository,
   ) {}
 

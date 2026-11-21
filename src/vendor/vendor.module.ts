@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { JwtGuard } from '../auth/guards/jwt.guard';
 import { PrismaModule } from '../prisma/prisma.module';
 import { VendorProfileController } from './vendor-profile.controller';
@@ -12,7 +12,7 @@ import { PublicVendorController } from './public-vendor.controller';
 import { EscrowModule } from '../escrow/escrow.module';
 
 @Module({
-  imports: [PrismaModule, AnalyticsModule, EscrowModule],
+  imports: [PrismaModule, AnalyticsModule, forwardRef(() => EscrowModule)],
   controllers: [
     VendorProfileController,
     VendorAccountDetailsController,
