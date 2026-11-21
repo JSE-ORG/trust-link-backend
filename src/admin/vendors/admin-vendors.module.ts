@@ -9,11 +9,7 @@ import { AdminGuard } from '../guards/admin.guard';
 @Module({
   imports: [PrismaModule, AnalyticsModule],
   controllers: [AdminVendorsController],
-  providers: [
-    VendorProfileRepository,
-    JwtGuard,
-    AdminGuard,
-  ],
+  providers: [VendorProfileRepository, JwtGuard, AdminGuard],
   exports: [VendorProfileRepository],
 })
 export class AdminVendorsModule {}

@@ -55,7 +55,9 @@ export class AdminVendorsController {
     return this.vendorProfileRepository.listVendorsForAdmin(query);
   }
 
-  @ApiOperation({ summary: "Get a vendor's transaction analytics (admin only)" })
+  @ApiOperation({
+    summary: "Get a vendor's transaction analytics (admin only)",
+  })
   @ApiResponse({
     status: 200,
     description: 'Vendor analytics returned.',
@@ -134,7 +136,7 @@ export class AdminVendorsController {
       query?.days ?? 30,
       timezone,
       query?.interval ?? 'day',
-      hasRange ? { from: query!.from!, to: query!.to! } : undefined,
+      hasRange ? { from: query.from!, to: query.to! } : undefined,
     );
   }
 
