@@ -19,6 +19,12 @@ export class AdminStatsDto {
   totalVolume!: number;
 
   @ApiProperty({
+    description: 'Total, count and average volume per currency (additive; totalVolume/averageEscrowAmount sum across currencies as before).',
+    type: 'array',
+  })
+  volumeByCurrency!: { currency: string; total: number; count: number; average: number }[];
+
+  @ApiProperty({
     description: 'Count of escrows grouped by their current state.',
     type: 'object',
     additionalProperties: { type: 'number' },

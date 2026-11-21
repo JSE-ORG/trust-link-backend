@@ -8,6 +8,7 @@ export const ESCROW_CSV_COLUMNS = [
   'currency',
   'state',
   'buyerAddress',
+  'vendorAddress',
   'createdAt',
   'shippedAt',
   'deliveredAt',

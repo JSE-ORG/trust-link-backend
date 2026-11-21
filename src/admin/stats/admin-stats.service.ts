@@ -43,6 +43,7 @@ export class AdminStatsService {
     return {
       totalEscrows,
       totalVolume,
+      volumeByCurrency: totals.volumeByCurrency,
       escrowsByState,
       uniqueVendors: totals.uniqueVendors,
       uniqueBuyers: totals.uniqueBuyers,
