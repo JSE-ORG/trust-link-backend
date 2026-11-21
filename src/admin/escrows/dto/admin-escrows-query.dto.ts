@@ -1,4 +1,4 @@
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsDateString,
@@ -12,11 +12,28 @@ import {
 } from 'class-validator';
 import { EscrowStateEnum } from '../../../common/enums/escrow-state.enum';
 
+/** Splits a comma-separated query value into a trimmed, non-empty list; a single value behaves as before. */
+function splitCommaList({ value }: { value: unknown }): unknown {
+  if (typeof value !== 'string') return value;
+  return value
+    .split(',')
+    .map((v) => v.trim())
+    .filter(Boolean);
+}
+
 export class AdminEscrowsQueryDto {
-  @ApiPropertyOptional({ enum: EscrowStateEnum })
+  @ApiPropertyOptional({
+    enum: EscrowStateEnum,
+    description:
+      'One or more lifecycle states (comma-separated, e.g. "FUNDED,SHIPPED"). A single value behaves as before.',
+  })
   @IsOptional()
-  @IsEnum(EscrowStateEnum)
-  state?: EscrowStateEnum;
+  @Transform(splitCommaList)
+  @IsEnum(EscrowStateEnum, {
+    each: true,
+    message: `state must be one of: ${Object.values(EscrowStateEnum).join(', ')}`,
+  })
+  state?: EscrowStateEnum | EscrowStateEnum[];
 
   @ApiPropertyOptional({ maxLength: 64 })
   @IsOptional()

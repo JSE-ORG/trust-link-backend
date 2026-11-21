@@ -57,11 +57,29 @@ export class AnalyticsService {
     days: number = 30,
     timezone: string = 'UTC',
     interval: 'day' | 'week' | 'month' = 'day',
+    range?: { from: string; to: string },
   ): Promise<ChartDataResponse> {
-    const endDate = new Date();
-    const endDateKey = this.formatDateInTimezone(endDate, timezone);
-    const startDateKey = this.addCalendarDays(endDateKey, -(days - 1));
-    const startDate = this.localMidnightInTimezone(startDateKey, timezone);
+    let startDateKey: string;
+    let endDateKey: string;
+    let startDate: Date;
+    let endDate: Date;
+
+    if (range) {
+      startDateKey = range.from;
+      endDateKey = range.to;
+      startDate = this.localMidnightInTimezone(startDateKey, timezone);
+      // Exclusive upper bound: local midnight the day after `to`, so the
+      // whole of `to` itself is included.
+      endDate = this.localMidnightInTimezone(
+        this.addCalendarDays(endDateKey, 1),
+        timezone,
+      );
+    } else {
+      endDate = new Date();
+      endDateKey = this.formatDateInTimezone(endDate, timezone);
+      startDateKey = this.addCalendarDays(endDateKey, -(days - 1));
+      startDate = this.localMidnightInTimezone(startDateKey, timezone);
+    }
 
     // Use repository for database-level aggregation with proper timezone handling and interval.
     const aggregationResult = await this.repository.aggregateDailyVolume(

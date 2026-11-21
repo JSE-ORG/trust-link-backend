@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Controller,
   Get,
   Query,
@@ -128,6 +129,28 @@ export class AnalyticsController {
       throw new UnauthorizedException();
     }
 
+    const hasRange = Boolean(query?.from || query?.to);
+    if (hasRange) {
+      if (query?.days !== undefined) {
+        throw new BadRequestException(
+          'from/to cannot be combined with days',
+        );
+      }
+      if (!query?.from || !query?.to) {
+        throw new BadRequestException('from and to must both be provided');
+      }
+      if (query.from > query.to) {
+        throw new BadRequestException('from must not be after to');
+      }
+      const spanDays =
+        Math.round(
+          (Date.parse(query.to) - Date.parse(query.from)) / 86_400_000,
+        ) + 1;
+      if (spanDays > 366) {
+        throw new BadRequestException('from/to must span at most 366 days');
+      }
+    }
+
     const days = query?.days ?? 30;
     const interval = query?.interval ?? 'day';
 
@@ -149,6 +172,7 @@ export class AnalyticsController {
       days,
       timezone,
       interval,
+      hasRange ? { from: query!.from!, to: query!.to! } : undefined,
     );
   }
 }

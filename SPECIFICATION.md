@@ -231,6 +231,7 @@ Limits are the `@Throttle` values in `src/**/*.controller.ts`, counted per clien
 | GET | `/vendor/escrows` | JWT | 20/min |
 | GET | `/vendor/escrows/export` | JWT | 5/min |
 | GET | `/buyer/escrows` | JWT | 20/min |
+| GET | `/buyer/escrows/export` | JWT | 5/min |
 | POST | `/vendor/profile` | JWT | 10/min |
 | GET | `/vendor/profile` | JWT | 20/min |
 | PUT | `/vendor/profile` | JWT | 10/min |
