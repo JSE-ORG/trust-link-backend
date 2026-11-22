@@ -100,7 +100,6 @@ describe('Auto-Release Worker E2E (issue #59)', () => {
         buyerAddress: 'buyer-address',
         vendorAddress: 'vendor-address',
         trackingId: 'TRK-001',
-        carrier: null,
       },
       pastDelivery,
     );
@@ -113,7 +112,6 @@ describe('Auto-Release Worker E2E (issue #59)', () => {
         buyerAddress: 'buyer-address-2',
         vendorAddress: 'vendor-address-2',
         trackingId: 'TRK-002',
-        carrier: null,
       },
       pastDelivery,
     );
@@ -155,7 +153,6 @@ describe('Auto-Release Worker E2E (issue #59)', () => {
         buyerAddress: 'buyer-address',
         vendorAddress: 'vendor-address',
         trackingId: 'TRK-003',
-        carrier: null,
       },
       pastDelivery,
     );
@@ -201,7 +198,6 @@ describe('Auto-Release Worker E2E (issue #59)', () => {
         buyerAddress: 'buyer-address',
         vendorAddress: 'vendor-address',
         trackingId: 'TRK-004',
-        carrier: null,
       },
       recentDelivery,
     );
@@ -222,7 +218,6 @@ describe('Auto-Release Worker E2E (issue #59)', () => {
         buyerAddress: 'buyer-address',
         vendorAddress: 'vendor-address',
         trackingId: 'TRK-005',
-        carrier: null,
         autoReleaseTxHash: 'existing-tx-hash',
       },
       pastDelivery,

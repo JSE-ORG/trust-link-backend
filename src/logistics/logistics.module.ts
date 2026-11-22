@@ -58,6 +58,7 @@ import { TerminalAfricaLogisticsService } from './terminal-africa/terminal-afric
     GiglClient,
     GiglLogisticsService,
     LogisticsService,
+    LogisticsProviderRegistry,
     TerminalAfricaLogisticsService,
   ],
 })

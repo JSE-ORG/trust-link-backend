@@ -5,14 +5,24 @@
  * No real HTTP calls or database access.
  */
 
-import { LogisticsProviderRegistry, DEFAULT_CARRIER } from './logistics-provider.registry';
+import {
+  LogisticsProviderRegistry,
+  DEFAULT_CARRIER,
+} from './logistics-provider.registry';
 import { GiglLogisticsService } from './gigl/gigl-logistics.service';
-import { TrackingDetails } from './logistics.service';
 
-function makeGiglService(): jest.Mocked<Pick<GiglLogisticsService, 'getStatus' | 'getTrackingDetails'>> {
+function makeGiglService(): jest.Mocked<
+  Pick<GiglLogisticsService, 'getStatus' | 'getTrackingDetails'>
+> {
   return {
-    getStatus: jest.fn().mockResolvedValue({ status: 'IN_TRANSIT', events: [] } as TrackingDetails),
-    getTrackingDetails: jest.fn().mockResolvedValue({ status: 'IN_TRANSIT', events: [] } as TrackingDetails),
+    getStatus: jest.fn().mockResolvedValue({
+      status: 'IN_TRANSIT',
+      events: [],
+    }),
+    getTrackingDetails: jest.fn().mockResolvedValue({
+      status: 'IN_TRANSIT',
+      events: [],
+    }),
   };
 }
 
@@ -22,8 +32,10 @@ describe('LogisticsProviderRegistry', () => {
 
   beforeEach(async () => {
     gigl = makeGiglService();
-    registry = new LogisticsProviderRegistry(gigl as unknown as GiglLogisticsService);
-    await registry.onModuleInit();
+    registry = new LogisticsProviderRegistry(
+      gigl as unknown as GiglLogisticsService,
+    );
+    registry.onModuleInit();
   });
 
   // ── Detection rules ────────────────────────────────────────────────────────
@@ -31,8 +43,12 @@ describe('LogisticsProviderRegistry', () => {
   describe('detectCarrier()', () => {
     it('returns GIGL for any tracking ID today (only one provider registered)', () => {
       expect(registry.detectCarrier('TRK-001')).toBe(DEFAULT_CARRIER);
-      expect(registry.detectCarrier('1Z999AA10123456784')).toBe(DEFAULT_CARRIER);
-      expect(registry.detectCarrier('GIGL-EXPRESS-00001')).toBe(DEFAULT_CARRIER);
+      expect(registry.detectCarrier('1Z999AA10123456784')).toBe(
+        DEFAULT_CARRIER,
+      );
+      expect(registry.detectCarrier('GIGL-EXPRESS-00001')).toBe(
+        DEFAULT_CARRIER,
+      );
     });
   });
 

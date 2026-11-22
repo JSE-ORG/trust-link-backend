@@ -325,7 +325,6 @@ describe('EscrowController', () => {
     it('returns 200 and tracking details', async () => {
       const mockTracking = {
         trackingId: 'TRK-1Z999AA10123456784',
-        carrier: null,
         status: 'IN_TRANSIT',
         carrier: 'DHL',
       };
@@ -468,6 +467,7 @@ describe('EscrowController', () => {
         VENDOR_ADDRESS,
         validShipDto.trackingId,
         false,
+        undefined,
       );
       expect(res.body).toEqual(mockResult);
     });

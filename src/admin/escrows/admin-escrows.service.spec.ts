@@ -17,6 +17,7 @@ function makeEscrow(overrides: Partial<EscrowRecord> = {}): EscrowRecord {
     vendorAddress: 'GVENDOR001',
     state: 'FUNDED',
     trackingId: null,
+    carrier: null,
     shippedAt: null,
     deliveredAt: null,
     deliveryRecordedAt: null,

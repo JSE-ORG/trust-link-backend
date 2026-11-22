@@ -16,6 +16,7 @@ import { EscrowService } from '../../src/escrow/escrow.service';
 import { S3PresignService } from '../../src/common/services/s3-presign.service';
 import { ContractService } from '../../src/stellar/contract.service';
 import { LogisticsService } from '../../src/logistics/logistics.service';
+import { LogisticsProviderRegistry } from '../../src/logistics/logistics-provider.registry';
 import { CacheService } from '../../src/cache/cache.service';
 import { PrismaService } from '../../src/prisma/prisma.service';
 import { ConfigService } from '../../src/config/config.service';
@@ -95,7 +96,11 @@ describe('EscrowService.handleShipment (issue #16)', () => {
       service.handleShipment('escrow-1', 'vendor-address', 'TRK-123'),
     ).resolves.toEqual(shipped);
 
-    expect(repository.markShipped).toHaveBeenCalledWith('escrow-1', 'TRK-123');
+    expect(repository.markShipped).toHaveBeenCalledWith(
+      'escrow-1',
+      'TRK-123',
+      null,
+    );
     expect(notifications.notifyShipped).toHaveBeenCalledWith(shipped);
   });
 
@@ -463,6 +468,7 @@ describe('EscrowService: tracking, idempotency, evidence upload, and vendor list
         { provide: S3PresignService, useValue: s3Presign },
         { provide: ContractService, useValue: {} },
         { provide: LogisticsService, useValue: logistics },
+        LogisticsProviderRegistry,
         { provide: CacheService, useValue: cache },
         { provide: PrismaService, useValue: undefined },
         { provide: TracingService, useValue: createTracingMock().service },

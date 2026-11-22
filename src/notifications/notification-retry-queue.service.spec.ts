@@ -78,6 +78,7 @@ function makeJobData(
       vendorAddress: 'GVENDOR001',
       state: 'FUNDED',
       trackingId: null,
+      carrier: null,
       shippedAt: null,
       deliveredAt: null,
       deliveryRecordedAt: null,

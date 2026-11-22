@@ -1,6 +1,11 @@
-import { Inject, Injectable, Logger, Optional, OnModuleInit } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  Logger,
+  Optional,
+  OnModuleInit,
+} from '@nestjs/common';
 import { LogisticsService, TrackingDetails } from './logistics.service';
-import { GiglLogisticsService } from './gigl/gigl-logistics.service';
 
 /**
  * Default carrier used when an escrow has no `carrier` stored (pre-existing
@@ -26,11 +31,11 @@ export class LogisticsProviderRegistry implements OnModuleInit {
 
   constructor(
     @Optional()
-    @Inject(GiglLogisticsService)
-    private readonly giglService?: GiglLogisticsService,
+    @Inject(LogisticsService)
+    private readonly giglService?: LogisticsService,
   ) {}
 
-  async onModuleInit(): Promise<void> {
+  onModuleInit(): void {
     if (this.giglService) {
       this.register(DEFAULT_CARRIER, this.giglService);
     } else {
@@ -55,6 +60,7 @@ export class LogisticsProviderRegistry implements OnModuleInit {
    * for example a regex that matches that provider's tracking-number format.
    * The default fallback is always {@link DEFAULT_CARRIER}.
    */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   detectCarrier(trackingId: string): string {
     return DEFAULT_CARRIER;
   }

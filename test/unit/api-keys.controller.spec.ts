@@ -2,7 +2,10 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { ApiKeysController } from '../../src/admin/api-keys/api-keys.controller';
-import { LogisticsService, TrackingDetails } from '../../src/logistics/logistics.service';
+import {
+  LogisticsService,
+  TrackingDetails,
+} from '../../src/logistics/logistics.service';
 import { AuditLogService } from '../../src/audit-log/audit-log.service';
 import { JwtGuard } from '../../src/auth/guards/jwt.guard';
 import { AdminGuard } from '../../src/admin/guards/admin.guard';

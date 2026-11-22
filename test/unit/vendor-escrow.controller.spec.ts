@@ -37,7 +37,6 @@ describe('VendorEscrowController (issue #575)', () => {
       currency: 'USDC',
       state: 'SHIPPED',
       trackingId: null,
-      carrier: null,
     }) as EscrowSummaryDto;
 
   beforeEach(async () => {

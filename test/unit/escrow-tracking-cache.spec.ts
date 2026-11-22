@@ -13,6 +13,7 @@ import { Test } from '@nestjs/testing';
 import { EscrowService } from '../../src/escrow/escrow.service';
 import { EscrowRepository } from '../../src/escrow/escrow.repository';
 import { LogisticsService } from '../../src/logistics/logistics.service';
+import { LogisticsProviderRegistry } from '../../src/logistics/logistics-provider.registry';
 import { CacheService } from '../../src/cache/cache.service';
 import { NotificationsService } from '../../src/notifications/notifications.service';
 import { EscrowRecord } from '../../src/prisma/prisma.service';
@@ -37,6 +38,7 @@ const makeEscrow = (overrides: Partial<EscrowRecord> = {}): EscrowRecord => ({
   vendorAddress: VENDOR,
   state: 'SHIPPED',
   trackingId: TRACKING_ID,
+  carrier: null,
   shippedAt: new Date('2026-06-01T00:00:00.000Z'),
   deliveredAt: null,
   deliveryRecordedAt: null,
@@ -77,6 +79,7 @@ describe('EscrowService tracking cache (issue #308)', () => {
         EscrowService,
         { provide: EscrowRepository, useValue: repository },
         { provide: LogisticsService, useValue: logisticsService },
+        LogisticsProviderRegistry,
         { provide: CacheService, useValue: cacheService },
         {
           provide: NotificationsService,

@@ -89,7 +89,10 @@ function makeService(
   config: jest.Mocked<Pick<ConfigService, 'get'>>,
   repository?: ReturnType<typeof makeRepository>,
 ): LogisticsService {
-  return new TestLogisticsService(repository, config as unknown as ConfigService);
+  return new TestLogisticsService(
+    repository,
+    config as unknown as ConfigService,
+  );
 }
 
 /**

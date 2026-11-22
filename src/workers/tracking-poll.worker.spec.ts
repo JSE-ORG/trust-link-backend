@@ -505,8 +505,8 @@ describe('TrackingPollWorker', () => {
       await h.worker.run();
 
       expect(h.logisticsRegistry.getStatus).toHaveBeenCalledTimes(2);
-      expect(h.logisticsRegistry.getStatus).toHaveBeenCalledWith('TRK-1');
-      expect(h.logisticsRegistry.getStatus).toHaveBeenCalledWith('TRK-2');
+      expect(h.logisticsRegistry.getStatus).toHaveBeenCalledWith(null, 'TRK-1');
+      expect(h.logisticsRegistry.getStatus).toHaveBeenCalledWith(null, 'TRK-2');
     });
 
     it('does nothing when there are no shipments to poll', async () => {
@@ -532,7 +532,10 @@ describe('TrackingPollWorker', () => {
       await h.worker.run();
 
       expect(h.logisticsRegistry.getStatus).toHaveBeenCalledTimes(1);
-      expect(h.logisticsRegistry.getStatus).toHaveBeenCalledWith('TRK-ENABLED');
+      expect(h.logisticsRegistry.getStatus).toHaveBeenCalledWith(
+        null,
+        'TRK-ENABLED',
+      );
     });
 
     it('isolates a failed item so healthy shipments are still processed', async () => {
@@ -540,12 +543,14 @@ describe('TrackingPollWorker', () => {
         makeEscrow({ id: 'escrow-fail', trackingId: 'TRK-FAIL' }),
         makeEscrow({ id: 'escrow-ok', trackingId: 'TRK-OK' }),
       ]);
-      h.logisticsRegistry.getStatus.mockImplementation((trackingId: string) => {
-        if (trackingId === 'TRK-FAIL') {
-          return Promise.reject(new Error('carrier timeout'));
-        }
-        return Promise.resolve({ status: 'DELIVERED', events: [] });
-      });
+      h.logisticsRegistry.getStatus.mockImplementation(
+        (_carrier: string | null, trackingId: string) => {
+          if (trackingId === 'TRK-FAIL') {
+            return Promise.reject(new Error('carrier timeout'));
+          }
+          return Promise.resolve({ status: 'DELIVERED', events: [] });
+        },
+      );
 
       await expect(h.worker.run()).resolves.toBeUndefined();
 
@@ -570,7 +575,9 @@ describe('TrackingPollWorker', () => {
       h.escrowRepository.findShippedWithTracking.mockResolvedValue([
         makeEscrow(),
       ]);
-      h.logisticsRegistry.getStatus.mockRejectedValue(new Error('carrier down'));
+      h.logisticsRegistry.getStatus.mockRejectedValue(
+        new Error('carrier down'),
+      );
 
       await expect(h.worker.run()).resolves.toBeUndefined();
       expect(h.escrowRepository.claimDelivery).not.toHaveBeenCalled();
@@ -584,7 +591,9 @@ describe('TrackingPollWorker', () => {
       h.escrowRepository.findShippedWithTracking.mockResolvedValue([
         makeEscrow(),
       ]);
-      h.logisticsRegistry.getStatus.mockRejectedValue(new Error('carrier down'));
+      h.logisticsRegistry.getStatus.mockRejectedValue(
+        new Error('carrier down'),
+      );
       const loggerError = jest
         .spyOn(loggerOf(h.worker), 'error')
         .mockImplementation(() => undefined);
@@ -599,7 +608,9 @@ describe('TrackingPollWorker', () => {
       h.escrowRepository.findShippedWithTracking.mockResolvedValue([
         makeEscrow({ id: 'escrow-bad', trackingId: 'TRK-BAD' }),
       ]);
-      h.logisticsRegistry.getStatus.mockRejectedValue(new Error('carrier down'));
+      h.logisticsRegistry.getStatus.mockRejectedValue(
+        new Error('carrier down'),
+      );
       const loggerError = jest
         .spyOn(loggerOf(h.worker), 'error')
         .mockImplementation(() => undefined);
@@ -849,7 +860,9 @@ describe('TrackingPollWorker reentrancy guard (#840)', () => {
   it('clears the flag when a per-escrow failure throws out of the loop', async () => {
     // A throwing logistics call is caught per-escrow, so the cycle still
     // completes; the flag must be released.
-    h.logisticsRegistry.getStatus.mockRejectedValue(new Error('logistics down'));
+    h.logisticsRegistry.getStatus.mockRejectedValue(
+      new Error('logistics down'),
+    );
     h.escrowRepository.findShippedWithTracking.mockResolvedValue([
       makeEscrow(),
     ]);
