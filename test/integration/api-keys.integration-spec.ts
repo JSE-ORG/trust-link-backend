@@ -145,7 +145,8 @@ describe('PATCH /admin/credentials/logistics (issue #776)', () => {
   it.each([
     ['a missing key', {}],
     ['an empty key', { key: '' }],
-    ['a non-string key', { key: 12345 }],
+    // The production pipe converts scalars to strings, so use an array.
+    ['a non-string key', { key: ['abc'] }],
     ['an over long key', { key: 'k'.repeat(513) }],
   ])('rejects %s with 400 and stores nothing', async (_label, body) => {
     await request(app.getHttpServer())

@@ -77,9 +77,7 @@ describe('EscrowService.syncStateFromChain', () => {
     } as unknown as jest.Mocked<NotificationsService>;
 
     disputeRepository = {
-      create: jest
-        .fn()
-        .mockResolvedValue({ id: 'dispute-1', status: 'OPEN' }),
+      create: jest.fn().mockResolvedValue({ id: 'dispute-1', status: 'OPEN' }),
       findByEscrow: jest.fn().mockResolvedValue(null),
       update: jest
         .fn()

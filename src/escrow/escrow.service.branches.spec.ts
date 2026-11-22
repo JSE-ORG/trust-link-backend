@@ -521,10 +521,14 @@ describe('EscrowService remaining branches (issue #1223)', () => {
       findByVendorAndItem: jest.fn().mockResolvedValue(null),
       create: jest.fn().mockResolvedValue(makeEscrow()),
     } as unknown as jest.Mocked<EscrowRepository>;
-    const prisma = {
-      vendorProfile: { upsert: jest.fn().mockResolvedValue({}) },
+    const vendorProfileRepository = {
+      ensurePlaceholder: jest.fn().mockResolvedValue({}),
     };
-    const svc = makeService({ repo, cacheService: cache, prisma });
+    const svc = makeService({
+      repo,
+      cacheService: cache,
+      vendorProfileRepository,
+    });
 
     const dto = {
       itemName: 'x',
