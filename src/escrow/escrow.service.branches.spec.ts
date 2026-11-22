@@ -758,3 +758,81 @@ describe('EscrowService remaining branches (issue #1223)', () => {
     expect(page.limit).toBe(10);
   });
 });
+
+// ── findBuyerEscrows (issue #1229) ───────────────────────────────────────────
+
+describe('EscrowService.findBuyerEscrows', () => {
+  it('scopes the query to the buyer and applies the default sort and page', async () => {
+    const findEscrows = jest
+      .fn()
+      .mockResolvedValue({ data: [makeEscrow()], total: 1 });
+    const svc = makeService({ repo: { findEscrows } });
+
+    const page = await svc.findBuyerEscrows('GBUYER', {});
+
+    expect(findEscrows).toHaveBeenCalledWith(
+      {
+        state: undefined,
+        from: undefined,
+        to: undefined,
+        q: undefined,
+        buyerAddress: 'GBUYER',
+        vendorAddress: undefined,
+      },
+      'date',
+      'desc',
+      1,
+      20,
+    );
+    expect(page).toMatchObject({ total: 1, page: 1, limit: 20 });
+    expect(page.data).toEqual([
+      {
+        id: 'e-1',
+        itemName: 'Item',
+        itemRef: 'REF-1',
+        amount: 50,
+        currency: 'USDC',
+        state: 'FUNDED',
+        trackingId: null,
+        createdAt: new Date('2024-01-01'),
+        updatedAt: new Date('2024-01-01'),
+      },
+    ]);
+  });
+
+  it('passes filters, sort and paging through, and the path buyer wins', async () => {
+    const findEscrows = jest.fn().mockResolvedValue({ data: [], total: 0 });
+    const svc = makeService({ repo: { findEscrows } });
+    const from = new Date('2024-01-01');
+    const to = new Date('2024-02-01');
+
+    const page = await svc.findBuyerEscrows('GBUYER', {
+      state: 'SHIPPED',
+      from,
+      to,
+      q: 'lamp',
+      vendorAddress: 'GVENDOR',
+      sort: 'amount',
+      order: 'asc',
+      page: 3,
+      limit: 5,
+      buyerAddress: 'GSOMEONE_ELSE',
+    } as never);
+
+    expect(findEscrows).toHaveBeenCalledWith(
+      {
+        state: 'SHIPPED',
+        from,
+        to,
+        q: 'lamp',
+        buyerAddress: 'GBUYER',
+        vendorAddress: 'GVENDOR',
+      },
+      'amount',
+      'asc',
+      3,
+      5,
+    );
+    expect(page).toMatchObject({ data: [], total: 0, page: 3, limit: 5 });
+  });
+});
