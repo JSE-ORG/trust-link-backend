@@ -34,6 +34,7 @@ describe('Cross-Vendor Escrow Access (issue #272)', () => {
     vendorAddress: vendorAAddress,
     state: 'FUNDED' as const,
     trackingId: null,
+    carrier: null,
     shippedAt: null,
     deliveredAt: null,
     deliveryRecordedAt: null,

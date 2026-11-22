@@ -32,7 +32,7 @@ export interface TrackingDetails {
 }
 
 @Injectable()
-export class LogisticsService implements OnModuleInit {
+export abstract class LogisticsService implements OnModuleInit {
   protected readonly logger = new Logger(LogisticsService.name);
   private apiKey: string | null = null;
 
@@ -169,34 +169,24 @@ export class LogisticsService implements OnModuleInit {
   }
 
   /**
-   * Fetches normalized shipment status for `trackingId` from the configured
-   * logistics provider.
+   * Fetches normalised shipment status for `trackingId` from the logistics
+   * provider backing this service.
    *
-   * **Currently a stub**: the real provider call is not wired yet, so this
-   * always rejects with `Error("Logistics service is not configured ...")`
-   * regardless of `trackingId` or whether an API key is present. Callers
-   * must treat a rejection as "status unavailable", not "shipment not
-   * found". When the provider integration lands, the contract is a resolved
-   * {@link TrackingDetails} on success and a reject on a provider/transport
-   * error — retryable at the caller's discretion.
+   * Implementations resolve the raw provider response into a
+   * {@link TrackingDetails} on success and reject on a provider or transport
+   * error. Callers should treat a rejection as "status unavailable" (not
+   * "shipment not found") and may retry at their discretion.
    */
-  getStatus(trackingId: string): Promise<TrackingDetails> {
-    return Promise.reject(
-      new Error(`Logistics service is not configured for ${trackingId}`),
-    );
-  }
+  abstract getStatus(trackingId: string): Promise<TrackingDetails>;
 
   /**
-   * Fetches detailed tracking information (status + the `events` timeline)
-   * for `trackingId`.
+   * Fetches detailed tracking information — status plus the `events`
+   * timeline — for `trackingId`.
    *
-   * Today this is a thin delegate to {@link getStatus} — there is no
-   * separate "details" endpoint yet — so it shares that method's stub
-   * behaviour and **always rejects** on the current build. Kept as a
-   * distinct method so callers that want the event history bind to a stable
-   * name once the provider call is implemented.
+   * Implementations may delegate to {@link getStatus} when the provider does
+   * not expose a separate details endpoint. The method is kept distinct so
+   * callers that want the event history bind to a stable name regardless of
+   * the provider's API surface.
    */
-  getTrackingDetails(trackingId: string): Promise<TrackingDetails> {
-    return this.getStatus(trackingId);
-  }
+  abstract getTrackingDetails(trackingId: string): Promise<TrackingDetails>;
 }

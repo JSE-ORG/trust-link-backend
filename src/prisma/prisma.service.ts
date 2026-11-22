@@ -43,6 +43,8 @@ export interface EscrowRecord {
   vendorAddress: string;
   state: EscrowState;
   trackingId: string | null;
+  /// Logistics carrier (e.g. "GIGL"); null means the default carrier.
+  carrier: string | null;
   trackingCheckedAt?: Date | null;
   shippedAt?: Date | null;
   deliveredAt: Date | null;

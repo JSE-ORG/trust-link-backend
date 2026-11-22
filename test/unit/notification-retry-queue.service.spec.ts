@@ -52,6 +52,7 @@ const escrow: EscrowRecord = {
   vendorAddress: 'vendor-address',
   state: 'FUNDED',
   trackingId: null,
+  carrier: null,
   shippedAt: null,
   deliveredAt: null,
   deliveryRecordedAt: null,
