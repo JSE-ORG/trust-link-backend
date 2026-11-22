@@ -4,7 +4,7 @@
  * Covers: findById cache-hit/miss/null fallback paths.
  */
 
-import { EscrowRepository } from './escrow.repository';
+import { EscrowRepository, reviveCachedEscrow } from './escrow.repository';
 import { PrismaService, EscrowRecord } from '../prisma/prisma.service';
 import { CacheService } from '../cache/cache.service';
 
@@ -85,5 +85,158 @@ describe('EscrowRepository.findById', () => {
     const result = await repo.findById('missing');
     expect(result).toBeNull();
     expect(cache.set).not.toHaveBeenCalled();
+  });
+});
+
+describe('reviveCachedEscrow', () => {
+  it('revives string contractEscrowId to BigInt', () => {
+    const cached = {
+      ...makeRow(),
+      contractEscrowId: '42',
+    } as unknown as EscrowRecord;
+
+    const revived = reviveCachedEscrow(cached);
+
+    expect(revived.contractEscrowId).toBe(42n);
+  });
+});
+
+describe('EscrowRepository.findEscrows filter branches', () => {
+  function makeRepoWithMocks() {
+    const prisma = {
+      escrow: {
+        findMany: jest.fn().mockResolvedValue([]),
+        count: jest.fn().mockResolvedValue(0),
+      },
+    } as unknown as jest.Mocked<PrismaService>;
+    return { prisma, repo: new EscrowRepository(prisma) };
+  }
+
+  it('uses exclusive next-day lt bound when to is a date-only YYYY-MM-DD string', async () => {
+    const { prisma, repo } = makeRepoWithMocks();
+
+    await repo.findEscrows(
+      { from: '2024-03-01', to: '2024-03-15' },
+      'date',
+      'desc',
+      1,
+      20,
+    );
+
+    expect(prisma.escrow.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          createdAt: {
+            gte: new Date('2024-03-01'),
+            lt: new Date('2024-03-16T00:00:00.000Z'),
+          },
+        }),
+      }),
+    );
+  });
+
+  it('uses inclusive lte bound when to includes a timestamp', async () => {
+    const { prisma, repo } = makeRepoWithMocks();
+
+    await repo.findEscrows(
+      { to: '2024-03-15T12:30:00.000Z' },
+      'amount',
+      'asc',
+      1,
+      20,
+    );
+
+    expect(prisma.escrow.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          createdAt: {
+            lte: new Date('2024-03-15T12:30:00.000Z'),
+          },
+        }),
+      }),
+    );
+  });
+
+  it('builds scalar state filter when state is a single string', async () => {
+    const { prisma, repo } = makeRepoWithMocks();
+
+    await repo.findEscrows({ state: 'FUNDED' }, 'date', 'desc', 1, 20);
+
+    expect(prisma.escrow.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ state: 'FUNDED' }),
+      }),
+    );
+  });
+
+  it('builds { in } state filter when state is an array', async () => {
+    const { prisma, repo } = makeRepoWithMocks();
+
+    await repo.findEscrows(
+      { state: ['FUNDED', 'SHIPPED'] },
+      'date',
+      'desc',
+      1,
+      20,
+    );
+
+    expect(prisma.escrow.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          state: { in: ['FUNDED', 'SHIPPED'] },
+        }),
+      }),
+    );
+  });
+});
+
+describe('EscrowRepository.markTrackingChecked', () => {
+  it('defaults checkedAt to current Date when omitted', async () => {
+    const row = makeRow({ trackingCheckedAt: new Date() });
+    const prisma = {
+      escrow: { update: jest.fn().mockResolvedValue(row) },
+    } as unknown as jest.Mocked<PrismaService>;
+    const repo = new EscrowRepository(prisma);
+
+    await repo.markTrackingChecked('e-1');
+
+    expect(prisma.escrow.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'e-1' },
+        data: { trackingCheckedAt: expect.any(Date) },
+      }),
+    );
+  });
+});
+
+describe('EscrowRepository.findContractEscrowId', () => {
+  it('returns the bigint contractEscrowId when found', async () => {
+    const prisma = {
+      escrow: {
+        findUnique: jest.fn().mockResolvedValue({ contractEscrowId: 99n }),
+      },
+    } as unknown as jest.Mocked<PrismaService>;
+    const repo = new EscrowRepository(prisma);
+
+    await expect(repo.findContractEscrowId('e-1')).resolves.toBe(99n);
+    expect(prisma.escrow.findUnique).toHaveBeenCalledWith({
+      where: { id: 'e-1' },
+      select: { contractEscrowId: true },
+    });
+  });
+
+  it('returns null when row is missing or has null contractEscrowId', async () => {
+    const prisma = {
+      escrow: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValueOnce(null)
+          .mockResolvedValueOnce({ contractEscrowId: null }),
+      },
+    } as unknown as jest.Mocked<PrismaService>;
+    const repo = new EscrowRepository(prisma);
+
+    await expect(repo.findContractEscrowId('missing')).resolves.toBeNull();
+    await expect(repo.findContractEscrowId('unmapped')).resolves.toBeNull();
   });
 });
