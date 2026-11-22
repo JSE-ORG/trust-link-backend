@@ -29,10 +29,9 @@ import {
   OnModuleInit,
   Optional,
 } from '@nestjs/common';
-import { TracingService } from '../tracing/tracing.service';
 import * as crypto from 'crypto';
 import type { ConnectionOptions } from 'bullmq';
-
+import { TracingService } from '../tracing/tracing.service';
 import { NotificationRepository } from './notification.repository';
 import { ConfigService } from '../config/config.service';
 import {

@@ -1,5 +1,5 @@
-import { SecurityMiddleware } from '../../src/common/middleware/security.middleware';
 import { Request, Response, NextFunction } from 'express';
+import { SecurityMiddleware } from '../../src/common/middleware/security.middleware';
 
 describe('SecurityMiddleware', () => {
   let middleware: SecurityMiddleware;

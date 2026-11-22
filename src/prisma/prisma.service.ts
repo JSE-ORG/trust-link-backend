@@ -1,5 +1,4 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
-import { ConfigService } from '../config/config.service';
 import {
   Prisma,
   PrismaClient,
@@ -10,6 +9,7 @@ import {
   VendorTrackingSettings as PrismaVendorTrackingSettings,
 } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
+import { ConfigService } from '../config/config.service';
 
 export type EscrowState =
   | 'CREATED'

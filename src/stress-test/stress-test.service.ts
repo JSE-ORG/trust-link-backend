@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
+import { firstValueFrom } from 'rxjs';
 import {
   StressTestConfigDto,
   VirtualProfile,
@@ -11,7 +12,6 @@ import {
   PerformanceMetrics,
   Alert,
 } from './interfaces/stress-test-result.interface';
-import { firstValueFrom } from 'rxjs';
 import { ConfigService } from '../config/config.service';
 
 @Injectable()

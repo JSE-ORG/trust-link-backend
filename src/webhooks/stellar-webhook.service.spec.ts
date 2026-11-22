@@ -21,6 +21,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import * as crypto from 'crypto';
 import { ConfigService } from '../config/config.service';
 import { EscrowRepository } from '../escrow/escrow.repository';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -421,8 +422,6 @@ describe('StellarWebhookService – handlePayment (issue #396)', () => {
 // ---------------------------------------------------------------------------
 // Issues #734 / #922 — persisted duplicate-delivery (replay) guard
 // ---------------------------------------------------------------------------
-
-import * as crypto from 'crypto';
 
 const WEBHOOK_SECRET = 'test-webhook-secret';
 

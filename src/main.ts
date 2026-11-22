@@ -1,4 +1,5 @@
 import './sentry.instrument';
+import './tracing/tracing.bootstrap';
 import './common/bigint-json';
 import { INestApplication } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';

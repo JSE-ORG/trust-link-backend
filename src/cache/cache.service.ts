@@ -1,6 +1,6 @@
 import { Injectable, Logger, OnModuleDestroy, Optional } from '@nestjs/common';
-import { ConfigService } from '../config/config.service';
 import Redis from 'ioredis';
+import { ConfigService } from '../config/config.service';
 
 /** Maximum number of entries held by the in-memory fallback cache. */
 const MAX_MEMORY_ENTRIES = 1_000;

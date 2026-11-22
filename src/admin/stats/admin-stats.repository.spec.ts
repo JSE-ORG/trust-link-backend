@@ -1,8 +1,8 @@
+import { EscrowState } from '@prisma/client';
 import { AdminStatsRepository } from './admin-stats.repository';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ensureVendors } from '../../../test/prisma-helpers';
 import { DisputeStatusEnum } from '../../common/enums/escrow-state.enum';
-import { EscrowState } from '@prisma/client';
 
 const OPEN_DISPUTE_STATUSES: readonly string[] = [
   DisputeStatusEnum.OPEN,

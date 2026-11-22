@@ -14,7 +14,9 @@ describe('Stellar key validation helpers', () => {
   });
 
   it('decodes valid public and secret keys', () => {
-    expect(() => assertValidStellarPublicKey(keypair.publicKey())).not.toThrow();
+    expect(() =>
+      assertValidStellarPublicKey(keypair.publicKey()),
+    ).not.toThrow();
     expect(() => assertValidStellarSecretKey(keypair.secret())).not.toThrow();
   });
 
