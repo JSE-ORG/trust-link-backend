@@ -4,7 +4,7 @@ import {
   ValidatorConstraint,
   ValidatorConstraintInterface,
 } from 'class-validator';
-import { StrKey } from '@stellar/stellar-sdk';
+import { isValidStellarPublicKey } from '../../stellar/key-validation';
 
 @ValidatorConstraint({ name: 'isStellarAddress', async: false })
 export class IsStellarAddressConstraint implements ValidatorConstraintInterface {
@@ -13,11 +13,7 @@ export class IsStellarAddressConstraint implements ValidatorConstraintInterface 
       return false;
     }
 
-    try {
-      return StrKey.isValidEd25519PublicKey(address);
-    } catch {
-      return false;
-    }
+    return isValidStellarPublicKey(address);
   }
 
   defaultMessage(): string {

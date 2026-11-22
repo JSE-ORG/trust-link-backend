@@ -8,7 +8,7 @@ import {
   Param,
 } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { StrKey } from '@stellar/stellar-sdk';
+import { isValidStellarPublicKey } from '../stellar/key-validation';
 import { EscrowRepository } from '../escrow/escrow.repository';
 import { VendorProfileRepository } from './vendor-profile.repository';
 import { PublicVendorProfileDto } from './dto/public-vendor-profile.dto';
@@ -44,7 +44,7 @@ export class PublicVendorController {
   async getPublicProfile(
     @Param('address') address: string,
   ): Promise<PublicVendorProfileDto> {
-    if (!address || !StrKey.isValidEd25519PublicKey(address)) {
+    if (!address || !isValidStellarPublicKey(address)) {
       throw new BadRequestException('Invalid Stellar address');
     }
 

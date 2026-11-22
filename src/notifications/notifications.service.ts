@@ -6,7 +6,7 @@ import {
   OnModuleInit,
   Optional,
 } from '@nestjs/common';
-import { StrKey } from '@stellar/stellar-sdk';
+import { isValidStellarPublicKey } from '../stellar/key-validation';
 import * as crypto from 'crypto';
 import { EscrowRecord, NotificationType } from '../prisma/prisma.service';
 import { ConfigService } from '../config/config.service';
@@ -521,7 +521,7 @@ export class NotificationsService implements OnModuleInit {
     let attemptCount = 0;
     let lastResponseCode: number | null = null;
 
-    if (StrKey.isValidEd25519PublicKey(recipientAddress)) {
+    if (isValidStellarPublicKey(recipientAddress)) {
       await this.recordUndeliverable(
         type,
         escrow,
@@ -639,7 +639,7 @@ export class NotificationsService implements OnModuleInit {
     let attemptCount = 0;
     let lastResponseCode: number | null = null;
 
-    if (StrKey.isValidEd25519PublicKey(recipientAddress)) {
+    if (isValidStellarPublicKey(recipientAddress)) {
       await this.recordUndeliverable(
         type,
         escrow,

@@ -1,11 +1,11 @@
 import './sentry.instrument';
-import { shutdownTracing } from './tracing/tracing.bootstrap';
 import './common/bigint-json';
 import { INestApplication } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import compression from 'compression';
 import * as express from 'express';
 import helmet from 'helmet';
+import { shutdownTracing } from './tracing/tracing.bootstrap';
 import { AppModule } from './app.module';
 import { ConfigService } from './config/config.service';
 import { JsonLoggerService } from './common/logger/json-logger.service';
