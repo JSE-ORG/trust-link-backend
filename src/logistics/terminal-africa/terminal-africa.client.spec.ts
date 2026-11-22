@@ -136,4 +136,35 @@ describe('TerminalAfricaClient', () => {
       TerminalAfricaInvalidResponseError,
     );
   });
+
+  // ── Issue #1227 ────────────────────────────────────────────────────────────
+
+  it('maps a network error with no message and no code to "unknown network error"', async () => {
+    get.mockRejectedValue(axiosError({}));
+    await expect(client.fetchTracking('SH1')).rejects.toThrow(
+      new TerminalAfricaNetworkError('SH1', 'unknown network error'),
+    );
+  });
+
+  it.each([
+    ['a string', 'in-transit'],
+    ['a number', 42],
+    ['null', null],
+    ['missing', undefined],
+  ])(
+    'rejects a 2xx whose data is %s (isValidData non-object)',
+    async (_n, data) => {
+      get.mockResolvedValue({ data: { status: true, message: 'ok', data } });
+      await expect(client.fetchTracking('SH1')).rejects.toThrow(
+        new TerminalAfricaInvalidResponseError('SH1', 'ok'),
+      );
+    },
+  );
+
+  it('falls back to "missing status or events" when the body has no message', async () => {
+    get.mockResolvedValue({ data: { status: true, data: 'nope' } });
+    await expect(client.fetchTracking('SH1')).rejects.toThrow(
+      new TerminalAfricaInvalidResponseError('SH1', 'missing status or events'),
+    );
+  });
 });

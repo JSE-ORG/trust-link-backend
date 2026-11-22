@@ -345,3 +345,86 @@ describe('CacheService (issue #285) — in-memory fallback mode', () => {
     });
   });
 });
+
+describe('CacheService startSweeper / stopSweeper (issue #1227)', () => {
+  type Internals = {
+    sweepTimer: ReturnType<typeof setInterval> | null;
+    memory: Map<string, unknown>;
+    startSweeper(): void;
+    stopSweeper(): void;
+  };
+
+  afterEach(() => {
+    jest.useRealTimers();
+    jest.restoreAllMocks();
+  });
+
+  it("starts an unref'd sweep timer in fallback mode", () => {
+    MockRedis.mockImplementation(() => {
+      throw new Error('should not construct Redis in fallback mode');
+    });
+    const unref = jest.fn();
+    const setIntervalSpy = jest
+      .spyOn(global, 'setInterval')
+      .mockReturnValue({ unref } as unknown as ReturnType<typeof setInterval>);
+
+    const service = new CacheService(mockConfigService({}));
+    const internals = service as unknown as Internals;
+
+    expect(setIntervalSpy).toHaveBeenCalledWith(expect.any(Function), 60_000);
+    expect(unref).toHaveBeenCalledTimes(1);
+    expect(internals.sweepTimer).not.toBeNull();
+  });
+
+  it('runs the sweep every 60 s once started', () => {
+    jest.useFakeTimers();
+    MockRedis.mockImplementation(() => {
+      throw new Error('should not construct Redis in fallback mode');
+    });
+    const service = new CacheService(mockConfigService({}));
+    const internals = service as unknown as Internals;
+    internals.memory.set('expired', { value: 1, expiresAt: Date.now() - 1 });
+
+    jest.advanceTimersByTime(59_999);
+    expect(internals.memory.has('expired')).toBe(true);
+    jest.advanceTimersByTime(1);
+    expect(internals.memory.has('expired')).toBe(false);
+
+    internals.stopSweeper();
+  });
+
+  it('stopSweeper clears the timer, and a second call is a no-op', () => {
+    jest.useFakeTimers();
+    MockRedis.mockImplementation(() => {
+      throw new Error('should not construct Redis in fallback mode');
+    });
+    const service = new CacheService(mockConfigService({}));
+    const internals = service as unknown as Internals;
+    const clearSpy = jest.spyOn(global, 'clearInterval');
+
+    internals.stopSweeper();
+    expect(internals.sweepTimer).toBeNull();
+    expect(clearSpy).toHaveBeenCalledTimes(1);
+
+    internals.stopSweeper();
+    expect(clearSpy).toHaveBeenCalledTimes(1);
+
+    internals.memory.set('expired', { value: 1, expiresAt: Date.now() - 1 });
+    jest.advanceTimersByTime(120_000);
+    expect(internals.memory.has('expired')).toBe(true);
+  });
+
+  it('never starts a sweeper in Redis mode, so shutdown skips clearInterval', async () => {
+    const redis = buildRedisMock();
+    const clearSpy = jest.spyOn(global, 'clearInterval');
+    const service = new CacheService(
+      mockConfigService({ REDIS_URL: 'redis://localhost:6379' }),
+    );
+
+    expect((service as unknown as Internals).sweepTimer).toBeNull();
+    await service.onModuleDestroy();
+
+    expect(clearSpy).not.toHaveBeenCalled();
+    expect(redis.quit).toHaveBeenCalledTimes(1);
+  });
+});
