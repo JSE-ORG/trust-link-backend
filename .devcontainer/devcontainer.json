@@ -1,0 +1,28 @@
+{
+  "name": "TrustLink Backend Dev Container",
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "app",
+  "workspaceFolder": "/workspace",
+  "remoteUser": "node",
+  "containerEnv": {
+    "DATABASE_URL": "postgresql://trustlink:trustlink@db:5432/trustlink_test"
+  },
+  "remoteEnv": {
+    "DATABASE_URL": "postgresql://trustlink:trustlink@db:5432/trustlink_test"
+  },
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "esbenp.prettier-vscode"
+      },
+      "extensions": [
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "Prisma.prisma"
+      ]
+    }
+  },
+  "forwardPorts": [3000, 5432],
+  "postCreateCommand": "npm ci && npx prisma generate && npx prisma migrate deploy"
+}

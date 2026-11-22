@@ -14,7 +14,7 @@ const VALID_CONTRACT_ID =
 const VALID_ADDRESS =
   'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5';
 
-type Priv = Record<string, (...args: any[]) => any>;
+type Priv = Record<string, (...args: unknown[]) => unknown>;
 
 function makeService(server?: object, config?: object): ContractService {
   return new ContractService(server, config as never, undefined);

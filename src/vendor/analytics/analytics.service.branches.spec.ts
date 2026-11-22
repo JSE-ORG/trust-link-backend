@@ -11,7 +11,7 @@ import { AnalyticsService } from './analytics.service';
 import { AnalyticsRepository } from './analytics.repository';
 import { DEFAULT_NOTIFICATION_CHANNELS } from '../vendor.constants';
 
-type Priv = Record<string, (...args: any[]) => any>;
+type Priv = Record<string, (...args: unknown[]) => unknown>;
 
 function makeService(
   repo: Partial<jest.Mocked<AnalyticsRepository>>,

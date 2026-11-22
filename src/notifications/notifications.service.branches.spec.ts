@@ -15,7 +15,7 @@ import { NotificationsService } from './notifications.service';
 import { EscrowRecord } from '../prisma/prisma.service';
 import { NotificationRepository } from './notification.repository';
 
-type Priv = Record<string, (...args: any[]) => any>;
+type Priv = Record<string, (...args: unknown[]) => unknown>;
 
 function makeEscrow(overrides: Partial<EscrowRecord> = {}): EscrowRecord {
   return {

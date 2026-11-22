@@ -802,7 +802,12 @@ describe('ContractService', () => {
       const server = makeServerNoPrepare();
       const assembleSpy = jest
         .spyOn(rpc, 'assembleTransaction')
-        .mockImplementation((tx: any) => ({ build: () => tx }) as any);
+        .mockImplementation(
+          (tx: unknown) =>
+            ({ build: () => tx }) as unknown as ReturnType<
+              typeof rpc.assembleTransaction
+            >,
+        );
 
       const svc = new ContractService(server, makeConfig());
       const hash = await svc.resolveDispute(ESCROW, 'RELEASE', ADMIN);

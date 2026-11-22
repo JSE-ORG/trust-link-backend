@@ -10,7 +10,7 @@ import { of, throwError } from 'rxjs';
 import { StressTestService } from './stress-test.service';
 import { ConfigService } from '../config/config.service';
 
-type Priv = Record<string, (...args: any[]) => any>;
+type Priv = Record<string, (...args: unknown[]) => unknown>;
 
 function makeConfig(url = 'http://localhost:3000'): ConfigService {
   return { get: jest.fn().mockReturnValue(url) } as unknown as ConfigService;
