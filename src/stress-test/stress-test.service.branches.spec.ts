@@ -105,3 +105,26 @@ describe('StressTestService.executeProfile', () => {
     expect(Array.isArray(result.alerts)).toBe(true);
   });
 });
+
+describe('StressTestService.generateTestId (issue #1229)', () => {
+  it('returns test_<timestamp>_<9 base-36 chars>', () => {
+    const svc = new StressTestService(makeHttp(), makeConfig());
+    const before = Date.now();
+
+    const id = svc.generateTestId();
+
+    const match = /^test_(\d+)_([0-9a-z]{1,9})$/.exec(id);
+    expect(match).not.toBeNull();
+    const timestamp = Number(match![1]);
+    expect(timestamp).toBeGreaterThanOrEqual(before);
+    expect(timestamp).toBeLessThanOrEqual(Date.now());
+  });
+
+  it('returns a different id on each call', () => {
+    const svc = new StressTestService(makeHttp(), makeConfig());
+
+    const ids = new Set(Array.from({ length: 50 }, () => svc.generateTestId()));
+
+    expect(ids.size).toBe(50);
+  });
+});
