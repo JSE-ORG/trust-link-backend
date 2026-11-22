@@ -2,6 +2,9 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '../../config/config.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { VendorProfileRepository } from '../../vendor/vendor-profile.repository';
+import { AnalyticsService } from '../../vendor/analytics/analytics.service';
+import { AnalyticsRepository } from '../../vendor/analytics/analytics.repository';
+import { VendorAccountDetailsRepository } from '../../vendor/vendor-account-details.repository';
 import { AdminVendorsController } from './admin-vendors.controller';
 
 describe('AdminVendors Integration Test (#1152)', () => {
@@ -18,6 +21,9 @@ describe('AdminVendors Integration Test (#1152)', () => {
       providers: [
         PrismaService,
         VendorProfileRepository,
+        AnalyticsService,
+        AnalyticsRepository,
+        VendorAccountDetailsRepository,
         AdminVendorsController,
         {
           provide: ConfigService,

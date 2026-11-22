@@ -40,7 +40,7 @@ import {
   VendorEscrowsResult,
 } from './escrow.types';
 import { ESCROW_EXPORT_MAX_ROWS } from './escrow.constants';
-import { escrowsToCsv } from './escrow-csv';
+import { BUYER_ESCROW_CSV_COLUMNS, escrowsToCsv } from './escrow-csv';
 import {
   ONE_HOUR_SECONDS,
   SECONDS_PER_DAY,
@@ -588,6 +588,7 @@ export class EscrowService {
               to: query.to,
               q: query.q,
               buyerAddress,
+              vendorAddress: query.vendorAddress,
             },
             sort,
             order,
@@ -621,6 +622,33 @@ export class EscrowService {
       ESCROW_EXPORT_MAX_ROWS,
     );
     return escrowsToCsv(data);
+  }
+
+  /**
+   * Returns the buyer's escrows matching `query` as CSV, newest first,
+   * capped at {@link ESCROW_EXPORT_MAX_ROWS} rows. Paging fields are ignored.
+   * Carries `vendorAddress` in place of `buyerAddress`, which the buyer
+   * already knows (it is every row's caller).
+   */
+  async exportBuyerEscrowsCsv(
+    buyerAddress: string,
+    query: EscrowListQuery,
+  ): Promise<string> {
+    const { data } = await this.escrowRepository.findEscrows(
+      {
+        state: query.state,
+        from: query.from,
+        to: query.to,
+        q: query.q,
+        vendorAddress: query.vendorAddress,
+        buyerAddress,
+      },
+      query.sort ?? 'date',
+      query.order ?? 'desc',
+      1,
+      ESCROW_EXPORT_MAX_ROWS,
+    );
+    return escrowsToCsv(data, BUYER_ESCROW_CSV_COLUMNS);
   }
 
   private async findEscrowPage(

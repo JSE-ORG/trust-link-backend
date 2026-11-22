@@ -30,7 +30,18 @@ export class VendorNotificationHistoryItemDto {
 }
 
 export class VendorNotificationHistoryPaginatedResponseDto {
-  @ApiProperty({ type: [VendorNotificationHistoryItemDto] })
+  @ApiProperty({
+    type: [VendorNotificationHistoryItemDto],
+    example: [
+      {
+        id: '123e4567-e89b-12d3-a456-426614174000',
+        escrowId: '123e4567-e89b-12d3-a456-426614174001',
+        type: 'DELIVERY_CONFIRMATION',
+        channel: 'EMAIL',
+        status: 'SENT',
+      },
+    ],
+  })
   data!: VendorNotificationHistoryItemDto[];
 
   @ApiProperty({ example: 42 })

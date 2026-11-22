@@ -2,6 +2,7 @@
 
 import { Request, Response, NextFunction } from 'express';
 import { LoggerMiddleware } from './logger.middleware';
+import type { AuthUser } from '../../auth/auth-user';
 
 interface MockRequestOptions {
   method?: string;
@@ -48,7 +49,7 @@ describe('LoggerMiddleware', () => {
         }
         return undefined;
       }),
-    } as unknown as Request & { requestId?: string };
+    } as unknown as Request & { requestId?: string; user?: AuthUser };
 
     const res = {
       statusCode: resOptions.statusCode ?? 200,
@@ -136,6 +137,30 @@ describe('LoggerMiddleware', () => {
     expect(parsed.requestId).toBe('req-abc-123');
     expect(typeof parsed.responseTime).toBe('number');
     expect(parsed.responseTime).toBeGreaterThanOrEqual(0);
+  });
+
+  it('includes the authenticated address and admin role on the finished line', () => {
+    const { req, res, next, triggerFinish } = createMockReqRes();
+
+    middleware.use(req, res, next);
+    // Simulate JwtGuard setting the claim after middleware registration.
+    req.user = { address: 'GADMIN123', role: 'admin' };
+    triggerFinish();
+
+    const parsed = JSON.parse((stdoutSpy.mock.calls[0][0] as string).trim());
+    expect(parsed.userAddress).toBe('GADMIN123');
+    expect(parsed.role).toBe('admin');
+  });
+
+  it('omits caller fields for an anonymous request', () => {
+    const { req, res, next, triggerFinish } = createMockReqRes();
+
+    middleware.use(req, res, next);
+    triggerFinish();
+
+    const parsed = JSON.parse((stdoutSpy.mock.calls[0][0] as string).trim());
+    expect(parsed).not.toHaveProperty('userAddress');
+    expect(parsed).not.toHaveProperty('role');
   });
 
   it('should log warn level for 4xx status codes', () => {

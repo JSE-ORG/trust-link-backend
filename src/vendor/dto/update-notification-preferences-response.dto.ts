@@ -156,6 +156,14 @@ export class UpdateNotificationPreferencesResponseDto {
   @ApiProperty({
     description: 'The updated vendor tracking settings.',
     type: VendorTrackingSettingsResponseDto,
+    example: {
+      id: '6f9619ff-8b86-d011-b42d-00cf4fc964ff',
+      vendorAddress: 'GAIGZHHWK3REZQPLQX5DNFRYDUPFGG6VY4PSWSL53N2OY3Z3H3CE5TMK',
+      enableTracking: true,
+      trackingProvider: 'fedex',
+      autoUpdateTracking: true,
+      trackingUpdateInterval: 60,
+    },
   })
   trackingSettings!: VendorTrackingSettingsResponseDto;
 }

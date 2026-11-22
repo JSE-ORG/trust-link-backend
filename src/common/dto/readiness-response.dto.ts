@@ -30,13 +30,22 @@ export class ReadinessComponentHealthDto {
  * `as any` casts because `properties` does not accept a raw $ref.
  */
 export class ReadinessDetailsDto {
-  @ApiPropertyOptional({ type: () => ReadinessComponentHealthDto })
+  @ApiPropertyOptional({
+    type: () => ReadinessComponentHealthDto,
+    example: { status: 'down', error: 'connection refused' },
+  })
   db?: ReadinessComponentHealthDto;
 
-  @ApiPropertyOptional({ type: () => ReadinessComponentHealthDto })
+  @ApiPropertyOptional({
+    type: () => ReadinessComponentHealthDto,
+    example: { status: 'down', error: 'connection refused' },
+  })
   horizon?: ReadinessComponentHealthDto;
 
-  @ApiPropertyOptional({ type: () => ReadinessComponentHealthDto })
+  @ApiPropertyOptional({
+    type: () => ReadinessComponentHealthDto,
+    example: { status: 'down', error: 'connection refused' },
+  })
   soroban?: ReadinessComponentHealthDto;
 }
 
@@ -126,6 +135,7 @@ export class ReadinessResponseDto {
     description:
       'Per-component error details. Only populated when at least one required component is down.',
     type: () => ReadinessDetailsDto,
+    example: { db: { status: 'ok' }, horizon: { status: 'ok' } },
   })
   details?: ReadinessDetailsDto;
 }

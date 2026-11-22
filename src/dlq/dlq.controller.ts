@@ -116,15 +116,22 @@ export class DlqController {
   })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   @ApiResponse({ status: 403, description: 'Admin access required.' })
-  @ApiQuery({ name: 'status', required: false, example: 'failed' })
+  @ApiQuery({
+    name: 'status',
+    required: false,
+    description: 'Filter failed transactions by replay lifecycle status.',
+    example: 'PENDING_REVIEW',
+  })
   @ApiQuery({
     name: 'operation',
     required: false,
+    description: 'Filter failed transactions by operation name.',
     example: 'submitAutoRelease',
   })
   @ApiQuery({
     name: 'escrowId',
     required: false,
+    description: 'Filter failed transactions by escrow ID.',
     example: '9d9e2e16-0c78-4a84-9c8c-0f3a5eb2d4e3',
   })
   @ApiResponse({ status: 429, description: 'Too many requests.' })

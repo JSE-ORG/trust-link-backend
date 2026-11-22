@@ -1,4 +1,4 @@
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   IsDateString,
   IsEnum,
@@ -13,6 +13,15 @@ import {
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { EscrowStateEnum } from '../../common/enums/escrow-state.enum';
 
+/** Splits a comma-separated query value into a trimmed, non-empty list; a single value behaves as before. */
+function splitCommaList({ value }: { value: unknown }): unknown {
+  if (typeof value !== 'string') return value;
+  return value
+    .split(',')
+    .map((v) => v.trim())
+    .filter(Boolean);
+}
+
 /**
  * Query parameters for GET /vendor/escrows, GET /vendor/escrows/export and
  * GET /buyer/escrows. Supports filtering by state, creation date, buyer and
@@ -20,15 +29,18 @@ import { EscrowStateEnum } from '../../common/enums/escrow-state.enum';
  */
 export class VendorEscrowsQueryDto {
   @ApiPropertyOptional({
-    description: 'Filter escrows by lifecycle state.',
+    description:
+      'Filter by one or more lifecycle states (comma-separated, e.g. "FUNDED,SHIPPED"). A single value behaves as before.',
     enum: EscrowStateEnum,
     example: EscrowStateEnum.SHIPPED,
   })
   @IsOptional()
+  @Transform(splitCommaList)
   @IsEnum(EscrowStateEnum, {
+    each: true,
     message: `state must be one of: ${Object.values(EscrowStateEnum).join(', ')}`,
   })
-  state?: EscrowStateEnum;
+  state?: EscrowStateEnum | EscrowStateEnum[];
 
   @ApiPropertyOptional({
     description: 'Earliest createdAt, inclusive (ISO 8601).',
@@ -51,6 +63,7 @@ export class VendorEscrowsQueryDto {
     description:
       'Filter by buyer Stellar address. Ignored on GET /buyer/escrows, which always uses the caller.',
     maxLength: 64,
+    example: 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
   })
   @IsOptional()
   @IsString()
@@ -58,8 +71,20 @@ export class VendorEscrowsQueryDto {
   buyerAddress?: string;
 
   @ApiPropertyOptional({
+    description:
+      'Filter by vendor Stellar address. Only meaningful on GET /buyer/escrows; ignored on vendor routes, which always scope to the caller.',
+    maxLength: 64,
+    example: 'GAIGZHHWK3REZQPLQX5DNFRYDUPFGG6VY4PSWSL53N2OY3Z3H3CE5TMK',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  vendorAddress?: string;
+
+  @ApiPropertyOptional({
     description: 'Case-insensitive search on itemName or itemRef.',
     maxLength: 128,
+    example: 'Sony A7 IV',
   })
   @IsOptional()
   @IsString()

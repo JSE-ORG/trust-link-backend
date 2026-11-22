@@ -60,7 +60,20 @@ export class VendorEscrowController {
    */
   @ApiOperation({ summary: 'Export vendor escrows as CSV (max 10,000 rows)' })
   @ApiProduces('text/csv')
-  @ApiResponse({ status: 200, description: 'CSV file.' })
+  @ApiResponse({
+    status: 200,
+    description: 'CSV file.',
+    content: {
+      'text/csv': {
+        schema: {
+          type: 'string',
+          example:
+            'id,itemName,itemRef,amount,currency,state,buyerAddress,createdAt,shippedAt,deliveredAt\n' +
+            'escrow-1,Laptop,REF-001,1000,USDC,FUNDED,GBUYER...,2026-01-01T00:00:00.000Z,,\n',
+        },
+      },
+    },
+  })
   @ApiResponse({ status: 400, description: 'Invalid query parameters.' })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   @ApiResponse({ status: 429, description: 'Too many requests.' })

@@ -39,7 +39,16 @@ export class AdminVendorItemDto {
 }
 
 export class AdminVendorsPaginatedResponseDto {
-  @ApiProperty({ type: [AdminVendorItemDto] })
+  @ApiProperty({
+    type: [AdminVendorItemDto],
+    example: [
+      {
+        address: 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5',
+        businessName: 'Acme Corp',
+        escrowCount: 10,
+      },
+    ],
+  })
   data!: AdminVendorItemDto[];
 
   @ApiProperty({ example: 1 })

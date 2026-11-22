@@ -122,6 +122,15 @@ export class StressTestConfigDto {
     description: 'One or more load profiles to run as part of the test.',
     type: [VirtualProfile],
     maxItems: 10,
+    example: [
+      {
+        concurrentUsers: 100,
+        requestsPerSecond: 50,
+        duration: 60,
+        endpoint: '/api/escrows',
+        method: 'GET',
+      },
+    ],
   })
   @IsArray()
   @ArrayMinSize(1)
@@ -131,6 +140,7 @@ export class StressTestConfigDto {
   @ApiPropertyOptional({
     description: 'Pass/fail thresholds evaluated against the run results.',
     type: PerformanceThresholds,
+    example: { maxResponseTime: 500, maxErrorRate: 1, minThroughput: 40 },
   })
   @IsOptional()
   thresholds?: PerformanceThresholds;

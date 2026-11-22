@@ -45,7 +45,18 @@ export class AdminNotificationItemDto {
 }
 
 export class AdminNotificationsPaginatedResponseDto {
-  @ApiProperty({ type: [AdminNotificationItemDto] })
+  @ApiProperty({
+    type: [AdminNotificationItemDto],
+    example: [
+      {
+        id: '123e4567-e89b-12d3-a456-426614174000',
+        escrowId: '123e4567-e89b-12d3-a456-426614174001',
+        type: 'DELIVERY_CONFIRMATION',
+        channel: 'EMAIL',
+        status: 'FAILED',
+      },
+    ],
+  })
   data!: AdminNotificationItemDto[];
 
   @ApiProperty({ example: 42 })

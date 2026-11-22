@@ -57,11 +57,29 @@ export class AnalyticsService {
     days: number = 30,
     timezone: string = 'UTC',
     interval: 'day' | 'week' | 'month' = 'day',
+    range?: { from: string; to: string },
   ): Promise<ChartDataResponse> {
-    const endDate = new Date();
-    const endDateKey = this.formatDateInTimezone(endDate, timezone);
-    const startDateKey = this.addCalendarDays(endDateKey, -(days - 1));
-    const startDate = this.localMidnightInTimezone(startDateKey, timezone);
+    let startDateKey: string;
+    let endDateKey: string;
+    let startDate: Date;
+    let endDate: Date;
+
+    if (range) {
+      startDateKey = range.from;
+      endDateKey = range.to;
+      startDate = this.localMidnightInTimezone(startDateKey, timezone);
+      // Exclusive upper bound: local midnight the day after `to`, so the
+      // whole of `to` itself is included.
+      endDate = this.localMidnightInTimezone(
+        this.addCalendarDays(endDateKey, 1),
+        timezone,
+      );
+    } else {
+      endDate = new Date();
+      endDateKey = this.formatDateInTimezone(endDate, timezone);
+      startDateKey = this.addCalendarDays(endDateKey, -(days - 1));
+      startDate = this.localMidnightInTimezone(startDateKey, timezone);
+    }
 
     // Use repository for database-level aggregation with proper timezone handling and interval.
     const aggregationResult = await this.repository.aggregateDailyVolume(
@@ -254,12 +272,33 @@ export class AnalyticsService {
    */
   async getTransactionStats(
     vendorAddress: string,
+    range?: { from?: string; to?: string },
   ): Promise<AnalyticsStatsResponse> {
+    const createdAtRange: { gte?: Date; lte?: Date; lt?: Date } | undefined =
+      range
+        ? {
+            ...(range.from ? { gte: new Date(range.from) } : {}),
+            ...(range.to
+              ? range.to.length === 10
+                ? {
+                    // A date-only `to` includes the full UTC calendar day.
+                    lt: new Date(
+                      new Date(`${range.to}T00:00:00.000Z`).getTime() +
+                        86_400_000,
+                    ),
+                  }
+                : { lte: new Date(range.to) }
+              : {}),
+          }
+        : undefined;
     const [groups, speedStats, notificationChannels] = await Promise.all([
       // One row per state, with the count and the exact `numeric` sum for that
       // state. Uses the composite index on (vendorAddress, state).
-      this.repository.getEscrowStateGroups(vendorAddress),
-      this.repository.getAverageShippingAndDeliveryTimes(vendorAddress),
+      this.repository.getEscrowStateGroups(vendorAddress, createdAtRange),
+      this.repository.getAverageShippingAndDeliveryTimes(
+        vendorAddress,
+        createdAtRange,
+      ),
       this.repository.findNotificationChannels(vendorAddress),
     ]);
 

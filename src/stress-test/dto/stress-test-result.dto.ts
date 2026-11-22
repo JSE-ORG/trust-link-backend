@@ -112,12 +112,31 @@ export class ProfileResultDto {
   @ApiProperty({
     description: 'Per-request metrics.',
     type: [PerformanceMetricsDto],
+    example: [
+      {
+        timestamp: 1690000000000,
+        responseTime: 125,
+        statusCode: 200,
+        success: true,
+      },
+    ],
   })
   metrics!: PerformanceMetricsDto[];
 
   @ApiProperty({
     description: 'Alerts generated for this profile.',
     type: [AlertDto],
+    example: [
+      {
+        timestamp: 1690000000000,
+        type: 'ERROR_RATE',
+        severity: 'CRITICAL',
+        message: 'Error rate 12.50% exceeds threshold 5%',
+        metric: 'errorRate',
+        value: 12.5,
+        threshold: 5,
+      },
+    ],
   })
   alerts!: AlertDto[];
 }
@@ -179,18 +198,47 @@ export class StressTestResultDto {
   @ApiProperty({
     description: 'Results for each virtual profile.',
     type: [ProfileResultDto],
+    example: [
+      {
+        profileIndex: 0,
+        totalRequests: 1000,
+        successfulRequests: 950,
+        failedRequests: 50,
+        averageResponseTime: 120.5,
+        errorRate: 5,
+      },
+    ],
   })
   profileResults!: ProfileResultDto[];
 
   @ApiProperty({
     description: 'Aggregated metrics across all profiles.',
     type: OverallMetricsDto,
+    example: {
+      totalRequests: 3000,
+      successfulRequests: 2850,
+      failedRequests: 150,
+      averageResponseTime: 130.2,
+      overallErrorRate: 5,
+      overallThroughput: 50,
+    },
   })
   overallMetrics!: OverallMetricsDto;
 
   @ApiProperty({
     description: 'Alerts generated across all profiles.',
     type: [AlertDto],
+    example: [
+      {
+        timestamp: 1690000000000,
+        type: 'ERROR_RATE',
+        severity: 'CRITICAL',
+        message: 'Error rate 12.50% exceeds threshold 5%',
+        metric: 'errorRate',
+        value: 12.5,
+        threshold: 5,
+      },
+    ],
   })
   alerts!: AlertDto[];
 

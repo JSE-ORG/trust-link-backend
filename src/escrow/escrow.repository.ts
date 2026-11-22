@@ -77,7 +77,11 @@ function buildEscrowWhere(filter: EscrowListFilter): Prisma.EscrowWhereInput {
   const where: Prisma.EscrowWhereInput = {};
   if (filter.vendorAddress) where.vendorAddress = filter.vendorAddress;
   if (filter.buyerAddress) where.buyerAddress = filter.buyerAddress;
-  if (filter.state) where.state = filter.state as EscrowState;
+  if (filter.state) {
+    where.state = Array.isArray(filter.state)
+      ? { in: filter.state as EscrowState[] }
+      : (filter.state as EscrowState);
+  }
   if (filter.from || filter.to) {
     where.createdAt = {
       ...(filter.from ? { gte: new Date(filter.from) } : {}),
@@ -254,7 +258,7 @@ export class EscrowRepository {
    */
   async findVendorEscrows(
     vendorAddress: string,
-    state: string | undefined,
+    state: string | string[] | undefined,
     sort: 'date' | 'amount',
     order: 'asc' | 'desc',
     page: number,

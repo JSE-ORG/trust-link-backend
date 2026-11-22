@@ -1024,8 +1024,8 @@ describe('ConfigModule (#946) — ADMIN_NOTIFICATION_EMAIL validation', () => {
   });
 
   it('accepts an unset ADMIN_NOTIFICATION_EMAIL (optional)', () => {
-    const env = { ...VALID_ENV };
-    delete (env as any).ADMIN_NOTIFICATION_EMAIL;
+    const env: Record<string, unknown> = { ...VALID_ENV };
+    delete env.ADMIN_NOTIFICATION_EMAIL;
 
     const { error } = configValidationSchema.validate(env, VALIDATE_OPTIONS);
 
@@ -1138,5 +1138,31 @@ describe('ACCESS_TOKEN_TTL — configurable JWT lifetime (#976)', () => {
     );
     expect(error).toBeDefined();
     expect(error?.message).toContain('ACCESS_TOKEN_TTL');
+  });
+});
+
+describe('DLQ_RETENTION_DAYS (#1214)', () => {
+  it('defaults to 90 days', () => {
+    const { error, value } = configValidationSchema.validate(
+      VALID_ENV,
+      VALIDATE_OPTIONS,
+    );
+    expect(error).toBeUndefined();
+    expect(value.DLQ_RETENTION_DAYS).toBe(90);
+  });
+
+  it('accepts a positive integer and rejects zero', () => {
+    const valid = configValidationSchema.validate(
+      { ...VALID_ENV, DLQ_RETENTION_DAYS: '30' },
+      VALIDATE_OPTIONS,
+    );
+    expect(valid.error).toBeUndefined();
+    expect(valid.value.DLQ_RETENTION_DAYS).toBe(30);
+
+    const invalid = configValidationSchema.validate(
+      { ...VALID_ENV, DLQ_RETENTION_DAYS: '0' },
+      VALIDATE_OPTIONS,
+    );
+    expect(invalid.error?.message).toContain('DLQ_RETENTION_DAYS');
   });
 });

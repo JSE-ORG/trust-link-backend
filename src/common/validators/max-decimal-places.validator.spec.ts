@@ -19,6 +19,13 @@ describe('countDecimalPlaces', () => {
   ])('counts %p as %p decimal places', (value, expected) => {
     expect(countDecimalPlaces(value)).toBe(expected);
   });
+
+  it('returns infinity for values that cannot be represented as a finite decimal', () => {
+    expect(countDecimalPlaces(Number.NaN)).toBe(Number.POSITIVE_INFINITY);
+    expect(countDecimalPlaces(Number.POSITIVE_INFINITY)).toBe(
+      Number.POSITIVE_INFINITY,
+    );
+  });
 });
 
 describe('MaxDecimalPlacesConstraint', () => {

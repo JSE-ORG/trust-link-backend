@@ -2,17 +2,33 @@ import { GUARDS_METADATA } from '@nestjs/common/constants';
 import { JwtGuard } from '../../auth/guards/jwt.guard';
 import { AdminGuard } from '../guards/admin.guard';
 import { VendorProfileRepository } from '../../vendor/vendor-profile.repository';
+import { AnalyticsService } from '../../vendor/analytics/analytics.service';
+import { VendorAccountDetailsRepository } from '../../vendor/vendor-account-details.repository';
 import { AdminVendorsController } from './admin-vendors.controller';
 
 describe('AdminVendorsController (#1152)', () => {
   const vendorProfileRepository: jest.Mocked<
-    Pick<VendorProfileRepository, 'listVendorsForAdmin'>
+    Pick<VendorProfileRepository, 'listVendorsForAdmin' | 'findByAddress'>
   > = {
     listVendorsForAdmin: jest.fn(),
+    findByAddress: jest.fn(),
   };
+  const analyticsService = {
+    getTransactionStats: jest.fn(),
+    getDailyVolumeChart: jest.fn(),
+  } as unknown as jest.Mocked<
+    Pick<AnalyticsService, 'getTransactionStats' | 'getDailyVolumeChart'>
+  >;
+  const accountDetailsRepository = {
+    findByVendorAddress: jest.fn(),
+  } as unknown as jest.Mocked<
+    Pick<VendorAccountDetailsRepository, 'findByVendorAddress'>
+  >;
 
   const controller = new AdminVendorsController(
     vendorProfileRepository as unknown as VendorProfileRepository,
+    analyticsService as unknown as AnalyticsService,
+    accountDetailsRepository as unknown as VendorAccountDetailsRepository,
   );
 
   afterEach(() => jest.clearAllMocks());

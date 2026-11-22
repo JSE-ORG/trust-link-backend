@@ -82,6 +82,7 @@ export class UpdateNotificationPreferencesDto {
   @ApiPropertyOptional({
     description:
       'Secret key for signing webhook payloads to verify authenticity.',
+    example: 'whsec_3f8c1d9e2b7a4f6c8d0e5a1b2c3d4e5f',
   })
   @IsOptional()
   @IsString()
