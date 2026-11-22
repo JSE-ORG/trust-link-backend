@@ -10,9 +10,8 @@
  * mocked; no real DB or HTTP calls are made.
  */
 
-import { createTracingMock } from '../../test/unit/tracing-mock';
-
 import { Logger } from '@nestjs/common';
+import { createTracingMock } from '../../test/unit/tracing-mock';
 import { TrackingPollWorker } from './tracking-poll.worker';
 import { EscrowRepository } from '../escrow/escrow.repository';
 import { LogisticsService } from '../logistics/logistics.service';
@@ -20,7 +19,6 @@ import { ContractService } from '../stellar/contract.service';
 import { ConfigService } from '../config/config.service';
 import { EscrowRecord } from '../prisma/prisma.service';
 import { TEN_MINUTES_MS } from '../common/constants/time.constants';
-
 import { NotificationsService } from '../notifications/notifications.service';
 
 /**

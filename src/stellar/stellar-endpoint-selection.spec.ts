@@ -1,6 +1,6 @@
 import 'reflect-metadata';
-import { createTracingMock } from '../../test/unit/tracing-mock';
 import axios from 'axios';
+import { createTracingMock } from '../../test/unit/tracing-mock';
 import { resolveStellarServerRpcUrl } from './stellar-endpoint-resolver';
 import { ConfigService } from '../config/config.service';
 import { STELLAR_HORIZON_URLS, STELLAR_RPC_URLS } from './stellar-endpoints';

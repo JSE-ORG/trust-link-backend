@@ -13,9 +13,9 @@
 //   - the RPC URL fallback (SOROBAN_RPC_URL override vs STELLAR_NETWORK
 //     derived default)
 
+import { Test } from '@nestjs/testing';
 import { TracingService } from '../../src/tracing/tracing.service';
 import { createTracingMock } from './tracing-mock';
-import { Test } from '@nestjs/testing';
 import { SorobanPollerService } from '../../src/stellar/soroban-poller.service';
 import { ConfigService } from '../../src/config/config.service';
 import { BlockchainListenerService } from '../../src/stellar/blockchain-listener.service';

@@ -3,9 +3,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { UnauthorizedException } from '@nestjs/common';
 import { Nonce } from '@prisma/client';
-import { Sep10Service } from './sep10.service';
-import { PrismaService } from '../../prisma/prisma.service';
-import { ConfigService } from '../../config/config.service';
 import {
   Keypair,
   Networks,
@@ -13,6 +10,9 @@ import {
   WebAuth,
 } from '@stellar/stellar-sdk';
 import { createHmac } from 'crypto';
+import { Sep10Service } from './sep10.service';
+import { PrismaService } from '../../prisma/prisma.service';
+import { ConfigService } from '../../config/config.service';
 import { REFRESH_TOKEN_TTL_DEFAULT } from './sep10.constants';
 import { configValidationSchema } from '../../config/config.schema';
 

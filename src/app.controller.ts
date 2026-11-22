@@ -14,8 +14,8 @@ import {
   ApiResponse,
 } from '@nestjs/swagger';
 import { SkipThrottle, Throttle } from '@nestjs/throttler';
-import { THROTTLE_WINDOW_MS } from './common/security/throttle.config';
 import type { Response } from 'express';
+import { THROTTLE_WINDOW_MS } from './common/security/throttle.config';
 import { AppService } from './app.service';
 import { getAppName, getAppVersion } from './common/version';
 import { ConfigService } from './config/config.service';

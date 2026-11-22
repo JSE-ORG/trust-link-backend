@@ -5,12 +5,12 @@ import {
 } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
+import { ForbiddenException } from '@nestjs/common';
 import { EscrowController } from '../../src/escrow/escrow.controller';
 import { EscrowService } from '../../src/escrow/escrow.service';
 import { BuyerDisputeService } from '../../src/escrow/buyer-dispute.service';
 import { JwtGuard } from '../../src/auth/guards/jwt.guard';
 import { AuthUser } from '../../src/auth/auth-user';
-import { ForbiddenException } from '@nestjs/common';
 
 describe('Cross-Vendor Escrow Access (issue #272)', () => {
   let app: INestApplication;

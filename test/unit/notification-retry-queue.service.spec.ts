@@ -5,6 +5,7 @@
  * dispatcher-registration / enqueue-routing level only.
  */
 
+import { Job, Queue, Worker } from 'bullmq';
 import {
   NotificationRetryQueueService,
   type NotificationChannelDispatcher,
@@ -18,7 +19,6 @@ import {
 } from '../../src/notifications/notification-retry-queue.types';
 import { EscrowRecord } from '../../src/prisma/prisma.service';
 import { NotificationRepository } from '../../src/notifications/notification.repository';
-import { Job, Queue, Worker } from 'bullmq';
 import { ConfigService } from '../../src/config/config.service';
 import { createTracingMock } from './tracing-mock';
 

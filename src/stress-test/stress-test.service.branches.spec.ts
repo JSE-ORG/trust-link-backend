@@ -5,10 +5,10 @@
  * executeProfile with and without thresholds/enableAlerts.
  */
 
-import { StressTestService } from './stress-test.service';
-import { ConfigService } from '../config/config.service';
 import { HttpService } from '@nestjs/axios';
 import { of, throwError } from 'rxjs';
+import { StressTestService } from './stress-test.service';
+import { ConfigService } from '../config/config.service';
 
 type Priv = Record<string, (...args: any[]) => any>;
 

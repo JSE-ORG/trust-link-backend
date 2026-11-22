@@ -1,5 +1,5 @@
-import { createTracingMock } from '../../test/unit/tracing-mock';
 import { Logger } from '@nestjs/common';
+import { createTracingMock } from '../../test/unit/tracing-mock';
 import { ConfigService } from '../config/config.service';
 import { BlockchainListenerService } from './blockchain-listener.service';
 import { CursorService } from './cursor.service';

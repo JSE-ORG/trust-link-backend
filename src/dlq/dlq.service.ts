@@ -1,4 +1,3 @@
-import { buildPaginatedEnvelope } from '../common/pagination/pagination.helper';
 import {
   ConflictException,
   Injectable,
@@ -6,6 +5,7 @@ import {
   NotFoundException,
   Optional,
 } from '@nestjs/common';
+import { buildPaginatedEnvelope } from '../common/pagination/pagination.helper';
 import { MetricsService } from '../tracing/metrics.service';
 import {
   FailedTransactionFilter,

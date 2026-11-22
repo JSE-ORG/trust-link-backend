@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { Injectable, Optional } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 import { CacheService } from '../cache/cache.service';
 import { ConfigService } from '../config/config.service';
-import type { Prisma } from '@prisma/client';
 import {
   EscrowRecord,
   EscrowState,

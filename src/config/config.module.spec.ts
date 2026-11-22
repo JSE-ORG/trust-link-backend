@@ -1,6 +1,6 @@
 import { Keypair } from '@stellar/stellar-sdk';
-import { configValidationSchema } from './config.schema';
 import { Test } from '@nestjs/testing';
+import { configValidationSchema } from './config.schema';
 import type { ConfigService } from './config.service';
 
 /**

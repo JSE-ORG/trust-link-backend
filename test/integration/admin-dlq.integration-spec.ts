@@ -1,9 +1,9 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
-import { ensureVendors } from '../prisma-helpers';
 import { Prisma } from '@prisma/client';
 import { createHmac } from 'crypto';
 import request from 'supertest';
+import { ensureVendors } from '../prisma-helpers';
 import { AppModule } from '../../src/app.module';
 import { ConfigService } from '../../src/config/config.service';
 import { PrismaService } from '../../src/prisma/prisma.service';

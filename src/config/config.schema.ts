@@ -1,5 +1,8 @@
 import * as Joi from 'joi';
-import { Keypair } from '@stellar/stellar-sdk';
+import {
+  assertValidStellarPublicKey,
+  assertValidStellarSecretKey,
+} from '../stellar/key-validation';
 import {
   parseTrustProxy,
   TRUST_PROXY_ERROR,
@@ -31,7 +34,7 @@ const stellarPublicKey = Joi.string()
     }
 
     try {
-      Keypair.fromPublicKey(value);
+      assertValidStellarPublicKey(value);
       return value; // valid
     } catch {
       return helpers.error('any.invalid', {
@@ -69,7 +72,7 @@ const stellarSecretKey = Joi.string().custom((value: string, helpers) => {
   }
 
   try {
-    Keypair.fromSecret(value);
+    assertValidStellarSecretKey(value);
     return value; // valid — checksum passed
   } catch {
     return helpers.message({
