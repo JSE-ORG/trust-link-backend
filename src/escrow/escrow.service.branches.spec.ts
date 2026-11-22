@@ -11,6 +11,7 @@ import {
   ConflictException,
   ForbiddenException,
   BadRequestException,
+  ServiceUnavailableException,
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { createTracingMock } from '../../test/unit/tracing-mock';
@@ -504,5 +505,338 @@ describe('EscrowService CSV export row cap (issue #1218)', () => {
       ESCROW_EXPORT_MAX_ROWS,
     );
     expect(csv).toContain('id,itemName,itemRef');
+  });
+});
+
+// ── Issue #1223: remaining EscrowService branches ─────────────────────────────
+
+describe('EscrowService remaining branches (issue #1223)', () => {
+  it('stableStringify handles arrays and undefined values', async () => {
+    const cache = {
+      get: jest.fn().mockResolvedValue(null),
+      set: jest.fn().mockResolvedValue(undefined),
+      del: jest.fn(),
+    };
+    const repo = {
+      findByVendorAndItem: jest.fn().mockResolvedValue(null),
+      create: jest.fn().mockResolvedValue(makeEscrow()),
+    } as unknown as jest.Mocked<EscrowRepository>;
+    const prisma = {
+      vendorProfile: { upsert: jest.fn().mockResolvedValue({}) },
+    };
+    const svc = makeService({ repo, cacheService: cache, prisma });
+
+    const dto = {
+      itemName: 'x',
+      itemRef: 'r',
+      amount: 10,
+      currency: 'USDC',
+      buyerAddress: 'B',
+      tags: ['a', undefined, { b: 1, a: 2 }],
+      optionalField: undefined,
+    } as never;
+
+    await svc.createIdempotent('k-arr', dto, 'V');
+    expect(cache.set).toHaveBeenCalledTimes(1);
+    const saved = cache.set.mock.calls[0][1] as { requestHash: string };
+    expect(typeof saved.requestHash).toBe('string');
+  });
+
+  it('toPublicEscrow and toSummary default null itemRef to empty string', () => {
+    const escrow = makeEscrow({ itemRef: null as unknown as string });
+    const svc = makeService();
+
+    const pub = (svc as unknown as Priv)['toPublicEscrow'](escrow) as {
+      itemRef: string;
+    };
+    const summary = (svc as unknown as Priv)['toSummary'](escrow) as {
+      itemRef: string;
+    };
+
+    expect(pub.itemRef).toBe('');
+    expect(summary.itemRef).toBe('');
+  });
+
+  it('uses default isAdmin=false when calling private cancel/shipment internals directly', async () => {
+    const funded = makeEscrow({
+      state: 'FUNDED',
+      vendorAddress: 'V',
+      buyerAddress: 'B',
+    });
+    const created = makeEscrow({
+      state: 'CREATED',
+      vendorAddress: 'V',
+      buyerAddress: 'B',
+    });
+    const repo = {
+      findById: jest
+        .fn()
+        .mockResolvedValueOnce(funded)
+        .mockResolvedValueOnce(created)
+        .mockResolvedValueOnce(funded),
+    } as unknown as jest.Mocked<EscrowRepository>;
+    const svc = makeService({ repo });
+
+    await expect(
+      (svc as unknown as Priv)['cancelEscrowInternal']('e-1', 'STRANGER'),
+    ).rejects.toThrow(ForbiddenException);
+    await expect(
+      (svc as unknown as Priv)['cancelPendingEscrowInternal'](
+        'e-1',
+        'STRANGER',
+      ),
+    ).rejects.toThrow(ForbiddenException);
+    await expect(
+      (svc as unknown as Priv)['handleShipmentInternal'](
+        'e-1',
+        'STRANGER',
+        'TRACK123',
+      ),
+    ).rejects.toThrow(ForbiddenException);
+  });
+
+  it('cancelPendingEscrowInternal submits on-chain refund when chain state is FUNDED and skips when CREATED or absent', async () => {
+    const escrow = makeEscrow({
+      state: 'CREATED',
+      contractEscrowId: 77n,
+      vendorAddress: 'V',
+    });
+    const cancelled = makeEscrow({ state: 'CANCELLED' });
+    const repo = {
+      findById: jest.fn().mockResolvedValue(escrow),
+      markCancelled: jest.fn().mockResolvedValue(cancelled),
+    } as unknown as jest.Mocked<EscrowRepository>;
+    const contract = {
+      getEscrowState: jest
+        .fn()
+        .mockResolvedValueOnce({ exists: true, state: 'FUNDED' })
+        .mockResolvedValueOnce({ exists: true, state: 'CREATED' })
+        .mockResolvedValueOnce({ exists: false, state: 'UNKNOWN' }),
+      cancelEscrowOnChain: jest.fn().mockResolvedValue('tx-refund-1'),
+    } as unknown as jest.Mocked<ContractService>;
+    const svc = makeService({ repo, contractService: contract });
+
+    await expect(svc.cancelPendingEscrow('e-1', 'V')).resolves.toEqual(
+      cancelled,
+    );
+    expect(contract.cancelEscrowOnChain).toHaveBeenCalledWith(77n, 'V');
+
+    await expect(svc.cancelPendingEscrow('e-1', 'V')).resolves.toEqual(
+      cancelled,
+    );
+    await expect(svc.cancelPendingEscrow('e-1', 'V')).resolves.toEqual(
+      cancelled,
+    );
+    expect(contract.cancelEscrowOnChain).toHaveBeenCalledTimes(1);
+  });
+
+  it('handleShipmentInternal logs and rethrows non-client errors (Error and non-Error)', async () => {
+    const escrow = makeEscrow({
+      state: 'FUNDED',
+      vendorAddress: 'V',
+      trackingId: null,
+    });
+    const repo = {
+      findById: jest.fn().mockResolvedValue(escrow),
+      markShipped: jest
+        .fn()
+        .mockRejectedValueOnce(new Error('DB connection lost'))
+        .mockRejectedValueOnce('raw string failure'),
+    } as unknown as jest.Mocked<EscrowRepository>;
+    const svc = makeService({ repo });
+
+    await expect(svc.handleShipment('e-1', 'V', 'TRACK123')).rejects.toThrow(
+      'DB connection lost',
+    );
+    await expect(svc.handleShipment('e-1', 'V', 'TRACK123')).rejects.toBe(
+      'raw string failure',
+    );
+  });
+
+  it('updateBuyerContactInternal throws ServiceUnavailableException when contact encryption is not configured', async () => {
+    const prevKey = process.env.CONTACT_ENCRYPTION_KEY;
+    delete process.env.CONTACT_ENCRYPTION_KEY;
+    try {
+      const escrow = makeEscrow({ state: 'FUNDED' });
+      const repo = {
+        findById: jest.fn().mockResolvedValue(escrow),
+      } as unknown as jest.Mocked<EscrowRepository>;
+      const svc = makeService({ repo });
+
+      await expect(
+        svc.updateBuyerContact('e-1', { email: 'buyer@example.com' }),
+      ).rejects.toThrow(ServiceUnavailableException);
+    } finally {
+      if (prevKey !== undefined) {
+        process.env.CONTACT_ENCRYPTION_KEY = prevKey;
+      }
+    }
+  });
+
+  it('syncStateFromChainInternal falls back to escrow.trackingId and empty string on EscrowShipped', async () => {
+    const withExistingTracking = makeEscrow({
+      state: 'FUNDED',
+      trackingId: 'EXISTING-TRK',
+    });
+    const withNoTracking = makeEscrow({
+      state: 'FUNDED',
+      trackingId: null,
+    });
+    const repo = {
+      findById: jest
+        .fn()
+        .mockResolvedValueOnce(withExistingTracking)
+        .mockResolvedValueOnce(withNoTracking),
+      markShipped: jest
+        .fn()
+        .mockImplementation((_id: string, trackingId: string) =>
+          Promise.resolve(makeEscrow({ state: 'SHIPPED', trackingId })),
+        ),
+    } as unknown as jest.Mocked<EscrowRepository>;
+    const svc = makeService({ repo });
+
+    await expect(
+      svc.syncStateFromChain({ eventType: 'EscrowShipped', escrowId: 'e-1' }),
+    ).resolves.toEqual({ skipped: false });
+    expect(repo.markShipped).toHaveBeenNthCalledWith(1, 'e-1', 'EXISTING-TRK');
+
+    await expect(
+      svc.syncStateFromChain({ eventType: 'EscrowShipped', escrowId: 'e-1' }),
+    ).resolves.toEqual({ skipped: false });
+    expect(repo.markShipped).toHaveBeenNthCalledWith(2, 'e-1', '');
+  });
+
+  it('getEvents verifies the escrow exists and returns its event history', async () => {
+    const events = [
+      {
+        event: 'FUNDED',
+        occurredAt: new Date('2024-01-02'),
+        fromState: 'CREATED',
+        toState: 'FUNDED',
+      },
+    ];
+    const repo = {
+      findById: jest.fn().mockResolvedValue(makeEscrow()),
+      findEvents: jest.fn().mockResolvedValue(events),
+    } as unknown as jest.Mocked<EscrowRepository>;
+    const svc = makeService({ repo });
+
+    await expect(svc.getEvents('e-1')).resolves.toEqual(events);
+    expect(repo.findById).toHaveBeenCalledWith('e-1');
+    expect(repo.findEvents).toHaveBeenCalledWith('e-1');
+  });
+
+  it('findBuyerEscrows delegates to findEscrows with buyerAddress scoped to caller', async () => {
+    const findEscrows = jest
+      .fn()
+      .mockResolvedValue({ data: [makeEscrow()], total: 1 });
+    const repo = {
+      findEscrows,
+    } as unknown as jest.Mocked<EscrowRepository>;
+    const svc = makeService({ repo });
+
+    const page = await svc.findBuyerEscrows('GBUYER', {
+      state: 'FUNDED',
+      vendorAddress: 'GVENDOR',
+      buyerAddress: 'GSPOOFED',
+      page: 2,
+      limit: 10,
+      sort: 'amount',
+      order: 'asc',
+    });
+
+    expect(findEscrows).toHaveBeenCalledWith(
+      expect.objectContaining({
+        buyerAddress: 'GBUYER',
+        vendorAddress: 'GVENDOR',
+        state: 'FUNDED',
+      }),
+      'amount',
+      'asc',
+      2,
+      10,
+    );
+    expect(page.data).toHaveLength(1);
+    expect(page.total).toBe(1);
+    expect(page.page).toBe(2);
+    expect(page.limit).toBe(10);
+  });
+});
+
+// ── findBuyerEscrows (issue #1229) ───────────────────────────────────────────
+
+describe('EscrowService.findBuyerEscrows', () => {
+  it('scopes the query to the buyer and applies the default sort and page', async () => {
+    const findEscrows = jest
+      .fn()
+      .mockResolvedValue({ data: [makeEscrow()], total: 1 });
+    const svc = makeService({ repo: { findEscrows } });
+
+    const page = await svc.findBuyerEscrows('GBUYER', {});
+
+    expect(findEscrows).toHaveBeenCalledWith(
+      {
+        state: undefined,
+        from: undefined,
+        to: undefined,
+        q: undefined,
+        buyerAddress: 'GBUYER',
+        vendorAddress: undefined,
+      },
+      'date',
+      'desc',
+      1,
+      20,
+    );
+    expect(page).toMatchObject({ total: 1, page: 1, limit: 20 });
+    expect(page.data).toEqual([
+      {
+        id: 'e-1',
+        itemName: 'Item',
+        itemRef: 'REF-1',
+        amount: 50,
+        currency: 'USDC',
+        state: 'FUNDED',
+        trackingId: null,
+        createdAt: new Date('2024-01-01'),
+        updatedAt: new Date('2024-01-01'),
+      },
+    ]);
+  });
+
+  it('passes filters, sort and paging through, and the path buyer wins', async () => {
+    const findEscrows = jest.fn().mockResolvedValue({ data: [], total: 0 });
+    const svc = makeService({ repo: { findEscrows } });
+    const from = new Date('2024-01-01');
+    const to = new Date('2024-02-01');
+
+    const page = await svc.findBuyerEscrows('GBUYER', {
+      state: 'SHIPPED',
+      from,
+      to,
+      q: 'lamp',
+      vendorAddress: 'GVENDOR',
+      sort: 'amount',
+      order: 'asc',
+      page: 3,
+      limit: 5,
+      buyerAddress: 'GSOMEONE_ELSE',
+    } as never);
+
+    expect(findEscrows).toHaveBeenCalledWith(
+      {
+        state: 'SHIPPED',
+        from,
+        to,
+        q: 'lamp',
+        buyerAddress: 'GBUYER',
+        vendorAddress: 'GVENDOR',
+      },
+      'amount',
+      'asc',
+      3,
+      5,
+    );
+    expect(page).toMatchObject({ data: [], total: 0, page: 3, limit: 5 });
   });
 });

@@ -50,4 +50,37 @@ describe('AdminStatsRepository.collectTotals', () => {
     expect(totals.uniqueVendors).toBe(3);
     expect(totals.uniqueBuyers).toBe(5);
   });
+
+  it('treats empty COUNT(DISTINCT) result rows as zero unique vendors and buyers (issue #1227)', async () => {
+    const prisma = {
+      escrow: {
+        aggregate: jest.fn().mockResolvedValue({ _sum: { amount: 10 } }),
+        groupBy: jest.fn().mockResolvedValue([]),
+      },
+      $queryRaw: jest.fn().mockResolvedValueOnce([]).mockResolvedValueOnce([]),
+    } as unknown as jest.Mocked<PrismaService>;
+
+    const totals = await new AdminStatsRepository(prisma).collectTotals();
+
+    expect(totals.uniqueVendors).toBe(0);
+    expect(totals.uniqueBuyers).toBe(0);
+  });
+
+  it('treats a row with a null count as zero', async () => {
+    const prisma = {
+      escrow: {
+        aggregate: jest.fn().mockResolvedValue({ _sum: { amount: null } }),
+        groupBy: jest.fn().mockResolvedValue([]),
+      },
+      $queryRaw: jest
+        .fn()
+        .mockResolvedValueOnce([{ count: null }])
+        .mockResolvedValueOnce([{ count: 4n }]),
+    } as unknown as jest.Mocked<PrismaService>;
+
+    const totals = await new AdminStatsRepository(prisma).collectTotals();
+
+    expect(totals.uniqueVendors).toBe(0);
+    expect(totals.uniqueBuyers).toBe(4);
+  });
 });

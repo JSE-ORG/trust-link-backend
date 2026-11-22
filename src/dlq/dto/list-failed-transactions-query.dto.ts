@@ -21,19 +21,24 @@ const FAILED_TRANSACTION_STATUSES = [
 export class ListFailedTransactionsQueryDto {
   @ApiPropertyOptional({
     enum: FAILED_TRANSACTION_STATUSES,
+    description: 'Filter failed transactions by replay lifecycle status.',
     example: 'PENDING_REVIEW',
   })
   @IsOptional()
   @IsIn(FAILED_TRANSACTION_STATUSES)
   status?: FailedTransactionStatus;
 
-  @ApiPropertyOptional({ example: 'fund' })
+  @ApiPropertyOptional({
+    description: 'Filter failed transactions by operation name.',
+    example: 'fund',
+  })
   @IsOptional()
   @IsString()
   operation?: string;
 
   @ApiPropertyOptional({
     format: 'uuid',
+    description: 'Filter failed transactions by escrow ID.',
     example: '6f9619ff-8b86-d011-b42d-00cf4fc964ff',
   })
   @IsOptional()

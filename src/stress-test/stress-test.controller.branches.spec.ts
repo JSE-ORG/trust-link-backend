@@ -63,3 +63,60 @@ describe('StressTestController.getActiveTest', () => {
     );
   });
 });
+
+describe('StressTestController.runStressTest audit details (issue #1227)', () => {
+  function makeController() {
+    const testId = 'test-id-audit';
+    const service = {
+      generateTestId: jest.fn().mockReturnValue(testId),
+      runStressTest: jest.fn().mockResolvedValue(makeStressTestResult(testId)),
+    } as unknown as jest.Mocked<StressTestService>;
+    const auditLog = { append: jest.fn().mockResolvedValue(undefined) };
+    const controller = new StressTestController(service, auditLog as never);
+    return { controller, service, auditLog, testId };
+  }
+
+  it('audits as "unknown" when the request carries no admin', async () => {
+    const { controller, auditLog, testId } = makeController();
+
+    await controller.runStressTest({ testName: 'run', profiles: [] });
+
+    expect(auditLog.append).toHaveBeenCalledWith({
+      action: 'STRESS_TEST_STARTED',
+      adminAddress: 'unknown',
+      entityType: 'stress_test',
+      entityId: testId,
+      details: { testName: 'run', profileCount: 0 },
+    });
+  });
+
+  it('records a profile count of 0 when the config has no profiles', async () => {
+    const { controller, service, auditLog, testId } = makeController();
+    const config = { testName: 'no-profiles' } as never;
+
+    await controller.runStressTest(config, { address: 'GADMIN' });
+
+    expect(auditLog.append).toHaveBeenCalledWith(
+      expect.objectContaining({
+        adminAddress: 'GADMIN',
+        details: { testName: 'no-profiles', profileCount: 0 },
+      }),
+    );
+    expect(service.runStressTest).toHaveBeenCalledWith(config, testId);
+  });
+
+  it('records the real profile count when profiles are present', async () => {
+    const { controller, auditLog } = makeController();
+
+    await controller.runStressTest(
+      { testName: 'two', profiles: [{}, {}] } as never,
+      { address: 'GADMIN' },
+    );
+
+    expect(auditLog.append).toHaveBeenCalledWith(
+      expect.objectContaining({
+        details: { testName: 'two', profileCount: 2 },
+      }),
+    );
+  });
+});
