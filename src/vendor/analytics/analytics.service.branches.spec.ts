@@ -114,4 +114,110 @@ describe('AnalyticsService.getTransactionStats', () => {
     expect(result.stats.averageHoursToShip).toBe(4.5);
     expect(result.stats.averageHoursToDeliver).toBe(12.3);
   });
+
+  it('treats null _sum.amount as zero via decimalAdd null branch', async () => {
+    const groups = [
+      {
+        state: 'CREATED',
+        _count: 2,
+        _sum: { amount: null },
+      },
+      {
+        state: 'COMPLETED',
+        _count: 1,
+        _sum: { amount: new Prisma.Decimal(150) },
+      },
+    ];
+    const repo = {
+      getEscrowStateGroups: jest.fn().mockResolvedValue(groups),
+      findNotificationChannels: jest.fn().mockResolvedValue(null),
+      getAverageShippingAndDeliveryTimes: jest.fn().mockResolvedValue({
+        averageHoursToShip: null,
+        averageHoursToDeliver: null,
+      }),
+    } as unknown as jest.Mocked<AnalyticsRepository>;
+    const svc = makeService(repo);
+
+    const result = await svc.getTransactionStats('VENDOR');
+    expect(result.stats.totalVolume).toBe(150);
+    expect(result.stats.activeVolume).toBe(0);
+    expect(result.stats.totalTransactions).toBe(3);
+  });
+});
+
+describe('AnalyticsService.getDailyVolumeChart interval bucketing', () => {
+  it('fills week gaps starting on the Monday on or before the window start', async () => {
+    // 2024-03-06 is a Wednesday -> Monday is 2024-03-04
+    // 2024-03-24 is a Sunday -> Monday is 2024-03-18 (exercises dayOfWeek === 0 branch)
+    const repo = {
+      aggregateDailyVolume: jest.fn().mockResolvedValue([
+        {
+          date: '2024-03-11',
+          totalVolume: 250,
+          transactionCount: 2,
+          completedCount: 1,
+          disputedCount: 0,
+        },
+      ]),
+    } as unknown as jest.Mocked<AnalyticsRepository>;
+    const svc = makeService(repo);
+
+    const res = await svc.getDailyVolumeChart('VENDOR', 30, 'UTC', 'week', {
+      from: '2024-03-06',
+      to: '2024-03-24',
+    });
+
+    expect(res.data.map((d) => d.date)).toEqual([
+      '2024-03-04',
+      '2024-03-11',
+      '2024-03-18',
+    ]);
+    expect(res.data[0].totalVolume).toBe(0);
+    expect(res.data[1].totalVolume).toBe(250);
+    expect(res.data[2].totalVolume).toBe(0);
+  });
+
+  it('fills week gaps when window starts on Sunday', async () => {
+    // 2024-03-10 is a Sunday -> Monday is 2024-03-04 (exercises start dayOfWeek === 0 branch)
+    const repo = {
+      aggregateDailyVolume: jest.fn().mockResolvedValue([]),
+    } as unknown as jest.Mocked<AnalyticsRepository>;
+    const svc = makeService(repo);
+
+    const res = await svc.getDailyVolumeChart('VENDOR', 30, 'UTC', 'week', {
+      from: '2024-03-10',
+      to: '2024-03-12',
+    });
+
+    expect(res.data.map((d) => d.date)).toEqual(['2024-03-04', '2024-03-11']);
+  });
+
+  it('fills month gaps stepping cleanly across a year end', async () => {
+    const repo = {
+      aggregateDailyVolume: jest.fn().mockResolvedValue([
+        {
+          date: new Date('2024-12-01T00:00:00.000Z'),
+          totalVolume: 500,
+          transactionCount: 5,
+          completedCount: 5,
+          disputedCount: 0,
+        },
+      ]),
+    } as unknown as jest.Mocked<AnalyticsRepository>;
+    const svc = makeService(repo);
+
+    const res = await svc.getDailyVolumeChart('VENDOR', 90, 'UTC', 'month', {
+      from: '2024-11-15',
+      to: '2025-02-10',
+    });
+
+    expect(res.data.map((d) => d.date)).toEqual([
+      '2024-11-01',
+      '2024-12-01',
+      '2025-01-01',
+      '2025-02-01',
+    ]);
+    expect(res.data[1].totalVolume).toBe(500);
+    expect(res.data[2].totalVolume).toBe(0);
+  });
 });
