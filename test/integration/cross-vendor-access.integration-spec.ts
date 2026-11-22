@@ -1,8 +1,4 @@
-import {
-  INestApplication,
-  ValidationPipe,
-  ExecutionContext,
-} from '@nestjs/common';
+import { INestApplication, ExecutionContext } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { EscrowController } from '../../src/escrow/escrow.controller';
@@ -11,6 +7,7 @@ import { BuyerDisputeService } from '../../src/escrow/buyer-dispute.service';
 import { JwtGuard } from '../../src/auth/guards/jwt.guard';
 import { AuthUser } from '../../src/auth/auth-user';
 import { ForbiddenException } from '@nestjs/common';
+import { createGlobalPipes } from '../../src/common/pipes/global-pipes';
 
 describe('Cross-Vendor Escrow Access (issue #272)', () => {
   let app: INestApplication;
@@ -94,9 +91,7 @@ describe('Cross-Vendor Escrow Access (issue #272)', () => {
       .compile();
 
     app = moduleFixture.createNestApplication();
-    app.useGlobalPipes(
-      new ValidationPipe({ whitelist: true, transform: true }),
-    );
+    app.useGlobalPipes(...createGlobalPipes());
     await app.init();
   });
 

@@ -53,6 +53,22 @@ describe('VendorProfileRepository', () => {
 
   beforeEach(() => jest.clearAllMocks());
 
+  it('creates only a placeholder and leaves existing profiles unchanged', async () => {
+    vendorProfile.upsert.mockResolvedValue(profile);
+
+    await repository.ensurePlaceholder('vendor-1');
+
+    expect(vendorProfile.upsert).toHaveBeenCalledWith({
+      where: { address: 'vendor-1' },
+      create: {
+        address: 'vendor-1',
+        businessName: 'vendor-1',
+        description: '[placeholder]',
+      },
+      update: {},
+    });
+  });
+
   it.each([
     [
       'creates a profile and normalizes omitted optional fields',

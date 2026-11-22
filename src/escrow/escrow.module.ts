@@ -11,6 +11,7 @@ import { BuyerEscrowController } from './buyer-escrow.controller';
 import { EscrowRepository } from './escrow.repository';
 import { EscrowService } from './escrow.service';
 import { BuyerDisputeService } from './buyer-dispute.service';
+import { VendorProfileRepository } from '../vendor/vendor-profile.repository';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { BuyerDisputeService } from './buyer-dispute.service';
   providers: [
     EscrowService,
     EscrowRepository,
+    VendorProfileRepository,
     BuyerDisputeService,
     S3PresignService,
     JwtGuard,

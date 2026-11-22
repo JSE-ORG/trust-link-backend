@@ -7,9 +7,10 @@
  * deployment platform polls before sending traffic — if it reports ready
  * while the database is unreachable, a bad deploy goes live.
  */
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
+import { createGlobalPipes } from '../../src/common/pipes/global-pipes';
 import { AppController } from '../../src/app.controller';
 import { AppService } from '../../src/app.service';
 import { ConfigService } from '../../src/config/config.service';
@@ -68,9 +69,7 @@ describe('App-level routes (issue #800)', () => {
     }).compile();
 
     app = moduleFixture.createNestApplication();
-    app.useGlobalPipes(
-      new ValidationPipe({ whitelist: true, transform: true }),
-    );
+    app.useGlobalPipes(...createGlobalPipes());
     await app.init();
     await prisma.reset();
   });

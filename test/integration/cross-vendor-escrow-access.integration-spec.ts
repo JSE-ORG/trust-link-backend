@@ -7,9 +7,10 @@
  * - Admin users can bypass ownership checks
  */
 import crypto from 'node:crypto';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
+import { createGlobalPipes } from '../../src/common/pipes/global-pipes';
 import { EscrowController } from '../../src/escrow/escrow.controller';
 import { EscrowService } from '../../src/escrow/escrow.service';
 import { BuyerDisputeService } from '../../src/escrow/buyer-dispute.service';
@@ -93,9 +94,7 @@ describe('Cross-vendor escrow access (issue #272)', () => {
     }).compile();
 
     app = moduleFixture.createNestApplication();
-    app.useGlobalPipes(
-      new ValidationPipe({ whitelist: true, transform: true }),
-    );
+    app.useGlobalPipes(...createGlobalPipes());
     await app.init();
   });
 
