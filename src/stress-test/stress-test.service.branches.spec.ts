@@ -11,6 +11,7 @@ import { StressTestService } from './stress-test.service';
 import { ConfigService } from '../config/config.service';
 
 type Priv = Record<string, (...args: unknown[]) => unknown>;
+type ProfileResult = { alerts: unknown[] };
 
 function makeConfig(url = 'http://localhost:3000'): ConfigService {
   return { get: jest.fn().mockReturnValue(url) } as unknown as ConfigService;
@@ -49,7 +50,10 @@ describe('StressTestService.runStressTest', () => {
 
     // Force a failure by overriding executeProfile to throw
     jest
-      .spyOn(svc as unknown as Priv, 'executeProfile')
+      .spyOn(
+        svc as unknown as { executeProfile: () => Promise<unknown> },
+        'executeProfile',
+      )
       .mockRejectedValue(new Error('bang'));
 
     const result = await svc.runStressTest(minimalConfig() as never);
@@ -73,12 +77,12 @@ describe('StressTestService.executeProfile', () => {
       duration: 1,
       method: 'GET',
     };
-    const result = await (svc as unknown as Priv)['executeProfile'](
+    const result = (await (svc as unknown as Priv)['executeProfile'](
       profile,
       0,
       { maxResponseTime: 1 },
       false,
-    );
+    )) as ProfileResult;
     expect(result.alerts).toHaveLength(0);
   });
 
@@ -95,12 +99,12 @@ describe('StressTestService.executeProfile', () => {
       duration: 1,
       method: 'GET',
     };
-    const result = await (svc as unknown as Priv)['executeProfile'](
+    const result = (await (svc as unknown as Priv)['executeProfile'](
       profile,
       0,
       { maxResponseTime: 0.001 },
       true,
-    );
+    )) as ProfileResult;
     // alerts array is defined (threshold check ran)
     expect(Array.isArray(result.alerts)).toBe(true);
   });
