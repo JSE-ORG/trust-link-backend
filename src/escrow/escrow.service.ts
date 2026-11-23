@@ -820,7 +820,11 @@ export class EscrowService {
       );
     }
 
-    return this.escrowRepository.markCancelled(escrowId);
+    const cancelled = await this.escrowRepository.markCancelled(escrowId);
+    this.notificationsService
+      .notifyCancelled(cancelled)
+      .catch((err) => this.logger.error('notifyCancelled failed', err));
+    return cancelled;
   }
 
   /**
@@ -887,7 +891,11 @@ export class EscrowService {
       this.logger.log(
         `Escrow ${escrowId} has no contractEscrowId; skipping the on-chain cancellation check`,
       );
-      return this.escrowRepository.markCancelled(escrowId);
+      const cancelled = await this.escrowRepository.markCancelled(escrowId);
+      this.notificationsService
+        .notifyCancelled(cancelled)
+        .catch((err) => this.logger.error('notifyCancelled failed', err));
+      return cancelled;
     }
 
     const chainState = await this.contractService.getEscrowState(
@@ -911,7 +919,11 @@ export class EscrowService {
       );
     }
 
-    return this.escrowRepository.markCancelled(escrowId);
+    const cancelled = await this.escrowRepository.markCancelled(escrowId);
+    this.notificationsService
+      .notifyCancelled(cancelled)
+      .catch((err) => this.logger.error('notifyCancelled failed', err));
+    return cancelled;
   }
 
   /**
@@ -1232,7 +1244,10 @@ export class EscrowService {
         if (escrow.state === 'CANCELLED' || TERMINAL_STATES.has(escrow.state)) {
           return { skipped: true, reason: 'already_cancelled_or_terminal' };
         }
-        await this.escrowRepository.markCancelled(escrowId);
+        const cancelled = await this.escrowRepository.markCancelled(escrowId);
+        this.notificationsService
+          .notifyCancelled(cancelled)
+          .catch((err) => this.logger.error('notifyCancelled failed', err));
         return { skipped: false };
       }
 
@@ -1319,7 +1334,12 @@ export class EscrowService {
         if (escrow.state === 'CANCELLED' || TERMINAL_STATES.has(escrow.state)) {
           return { skipped: true, reason: 'already_cancelled_or_terminal' };
         }
-        await this.escrowRepository.markCancelled(escrowId);
+        const cancelled = await this.escrowRepository.markCancelled(escrowId);
+        this.notificationsService
+          .notifyCancelled(cancelled)
+          .catch((err) =>
+            this.logger.error('notifyCancelled(auto) failed', err),
+          );
         return { skipped: false };
       }
 

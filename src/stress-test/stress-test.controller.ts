@@ -145,4 +145,32 @@ export class StressTestController {
   getAllActiveTests(): StressTestResult[] {
     return this.stressTestService.getAllActiveTests();
   }
+
+  @ApiOperation({ summary: 'List completed stress test runs' })
+  @ApiResponse({
+    status: 200,
+    description: 'Stress test history returned.',
+    type: [StressTestResultDto],
+  })
+  @Get()
+  listCompleted(): Promise<StressTestResult[]> {
+    return this.stressTestService.getCompletedTests();
+  }
+
+  @ApiOperation({ summary: 'Get a stress test run by id' })
+  @ApiParam({ name: 'testId', example: 'test_2026-11-21_1' })
+  @ApiResponse({
+    status: 200,
+    description: 'Stress test run returned.',
+    type: StressTestResultDto,
+  })
+  @ApiResponse({ status: 404, description: 'Stress test not found.' })
+  @Get(':testId')
+  async getTest(@Param('testId') testId: string): Promise<StressTestResult> {
+    const result = await this.stressTestService.getTest(testId);
+    if (!result) {
+      throw new NotFoundException(`Stress test with id "${testId}" not found`);
+    }
+    return result;
+  }
 }

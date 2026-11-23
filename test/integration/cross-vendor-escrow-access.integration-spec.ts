@@ -54,6 +54,7 @@ describe('Cross-vendor escrow access (issue #272)', () => {
     const mockNotificationsService = {
       notifyFunded: jest.fn(),
       notifyShipped: jest.fn().mockResolvedValue(undefined),
+      notifyCancelled: jest.fn().mockResolvedValue(undefined),
       notifyCompleted: jest.fn(),
       notifyDisputed: jest.fn(),
     } as unknown as NotificationsService;

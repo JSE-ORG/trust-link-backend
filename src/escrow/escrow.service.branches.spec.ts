@@ -73,6 +73,7 @@ function makeService(
 
   const notifications = {
     notifyShipped: jest.fn().mockResolvedValue(undefined),
+    notifyCancelled: jest.fn().mockResolvedValue(undefined),
     notifyFunded: jest.fn().mockResolvedValue(undefined),
     ...overrides.notifications,
   } as unknown as jest.Mocked<NotificationsService>;

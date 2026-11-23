@@ -49,6 +49,9 @@ export interface Config {
   SENDGRID_TEMPLATE_DISPUTED?: string;
   SENDGRID_TEMPLATE_COMPLETED?: string;
   SENDGRID_TEMPLATE_REFUNDED?: string;
+  SENDGRID_TEMPLATE_CANCELLED?: string;
+  SENDGRID_TEMPLATE_DELAYED?: string;
+  SENDGRID_TEMPLATE_EXCEPTION?: string;
   TWILIO_ACCOUNT_SID?: string;
   TWILIO_AUTH_TOKEN?: string;
   TWILIO_FROM_NUMBER?: string;
@@ -156,6 +159,18 @@ export class ConfigService {
       ),
       SENDGRID_TEMPLATE_REFUNDED: this.nestConfigService.get(
         'SENDGRID_TEMPLATE_REFUNDED',
+        { infer: true },
+      ),
+      SENDGRID_TEMPLATE_CANCELLED: this.nestConfigService.get(
+        'SENDGRID_TEMPLATE_CANCELLED',
+        { infer: true },
+      ),
+      SENDGRID_TEMPLATE_DELAYED: this.nestConfigService.get(
+        'SENDGRID_TEMPLATE_DELAYED',
+        { infer: true },
+      ),
+      SENDGRID_TEMPLATE_EXCEPTION: this.nestConfigService.get(
+        'SENDGRID_TEMPLATE_EXCEPTION',
         { infer: true },
       ),
       TWILIO_ACCOUNT_SID: this.nestConfigService.get('TWILIO_ACCOUNT_SID', {

@@ -250,6 +250,42 @@ export class TrackingPollWorker implements OnModuleInit, OnApplicationShutdown {
         escrow.carrier,
         escrow.trackingId,
       );
+      if (status.status === 'DELAYED' && this.notificationsService) {
+        try {
+          const updated = await this.escrowRepository.findById(escrow.id);
+          if (updated) {
+            await this.notificationsService.notifyShipmentDelay(updated);
+          }
+        } catch (error) {
+          this.logger.error(
+            JSON.stringify({
+              msg: 'tracking_poll.delay_notification_failed',
+              escrowId: escrow.id,
+              error: error instanceof Error ? error.message : String(error),
+            }),
+            error instanceof Error ? error.stack : undefined,
+          );
+        }
+        return;
+      }
+      if (status.status === 'EXCEPTION' && this.notificationsService) {
+        try {
+          const updated = await this.escrowRepository.findById(escrow.id);
+          if (updated) {
+            await this.notificationsService.notifyShipmentException(updated);
+          }
+        } catch (error) {
+          this.logger.error(
+            JSON.stringify({
+              msg: 'tracking_poll.exception_notification_failed',
+              escrowId: escrow.id,
+              error: error instanceof Error ? error.message : String(error),
+            }),
+            error instanceof Error ? error.stack : undefined,
+          );
+        }
+        return;
+      }
       if (status.status !== 'DELIVERED') {
         return;
       }

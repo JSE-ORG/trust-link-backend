@@ -1,6 +1,7 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
+import { Prisma } from '@prisma/client';
 import {
   StressTestConfigDto,
   VirtualProfile,
@@ -13,6 +14,7 @@ import {
   Alert,
 } from './interfaces/stress-test-result.interface';
 import { ConfigService } from '../config/config.service';
+import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
 export class StressTestService {
@@ -22,6 +24,7 @@ export class StressTestService {
   constructor(
     private readonly httpService: HttpService,
     private readonly configService: ConfigService,
+    @Optional() private readonly prisma?: PrismaService,
   ) {}
 
   /**
@@ -98,9 +101,36 @@ export class StressTestService {
       this.logger.error(`Stress test failed: ${err.message}`, err.stack);
     }
 
+    await this.persistResult(result);
     this.activeTests.delete(testId);
     return result;
   }
+
+  private async persistResult(result: StressTestResult): Promise<void> {
+    if (!this.prisma) {
+      this.completedTests.set(result.testId, result);
+      return;
+    }
+    await this.prisma.stressTestRun.upsert({
+      where: { testId: result.testId },
+      create: {
+        testId: result.testId,
+        testName: result.testName,
+        status: result.status,
+        result: result as unknown as Prisma.InputJsonValue,
+        startedAt: new Date(result.startTime),
+        completedAt: result.endTime ? new Date(result.endTime) : null,
+      },
+      update: {
+        testName: result.testName,
+        status: result.status,
+        result: result as unknown as Prisma.InputJsonValue,
+        completedAt: result.endTime ? new Date(result.endTime) : null,
+      },
+    });
+  }
+
+  private readonly completedTests = new Map<string, StressTestResult>();
 
   private async executeProfile(
     profile: VirtualProfile,
@@ -375,6 +405,29 @@ export class StressTestService {
    */
   getAllActiveTests(): StressTestResult[] {
     return Array.from(this.activeTests.values());
+  }
+
+  async getTest(testId: string): Promise<StressTestResult | undefined> {
+    const active = this.activeTests.get(testId);
+    if (active) return active;
+    if (!this.prisma) return this.completedTests.get(testId);
+
+    const row = await this.prisma.stressTestRun.findUnique({
+      where: { testId },
+    });
+    return row?.result as unknown as StressTestResult | undefined;
+  }
+
+  async getCompletedTests(): Promise<StressTestResult[]> {
+    if (!this.prisma) {
+      return Array.from(this.completedTests.values()).sort(
+        (a, b) => b.startTime - a.startTime,
+      );
+    }
+    const rows = await this.prisma.stressTestRun.findMany({
+      orderBy: { createdAt: 'desc' },
+    });
+    return rows.map((row) => row.result as unknown as StressTestResult);
   }
 
   /**

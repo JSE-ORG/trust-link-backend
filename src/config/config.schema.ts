@@ -263,6 +263,9 @@ export const configValidationSchema = Joi.object({
   SENDGRID_TEMPLATE_DISPUTED: sendGridTemplateId,
   SENDGRID_TEMPLATE_COMPLETED: sendGridTemplateId,
   SENDGRID_TEMPLATE_REFUNDED: sendGridTemplateId,
+  SENDGRID_TEMPLATE_CANCELLED: sendGridTemplateId,
+  SENDGRID_TEMPLATE_DELAYED: sendGridTemplateId,
+  SENDGRID_TEMPLATE_EXCEPTION: sendGridTemplateId,
   TWILIO_ACCOUNT_SID: Joi.string().optional(),
   TWILIO_AUTH_TOKEN: Joi.string().optional(),
   TWILIO_FROM_NUMBER: Joi.string()

@@ -96,7 +96,7 @@ describe('GiglLogisticsService', () => {
 
     it('returns PENDING for any unknown GIGL status code', async () => {
       client.fetchTracking.mockResolvedValue(
-        makeGiglResponse({ current_status: 'EXCEPTION' }),
+        makeGiglResponse({ current_status: 'SOMETHING_NEW' }),
       );
 
       const result = await service.getStatus('TRK-001');

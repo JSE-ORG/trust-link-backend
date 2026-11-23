@@ -21,6 +21,14 @@ function mapStatus(giglStatus: string): LogisticsStatus {
     case 'IN_TRANSIT':
     case 'OUT_FOR_DELIVERY':
       return 'IN_TRANSIT';
+    case 'DELAYED':
+    case 'PARTIAL_DELIVERY':
+      return 'DELAYED';
+    case 'EXCEPTION':
+    case 'FAILED':
+    case 'LOST':
+    case 'RETURNED':
+      return 'EXCEPTION';
     default:
       return 'PENDING';
   }
