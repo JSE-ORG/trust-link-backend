@@ -41,6 +41,14 @@ export const pollerLedgerLagHistogram = meter.createHistogram(
 
 @Injectable()
 export class MetricsService {
+  /**
+   * Records count and duration metrics for an HTTP request.
+   *
+   * @param route Route pattern.
+   * @param method HTTP method.
+   * @param status HTTP response status code.
+   * @param durationMs Request processing duration in milliseconds.
+   */
   recordHttpRequest(
     route: string,
     method: string,
@@ -52,6 +60,13 @@ export class MetricsService {
     httpRequestDurationHistogram.record(durationMs, attributes);
   }
 
+  /**
+   * Records execution count and duration metrics for a background worker cycle.
+   *
+   * @param worker Worker name.
+   * @param outcome Execution outcome ('success' or 'error').
+   * @param durationMs Cycle duration in milliseconds.
+   */
   recordWorkerCycle(
     worker: string,
     outcome: 'success' | 'error',
@@ -62,10 +77,20 @@ export class MetricsService {
     workerCycleDurationHistogram.record(durationMs, attributes);
   }
 
+  /**
+   * Increments the dead-letter queue count metric.
+   *
+   * @param size Number of dead-letter records to increment.
+   */
   recordDlqSize(size: number): void {
     dlqSizeCounter.add(size);
   }
 
+  /**
+   * Records lag between latest ledger and processed ledger for the poller.
+   *
+   * @param lag Ledger lag count.
+   */
   recordPollerLag(lag: number): void {
     pollerLedgerLagHistogram.record(lag);
   }

@@ -45,6 +45,9 @@ export abstract class LogisticsService implements OnModuleInit {
     private readonly configService?: ConfigService,
   ) {}
 
+  /**
+   * Loads persisted API key on module initialization and logs warnings if missing.
+   */
   async onModuleInit(): Promise<void> {
     await this.loadPersistedApiKey();
     if (!this.getApiKey()) {

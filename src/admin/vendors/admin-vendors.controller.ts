@@ -38,6 +38,14 @@ export class AdminVendorsController {
     private readonly accountDetailsRepository: VendorAccountDetailsRepository,
   ) {}
 
+  /**
+   * Lists registered vendors with aggregated escrow counts and pagination for admin inspection.
+   *
+   * @param query Admin vendor query and pagination criteria.
+   * @returns Paginated list of vendor profiles.
+   * @throws UnauthorizedException if authentication token is missing or invalid.
+   * @throws ForbiddenException if caller is not an admin.
+   */
   @ApiOperation({ summary: 'List vendors with escrow counts (admin only)' })
   @ApiResponse({
     status: 200,
@@ -55,6 +63,15 @@ export class AdminVendorsController {
     return this.vendorProfileRepository.listVendorsForAdmin(query);
   }
 
+  /**
+   * Retrieves transaction analytics summary for a specific vendor.
+   *
+   * @param address Stellar address of the vendor.
+   * @returns Transaction statistics for the specified vendor.
+   * @throws NotFoundException if the vendor does not exist.
+   * @throws UnauthorizedException if authentication token is missing or invalid.
+   * @throws ForbiddenException if caller is not an admin.
+   */
   @ApiOperation({
     summary: "Get a vendor's transaction analytics (admin only)",
   })
@@ -75,6 +92,19 @@ export class AdminVendorsController {
     return this.analyticsService.getTransactionStats(address);
   }
 
+  /**
+   * Retrieves volume chart data for a specific vendor across a timeframe.
+   *
+   * @param address Stellar address of the vendor.
+   * @param query Chart query containing days, timezone, interval, or date range.
+   * @param rawDays Query param for days.
+   * @param rawTimezone Query param for timezone override.
+   * @returns Chart data with volume series and totals.
+   * @throws BadRequestException if from/to range is invalid or combined with days.
+   * @throws NotFoundException if the vendor does not exist.
+   * @throws UnauthorizedException if authentication token is missing or invalid.
+   * @throws ForbiddenException if caller is not an admin.
+   */
   @ApiOperation({ summary: "Get a vendor's analytics chart (admin only)" })
   @ApiResponse({
     status: 200,

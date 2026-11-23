@@ -20,6 +20,14 @@ import { AdminNotificationsPaginatedResponseDto } from './dto/admin-notification
 export class AdminNotificationsController {
   constructor(private readonly notificationRepo: NotificationRepository) {}
 
+  /**
+   * Retrieves paginated notification records for admin inspection and auditing.
+   *
+   * @param query Admin notification query filters and pagination parameters.
+   * @returns Paginated notification envelopes matching criteria.
+   * @throws UnauthorizedException if authentication token is missing or invalid.
+   * @throws ForbiddenException if caller is not an admin.
+   */
   @ApiOperation({ summary: 'List notifications for admin inspection' })
   @ApiResponse({
     status: 200,

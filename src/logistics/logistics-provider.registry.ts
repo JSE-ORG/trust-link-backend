@@ -35,6 +35,9 @@ export class LogisticsProviderRegistry implements OnModuleInit {
     private readonly giglService?: LogisticsService,
   ) {}
 
+  /**
+   * Registers default logistics carrier during module initialization.
+   */
   onModuleInit(): void {
     if (this.giglService) {
       this.register(DEFAULT_CARRIER, this.giglService);
@@ -59,6 +62,9 @@ export class LogisticsProviderRegistry implements OnModuleInit {
    * When a second provider is added, its detection pattern is added here —
    * for example a regex that matches that provider's tracking-number format.
    * The default fallback is always {@link DEFAULT_CARRIER}.
+   *
+   * @param trackingId Carrier shipment or tracking ID.
+   * @returns Detected carrier identifier string.
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   detectCarrier(trackingId: string): string {

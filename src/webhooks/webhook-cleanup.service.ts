@@ -22,6 +22,9 @@ export class WebhookCleanupService {
     private readonly configService: ConfigService,
   ) {}
 
+  /**
+   * Prunes processed webhook events older than the configured retention days.
+   */
   @Cron('0 0 * * *')
   async pruneProcessedWebhookEvents(): Promise<void> {
     const retentionDays = this.configService.get<number>(

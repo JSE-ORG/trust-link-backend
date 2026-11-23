@@ -65,6 +65,12 @@ export class AppController {
     private readonly sorobanHealthService?: SorobanHealthService,
   ) {}
 
+  /**
+   * Returns root service metadata including application name, version, and documentation link.
+   *
+   * @returns Service identity and documentation URL.
+   * @throws InternalServerErrorException on unexpected runtime failure.
+   */
   @ApiOperation({
     summary: 'Root endpoint — service name, version and docs path',
   })

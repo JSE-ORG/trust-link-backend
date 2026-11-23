@@ -21,6 +21,13 @@ export class JwtGuard implements CanActivate {
     private readonly configService?: ConfigService,
   ) {}
 
+  /**
+   * Validates bearer JWT token on the incoming request and attaches the user payload.
+   *
+   * @param context Execution context of the request.
+   * @returns True if token is valid and user is attached.
+   * @throws UnauthorizedException if authorization header is missing, malformed, expired, or invalid.
+   */
   canActivate(context: ExecutionContext): boolean {
     const request = context.switchToHttp().getRequest<RequestWithUser>();
     const authorization = request.headers.authorization;

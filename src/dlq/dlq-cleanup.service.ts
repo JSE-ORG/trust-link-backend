@@ -13,6 +13,9 @@ export class DlqCleanupService {
     private readonly configService: ConfigService,
   ) {}
 
+  /**
+   * Prunes resolved (REPLAYED or ABANDONED) DLQ entries older than the configured retention days.
+   */
   @Cron('0 0 * * *')
   async pruneResolvedFailedTransactions(): Promise<void> {
     const retentionDays = this.configService.get<number>('DLQ_RETENTION_DAYS');

@@ -156,6 +156,13 @@ export class AuthTokenResponseDto {
 export class Sep10Controller {
   constructor(private readonly sep10Service: Sep10Service) {}
 
+  /**
+   * Issues a SEP-10 challenge transaction via GET query parameter.
+   *
+   * @param query Query containing the client Stellar account address.
+   * @returns Challenge transaction wrapped in response DTO.
+   * @throws BadRequestException if the Stellar account address is invalid.
+   */
   @ApiOperation({ summary: 'Issue SEP-10 challenge (legacy query-param form)' })
   @ApiResponse({
     status: 200,
@@ -176,6 +183,13 @@ export class Sep10Controller {
     };
   }
 
+  /**
+   * Issues a SEP-10 challenge transaction and network passphrase via POST request body.
+   *
+   * @param dto Request body containing the client Stellar public key.
+   * @returns Challenge transaction XDR and network passphrase.
+   * @throws BadRequestException if the Stellar public key is invalid.
+   */
   @ApiOperation({
     summary: 'Issue SEP-10 challenge transaction for wallet signing',
   })
@@ -197,6 +211,14 @@ export class Sep10Controller {
     };
   }
 
+  /**
+   * Verifies a client-signed SEP-10 challenge transaction and issues JWT access/refresh tokens.
+   *
+   * @param dto DTO containing signed challenge transaction XDR.
+   * @returns Issued JWT access and refresh tokens.
+   * @throws BadRequestException if the transaction is malformed or invalid.
+   * @throws UnauthorizedException if signature verification fails or challenge is expired.
+   */
   @ApiOperation({ summary: 'Verify signed SEP-10 challenge and issue JWT' })
   @ApiResponse({
     status: 200,
@@ -213,6 +235,13 @@ export class Sep10Controller {
     return await this.sep10Service.verifyAndIssueToken(dto.transaction);
   }
 
+  /**
+   * Rotates a refresh token and issues a new JWT access and refresh token pair.
+   *
+   * @param dto DTO containing the existing refresh token.
+   * @returns Newly issued access and refresh token pair.
+   * @throws UnauthorizedException if the refresh token is expired, revoked, or invalid.
+   */
   @ApiOperation({ summary: 'Rotate refresh token and issue new JWT pair' })
   @ApiResponse({
     status: 200,

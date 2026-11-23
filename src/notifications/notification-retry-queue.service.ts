@@ -176,6 +176,11 @@ export class NotificationRetryQueueService
     return this.tracing.withSpan(name, { attributes }, fn);
   }
 
+  /**
+   * Enqueues a notification job for asynchronous delivery and retries.
+   *
+   * @param job Notification retry job payload.
+   */
   async enqueue(job: NotificationRetryJobData): Promise<void> {
     return this.traced(
       'notification.retry.enqueue',
@@ -333,6 +338,9 @@ export class NotificationRetryQueueService
     });
   }
 
+  /**
+   * Initializes BullMQ queues and workers or falls back to in-process retry.
+   */
   async onModuleInit(): Promise<void> {
     const url = this.configService?.get<string>('REDIS_URL');
     if (!url) {
@@ -433,6 +441,9 @@ export class NotificationRetryQueueService
     }
   }
 
+  /**
+   * Closes BullMQ queues and workers on module destruction.
+   */
   async onModuleDestroy(): Promise<void> {
     await Promise.all([
       this.bullWorker?.close(),

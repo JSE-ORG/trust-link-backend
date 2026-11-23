@@ -6,6 +6,7 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  IsDateString,
   Max,
   Min,
 } from 'class-validator';
@@ -44,6 +45,23 @@ export class ListFailedTransactionsQueryDto {
   @IsOptional()
   @IsUUID()
   escrowId?: string;
+
+  @ApiPropertyOptional({
+    description: 'Earliest createdAt, inclusive (ISO 8601).',
+    example: '2026-01-01',
+  })
+  @IsOptional()
+  @IsDateString()
+  from?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Latest createdAt, inclusive (ISO 8601). A date without a time covers the whole day.',
+    example: '2026-12-31',
+  })
+  @IsOptional()
+  @IsDateString()
+  to?: string;
 
   @ApiPropertyOptional({
     minimum: 1,

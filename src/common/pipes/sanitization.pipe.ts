@@ -12,6 +12,12 @@ import { sanitizeDeep } from '../sanitization/sanitize.util';
  */
 @Injectable()
 export class SanitizationPipe implements PipeTransform {
+  /**
+   * Sanitizes input values recursively before passing to route handlers.
+   *
+   * @param value Unsanitized input value.
+   * @returns Deeply sanitized value with dangerous characters stripped.
+   */
   transform(value: unknown): unknown {
     return sanitizeDeep(value);
   }

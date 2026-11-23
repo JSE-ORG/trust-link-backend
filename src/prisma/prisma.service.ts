@@ -246,6 +246,9 @@ export class PrismaService extends PrismaClient {
     this.effectiveDatabaseUrl = effectiveUrl;
   }
 
+  /**
+   * Connects to PostgreSQL and configures slow query logging on initialization.
+   */
   async onModuleInit(): Promise<void> {
     await this.$connect();
     const slowQueryThresholdMs =
@@ -266,6 +269,9 @@ export class PrismaService extends PrismaClient {
     });
   }
 
+  /**
+   * Disconnects database connection pool on application shutdown.
+   */
   async onModuleDestroy(): Promise<void> {
     await this.$disconnect();
   }

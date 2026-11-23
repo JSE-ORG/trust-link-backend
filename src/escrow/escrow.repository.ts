@@ -372,6 +372,12 @@ export class EscrowRepository {
     return row?.contractEscrowId ?? null;
   }
 
+  /**
+   * Looks up the backend UUID of an escrow by its on-chain contractEscrowId.
+   *
+   * @param contractEscrowId On-chain contract escrow ID (bigint).
+   * @returns Backend UUID string or null if not found.
+   */
   async findIdByContractEscrowId(
     contractEscrowId: bigint,
   ): Promise<string | null> {

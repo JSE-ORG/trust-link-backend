@@ -23,6 +23,13 @@ interface RequestWithUser {
 export class AdminGuard implements CanActivate {
   constructor(private readonly configService: ConfigService) {}
 
+  /**
+   * Evaluates if the authenticated caller's address matches ADMIN_ADDRESS.
+   *
+   * @param context Execution context of the request.
+   * @returns True if caller is authorized as admin.
+   * @throws ForbiddenException if user is missing or address does not match admin address.
+   */
   canActivate(context: ExecutionContext): boolean {
     const request = context.switchToHttp().getRequest<RequestWithUser>();
     const adminAddress = this.configService.get<string>('ADMIN_ADDRESS');

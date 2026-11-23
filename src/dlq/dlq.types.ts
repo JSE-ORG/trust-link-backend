@@ -128,6 +128,8 @@ export interface ListFailedTransactionsQuery {
   escrowId?: string;
   page?: number;
   limit?: number;
+  from?: string;
+  to?: string;
 }
 
 export class PaginatedFailedTransactions {

@@ -26,6 +26,15 @@ import { VendorEscrowsPaginatedResponseDto } from './dto/vendor-escrows-paginate
 export class BuyerEscrowController {
   constructor(private readonly escrowService: EscrowService) {}
 
+  /**
+   * Lists escrows associated with the authenticated buyer.
+   *
+   * @param query Filtering, sorting, and pagination criteria.
+   * @param user Authenticated buyer user.
+   * @returns Paginated list of buyer escrows.
+   * @throws BadRequestException if query parameters fail validation.
+   * @throws UnauthorizedException if authentication token is missing or invalid.
+   */
   @ApiOperation({ summary: 'List all escrows for the authenticated buyer' })
   @ApiResponse({
     status: 200,
@@ -48,6 +57,12 @@ export class BuyerEscrowController {
    * Exports the buyer's escrows as CSV, newest first, using the same filters
    * as the list. Capped at 10,000 rows; cells that could run as spreadsheet
    * formulas are escaped. Carries `vendorAddress` in place of `buyerAddress`.
+   *
+   * @param query Filtering and sorting criteria for export.
+   * @param user Authenticated buyer user.
+   * @returns CSV formatted file string.
+   * @throws BadRequestException if query parameters fail validation.
+   * @throws UnauthorizedException if authentication token is missing or invalid.
    */
   @ApiOperation({ summary: 'Export buyer escrows as CSV (max 10,000 rows)' })
   @ApiProduces('text/csv')
