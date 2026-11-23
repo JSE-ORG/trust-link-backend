@@ -147,7 +147,11 @@ export class StressTestController {
   }
 
   @ApiOperation({ summary: 'List completed stress test runs' })
-  @ApiResponse({ status: 200, description: 'Stress test history returned.', type: [StressTestResultDto] })
+  @ApiResponse({
+    status: 200,
+    description: 'Stress test history returned.',
+    type: [StressTestResultDto],
+  })
   @Get()
   listCompleted(): Promise<StressTestResult[]> {
     return this.stressTestService.getCompletedTests();
@@ -155,7 +159,11 @@ export class StressTestController {
 
   @ApiOperation({ summary: 'Get a stress test run by id' })
   @ApiParam({ name: 'testId', example: 'test_2026-11-21_1' })
-  @ApiResponse({ status: 200, description: 'Stress test run returned.', type: StressTestResultDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Stress test run returned.',
+    type: StressTestResultDto,
+  })
   @ApiResponse({ status: 404, description: 'Stress test not found.' })
   @Get(':testId')
   async getTest(@Param('testId') testId: string): Promise<StressTestResult> {

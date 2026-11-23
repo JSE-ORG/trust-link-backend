@@ -16,11 +16,7 @@ import { ConfigService } from '../config/config.service';
 export const LOGISTICS_CREDENTIAL_PROVIDER = 'logistics';
 
 export type LogisticsStatus =
-  | 'PENDING'
-  | 'IN_TRANSIT'
-  | 'DELIVERED'
-  | 'DELAYED'
-  | 'EXCEPTION';
+  'PENDING' | 'IN_TRANSIT' | 'DELIVERED' | 'DELAYED' | 'EXCEPTION';
 
 export interface TrackingEvent {
   timestamp: Date;

@@ -1337,7 +1337,9 @@ export class EscrowService {
         const cancelled = await this.escrowRepository.markCancelled(escrowId);
         this.notificationsService
           .notifyCancelled(cancelled)
-          .catch((err) => this.logger.error('notifyCancelled(auto) failed', err));
+          .catch((err) =>
+            this.logger.error('notifyCancelled(auto) failed', err),
+          );
         return { skipped: false };
       }
 

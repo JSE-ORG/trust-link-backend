@@ -72,6 +72,7 @@ describe('EscrowService.syncStateFromChain', () => {
     notifications = {
       notifyFunded: jest.fn().mockResolvedValue(undefined),
       notifyShipped: jest.fn().mockResolvedValue(undefined),
+      notifyCancelled: jest.fn().mockResolvedValue(undefined),
       notifyCompleted: jest.fn().mockResolvedValue(undefined),
       notifyDisputed: jest.fn().mockResolvedValue(undefined),
       notifyRefunded: jest.fn().mockResolvedValue(undefined),

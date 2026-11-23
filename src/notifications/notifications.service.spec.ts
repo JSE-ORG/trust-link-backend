@@ -28,6 +28,9 @@ const EMAIL_CONFIG: Record<string, string> = {
   SENDGRID_TEMPLATE_DISPUTED: templateId('d'),
   SENDGRID_TEMPLATE_COMPLETED: templateId('e'),
   SENDGRID_TEMPLATE_REFUNDED: templateId('f'),
+  SENDGRID_TEMPLATE_CANCELLED: templateId('1'),
+  SENDGRID_TEMPLATE_DELAYED: templateId('2'),
+  SENDGRID_TEMPLATE_EXCEPTION: templateId('3'),
 };
 const VENDOR_EMAIL = 'vendor@example.test';
 const VENDOR_PHONE = '+15555550100';

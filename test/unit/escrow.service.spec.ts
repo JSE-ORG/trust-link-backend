@@ -59,6 +59,7 @@ describe('EscrowService.handleShipment (issue #16)', () => {
     notifications = {
       notifyFunded: jest.fn(),
       notifyShipped: jest.fn(),
+      notifyCancelled: jest.fn().mockResolvedValue(undefined),
     } as unknown as jest.Mocked<NotificationsService>;
     configService = {
       get: jest.fn((key: string) =>
