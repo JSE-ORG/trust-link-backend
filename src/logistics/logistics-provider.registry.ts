@@ -55,7 +55,6 @@ export class LogisticsProviderRegistry implements OnModuleInit {
     this.providers.set(carrier, service);
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   /**
    * Detects the carrier from the tracking ID format.
    *
@@ -67,6 +66,7 @@ export class LogisticsProviderRegistry implements OnModuleInit {
    * @param trackingId Carrier shipment or tracking ID.
    * @returns Detected carrier identifier string.
    */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   detectCarrier(trackingId: string): string {
     return DEFAULT_CARRIER;
   }

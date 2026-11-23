@@ -93,7 +93,9 @@ export class DlqService {
       const fromTime = new Date(query.from).getTime();
       const toDate = new Date(query.to);
       const isDateOnly = /^\d{4}-\d{2}-\d{2}$/.test(query.to);
-      const toTime = isDateOnly ? toDate.getTime() + 86_400_000 : toDate.getTime();
+      const toTime = isDateOnly
+        ? toDate.getTime() + 86_400_000
+        : toDate.getTime();
       if (isDateOnly ? fromTime >= toTime : fromTime > toTime) {
         throw new BadRequestException('from must not be after to');
       }

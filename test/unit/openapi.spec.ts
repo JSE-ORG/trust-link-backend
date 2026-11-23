@@ -66,14 +66,38 @@ describe('createOpenApiDocument', () => {
           version: '1.0.0',
         }),
         tags: expect.arrayContaining([
-          expect.objectContaining({ name: 'Admin', description: expect.any(String) }),
-          expect.objectContaining({ name: 'Auth', description: expect.any(String) }),
-          expect.objectContaining({ name: 'Buyer', description: expect.any(String) }),
-          expect.objectContaining({ name: 'Escrow', description: expect.any(String) }),
-          expect.objectContaining({ name: 'Health', description: expect.any(String) }),
-          expect.objectContaining({ name: 'Stress Test', description: expect.any(String) }),
-          expect.objectContaining({ name: 'Vendor', description: expect.any(String) }),
-          expect.objectContaining({ name: 'Webhooks', description: expect.any(String) }),
+          expect.objectContaining({
+            name: 'Admin',
+            description: expect.any(String),
+          }),
+          expect.objectContaining({
+            name: 'Auth',
+            description: expect.any(String),
+          }),
+          expect.objectContaining({
+            name: 'Buyer',
+            description: expect.any(String),
+          }),
+          expect.objectContaining({
+            name: 'Escrow',
+            description: expect.any(String),
+          }),
+          expect.objectContaining({
+            name: 'Health',
+            description: expect.any(String),
+          }),
+          expect.objectContaining({
+            name: 'Stress Test',
+            description: expect.any(String),
+          }),
+          expect.objectContaining({
+            name: 'Vendor',
+            description: expect.any(String),
+          }),
+          expect.objectContaining({
+            name: 'Webhooks',
+            description: expect.any(String),
+          }),
         ]),
       }),
       expect.objectContaining({
