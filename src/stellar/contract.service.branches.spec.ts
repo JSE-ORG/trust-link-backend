@@ -14,7 +14,8 @@ const VALID_CONTRACT_ID =
 const VALID_ADDRESS =
   'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5';
 
-type Priv = Record<string, (...args: any[]) => any>;
+type Priv = Record<string, (...args: unknown[]) => unknown>;
+type Account = { sequenceNumber(): string };
 
 function makeService(server?: object, config?: object): ContractService {
   return new ContractService(server, config as never, undefined);
@@ -229,27 +230,27 @@ describe('ContractService remaining branches (issue #1222)', () => {
           .mockResolvedValue({ sequenceNumber: () => '123' }),
       };
       const svc1 = makeService(serverWithFn);
-      const acc1 = await (svc1 as unknown as Priv)['fetchAccount'](
+      const acc1 = (await (svc1 as unknown as Priv)['fetchAccount'](
         VALID_ADDRESS,
-      );
+      )) as Account;
       expect(acc1.sequenceNumber()).toBe('123');
 
       const serverWithProp = {
         getAccount: jest.fn().mockResolvedValue({ sequence: 456 }),
       };
       const svc2 = makeService(serverWithProp);
-      const acc2 = await (svc2 as unknown as Priv)['fetchAccount'](
+      const acc2 = (await (svc2 as unknown as Priv)['fetchAccount'](
         VALID_ADDRESS,
-      );
+      )) as Account;
       expect(acc2.sequenceNumber()).toBe('456');
 
       const serverWithEmpty = {
         getAccount: jest.fn().mockResolvedValue({}),
       };
       const svc3 = makeService(serverWithEmpty);
-      const acc3 = await (svc3 as unknown as Priv)['fetchAccount'](
+      const acc3 = (await (svc3 as unknown as Priv)['fetchAccount'](
         VALID_ADDRESS,
-      );
+      )) as Account;
       expect(acc3.sequenceNumber()).toBe('0');
     });
 
@@ -258,7 +259,9 @@ describe('ContractService remaining branches (issue #1222)', () => {
         loadAccount: jest.fn().mockResolvedValue({ sequence: '789' }),
       };
       const svc = makeService(server);
-      const acc = await (svc as unknown as Priv)['fetchAccount'](VALID_ADDRESS);
+      const acc = (await (svc as unknown as Priv)['fetchAccount'](
+        VALID_ADDRESS,
+      )) as Account;
       expect(acc.sequenceNumber()).toBe('789');
     });
   });

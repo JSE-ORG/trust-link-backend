@@ -24,31 +24,41 @@ Optimized the chart endpoint to use database-level aggregation instead of loadin
 - Uses PostgreSQL's `AT TIME ZONE` for correct date conversion
 - Default timezone is UTC for backward compatibility
 
-### 3. Gap Filling
+### 3. Gap Filling and Interval Bucketing
 
-- Implemented `fillDateGaps` method to fill days with zero transactions
-- Ensures consistent time-series data even for inactive days
-- Maintains chronological order in results
+- Implemented `fillDateGaps` method to fill periods with zero transactions across all intervals:
+  - `day` (default): Daily calendar steps.
+  - `week`: Monday-start week bucketing (`DATE_TRUNC('week', ...)`), ensuring ISO week alignment and 7-day increments.
+  - `month`: Monthly bucketing aligned to the 1st of each calendar month (`DATE_TRUNC('month', ...)`).
+- Ensures consistent time-series data even for inactive periods while maintaining chronological order.
 
-### 4. Mock Prisma Service Update (`prisma.service.ts`)
+### 4. Shipping and Delivery Speed Metrics
+
+- Added fulfillment speed metrics to vendor analytics statistics (`GET /vendor/analytics/stats`):
+  - `averageHoursToShip`: Mean elapsed hours between escrow creation (`createdAt`) and shipment (`shippedAt`), computed as `(shippedAt - createdAt) / 3600` when `shippedAt >= createdAt`. Evaluates to `null` when no escrows in the requested window have been shipped.
+  - `averageHoursToDeliver`: Mean elapsed hours between shipment (`shippedAt`) and buyer delivery (`deliveredAt`), computed as `(deliveredAt - shippedAt) / 3600` when `deliveredAt >= shippedAt`. Evaluates to `null` when no escrows in the requested window have reached delivery.
+
+### 5. Mock Prisma Service Update (`prisma.service.ts`)
 
 - Added `$queryRaw` mock implementation for testing
 - Supports basic aggregation queries
 - Maintains compatibility with in-memory test environment
 
-### 5. Controller Update (`analytics.controller.ts`)
+### 6. Controller Update (`analytics.controller.ts`)
 
-- Added optional `timezone` query parameter
-- Maintains backward compatibility with UTC default
+- Added optional `timezone` query parameter (defaults to UTC)
+- Added optional `interval` query parameter (`day`, `week`, `month`)
+- Added optional `from` and `to` date range query parameters (mutually exclusive with `days`)
 
-### 6. Unit Tests (`analytics.service.spec.ts`)
+### 7. Unit Tests (`analytics.service.spec.ts`, `analytics.repository.spec.ts`)
 
-- Tests for database-level aggregation
-- Tests for gap filling functionality
+- Tests for database-level aggregation across `day`, `week`, and `month` intervals
+- Tests for gap filling functionality and Monday week start
+- Tests for shipping and delivery duration metrics including `null` cases
 - Tests for timezone boundary handling
 - Tests for correct aggregation calculations
 
-### 7. Performance Benchmark (`scripts/benchmark-chart-aggregation.ts`)
+### 8. Performance Benchmark (`scripts/benchmark-chart-aggregation.ts`)
 
 - Compares old vs new approach
 - Measures execution time and memory usage
@@ -56,11 +66,11 @@ Optimized the chart endpoint to use database-level aggregation instead of loadin
 
 ## SQL Query
 
-The optimized query uses PostgreSQL's aggregation functions:
+The optimized chart query uses PostgreSQL's `DATE_TRUNC` and aggregation functions, adapting dynamically to the selected interval (`day`, `week`, or `month`):
 
 ```sql
 SELECT 
-  DATE("createdAt" AT TIME ZONE ${timezone})::date as date,
+  DATE_TRUNC(${interval}, ("createdAt" AT TIME ZONE 'UTC') AT TIME ZONE ${timezone})::date as date,
   COALESCE(SUM("amount"), 0) as "totalVolume",
   COUNT(*) as "transactionCount",
   SUM(CASE WHEN "state" IN ('COMPLETED', 'RELEASED') THEN 1 ELSE 0 END) as "completedCount",
@@ -70,8 +80,26 @@ WHERE
   "vendorAddress" = ${vendorAddress}
   AND "createdAt" >= ${startDate}
   AND "createdAt" <= ${endDate}
-GROUP BY DATE("createdAt" AT TIME ZONE ${timezone})::date
-ORDER BY date ASC
+GROUP BY 1
+ORDER BY 1 ASC
+```
+
+### Speed Metrics SQL Query
+
+Fulfillment duration metrics are computed at the database level:
+
+```sql
+SELECT 
+  AVG(CASE WHEN "shippedAt" IS NOT NULL AND "shippedAt" >= "createdAt" 
+      THEN EXTRACT(EPOCH FROM ("shippedAt" - "createdAt")) / 3600.0 
+      ELSE NULL END) as "averageHoursToShip",
+  AVG(CASE WHEN "deliveredAt" IS NOT NULL AND "shippedAt" IS NOT NULL AND "deliveredAt" >= "shippedAt" 
+      THEN EXTRACT(EPOCH FROM ("deliveredAt" - "shippedAt")) / 3600.0 
+      ELSE NULL END) as "averageHoursToDeliver"
+FROM "Escrow"
+WHERE "vendorAddress" = ${vendorAddress}
+  AND "createdAt" >= ${startDate}
+  AND "createdAt" <= ${endDate}
 ```
 
 ## Performance Improvements
@@ -103,18 +131,26 @@ ts-node scripts/benchmark-chart-aggregation.ts
 
 ## API Usage
 
-### Request
+### Chart Endpoint
+
+#### Request
 
 ```http
-GET /vendor/analytics/chart?days=30&timezone=America/New_York
+GET /vendor/analytics/chart?days=30&timezone=America/New_York&interval=week
 ```
 
-### Parameters
+#### Parameters
 
-- `days` (optional): Number of days to retrieve (default: 30, max: 365)
-- `timezone` (optional): Timezone for date grouping (default: UTC)
+- `days` (optional): Number of days to retrieve (default: 30, max: 365). Mutually exclusive with `from`/`to`.
+- `from` / `to` (optional): Explicit date range window in ISO format (`YYYY-MM-DD`). Mutually exclusive with `days`, max span 366 days.
+- `timezone` (optional): Timezone for date grouping (default: `UTC`).
+- `interval` (optional): Aggregation interval (`day`, `week`, or `month`; default: `day`).
+  - `day`: Standard daily bucketing.
+  - `week`: Monday-start weekly bucketing.
+  - `month`: Monthly bucketing aligned to the 1st of each calendar month.
+  - Zero-transaction periods are gap-filled across all intervals to return continuous series data.
 
-### Response
+#### Response
 
 ```json
 {
@@ -139,6 +175,33 @@ GET /vendor/analytics/chart?days=30&timezone=America/New_York
   }
 }
 ```
+
+### Stats Endpoint (Fulfillment Speed Metrics)
+
+#### Request
+
+```http
+GET /vendor/analytics/stats
+```
+
+#### Response
+
+```json
+{
+  "totalVolume": 45000,
+  "totalTransactions": 450,
+  "completedTransactions": 400,
+  "disputedTransactions": 10,
+  "disputeRate": 0.022,
+  "averageHoursToShip": 14.5,
+  "averageHoursToDeliver": 48.2
+}
+```
+
+#### Speed Metrics Details
+
+- `averageHoursToShip` (`number | null`): Average hours between escrow creation and shipment dispatch. Returns `null` if no escrows have been shipped.
+- `averageHoursToDeliver` (`number | null`): Average hours between shipment dispatch and buyer delivery. Returns `null` if no escrows have been delivered.
 
 ## Acceptance Criteria
 
@@ -221,5 +284,5 @@ npm run benchmark:chart
 
 - Add caching for frequently accessed date ranges
 - Implement incremental updates for real-time dashboards
-- Add support for custom aggregation intervals (hourly, weekly, monthly)
+- Add support for additional aggregation intervals (e.g., hourly)
 - Consider materialized views for very large datasets

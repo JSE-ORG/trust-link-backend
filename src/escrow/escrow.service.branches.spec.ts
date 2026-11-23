@@ -24,7 +24,7 @@ import { S3PresignService } from '../common/services/s3-presign.service';
 import { ContractService } from '../stellar/contract.service';
 import { EscrowRecord } from '../prisma/prisma.service';
 
-type Priv = Record<string, (...args: any[]) => any>;
+type Priv = Record<string, (...args: unknown[]) => unknown>;
 
 function makeEscrow(overrides: Partial<EscrowRecord> = {}): EscrowRecord {
   return {

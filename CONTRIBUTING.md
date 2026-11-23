@@ -95,7 +95,7 @@ Key requirements from the SRD:
 | Node.js | `22` | Pinned in `.nvmrc`. Run `nvm use` in the project root |
 | npm | `10.x` | Ships with Node 22. See the note below before using another version |
 | PostgreSQL | `15+` | Local install or Docker |
-| Docker | optional | For spinning up Postgres quickly |
+| Docker | optional | For spinning up Postgres quickly, or running via Dev Container |
 
 > **Use Node 22, not just "20 or newer".** Every CI workflow reads `.nvmrc`, so
 > anything else means your local results and CI's can disagree. Newer versions
@@ -148,6 +148,18 @@ npm run db:seed
 # 10. Start the dev server
 npm run start:dev
 ```
+
+### Dev Container Setup (Optional)
+
+If you use VS Code or GitHub Codespaces, a pre-configured dev container is available in `.devcontainer/` to automate the entire environment setup:
+
+- Ships with **Node.js 22** (matching `.nvmrc`) and **PostgreSQL 16**.
+- Automatically runs `npm ci`, `npx prisma generate`, and database migrations (`npx prisma migrate deploy`) upon container creation.
+- Preconfigures `DATABASE_URL` so `npm test` and `npm run test:integration` pass immediately out of the box.
+
+To use it:
+1. Open the repository in VS Code with the **Dev Containers** extension installed.
+2. When prompted, click **Reopen in Container** (or run `Dev Containers: Reopen in Container` from the Command Palette).
 
 The API will be available at `http://localhost:3000`.
 Swagger docs: `http://localhost:3000/api/docs`

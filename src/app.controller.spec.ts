@@ -372,7 +372,7 @@ describe('AppController', () => {
   describe('version', () => {
     it('returns version metadata', () => {
       const version = appController.getVersion();
-      expect(version.version).toBe('1.0.0');
+      expect(version.version).toBe('1.1.0');
       expect(version.environment).toBe('test');
     });
 
