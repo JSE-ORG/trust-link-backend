@@ -1,6 +1,7 @@
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
+import { createGlobalPipes } from '../../src/common/pipes/global-pipes';
 import { ConfigService } from '../../src/config/config.service';
 import { AppModule } from '../../src/app.module';
 import { PrismaService } from '../../src/prisma/prisma.service';
@@ -34,9 +35,7 @@ describe('GET /escrow/:id/dispute access control integration (issue #52)', () =>
     }).compile();
 
     app = moduleFixture.createNestApplication();
-    app.useGlobalPipes(
-      new ValidationPipe({ whitelist: true, transform: true }),
-    );
+    app.useGlobalPipes(...createGlobalPipes());
     await app.init();
     prisma = app.get(PrismaService);
     adminAddress = app.get(ConfigService).get<string>('ADMIN_ADDRESS')!;

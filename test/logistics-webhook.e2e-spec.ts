@@ -1,4 +1,4 @@
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
@@ -6,6 +6,7 @@ import { TrackingPollWorker } from '../src/workers/tracking-poll.worker';
 import { LogisticsService } from '../src/logistics/logistics.service';
 import { ContractService } from '../src/stellar/contract.service';
 import { ensureVendors } from './prisma-helpers';
+import { createGlobalPipes } from '../src/common/pipes/global-pipes';
 
 describe('Logistics Webhook Delivery Update E2E (issue #61)', () => {
   let nextContractEscrowId = 1n;
@@ -21,9 +22,7 @@ describe('Logistics Webhook Delivery Update E2E (issue #61)', () => {
     }).compile();
 
     app = moduleFixture.createNestApplication();
-    app.useGlobalPipes(
-      new ValidationPipe({ whitelist: true, transform: true }),
-    );
+    app.useGlobalPipes(...createGlobalPipes());
     await app.init();
 
     prisma = app.get(PrismaService);
@@ -58,6 +57,7 @@ describe('Logistics Webhook Delivery Update E2E (issue #61)', () => {
         state: 'SHIPPED',
         contractEscrowId: nextContractEscrowId++,
         trackingId: 'TRK-WEBHOOK-001',
+        carrier: null,
         shippedAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000),
       },
     });
@@ -95,6 +95,7 @@ describe('Logistics Webhook Delivery Update E2E (issue #61)', () => {
         state: 'SHIPPED',
         contractEscrowId: nextContractEscrowId++,
         trackingId: 'TRK-DELIVERED-001',
+        carrier: null,
         shippedAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000),
       },
     });
@@ -110,6 +111,7 @@ describe('Logistics Webhook Delivery Update E2E (issue #61)', () => {
         state: 'SHIPPED',
         contractEscrowId: nextContractEscrowId++,
         trackingId: 'TRK-IN-TRANSIT-001',
+        carrier: null,
         shippedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
       },
     });
@@ -150,6 +152,7 @@ describe('Logistics Webhook Delivery Update E2E (issue #61)', () => {
         state: 'SHIPPED',
         contractEscrowId: nextContractEscrowId++,
         trackingId: 'TRK-ERROR-001',
+        carrier: null,
         shippedAt: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000),
       },
     });
@@ -175,6 +178,7 @@ describe('Logistics Webhook Delivery Update E2E (issue #61)', () => {
         state: 'SHIPPED',
         contractEscrowId: nextContractEscrowId++,
         trackingId: null,
+        carrier: null,
         shippedAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000),
       },
     });
@@ -198,6 +202,7 @@ describe('Logistics Webhook Delivery Update E2E (issue #61)', () => {
         state: 'SHIPPED',
         contractEscrowId: nextContractEscrowId++,
         trackingId: 'TRK-INSTANT-001',
+        carrier: null,
         shippedAt: new Date(Date.now() - 6 * 24 * 60 * 60 * 1000),
       },
     });

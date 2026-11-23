@@ -7,6 +7,7 @@ import {
   type ThrottlerModuleOptions,
 } from '@nestjs/throttler';
 import { ThrottlerStorageRedisService } from '@nest-lab/throttler-storage-redis';
+import { SentryModule } from '@sentry/nestjs/setup';
 import { AdminStatsModule } from './admin/stats/admin-stats.module';
 import { DisputeModule as AdminDisputeModule } from './admin/dispute/dispute.module';
 import { QueueDashboardModule } from './admin/queues/queue-dashboard.module';
@@ -35,11 +36,9 @@ import { StellarModule } from './stellar/stellar.module';
 import { VendorModule } from './vendor/vendor.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 import { StressTestModule } from './stress-test/stress-test.module';
-
 import { DlqModule } from './dlq/dlq.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { WorkersModule } from './workers/workers.module';
-import { SentryModule } from '@sentry/nestjs/setup';
 
 export type AppThrottlerOptions = Exclude<
   ThrottlerModuleOptions,
@@ -123,6 +122,11 @@ export function buildThrottlerOptions(
   ],
 })
 export class AppModule implements NestModule {
+  /**
+   * Configures global middleware applied across all routes.
+   *
+   * @param consumer Middleware consumer to bind pipeline middleware.
+   */
   configure(consumer: MiddlewareConsumer) {
     consumer
       .apply(

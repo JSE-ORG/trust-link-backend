@@ -15,7 +15,7 @@
 
 import axios from 'axios';
 import { Test } from '@nestjs/testing';
-import { LogisticsService } from './logistics.service';
+import { LogisticsService, TrackingDetails } from './logistics.service';
 import { LogisticsModule } from './logistics.module';
 import { ConfigService } from '../config/config.service';
 import { GiglLogisticsService } from './gigl/gigl-logistics.service';
@@ -89,7 +89,27 @@ function makeService(
   config: jest.Mocked<Pick<ConfigService, 'get'>>,
   repository?: ReturnType<typeof makeRepository>,
 ): LogisticsService {
-  return new LogisticsService(repository, config as unknown as ConfigService);
+  return new TestLogisticsService(
+    repository,
+    config as unknown as ConfigService,
+  );
+}
+
+/**
+ * Concrete subclass for unit-testing the shared API-key management logic in
+ * LogisticsService. The base class is abstract (issue #1143), so tests that
+ * exercise key rotation, encryption, and startup behaviour construct this
+ * minimal implementation instead of a real provider.
+ */
+class TestLogisticsService extends LogisticsService {
+  override getStatus(trackingId: string): Promise<TrackingDetails> {
+    return Promise.reject(
+      new Error(`Logistics service is not configured for ${trackingId}`),
+    );
+  }
+  override getTrackingDetails(trackingId: string): Promise<TrackingDetails> {
+    return this.getStatus(trackingId);
+  }
 }
 
 // ── Suites ───────────────────────────────────────────────────────────────────
@@ -249,7 +269,7 @@ describe('LogisticsService & LogisticsModule (issue #479)', () => {
 
   describe('Runtime API key management', () => {
     beforeEach(() => {
-      service = new LogisticsService(undefined, encryptionKeyConfig);
+      service = new TestLogisticsService(undefined, encryptionKeyConfig);
     });
 
     it('stores and returns the API key at runtime', () => {
@@ -303,7 +323,7 @@ describe('LogisticsService & LogisticsModule (issue #479)', () => {
 
     it('rotates to the submitted key on first set (nothing previously stored)', async () => {
       const repository = createFakeRepository();
-      const svc = new LogisticsService(
+      const svc = new TestLogisticsService(
         repository as unknown as ProviderCredentialRepository,
         encryptionKeyConfig,
       );
@@ -317,7 +337,7 @@ describe('LogisticsService & LogisticsModule (issue #479)', () => {
 
     it('rotates to the submitted key when a key already exists, and the stored value actually changes', async () => {
       const repository = createFakeRepository();
-      const svc = new LogisticsService(
+      const svc = new TestLogisticsService(
         repository as unknown as ProviderCredentialRepository,
         encryptionKeyConfig,
       );
@@ -336,13 +356,13 @@ describe('LogisticsService & LogisticsModule (issue #479)', () => {
 
     it('persists the rotated key so a freshly constructed service instance loads it (issue #499)', async () => {
       const repository = createFakeRepository();
-      const svc1 = new LogisticsService(
+      const svc1 = new TestLogisticsService(
         repository as unknown as ProviderCredentialRepository,
         encryptionKeyConfig,
       );
       await svc1.rotateApiKey('rotated-secret');
 
-      const svc2 = new LogisticsService(
+      const svc2 = new TestLogisticsService(
         repository as unknown as ProviderCredentialRepository,
         encryptionKeyConfig,
       );
@@ -357,7 +377,7 @@ describe('LogisticsService & LogisticsModule (issue #479)', () => {
       process.env.LOGISTICS_API_KEY = 'env-fallback-token';
 
       try {
-        const svc = new LogisticsService(
+        const svc = new TestLogisticsService(
           repository as unknown as ProviderCredentialRepository,
           encryptionKeyConfig,
         );
@@ -378,13 +398,13 @@ describe('LogisticsService & LogisticsModule (issue #479)', () => {
       process.env.LOGISTICS_API_KEY = 'env-fallback-token';
 
       try {
-        const svc1 = new LogisticsService(
+        const svc1 = new TestLogisticsService(
           repository as unknown as ProviderCredentialRepository,
           encryptionKeyConfig,
         );
         await svc1.rotateApiKey('rotated-secret');
 
-        const svc2 = new LogisticsService(
+        const svc2 = new TestLogisticsService(
           repository as unknown as ProviderCredentialRepository,
           encryptionKeyConfig,
         );

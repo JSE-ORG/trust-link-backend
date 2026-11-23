@@ -41,6 +41,14 @@ export class DisputeController {
     private readonly auditLogService: AuditLogService,
   ) {}
 
+  /**
+   * Lists all disputes across all escrows with pagination.
+   *
+   * @param query Query filters and pagination parameters.
+   * @returns Paginated list of disputes.
+   * @throws UnauthorizedException if authentication token is missing or invalid.
+   * @throws ForbiddenException if caller is not an admin.
+   */
   @ApiOperation({ summary: 'List all disputes (admin only)' })
   @ApiResponse({
     status: 200,
@@ -56,6 +64,18 @@ export class DisputeController {
     return this.disputeService.getDisputes(query);
   }
 
+  /**
+   * Resolves an open dispute by releasing funds to vendor or refunding buyer.
+   *
+   * @param id Unique identifier of the disputed escrow.
+   * @param dto Resolution payload (RELEASE or REFUND).
+   * @param admin Authenticated admin user performing the resolution.
+   * @returns Updated escrow record reflecting resolution.
+   * @throws BadRequestException if resolution value is invalid.
+   * @throws NotFoundException if escrow is not found.
+   * @throws UnauthorizedException if authentication token is missing or invalid.
+   * @throws ForbiddenException if caller is not an admin.
+   */
   @ApiOperation({
     summary: 'Resolve a dispute by releasing or refunding the escrow',
   })
@@ -87,6 +107,15 @@ export class DisputeController {
     return result;
   }
 
+  /**
+   * Exports admin audit log entries matching filters as a CSV download.
+   *
+   * @param query Filtering parameters for audit log export.
+   * @param res Express response object for setting download headers.
+   * @returns CSV formatted audit log string.
+   * @throws UnauthorizedException if authentication token is missing or invalid.
+   * @throws ForbiddenException if caller is not an admin.
+   */
   @ApiOperation({ summary: 'Export admin audit log as CSV' })
   @ApiResponse({
     status: 200,
@@ -111,6 +140,14 @@ export class DisputeController {
     return csv;
   }
 
+  /**
+   * Retrieves paginated admin audit log records matching filters.
+   *
+   * @param query Filtering and pagination parameters for audit log.
+   * @returns Paginated audit log records envelope.
+   * @throws UnauthorizedException if authentication token is missing or invalid.
+   * @throws ForbiddenException if caller is not an admin.
+   */
   @ApiOperation({ summary: 'Get admin audit log entries' })
   @ApiResponse({
     status: 200,

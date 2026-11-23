@@ -14,6 +14,19 @@ export class VendorEscrowsPaginatedResponseDto {
     description:
       'The escrow summary records for the requested page. Compact EscrowSummaryDto representation (no sensitive internal identifiers).',
     type: [EscrowSummaryDto],
+    example: [
+      {
+        id: '6f9619ff-8b86-d011-b42d-00cf4fc964ff',
+        itemName: 'Sony A7 IV Mirrorless Camera',
+        itemRef: 'SKU-CAM-A7IV-001',
+        amount: 2499.99,
+        currency: 'USDC',
+        state: 'SHIPPED',
+        trackingId: 'TRK-1Z999AA10123456784',
+        createdAt: '2026-05-18T09:15:00.000Z',
+        updatedAt: '2026-05-20T14:32:00.000Z',
+      },
+    ],
   })
   data!: EscrowSummaryDto[];
 

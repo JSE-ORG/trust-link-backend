@@ -1,6 +1,7 @@
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
+import { createGlobalPipes } from '../../src/common/pipes/global-pipes';
 import { AppModule } from '../../src/app.module';
 import { PrismaService } from '../../src/prisma/prisma.service';
 import { LogisticsService } from '../../src/logistics/logistics.service';
@@ -31,9 +32,7 @@ describe('GET /escrow/:id/tracking integration (issue #54)', () => {
       .compile();
 
     app = moduleFixture.createNestApplication();
-    app.useGlobalPipes(
-      new ValidationPipe({ whitelist: true, transform: true }),
-    );
+    app.useGlobalPipes(...createGlobalPipes());
     await app.init();
     prisma = app.get(PrismaService);
   });
@@ -64,6 +63,7 @@ describe('GET /escrow/:id/tracking integration (issue #54)', () => {
         vendorAddress,
         state: 'SHIPPED',
         trackingId: 'TRACK123',
+        carrier: null,
       },
     });
 
@@ -111,6 +111,7 @@ describe('GET /escrow/:id/tracking integration (issue #54)', () => {
         vendorAddress,
         state: 'SHIPPED',
         trackingId: 'CACHE123',
+        carrier: null,
       },
     });
 

@@ -14,8 +14,8 @@ import {
   ApiResponse,
 } from '@nestjs/swagger';
 import { SkipThrottle, Throttle } from '@nestjs/throttler';
-import { THROTTLE_WINDOW_MS } from './common/security/throttle.config';
 import type { Response } from 'express';
+import { THROTTLE_WINDOW_MS } from './common/security/throttle.config';
 import { AppService } from './app.service';
 import { getAppName, getAppVersion } from './common/version';
 import { ConfigService } from './config/config.service';
@@ -65,6 +65,12 @@ export class AppController {
     private readonly sorobanHealthService?: SorobanHealthService,
   ) {}
 
+  /**
+   * Returns root service metadata including application name, version, and documentation link.
+   *
+   * @returns Service identity and documentation URL.
+   * @throws InternalServerErrorException on unexpected runtime failure.
+   */
   @ApiOperation({
     summary: 'Root endpoint — service name, version and docs path',
   })

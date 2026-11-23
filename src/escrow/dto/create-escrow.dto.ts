@@ -17,10 +17,21 @@ import { supportedCurrencies } from '../../config/supported-currencies';
 
 @ValidatorConstraint({ name: 'supportedCurrency' })
 class SupportedCurrencyConstraint implements ValidatorConstraintInterface {
+  /**
+   * Validates that the currency code is in the list of supported currencies.
+   *
+   * @param value Currency code string.
+   * @returns True if supported.
+   */
   validate(value: unknown): boolean {
     return typeof value === 'string' && supportedCurrencies().includes(value);
   }
 
+  /**
+   * Returns default validation error message for unsupported currencies.
+   *
+   * @returns Error message string.
+   */
   defaultMessage(): string {
     return 'Currency is not supported by this platform';
   }

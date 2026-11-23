@@ -11,6 +11,7 @@ import { UpdateVendorProfileDto } from './dto/update-vendor-profile.dto';
 import { UpdateNotificationPreferencesDto } from './dto/update-notification-preferences.dto';
 import { NotificationPreferencesResponseDto } from './dto/notification-preferences-response.dto';
 import { DEFAULT_NOTIFICATION_CHANNELS } from './vendor.constants';
+import { VENDOR_PROFILE_PLACEHOLDER_DESCRIPTION } from './vendor-profile.constants';
 
 @Injectable()
 export class VendorProfileRepository {
@@ -57,6 +58,22 @@ export class VendorProfileRepository {
         phone: dto.phone ?? null,
         description: dto.description ?? null,
       },
+    });
+  }
+
+  /**
+   * Ensures the foreign-key parent exists without overwriting an existing
+   * profile.
+   */
+  ensurePlaceholder(address: string): Promise<VendorProfileRecord> {
+    return this.prisma.vendorProfile.upsert({
+      where: { address },
+      create: {
+        address,
+        businessName: address,
+        description: VENDOR_PROFILE_PLACEHOLDER_DESCRIPTION,
+      },
+      update: {},
     });
   }
 

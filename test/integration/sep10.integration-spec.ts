@@ -5,11 +5,12 @@
  *   GET /auth?account=<G...>  →  { transaction: "<base64-xdr>" }
  *   POST /auth { transaction: "<signed-base64-xdr>" }  →  { token: "<jwt>" }
  */
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { Prisma } from '@prisma/client';
 import { Keypair, Networks, TransactionBuilder } from '@stellar/stellar-sdk';
 import request from 'supertest';
+import { createGlobalPipes } from '../../src/common/pipes/global-pipes';
 import { Sep10Controller } from '../../src/auth/sep10/sep10.controller';
 import { Sep10Service } from '../../src/auth/sep10/sep10.service';
 import {
@@ -127,9 +128,7 @@ describe('SEP-10 authentication (issue #23)', () => {
     }).compile();
 
     app = moduleFixture.createNestApplication();
-    app.useGlobalPipes(
-      new ValidationPipe({ whitelist: true, transform: true }),
-    );
+    app.useGlobalPipes(...createGlobalPipes());
     await app.init();
     sep10Service = moduleFixture.get(Sep10Service);
   });

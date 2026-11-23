@@ -5,12 +5,13 @@
  * executeProfile with and without thresholds/enableAlerts.
  */
 
-import { StressTestService } from './stress-test.service';
-import { ConfigService } from '../config/config.service';
 import { HttpService } from '@nestjs/axios';
 import { of, throwError } from 'rxjs';
+import { StressTestService } from './stress-test.service';
+import { ConfigService } from '../config/config.service';
 
-type Priv = Record<string, (...args: any[]) => any>;
+type Priv = Record<string, (...args: unknown[]) => unknown>;
+type ProfileResult = { alerts: unknown[] };
 
 function makeConfig(url = 'http://localhost:3000'): ConfigService {
   return { get: jest.fn().mockReturnValue(url) } as unknown as ConfigService;
@@ -49,7 +50,10 @@ describe('StressTestService.runStressTest', () => {
 
     // Force a failure by overriding executeProfile to throw
     jest
-      .spyOn(svc as unknown as Priv, 'executeProfile')
+      .spyOn(
+        svc as unknown as { executeProfile: () => Promise<unknown> },
+        'executeProfile',
+      )
       .mockRejectedValue(new Error('bang'));
 
     const result = await svc.runStressTest(minimalConfig() as never);
@@ -73,12 +77,12 @@ describe('StressTestService.executeProfile', () => {
       duration: 1,
       method: 'GET',
     };
-    const result = await (svc as unknown as Priv)['executeProfile'](
+    const result = (await (svc as unknown as Priv)['executeProfile'](
       profile,
       0,
       { maxResponseTime: 1 },
       false,
-    );
+    )) as ProfileResult;
     expect(result.alerts).toHaveLength(0);
   });
 
@@ -95,13 +99,36 @@ describe('StressTestService.executeProfile', () => {
       duration: 1,
       method: 'GET',
     };
-    const result = await (svc as unknown as Priv)['executeProfile'](
+    const result = (await (svc as unknown as Priv)['executeProfile'](
       profile,
       0,
       { maxResponseTime: 0.001 },
       true,
-    );
+    )) as ProfileResult;
     // alerts array is defined (threshold check ran)
     expect(Array.isArray(result.alerts)).toBe(true);
+  });
+});
+
+describe('StressTestService.generateTestId (issue #1229)', () => {
+  it('returns test_<timestamp>_<9 base-36 chars>', () => {
+    const svc = new StressTestService(makeHttp(), makeConfig());
+    const before = Date.now();
+
+    const id = svc.generateTestId();
+
+    const match = /^test_(\d+)_([0-9a-z]{1,9})$/.exec(id);
+    expect(match).not.toBeNull();
+    const timestamp = Number(match![1]);
+    expect(timestamp).toBeGreaterThanOrEqual(before);
+    expect(timestamp).toBeLessThanOrEqual(Date.now());
+  });
+
+  it('returns a different id on each call', () => {
+    const svc = new StressTestService(makeHttp(), makeConfig());
+
+    const ids = new Set(Array.from({ length: 50 }, () => svc.generateTestId()));
+
+    expect(ids.size).toBe(50);
   });
 });

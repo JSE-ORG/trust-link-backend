@@ -8,7 +8,7 @@ import {
 import { TracingService } from '../tracing/tracing.service';
 import { MetricsService } from '../tracing/metrics.service';
 import { EscrowRepository } from '../escrow/escrow.repository';
-import { LogisticsService } from '../logistics/logistics.service';
+import { LogisticsProviderRegistry } from '../logistics/logistics-provider.registry';
 import { ContractService } from '../stellar/contract.service';
 import { ConfigService } from '../config/config.service';
 import { TEN_MINUTES_MS } from '../common/constants/time.constants';
@@ -43,7 +43,7 @@ export class TrackingPollWorker implements OnModuleInit, OnApplicationShutdown {
 
   constructor(
     private readonly escrowRepository: EscrowRepository,
-    private readonly logisticsService: LogisticsService,
+    private readonly logisticsRegistry: LogisticsProviderRegistry,
     private readonly contractService: ContractService,
     private readonly configService: ConfigService,
     private readonly tracing: TracingService,
@@ -88,6 +88,9 @@ export class TrackingPollWorker implements OnModuleInit, OnApplicationShutdown {
     return address;
   }
 
+  /**
+   * Starts the periodic shipment tracking poll interval on module initialization.
+   */
   onModuleInit(): void {
     if (this.configService.get('NODE_ENV') === 'test') {
       return;
@@ -98,6 +101,9 @@ export class TrackingPollWorker implements OnModuleInit, OnApplicationShutdown {
     }, TEN_MINUTES_MS);
   }
 
+  /**
+   * Cleans up the polling interval timer during application shutdown.
+   */
   onApplicationShutdown(): void {
     if (this.timer) {
       clearInterval(this.timer);
@@ -105,6 +111,9 @@ export class TrackingPollWorker implements OnModuleInit, OnApplicationShutdown {
     }
   }
 
+  /**
+   * Executes a polling cycle to sync shipment delivery status from carriers and update escrows.
+   */
   async run(): Promise<void> {
     // #840 — Skip a tick that arrives while the previous run is still going,
     // rather than starting a second overlapping cycle.
@@ -214,6 +223,7 @@ export class TrackingPollWorker implements OnModuleInit, OnApplicationShutdown {
   private async processShipment(escrow: {
     id: string;
     trackingId: string | null;
+    carrier: string | null;
     contractEscrowId: bigint | null;
     vendorAddress: string;
   }): Promise<void> {
@@ -236,7 +246,10 @@ export class TrackingPollWorker implements OnModuleInit, OnApplicationShutdown {
         return;
       }
 
-      const status = await this.logisticsService.getStatus(escrow.trackingId);
+      const status = await this.logisticsRegistry.getStatus(
+        escrow.carrier,
+        escrow.trackingId,
+      );
       if (status.status === 'DELAYED' && this.notificationsService) {
         try {
           const updated = await this.escrowRepository.findById(escrow.id);

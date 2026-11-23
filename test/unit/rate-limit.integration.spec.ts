@@ -2,9 +2,9 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { ThrottlerModule, ThrottlerGuard, Throttle } from '@nestjs/throttler';
-import { THROTTLE_WINDOW_MS } from '../../src/common/security/throttle.config';
 import { APP_GUARD } from '@nestjs/core';
 import { Controller, Get } from '@nestjs/common';
+import { THROTTLE_WINDOW_MS } from '../../src/common/security/throttle.config';
 
 /**
  * Minimal controller used only for rate-limit integration tests.

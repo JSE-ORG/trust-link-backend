@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  app:
+    image: mcr.microsoft.com/devcontainers/typescript-node:1-22-bookworm
+    volumes:
+      - ..:/workspace:cached
+    working_dir: /workspace
+    environment:
+      - NODE_ENV=development
+      - DATABASE_URL=postgresql://trustlink:trustlink@db:5432/trustlink_test
+      - SEP10_JWT_SECRET=test-jwt-secret-must-be-at-least-32-chars
+      - SYSTEM_SIGNER_SECRET=SDWG7OPXKSKX2JMFVO2C4W37DA56UKOZIUYP34COSENTJ53OIYMYYS4V
+      - CONTRACT_ID=CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4
+      - ADMIN_ADDRESS=GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5
+      - STELLAR_NETWORK=TESTNET
+      - PORT=3000
+    depends_on:
+      db:
+        condition: service_healthy
+    command: sleep infinity
+
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: trustlink
+      POSTGRES_PASSWORD: trustlink
+      POSTGRES_DB: trustlink_test
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U trustlink -d trustlink_test"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres-data:

@@ -19,11 +19,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Optional `ADMIN_NOTIFICATION_EMAIL` configuration to receive email alerts when disputes are opened.
 - Optional `WEBHOOK_EVENT_RETENTION_DAYS` configuration to set the retention window (default: 30 days) for daily cleanup of processed Stellar webhook events.
 - Optional `GIT_SHA` configuration to record the deployed commit SHA in Sentry releases and `GET /version` responses.
+- Optional `SENTRY_TRACES_SAMPLE_RATE` configuration (0 to 1) to override the Sentry trace sample rate, which otherwise defaults to 0.2 in production and 1.0 elsewhere.
+- Buyer escrow listing (`GET /buyer/escrows`) and buyer CSV export (`GET /buyer/escrows/export`).
+- Escrow list filters (`vendorAddress`, multi-state comma-separated filtering) and CSV export across vendor, buyer, and admin escrow endpoints.
+- Dedicated admin escrow routes (`GET /admin/escrows`, `GET /admin/escrows/:id`, and `GET /admin/escrows/export`) with UUID parameter validation, search, and sorting.
+- Terminal Africa logistics provider client and integration alongside GIGL.
+- In-memory escrow read caching with configurable `ESCROW_CACHE_TTL_SECONDS` and automatic invalidation on state changes.
+- Exposed rate-limit headers (`X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`, `Retry-After`) in CORS responses.
+- Standardized pagination envelopes with `totalPages` and `hasNextPage` fields across paginated responses.
+- Vendor analytics chart interval parameter supporting day, week (Monday start), and month bucketing with zero-transaction gap filling.
+- Average shipping and delivery duration statistics (`averageHoursToShip` and `averageHoursToDeliver`) in vendor analytics stats.
+- Database reset safety guard (`scripts/assert-local-db.cjs`) preventing accidental `npm run db:reset` execution against non-local databases.
 
 ### Changed
 
 - `GiglClient` now rejects 2xx responses whose body does not match the expected `GiglTrackingResponse` schema, surfacing them as `GiglInvalidResponseError` instead of leaking bad payloads downstream. The new behaviour is exercised by the unit-test suite added alongside this change.
-- Escrow listings for vendors and buyers are cursor-paginated, return newest records first, and default to 20 records per page.
+- Escrow listings for vendors and buyers are page-based, return newest records first, and default to 20 records per page.
 - Creating an escrow requires an `Idempotency-Key`; keys must be UUIDs and are scoped to the authenticated vendor.
 - SEP-10 challenge signing now uses a configured key that remains stable across restarts and replicas.
 - **Breaking:** `FRONTEND_URL` and `EVIDENCE_STORAGE_BASE_URL` are required when `NODE_ENV=production`; the process fails config validation at boot if either is missing. Outside production they default to `http://localhost:3000` and `http://localhost:9000`.

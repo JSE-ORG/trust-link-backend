@@ -1,10 +1,10 @@
-import { buildPaginatedEnvelope } from '../../common/pagination/pagination.helper';
 import {
   ConflictException,
   Injectable,
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { buildPaginatedEnvelope } from '../../common/pagination/pagination.helper';
 import {
   DisputeRecord,
   DisputeState,
@@ -46,6 +46,12 @@ export class DisputeService {
     return address;
   }
 
+  /**
+   * Retrieves a paginated list of disputes matching optional status criteria.
+   *
+   * @param query Pagination and filtering parameters.
+   * @returns Paginated disputes envelope.
+   */
   async getDisputes(query: {
     status?: string;
     page?: number;

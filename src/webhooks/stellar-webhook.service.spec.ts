@@ -21,6 +21,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import * as crypto from 'crypto';
 import { ConfigService } from '../config/config.service';
 import { EscrowRepository } from '../escrow/escrow.repository';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -49,6 +50,7 @@ function makeEscrow(overrides: Partial<EscrowRecord> = {}): EscrowRecord {
     itemName: 'Widget',
     itemRef: 'REF-001',
     trackingId: null,
+    carrier: null,
     shippedAt: null,
     deliveredAt: null,
     deliveryRecordedAt: null,
@@ -421,8 +423,6 @@ describe('StellarWebhookService – handlePayment (issue #396)', () => {
 // ---------------------------------------------------------------------------
 // Issues #734 / #922 — persisted duplicate-delivery (replay) guard
 // ---------------------------------------------------------------------------
-
-import * as crypto from 'crypto';
 
 const WEBHOOK_SECRET = 'test-webhook-secret';
 

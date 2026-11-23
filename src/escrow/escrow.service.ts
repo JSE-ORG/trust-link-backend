@@ -1,4 +1,3 @@
-import { buildPaginatedEnvelope } from '../common/pagination/pagination.helper';
 import crypto from 'node:crypto';
 import {
   BadRequestException,
@@ -13,11 +12,11 @@ import {
   Logger,
   Optional,
 } from '@nestjs/common';
+import { buildPaginatedEnvelope } from '../common/pagination/pagination.helper';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ConfigService } from '../config/config.service';
-import { EscrowRecord } from '../prisma/prisma.service';
-import { PrismaService } from '../prisma/prisma.service';
-import { LogisticsService } from '../logistics/logistics.service';
+import type { EscrowRecord } from '../prisma/prisma.service';
+import { LogisticsProviderRegistry } from '../logistics/logistics-provider.registry';
 import { CacheService } from '../cache/cache.service';
 import { ContractService } from '../stellar/contract.service';
 import { EscrowResponseDto } from './dto/escrow-response.dto';
@@ -27,7 +26,8 @@ import { EVIDENCE_FILE_EXTENSIONS } from './dto/evidence-upload-query.dto';
 import { S3PresignService } from '../common/services/s3-presign.service';
 import { EscrowRepository } from './escrow.repository';
 import { UpdateBuyerContactDto } from './dto/update-buyer-contact.dto';
-import { VENDOR_PROFILE_PLACEHOLDER_DESCRIPTION } from '../vendor/vendor-profile.constants';
+import { VendorProfileRepository } from '../vendor/vendor-profile.repository';
+import { DisputeRepository } from '../dispute/dispute.repository';
 import {
   encryptContact,
   isContactEncryptionConfigured,
@@ -40,7 +40,7 @@ import {
   VendorEscrowsResult,
 } from './escrow.types';
 import { ESCROW_EXPORT_MAX_ROWS } from './escrow.constants';
-import { escrowsToCsv } from './escrow-csv';
+import { BUYER_ESCROW_CSV_COLUMNS, escrowsToCsv } from './escrow-csv';
 import {
   ONE_HOUR_SECONDS,
   SECONDS_PER_DAY,
@@ -120,11 +120,13 @@ export class EscrowService {
     private readonly s3PresignService: S3PresignService,
     private readonly contractService: ContractService,
     @Optional()
-    private readonly logisticsService?: LogisticsService,
+    private readonly logisticsRegistry?: LogisticsProviderRegistry,
     @Optional()
     private readonly cacheService?: CacheService,
     @Optional()
-    private readonly prisma?: PrismaService,
+    private readonly vendorProfileRepository?: VendorProfileRepository,
+    @Optional()
+    private readonly disputeRepository?: DisputeRepository,
     @Optional()
     private readonly configService?: ConfigService,
   ) {}
@@ -197,7 +199,7 @@ export class EscrowService {
     }
 
     const key = `tracking:${escrow.trackingId}`;
-    if (!this.logisticsService) {
+    if (!this.logisticsRegistry) {
       throw new NotFoundException('Tracking service not available');
     }
 
@@ -217,7 +219,10 @@ export class EscrowService {
     }
 
     try {
-      const status = await this.logisticsService.getStatus(escrow.trackingId);
+      const status = await this.logisticsRegistry.getStatus(
+        escrow.carrier,
+        escrow.trackingId,
+      );
 
       const details = {
         status: status.status,
@@ -314,16 +319,7 @@ export class EscrowService {
    * `update` leaves an existing profile untouched.
    */
   private async ensureVendorProfile(vendorAddress: string): Promise<void> {
-    if (!this.prisma) return;
-    await this.prisma.vendorProfile.upsert({
-      where: { address: vendorAddress },
-      create: {
-        address: vendorAddress,
-        businessName: vendorAddress,
-        description: VENDOR_PROFILE_PLACEHOLDER_DESCRIPTION,
-      },
-      update: {},
-    });
+    await this.vendorProfileRepository?.ensurePlaceholder(vendorAddress);
   }
 
   /**
@@ -585,6 +581,7 @@ export class EscrowService {
               to: query.to,
               q: query.q,
               buyerAddress,
+              vendorAddress: query.vendorAddress,
             },
             sort,
             order,
@@ -618,6 +615,33 @@ export class EscrowService {
       ESCROW_EXPORT_MAX_ROWS,
     );
     return escrowsToCsv(data);
+  }
+
+  /**
+   * Returns the buyer's escrows matching `query` as CSV, newest first,
+   * capped at {@link ESCROW_EXPORT_MAX_ROWS} rows. Paging fields are ignored.
+   * Carries `vendorAddress` in place of `buyerAddress`, which the buyer
+   * already knows (it is every row's caller).
+   */
+  async exportBuyerEscrowsCsv(
+    buyerAddress: string,
+    query: EscrowListQuery,
+  ): Promise<string> {
+    const { data } = await this.escrowRepository.findEscrows(
+      {
+        state: query.state,
+        from: query.from,
+        to: query.to,
+        q: query.q,
+        vendorAddress: query.vendorAddress,
+        buyerAddress,
+      },
+      query.sort ?? 'date',
+      query.order ?? 'desc',
+      1,
+      ESCROW_EXPORT_MAX_ROWS,
+    );
+    return escrowsToCsv(data, BUYER_ESCROW_CSV_COLUMNS);
   }
 
   private async findEscrowPage(
@@ -927,6 +951,7 @@ export class EscrowService {
     vendorAddress: string,
     trackingId: string,
     isAdmin = false,
+    carrier?: string,
   ): Promise<EscrowRecord> {
     return this.traced(
       'handle_shipment',
@@ -940,6 +965,7 @@ export class EscrowService {
           vendorAddress,
           trackingId,
           isAdmin,
+          carrier,
         ),
     );
   }
@@ -949,6 +975,7 @@ export class EscrowService {
     vendorAddress: string,
     trackingId: string,
     isAdmin = false,
+    carrier?: string,
   ): Promise<EscrowRecord> {
     try {
       if (!trackingId?.trim()) {
@@ -990,9 +1017,19 @@ export class EscrowService {
         `Shipping escrow ${escrowId} with tracking ID: ${trackingId}`,
       );
 
+      // Auto-detect the carrier from the tracking ID when the caller does not
+      // supply one, falling back to the default carrier (GIGL). The resolved
+      // carrier is persisted on the escrow so subsequent tracking polls and
+      // lookups route to the correct provider (issue #1146).
+      const resolvedCarrier =
+        carrier?.trim() ||
+        this.logisticsRegistry?.detectCarrier(trackingId.trim()) ||
+        null;
+
       const shipped = await this.escrowRepository.markShipped(
         escrow.id,
         trackingId.trim(),
+        resolvedCarrier,
       );
 
       await this.cacheService?.del(`tracking:${trackingId.trim()}`);
@@ -1125,7 +1162,7 @@ export class EscrowService {
    * beforehand). Handled types are `EscrowFunded`, `EscrowShipped`,
    * `EscrowCompleted`, `DisputeRaised`, `DisputeResolved` and `AutoReleased`;
    * any other type is skipped as `unknown_event_type`. The two dispute events
-   * also touch the dispute table, but only when Prisma is wired in. All
+   * also touch the dispute table, but only when its repository is wired in. All
    * notifications are dispatched fire-and-forget, so a notification failure
    * neither fails the sync nor blocks the poller's cursor.
    *
@@ -1221,17 +1258,13 @@ export class EscrowService {
         if (TERMINAL_STATES.has(escrow.state)) {
           return { skipped: true, reason: 'terminal_state' };
         }
-        if (this.prisma) {
-          await this.prisma.dispute.create({
-            data: {
-              id: crypto.randomUUID(),
-              escrowId,
-              reason: event.reason ?? 'on-chain dispute',
-              description: '',
-              evidenceUrls: [],
-            },
-          });
-        }
+        await this.disputeRepository?.create({
+          id: crypto.randomUUID(),
+          escrowId,
+          reason: event.reason ?? 'on-chain dispute',
+          description: '',
+          evidenceUrls: [],
+        });
         const disputed = await this.escrowRepository.updateState(
           escrowId,
           'DISPUTED',
@@ -1246,15 +1279,13 @@ export class EscrowService {
         if (TERMINAL_STATES.has(escrow.state)) {
           return { skipped: true, reason: 'terminal_state' };
         }
-        if (this.prisma) {
-          const dispute = await this.prisma.dispute.findFirst({
-            where: { escrowId },
-          });
+        if (this.disputeRepository) {
+          const dispute = await this.disputeRepository.findByEscrow(escrowId);
           if (dispute?.status === 'RESOLVED') {
             return { skipped: true, reason: 'dispute_already_resolved' };
           }
           if (dispute) {
-            await this.prisma.dispute.update({
+            await this.disputeRepository.update({
               where: { id: dispute.id },
               data: { status: 'RESOLVED', resolvedAt: new Date() },
             });

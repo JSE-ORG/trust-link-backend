@@ -42,6 +42,10 @@ model Escrow {
   vendorAddress          String
   state                  EscrowState    @default(CREATED)
   trackingId             String?
+  /// Logistics carrier for this escrow's tracking ID (e.g. "GIGL").
+  /// Null on existing rows created before this column was added; callers
+  /// treat null as the default carrier (GIGL).
+  carrier                String?
   trackingCheckedAt      DateTime?
   shippedAt              DateTime?
   deliveredAt            DateTime?

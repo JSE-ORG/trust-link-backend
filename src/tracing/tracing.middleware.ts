@@ -15,6 +15,13 @@ export class TracingMiddleware implements NestMiddleware {
     private readonly metrics?: MetricsService,
   ) {}
 
+  /**
+   * Extracts W3C trace context, populates span attributes, and records metrics on response completion.
+   *
+   * @param req Express request object.
+   * @param res Express response object.
+   * @param next Next middleware function.
+   */
   use(req: Request, res: Response, next: NextFunction): void {
     if (!isTracingEnabled()) {
       next();

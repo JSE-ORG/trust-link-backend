@@ -1,5 +1,7 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
+import { firstValueFrom } from 'rxjs';
+import { Prisma } from '@prisma/client';
 import {
   StressTestConfigDto,
   VirtualProfile,
@@ -11,9 +13,7 @@ import {
   PerformanceMetrics,
   Alert,
 } from './interfaces/stress-test-result.interface';
-import { firstValueFrom } from 'rxjs';
 import { ConfigService } from '../config/config.service';
-import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -427,11 +427,14 @@ export class StressTestService {
     const rows = await this.prisma.stressTestRun.findMany({
       orderBy: { createdAt: 'desc' },
     });
-    return rows.map(
-      (row) => row.result as unknown as StressTestResult,
-    );
+    return rows.map((row) => row.result as unknown as StressTestResult);
   }
 
+  /**
+   * Generates a unique stress test execution identifier.
+   *
+   * @returns Generated test identifier string.
+   */
   generateTestId(): string {
     return `test_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   }

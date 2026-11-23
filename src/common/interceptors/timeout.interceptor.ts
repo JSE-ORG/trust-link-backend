@@ -13,6 +13,13 @@ import type { Request } from 'express';
 export class TimeoutInterceptor implements NestInterceptor {
   constructor(private readonly timeoutMs: number = 30000) {}
 
+  /**
+   * Applies a timeout to incoming HTTP requests, mapping TimeoutError to a 503 ServiceUnavailableException.
+   *
+   * @param context Execution context of the request.
+   * @param next Call handler for the request.
+   * @returns Observable stream with timeout enforcement.
+   */
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
     if (context.getType() === 'http') {
       const http = context.switchToHttp();

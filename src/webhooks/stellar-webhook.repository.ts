@@ -14,6 +14,12 @@ import { PrismaService } from '../prisma/prisma.service';
 export class StellarWebhookRepository {
   constructor(@Inject(PrismaService) private readonly prisma: PrismaService) {}
 
+  /**
+   * Checks whether the webhook operation ID has already been processed.
+   *
+   * @param operationId Horizon operation identifier.
+   * @returns True if already processed.
+   */
   async isProcessed(operationId: string): Promise<boolean> {
     const event = await this.prisma.processedWebhookEvent.findUnique({
       where: { operationId },
@@ -22,6 +28,12 @@ export class StellarWebhookRepository {
     return event !== null;
   }
 
+  /**
+   * Records a webhook operation ID as processed in the database.
+   *
+   * @param operationId Horizon operation identifier.
+   * @returns True if successfully marked, false if conflict occurred.
+   */
   async markProcessed(operationId: string): Promise<boolean> {
     try {
       await this.prisma.processedWebhookEvent.create({
@@ -39,6 +51,11 @@ export class StellarWebhookRepository {
     }
   }
 
+  /**
+   * Removes a processed webhook operation ID record on processing failure.
+   *
+   * @param operationId Horizon operation identifier.
+   */
   async unmarkProcessed(operationId: string): Promise<void> {
     await this.prisma.processedWebhookEvent.delete({
       where: { operationId },

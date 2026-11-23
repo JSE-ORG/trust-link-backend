@@ -13,6 +13,7 @@ export class DisputeRepository {
 
   /** Creates a new dispute record linked to the given escrow. */
   create(data: {
+    id?: string;
     escrowId: string;
     reason: string;
     description?: string;
@@ -36,6 +37,12 @@ export class DisputeRepository {
       .then((row) => (row ? toDisputeRecord(row) : null));
   }
 
+  /**
+   * Returns multiple dispute records matching the given criteria.
+   *
+   * @param params Query filtering, sorting, and pagination parameters.
+   * @returns Array of dispute records.
+   */
   findMany(params?: {
     where?: Prisma.DisputeWhereInput;
     orderBy?: Prisma.DisputeOrderByWithRelationInput;
@@ -47,10 +54,22 @@ export class DisputeRepository {
       .then((rows) => rows.map(toDisputeRecord));
   }
 
+  /**
+   * Counts the number of dispute records matching the given filter.
+   *
+   * @param where Filter criteria.
+   * @returns Total count of matching disputes.
+   */
   count(where?: Prisma.DisputeWhereInput): Promise<number> {
     return this.prisma.dispute.count({ where });
   }
 
+  /**
+   * Finds the first dispute record matching the criteria, or null if none found.
+   *
+   * @param params Filter criteria.
+   * @returns Dispute record or null.
+   */
   findFirst(params: {
     where?: Prisma.DisputeWhereInput;
   }): Promise<DisputeRecord | null> {
@@ -59,6 +78,12 @@ export class DisputeRepository {
       .then((row) => (row ? toDisputeRecord(row) : null));
   }
 
+  /**
+   * Updates an existing dispute record.
+   *
+   * @param params Target dispute selector and update data.
+   * @returns Updated dispute record.
+   */
   update(params: {
     where: Prisma.DisputeWhereUniqueInput;
     data: Prisma.DisputeUpdateInput;

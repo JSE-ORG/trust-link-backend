@@ -1,5 +1,6 @@
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import { createGlobalPipes } from '../../src/common/pipes/global-pipes';
 import { AppModule } from '../../src/app.module';
 import { PrismaService } from '../../src/prisma/prisma.service';
 import { ContractService } from '../../src/stellar/contract.service';
@@ -18,9 +19,7 @@ describe('Auto-Release Idempotency Key Locking (issue #296)', () => {
     }).compile();
 
     app = moduleFixture.createNestApplication();
-    app.useGlobalPipes(
-      new ValidationPipe({ whitelist: true, transform: true }),
-    );
+    app.useGlobalPipes(...createGlobalPipes());
     await app.init();
 
     prisma = app.get(PrismaService);
@@ -62,6 +61,7 @@ describe('Auto-Release Idempotency Key Locking (issue #296)', () => {
         vendorAddress: 'vendor-address',
         state: 'SHIPPED',
         trackingId: 'TRK-001',
+        carrier: null,
         shippedAt: new Date(Date.now() - 60 * 60 * 60 * 1000),
         deliveredAt: pastDelivery,
         deliveryRecordedAt: pastDelivery,

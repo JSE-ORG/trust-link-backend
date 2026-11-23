@@ -36,6 +36,12 @@ function toAdminView(escrow: EscrowRecord): AdminEscrowView {
 export class AdminEscrowsService {
   constructor(private readonly escrowRepository: EscrowRepository) {}
 
+  /**
+   * Lists escrows matching administrative query filters with pagination.
+   *
+   * @param query Admin query filters and pagination parameters.
+   * @returns Paginated envelope containing transformed admin escrow views.
+   */
   async list(
     query: AdminEscrowsQueryDto,
   ): Promise<PaginatedEnvelope<AdminEscrowView>> {
@@ -77,6 +83,13 @@ export class AdminEscrowsService {
     return escrowsToCsv(data, ADMIN_ESCROW_CSV_COLUMNS);
   }
 
+  /**
+   * Retrieves an escrow by UUID including its associated dispute, if any.
+   *
+   * @param id Escrow UUID.
+   * @returns Admin escrow view with optional dispute record.
+   * @throws NotFoundException if the escrow is not found.
+   */
   async get(
     id: string,
   ): Promise<AdminEscrowView & { dispute: DisputeRecord | null }> {

@@ -1,5 +1,8 @@
 import * as Joi from 'joi';
-import { Keypair } from '@stellar/stellar-sdk';
+import {
+  assertValidStellarPublicKey,
+  assertValidStellarSecretKey,
+} from '../stellar/key-validation';
 import {
   parseTrustProxy,
   TRUST_PROXY_ERROR,
@@ -31,7 +34,7 @@ const stellarPublicKey = Joi.string()
     }
 
     try {
-      Keypair.fromPublicKey(value);
+      assertValidStellarPublicKey(value);
       return value; // valid
     } catch {
       return helpers.error('any.invalid', {
@@ -69,7 +72,7 @@ const stellarSecretKey = Joi.string().custom((value: string, helpers) => {
   }
 
   try {
-    Keypair.fromSecret(value);
+    assertValidStellarSecretKey(value);
     return value; // valid — checksum passed
   } catch {
     return helpers.message({
@@ -307,6 +310,18 @@ export const configValidationSchema = Joi.object({
     then: Joi.string().uri().required(),
     otherwise: Joi.string().uri().allow('').optional(),
   }),
+  // #1175 — Optional Sentry trace sample-rate override. The environment-specific
+  // defaults (0.2 in production, 1.0 elsewhere) are applied by the Sentry
+  // bootstrap, which runs before Nest config is available; this key only
+  // validates an operator-supplied override. Out-of-range values fail boot.
+  SENTRY_TRACES_SAMPLE_RATE: Joi.number().min(0).max(1).optional().messages({
+    'number.base':
+      'Config validation error: SENTRY_TRACES_SAMPLE_RATE must be a number between 0 and 1',
+    'number.min':
+      'Config validation error: SENTRY_TRACES_SAMPLE_RATE must be at least 0',
+    'number.max':
+      'Config validation error: SENTRY_TRACES_SAMPLE_RATE must not exceed 1',
+  }),
   GIT_SHA: Joi.string().optional(),
   // #971 — Behind a load balancer, req.ip is the balancer's address and every
   // client shares one throttle bucket. Off unless set; see trust-proxy.config.
@@ -402,4 +417,6 @@ export const configValidationSchema = Joi.object({
   // Retention window (days) for processed webhook event ids. A daily job
   // deletes `ProcessedWebhookEvent` rows older than this. Default: 30.
   WEBHOOK_EVENT_RETENTION_DAYS: Joi.number().integer().min(1).default(30),
+  // Retention window for resolved DLQ records. Default: 90 days.
+  DLQ_RETENTION_DAYS: Joi.number().integer().min(1).default(90),
 });

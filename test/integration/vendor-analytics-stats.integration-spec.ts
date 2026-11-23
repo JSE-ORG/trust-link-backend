@@ -4,9 +4,10 @@
  * Verifies transaction statistics: counts, volume, completion/dispute rates,
  * vendor data isolation, and empty-data behaviour for new vendors.
  */
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
+import { createGlobalPipes } from '../../src/common/pipes/global-pipes';
 import { AppModule } from '../../src/app.module';
 import { PrismaService } from '../../src/prisma/prisma.service';
 import { EscrowState } from '../../src/prisma/prisma.service';
@@ -31,9 +32,7 @@ describe('GET /vendor/analytics (issue #289)', () => {
     }).compile();
 
     app = moduleFixture.createNestApplication();
-    app.useGlobalPipes(
-      new ValidationPipe({ whitelist: true, transform: true }),
-    );
+    app.useGlobalPipes(...createGlobalPipes());
     await app.init();
     prisma = app.get(PrismaService);
     await prisma.reset();
@@ -51,6 +50,7 @@ describe('GET /vendor/analytics (issue #289)', () => {
     vendorAddress: string,
     amount: number | string,
     state: EscrowState = 'FUNDED',
+    createdAt?: Date,
   ): Promise<void> {
     await prisma.escrow.create({
       data: {
@@ -61,6 +61,7 @@ describe('GET /vendor/analytics (issue #289)', () => {
         buyerAddress: BUYER,
         vendorAddress,
         state,
+        ...(createdAt ? { createdAt } : {}),
       },
     });
   }
@@ -96,6 +97,55 @@ describe('GET /vendor/analytics (issue #289)', () => {
       .expect(200);
 
     expect(res.body.stats.totalTransactions).toBe(3);
+  });
+
+  it('filters all stats and speed metrics by the inclusive createdAt date range', async () => {
+    await seedEscrow(
+      VENDOR_A,
+      100,
+      'COMPLETED',
+      new Date('2026-10-10T10:00:00Z'),
+    );
+    await prisma.escrow.create({
+      data: {
+        vendorAddress: VENDOR_A,
+        itemName: 'In range disputed',
+        itemRef: `ref-${Date.now()}-range-disputed`,
+        amount: 50,
+        currency: 'USDC',
+        buyerAddress: BUYER,
+        state: 'DISPUTED',
+        createdAt: new Date('2026-10-20T10:00:00Z'),
+      },
+    });
+    await prisma.escrow.create({
+      data: {
+        vendorAddress: VENDOR_A,
+        itemName: 'Outside shipped',
+        itemRef: `ref-${Date.now()}-range-outside`,
+        amount: 900,
+        currency: 'USDC',
+        buyerAddress: BUYER,
+        state: 'DELIVERED',
+        createdAt: new Date('2026-11-01T10:00:00Z'),
+        shippedAt: new Date('2026-11-01T12:00:00Z'),
+        deliveredAt: new Date('2026-11-01T16:00:00Z'),
+      },
+    });
+
+    const res = await request(app.getHttpServer())
+      .get('/vendor/analytics?from=2026-10-01&to=2026-10-31')
+      .set('Authorization', AUTH_A)
+      .expect(200);
+
+    expect(res.body.stats.totalTransactions).toBe(2);
+    expect(res.body.stats.totalVolume).toBe(150);
+    expect(res.body.stats.completedTransactions).toBe(1);
+    expect(res.body.stats.disputedTransactions).toBe(1);
+    expect(res.body.stats.completionRate).toBe(50);
+    expect(res.body.stats.disputeRate).toBe(50);
+    expect(res.body.stats.averageHoursToShip).toBeNull();
+    expect(res.body.stats.averageHoursToDeliver).toBeNull();
   });
 
   it('returns stats with correct total volume', async () => {

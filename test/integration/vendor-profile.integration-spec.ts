@@ -9,9 +9,10 @@
  *   GET   /vendor/profile/notifications
  *   PATCH /vendor/profile/notifications
  */
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
+import { createGlobalPipes } from '../../src/common/pipes/global-pipes';
 import { PrismaService } from '../../src/prisma/prisma.service';
 import { ConfigModule } from '../../src/config/config.module';
 import { JwtGuard } from '../../src/auth/guards/jwt.guard';
@@ -50,9 +51,7 @@ describe('Vendor profile CRUD (issue #292, issue #643)', () => {
     }).compile();
 
     app = moduleFixture.createNestApplication();
-    app.useGlobalPipes(
-      new ValidationPipe({ whitelist: true, transform: true }),
-    );
+    app.useGlobalPipes(...createGlobalPipes());
     await app.init();
     prisma = app.get(PrismaService);
   });

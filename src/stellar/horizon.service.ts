@@ -77,6 +77,11 @@ export class HorizonService {
       : 'TESTNET';
   }
 
+  /**
+   * Probes Horizon server health and returns connectivity status and latest ledger.
+   *
+   * @returns Health status object with reachable flag, response time, and ledger info.
+   */
   async checkHealth(): Promise<HorizonHealth> {
     return this.traced(
       'stellar.horizon.health',

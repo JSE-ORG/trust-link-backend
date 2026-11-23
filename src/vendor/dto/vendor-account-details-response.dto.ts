@@ -30,34 +30,34 @@ export class VendorAccountDetailsResponseDto {
   @ApiProperty({ example: 'USDC' })
   preferredCurrency: string = 'USD';
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ example: '123 Market Street' })
   billingAddress: string | null = null;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ example: 'San Francisco' })
   billingCity: string | null = null;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ example: 'CA' })
   billingState: string | null = null;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ example: 'US' })
   billingCountry: string | null = null;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ example: '94105' })
   billingPostalCode: string | null = null;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ example: '456 Mission Street' })
   shippingAddress: string | null = null;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ example: 'San Francisco' })
   shippingCity: string | null = null;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ example: 'CA' })
   shippingState: string | null = null;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ example: 'US' })
   shippingCountry: string | null = null;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ example: '94105' })
   shippingPostalCode: string | null = null;
 
   @ApiPropertyOptional({ example: 'https://acme.example.com' })
@@ -78,28 +78,30 @@ export class VendorAccountDetailsResponseDto {
   @ApiProperty({ example: 'PENDING' })
   verificationStatus: string = 'PENDING';
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ example: '2026-05-27T09:14:00.000Z' })
   verifiedAt: Date | null = null;
 
   @ApiProperty({ example: 'NOT_STARTED' })
   kycStatus: string = 'NOT_STARTED';
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ example: '2026-05-27T09:20:00.000Z' })
   kycCompletedAt: Date | null = null;
 
   @ApiProperty({ example: 0 })
   riskScore: number = 0;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({
+    example: 'KYC documents verified on 2026-05-27.',
+  })
   complianceNotes: string | null = null;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ example: { preferredContactMethod: 'email' } })
   customFields: Record<string, unknown> | null = null;
 
-  @ApiProperty()
+  @ApiProperty({ example: '2026-05-18T09:15:00.000Z' })
   createdAt!: Date;
 
-  @ApiProperty()
+  @ApiProperty({ example: '2026-05-27T09:20:00.000Z' })
   updatedAt!: Date;
 
   /** Masks sensitive fields for safe API responses. */

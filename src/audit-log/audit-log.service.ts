@@ -1,5 +1,5 @@
-import { buildPaginatedEnvelope } from '../common/pagination/pagination.helper';
 import { Injectable } from '@nestjs/common';
+import { buildPaginatedEnvelope } from '../common/pagination/pagination.helper';
 import { AuditLogRepository } from './audit-log.repository';
 
 export interface AuditLogEntry {

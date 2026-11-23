@@ -231,6 +231,7 @@ Limits are the `@Throttle` values in `src/**/*.controller.ts`, counted per clien
 | GET | `/vendor/escrows` | JWT | 20/min |
 | GET | `/vendor/escrows/export` | JWT | 5/min |
 | GET | `/buyer/escrows` | JWT | 20/min |
+| GET | `/buyer/escrows/export` | JWT | 5/min |
 | POST | `/vendor/profile` | JWT | 10/min |
 | GET | `/vendor/profile` | JWT | 20/min |
 | PUT | `/vendor/profile` | JWT | 10/min |
@@ -241,6 +242,9 @@ Limits are the `@Throttle` values in `src/**/*.controller.ts`, counted per clien
 | GET | `/vendor/analytics/chart` | JWT | 20/min |
 | POST | `/webhooks/stellar` | HMAC | — |
 | GET | `/admin/stats` | JWT+Admin | 20/min |
+| GET | `/admin/vendors` | JWT+Admin | 20/min |
+| GET | `/admin/vendors/:address/analytics` | JWT+Admin | 20/min |
+| GET | `/admin/vendors/:address/analytics/chart` | JWT+Admin | 20/min |
 | GET | `/admin/disputes` | JWT+Admin | 20/min |
 | GET | `/admin/escrows` | JWT+Admin | 20/min |
 | GET | `/admin/escrows/:id` | JWT+Admin | 20/min |

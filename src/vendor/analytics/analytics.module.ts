@@ -13,6 +13,10 @@ import { VendorAccountDetailsRepository } from '../vendor-account-details.reposi
     AnalyticsRepository,
     VendorAccountDetailsRepository,
   ],
-  exports: [AnalyticsService, AnalyticsRepository],
+  exports: [
+    AnalyticsService,
+    AnalyticsRepository,
+    VendorAccountDetailsRepository,
+  ],
 })
 export class AnalyticsModule {}

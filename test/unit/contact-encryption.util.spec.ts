@@ -1,9 +1,9 @@
+import { ServiceUnavailableException } from '@nestjs/common';
 import {
   encryptContact,
   decryptContact,
   isContactEncryptionConfigured,
 } from '../../src/common/sanitization/contact-encryption.util';
-import { ServiceUnavailableException } from '@nestjs/common';
 
 describe('contact-encryption.util', () => {
   const GOOD_KEY = 'a'.repeat(64); // 32 bytes hex

@@ -70,6 +70,12 @@ export class TerminalAfricaClient {
     });
   }
 
+  /**
+   * Fetches raw tracking response data from the Terminal Africa REST API.
+   *
+   * @param shipmentId Shipment identifier or tracking code.
+   * @returns Raw tracking data payload.
+   */
   async fetchTracking(shipmentId: string): Promise<TerminalAfricaTrackingData> {
     let body: TerminalAfricaTrackingResponse;
     try {

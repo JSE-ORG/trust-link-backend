@@ -5,10 +5,11 @@
  * through the Nest testing module.  Verifies authentication, vendor data
  * isolation, and response shapes for both routes.
  */
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { EscrowState } from '@prisma/client';
 import request from 'supertest';
+import { createGlobalPipes } from '../../src/common/pipes/global-pipes';
 import { AppModule } from '../../src/app.module';
 import { PrismaService } from '../../src/prisma/prisma.service';
 import { bearer } from '../auth-helper';
@@ -31,9 +32,7 @@ describe('Analytics controller endpoints (issue #641)', () => {
     }).compile();
 
     app = moduleFixture.createNestApplication();
-    app.useGlobalPipes(
-      new ValidationPipe({ whitelist: true, transform: true }),
-    );
+    app.useGlobalPipes(...createGlobalPipes());
     await app.init();
 
     prisma = app.get(PrismaService);
@@ -187,6 +186,53 @@ describe('Analytics controller endpoints (issue #641)', () => {
         .get('/vendor/analytics/chart?days=14&timezone=America/New_York')
         .set('Authorization', AUTH_A)
         .expect(200);
+    });
+
+    it('charts a past range spanning a month boundary (#1212)', async () => {
+      await seedEscrow(VENDOR_A, 150, {
+        createdAt: new Date('2026-01-28T00:00:00Z'),
+      });
+      await seedEscrow(VENDOR_A, 50, {
+        createdAt: new Date('2026-02-02T00:00:00Z'),
+      });
+
+      const res = await request(app.getHttpServer())
+        .get('/vendor/analytics/chart?from=2026-01-25&to=2026-02-05')
+        .set('Authorization', AUTH_A)
+        .expect(200);
+
+      expect(res.body.period).toMatchObject({
+        startDate: '2026-01-25',
+        endDate: '2026-02-05',
+      });
+      expect(res.body.summary.totalVolume).toBeCloseTo(200, 1);
+      expect(res.body.summary.totalTransactions).toBe(2);
+    });
+
+    it('rejects invalid from/to combinations (#1212)', async () => {
+      // combined with days
+      await request(app.getHttpServer())
+        .get('/vendor/analytics/chart?from=2026-01-01&to=2026-01-31&days=7')
+        .set('Authorization', AUTH_A)
+        .expect(400);
+
+      // from after to
+      await request(app.getHttpServer())
+        .get('/vendor/analytics/chart?from=2026-02-01&to=2026-01-01')
+        .set('Authorization', AUTH_A)
+        .expect(400);
+
+      // span over 366 days
+      await request(app.getHttpServer())
+        .get('/vendor/analytics/chart?from=2025-01-01&to=2026-12-31')
+        .set('Authorization', AUTH_A)
+        .expect(400);
+
+      // only one of from/to given
+      await request(app.getHttpServer())
+        .get('/vendor/analytics/chart?from=2026-01-01')
+        .set('Authorization', AUTH_A)
+        .expect(400);
     });
   });
 });

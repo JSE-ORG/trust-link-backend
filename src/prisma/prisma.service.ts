@@ -1,5 +1,4 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
-import { ConfigService } from '../config/config.service';
 import {
   Prisma,
   PrismaClient,
@@ -10,6 +9,7 @@ import {
   VendorTrackingSettings as PrismaVendorTrackingSettings,
 } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
+import { ConfigService } from '../config/config.service';
 
 export type EscrowState =
   | 'CREATED'
@@ -51,6 +51,8 @@ export interface EscrowRecord {
   vendorAddress: string;
   state: EscrowState;
   trackingId: string | null;
+  /// Logistics carrier (e.g. "GIGL"); null means the default carrier.
+  carrier: string | null;
   trackingCheckedAt?: Date | null;
   shippedAt?: Date | null;
   deliveredAt: Date | null;
@@ -252,6 +254,9 @@ export class PrismaService extends PrismaClient {
     this.effectiveDatabaseUrl = effectiveUrl;
   }
 
+  /**
+   * Connects to PostgreSQL and configures slow query logging on initialization.
+   */
   async onModuleInit(): Promise<void> {
     await this.$connect();
     const slowQueryThresholdMs =
@@ -272,6 +277,9 @@ export class PrismaService extends PrismaClient {
     });
   }
 
+  /**
+   * Disconnects database connection pool on application shutdown.
+   */
   async onModuleDestroy(): Promise<void> {
     await this.$disconnect();
   }

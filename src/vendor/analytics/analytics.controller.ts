@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Controller,
   Get,
   Query,
@@ -24,6 +25,7 @@ import { AnalyticsService } from './analytics.service';
 import { ChartDataResponse } from './analytics.dto';
 import { AnalyticsStatsResponse } from './analytics-stats.dto';
 import { ChartQueryDto } from './chart-query.dto';
+import { AnalyticsStatsQueryDto } from './analytics-stats-query.dto';
 import { VendorAccountDetailsRepository } from '../vendor-account-details.repository';
 
 @ApiTags('Vendor')
@@ -55,6 +57,17 @@ export class AnalyticsController {
     description: 'Vendor transaction statistics returned.',
     type: AnalyticsStatsResponse,
   })
+  @ApiQuery({
+    name: 'from',
+    required: false,
+    description: 'Inclusive createdAt lower bound (ISO 8601).',
+  })
+  @ApiQuery({
+    name: 'to',
+    required: false,
+    description: 'Inclusive createdAt upper bound (ISO 8601).',
+  })
+  @ApiResponse({ status: 400, description: 'Invalid date range.' })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   @ApiResponse({ status: 403, description: 'Forbidden.' })
   @ApiResponse({ status: 429, description: 'Too many requests.' })
@@ -64,6 +77,7 @@ export class AnalyticsController {
   @HttpCode(HttpStatus.OK)
   async getTransactionStats(
     @CurrentUser() user?: AuthUser,
+    @Query() query?: AnalyticsStatsQueryDto,
   ): Promise<AnalyticsStatsResponse> {
     // `CurrentUser` really can be undefined; assert-and-hope (`user!`) turned
     // a missing user into a 500 if `JwtGuard` were ever removed or reordered.
@@ -71,7 +85,14 @@ export class AnalyticsController {
     if (!user) {
       throw new UnauthorizedException();
     }
-    return this.analyticsService.getTransactionStats(user.address);
+    if (
+      query?.from &&
+      query?.to &&
+      new Date(query.from).getTime() > new Date(query.to).getTime()
+    ) {
+      throw new BadRequestException('from must not be after to');
+    }
+    return this.analyticsService.getTransactionStats(user.address, query);
   }
 
   /**
@@ -123,9 +144,32 @@ export class AnalyticsController {
   async getDailyVolumeChart(
     @Query() query?: ChartQueryDto,
     @CurrentUser() user?: AuthUser,
+    @Query('days') rawDays?: string,
   ): Promise<ChartDataResponse> {
     if (!user) {
       throw new UnauthorizedException();
+    }
+
+    const hasRange = Boolean(query?.from || query?.to);
+    if (hasRange) {
+      // `query.days` always carries a value (defaults to 30), so presence is
+      // checked against the raw query string instead.
+      if (rawDays !== undefined) {
+        throw new BadRequestException('from/to cannot be combined with days');
+      }
+      if (!query?.from || !query?.to) {
+        throw new BadRequestException('from and to must both be provided');
+      }
+      if (query.from > query.to) {
+        throw new BadRequestException('from must not be after to');
+      }
+      const spanDays =
+        Math.round(
+          (Date.parse(query.to) - Date.parse(query.from)) / 86_400_000,
+        ) + 1;
+      if (spanDays > 366) {
+        throw new BadRequestException('from/to must span at most 366 days');
+      }
     }
 
     const days = query?.days ?? 30;
@@ -144,6 +188,15 @@ export class AnalyticsController {
       timezone = 'UTC';
     }
 
+    if (hasRange) {
+      return this.analyticsService.getDailyVolumeChart(
+        user.address,
+        days,
+        timezone,
+        interval,
+        { from: query!.from!, to: query!.to! },
+      );
+    }
     return this.analyticsService.getDailyVolumeChart(
       user.address,
       days,

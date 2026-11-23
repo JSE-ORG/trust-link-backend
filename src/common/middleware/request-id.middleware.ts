@@ -26,6 +26,13 @@ declare module 'express' {
  */
 @Injectable()
 export class RequestIdMiddleware implements NestMiddleware {
+  /**
+   * Resolves or generates an x-request-id header and echoes it on the response.
+   *
+   * @param req Express request object.
+   * @param res Express response object.
+   * @param next Next middleware function.
+   */
   use(req: Request, res: Response, next: NextFunction): void {
     const incoming = req.headers[REQUEST_ID_HEADER];
     const headerValue = Array.isArray(incoming) ? incoming[0] : incoming;

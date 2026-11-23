@@ -1,9 +1,10 @@
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
-import { ensureVendors } from '../prisma-helpers';
 import { Prisma } from '@prisma/client';
 import { createHmac } from 'crypto';
 import request from 'supertest';
+import { createGlobalPipes } from '../../src/common/pipes/global-pipes';
+import { ensureVendors } from '../prisma-helpers';
 import { AppModule } from '../../src/app.module';
 import { ConfigService } from '../../src/config/config.service';
 import { PrismaService } from '../../src/prisma/prisma.service';
@@ -25,9 +26,7 @@ describe('Admin DLQ Operations (issue #297)', () => {
     }).compile();
 
     app = moduleFixture.createNestApplication();
-    app.useGlobalPipes(
-      new ValidationPipe({ whitelist: true, transform: true }),
-    );
+    app.useGlobalPipes(...createGlobalPipes());
     await app.init();
     prisma = app.get(PrismaService);
     configService = app.get(ConfigService);
@@ -150,6 +149,63 @@ describe('Admin DLQ Operations (issue #297)', () => {
 
       expect(res.body.data).toHaveLength(1);
       expect(res.body.data[0].operation).toBe('submitAutoRelease');
+    });
+
+    it('filters by createdAt date range against Postgres', async () => {
+      const entry1 = await seedDlqEntry({ operation: 'submitAutoRelease' });
+      await prisma.failedTransaction.update({
+        where: { id: entry1.id },
+        data: { createdAt: new Date('2026-05-10T12:00:00.000Z') },
+      });
+
+      const entry2 = await seedDlqEntry({ operation: 'recordDelivery' });
+      await prisma.failedTransaction.update({
+        where: { id: entry2.id },
+        data: { createdAt: new Date('2026-05-20T12:00:00.000Z') },
+      });
+
+      const res = await request(httpServer())
+        .get('/admin/dlq')
+        .set('Authorization', `Bearer ${adminJwt()}`)
+        .query({
+          from: '2026-05-15T00:00:00.000Z',
+          to: '2026-05-25T23:59:59.000Z',
+        })
+        .expect(200);
+
+      expect(res.body.data).toHaveLength(1);
+      expect(res.body.data[0].id).toBe(entry2.id);
+    });
+
+    it('covers the whole day when to is date-only', async () => {
+      const entry = await seedDlqEntry({ operation: 'submitAutoRelease' });
+      await prisma.failedTransaction.update({
+        where: { id: entry.id },
+        data: { createdAt: new Date('2026-05-10T23:30:00.000Z') },
+      });
+
+      const res = await request(httpServer())
+        .get('/admin/dlq')
+        .set('Authorization', `Bearer ${adminJwt()}`)
+        .query({
+          from: '2026-05-10',
+          to: '2026-05-10',
+        })
+        .expect(200);
+
+      expect(res.body.data).toHaveLength(1);
+      expect(res.body.data[0].id).toBe(entry.id);
+    });
+
+    it('rejects request when from is after to with 400', async () => {
+      await request(httpServer())
+        .get('/admin/dlq')
+        .set('Authorization', `Bearer ${adminJwt()}`)
+        .query({
+          from: '2026-05-20',
+          to: '2026-05-10',
+        })
+        .expect(400);
     });
 
     it.each([

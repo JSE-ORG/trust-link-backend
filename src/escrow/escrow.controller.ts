@@ -23,6 +23,7 @@ import {
   ApiCreatedResponse,
 } from '@nestjs/swagger';
 import { isUUID } from 'class-validator';
+import { Throttle } from '@nestjs/throttler';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { AuthUser } from '../auth/auth-user';
 import { JwtGuard } from '../auth/guards/jwt.guard';
@@ -32,7 +33,6 @@ import { OpenDisputeDto } from './dto/open-dispute.dto';
 import { UpdateBuyerContactDto } from './dto/update-buyer-contact.dto';
 import { EscrowService } from './escrow.service';
 import { BuyerDisputeService } from './buyer-dispute.service';
-import { Throttle } from '@nestjs/throttler';
 import {
   EVIDENCE_UPLOAD_THROTTLE,
   THROTTLE_WINDOW_MS,
@@ -416,6 +416,7 @@ export class EscrowController {
       user.address,
       dto.trackingId,
       user.role === 'admin',
+      dto.carrier,
     );
   }
 

@@ -203,6 +203,9 @@ export class SorobanPollerService implements OnModuleInit, OnModuleDestroy {
     return this.tracing.withSpan(name, { attributes }, fn);
   }
 
+  /**
+   * Starts periodic polling for Soroban contract events if enabled.
+   */
   onModuleInit(): void {
     // An explicit switch, not an environment sniff: a background interval that
     // issues real RPC requests is unwanted in any process that only boots the
@@ -228,6 +231,9 @@ export class SorobanPollerService implements OnModuleInit, OnModuleDestroy {
     void this.poll();
   }
 
+  /**
+   * Cleans up the polling timer on module destruction.
+   */
   onModuleDestroy(): void {
     if (this.timer) {
       clearInterval(this.timer);

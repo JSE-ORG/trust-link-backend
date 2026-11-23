@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { Injectable, Optional } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 import { CacheService } from '../cache/cache.service';
 import { ConfigService } from '../config/config.service';
-import type { Prisma } from '@prisma/client';
 import {
   EscrowRecord,
   EscrowState,
@@ -77,7 +77,11 @@ function buildEscrowWhere(filter: EscrowListFilter): Prisma.EscrowWhereInput {
   const where: Prisma.EscrowWhereInput = {};
   if (filter.vendorAddress) where.vendorAddress = filter.vendorAddress;
   if (filter.buyerAddress) where.buyerAddress = filter.buyerAddress;
-  if (filter.state) where.state = filter.state as EscrowState;
+  if (filter.state) {
+    where.state = Array.isArray(filter.state)
+      ? { in: filter.state as EscrowState[] }
+      : (filter.state as EscrowState);
+  }
   if (filter.from || filter.to) {
     where.createdAt = {
       ...(filter.from ? { gte: new Date(filter.from) } : {}),
@@ -254,7 +258,7 @@ export class EscrowRepository {
    */
   async findVendorEscrows(
     vendorAddress: string,
-    state: string | undefined,
+    state: string | string[] | undefined,
     sort: 'date' | 'amount',
     order: 'asc' | 'desc',
     page: number,
@@ -314,13 +318,17 @@ export class EscrowRepository {
   }
 
   /**
-   * Transitions the escrow to SHIPPED, records the tracking ID and ship
-   * timestamp, then invalidates the cache.
+   * Transitions the escrow to SHIPPED, records the tracking ID, optional
+   * carrier, and ship timestamp, then invalidates the cache.
    */
-  async markShipped(id: string, trackingId: string): Promise<EscrowRecord> {
+  async markShipped(
+    id: string,
+    trackingId: string,
+    carrier: string | null = null,
+  ): Promise<EscrowRecord> {
     const result = await this.prisma.escrow.update({
       where: { id },
-      data: { state: 'SHIPPED', trackingId, shippedAt: new Date() },
+      data: { state: 'SHIPPED', trackingId, carrier, shippedAt: new Date() },
     });
     await this.invalidate(id);
     return toEscrowRecord(result);
@@ -364,6 +372,12 @@ export class EscrowRepository {
     return row?.contractEscrowId ?? null;
   }
 
+  /**
+   * Looks up the backend UUID of an escrow by its on-chain contractEscrowId.
+   *
+   * @param contractEscrowId On-chain contract escrow ID (bigint).
+   * @returns Backend UUID string or null if not found.
+   */
   async findIdByContractEscrowId(
     contractEscrowId: bigint,
   ): Promise<string | null> {

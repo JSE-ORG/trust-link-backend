@@ -79,6 +79,7 @@ describe('NotificationsService', () => {
     vendorAddress: 'GVENDOR',
     state: 'FUNDED',
     trackingId: null,
+    carrier: null,
     shippedAt: null,
     deliveredAt: null,
     deliveryRecordedAt: null,
@@ -711,6 +712,7 @@ describe('NotificationsService (#726) — channel selection', () => {
     vendorAddress: 'GVENDOR',
     state: 'SHIPPED',
     trackingId: null,
+    carrier: null,
     shippedAt: null,
     deliveredAt: null,
     deliveryRecordedAt: null,
@@ -845,6 +847,7 @@ describe('NotificationsService (#726) — extractResponseCode shapes', () => {
     vendorAddress: 'GVENDOR',
     state: 'FUNDED',
     trackingId: null,
+    carrier: null,
     shippedAt: null,
     deliveredAt: null,
     deliveryRecordedAt: null,
@@ -951,6 +954,7 @@ describe('NotificationsService SendGrid sender and template ids (#839)', () => {
     vendorAddress: 'GVENDOR839',
     state: 'FUNDED',
     trackingId: null,
+    carrier: null,
     shippedAt: null,
     deliveredAt: null,
     deliveryRecordedAt: null,
@@ -1258,6 +1262,7 @@ describe('NotificationsService (#946) — stop sending to Stellar addresses', ()
     vendorAddress: 'GVENDOR946_STELLAR_KEY_LONGER_THAN_50_CHARS_TEST',
     state: 'DISPUTED',
     trackingId: null,
+    carrier: null,
     shippedAt: null,
     deliveredAt: null,
     deliveryRecordedAt: null,
@@ -1378,16 +1383,12 @@ describe('NotificationsService (#946) — stop sending to Stellar addresses', ()
       config,
     );
 
-    await (svc as any).dispatchEmail(
-      'SHIPPED',
-      stubEscrow,
-      VALID_STELLAR_PUBLIC_KEY,
-    );
-    await (svc as any).dispatchSms(
-      'SHIPPED',
-      stubEscrow,
-      VALID_STELLAR_PUBLIC_KEY,
-    );
+    await (
+      svc as unknown as { dispatchEmail: (...args: unknown[]) => Promise<void> }
+    ).dispatchEmail('SHIPPED', stubEscrow, VALID_STELLAR_PUBLIC_KEY);
+    await (
+      svc as unknown as { dispatchSms: (...args: unknown[]) => Promise<void> }
+    ).dispatchSms('SHIPPED', stubEscrow, VALID_STELLAR_PUBLIC_KEY);
 
     expect(sendGrid.send).not.toHaveBeenCalled();
     expect(twilio.messages.create).not.toHaveBeenCalled();
@@ -1445,6 +1446,7 @@ describe('NotificationsService (#1062) — emails starting with G are sent, not 
     vendorAddress: 'GVENDOR1062',
     state: 'FUNDED',
     trackingId: null,
+    carrier: null,
     shippedAt: null,
     deliveredAt: null,
     deliveryRecordedAt: null,
@@ -1483,11 +1485,9 @@ describe('NotificationsService (#1062) — emails starting with G are sent, not 
       .mockResolvedValue(undefined);
 
     // George@example.com starts with 'G' but is not a valid Stellar public key
-    await (svc as any).dispatchEmail(
-      'FUNDED',
-      stubEscrow,
-      'George@example.com',
-    );
+    await (
+      svc as unknown as { dispatchEmail: (...args: unknown[]) => Promise<void> }
+    ).dispatchEmail('FUNDED', stubEscrow, 'George@example.com');
 
     // The email WAS sent — this is the bug: it used to be blocked
     expect(sendGrid.send).toHaveBeenCalledTimes(1);
@@ -1520,7 +1520,9 @@ describe('NotificationsService (#1062) — emails starting with G are sent, not 
       .mockResolvedValue(undefined);
 
     // A phone number string that starts with 'G' — not a valid Stellar key
-    await (svc as any).dispatchSms('FUNDED', stubEscrow, 'GSM-555-0199');
+    await (
+      svc as unknown as { dispatchSms: (...args: unknown[]) => Promise<void> }
+    ).dispatchSms('FUNDED', stubEscrow, 'GSM-555-0199');
 
     expect(twilio.messages.create).toHaveBeenCalledTimes(1);
     expect(twilio.messages.create).toHaveBeenCalledWith(
@@ -1548,11 +1550,9 @@ describe('NotificationsService (#1062) — emails starting with G are sent, not 
     // A valid 56-char Stellar ed25519 public key
     expect(StrKey.isValidEd25519PublicKey(VALID_STELLAR_PUBLIC_KEY)).toBe(true);
 
-    await (svc as any).dispatchEmail(
-      'FUNDED',
-      stubEscrow,
-      VALID_STELLAR_PUBLIC_KEY,
-    );
+    await (
+      svc as unknown as { dispatchEmail: (...args: unknown[]) => Promise<void> }
+    ).dispatchEmail('FUNDED', stubEscrow, VALID_STELLAR_PUBLIC_KEY);
 
     // The email was NOT sent
     expect(sendGrid.send).not.toHaveBeenCalled();
@@ -1577,11 +1577,9 @@ describe('NotificationsService (#1062) — emails starting with G are sent, not 
       config,
     );
 
-    await (svc as any).dispatchSms(
-      'FUNDED',
-      stubEscrow,
-      VALID_STELLAR_PUBLIC_KEY,
-    );
+    await (
+      svc as unknown as { dispatchSms: (...args: unknown[]) => Promise<void> }
+    ).dispatchSms('FUNDED', stubEscrow, VALID_STELLAR_PUBLIC_KEY);
 
     expect(twilio.messages.create).not.toHaveBeenCalled();
 

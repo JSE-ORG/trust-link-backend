@@ -97,6 +97,16 @@ export class FailedTransactionRepository {
     return result;
   }
 
+  /** Deletes only resolved DLQ records last updated before the retention cutoff. */
+  pruneResolvedOlderThan(before: Date) {
+    return this.prisma.failedTransaction.deleteMany({
+      where: {
+        status: { in: ['REPLAYED', 'ABANDONED'] },
+        updatedAt: { lt: before },
+      },
+    });
+  }
+
   /** Returns one dead-letter row, or null when the id is unknown. */
   async findById(id: string): Promise<FailedTransactionRecord | null> {
     const row = await this.prisma.failedTransaction.findUnique({

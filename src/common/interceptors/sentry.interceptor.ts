@@ -15,6 +15,13 @@ export function isServerError(error: unknown): boolean {
 
 @Injectable()
 export class SentryInterceptor implements NestInterceptor {
+  /**
+   * Captures uncaught 5xx server errors to Sentry.
+   *
+   * @param _ctx Request execution context.
+   * @param next Call handler to invoke next pipeline stage.
+   * @returns Observable stream with error capture hooked.
+   */
   intercept(_ctx: ExecutionContext, next: CallHandler): Observable<unknown> {
     return next.handle().pipe(
       catchError((err: unknown) => {

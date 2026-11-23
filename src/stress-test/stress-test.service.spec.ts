@@ -19,17 +19,17 @@
  * are covered by the integration suite.
  */
 
-import { StressTestService } from './stress-test.service';
 import { HttpService } from '@nestjs/axios';
+import { Observable, of, throwError } from 'rxjs';
+import { delay } from 'rxjs/operators';
+import type { AxiosResponse } from 'axios';
+import { StressTestService } from './stress-test.service';
 import { ConfigService } from '../config/config.service';
 import {
   StressTestConfigDto,
   VirtualProfile,
   PerformanceThresholds,
 } from './dto/stress-test-config.dto';
-import { Observable, of, throwError } from 'rxjs';
-import { delay } from 'rxjs/operators';
-import type { AxiosResponse } from 'axios';
 
 /**
  * HttpService.request is typed as Observable<AxiosResponse>. The fields these

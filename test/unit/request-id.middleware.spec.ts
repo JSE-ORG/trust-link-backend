@@ -1,8 +1,8 @@
+import { Request, Response, NextFunction } from 'express';
 import {
   RequestIdMiddleware,
   REQUEST_ID_HEADER,
 } from '../../src/common/middleware/request-id.middleware';
-import { Request, Response, NextFunction } from 'express';
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

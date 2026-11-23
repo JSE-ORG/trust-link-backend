@@ -39,6 +39,16 @@ export class StressTestController {
     private readonly auditLog?: AuditLogService,
   ) {}
 
+  /**
+   * Starts a new load/stress test run based on the provided configuration.
+   *
+   * @param config Stress test execution parameters and simulated profiles.
+   * @param admin Authenticated admin user initiating the test.
+   * @returns Stress test result summary including metrics and transaction outcomes.
+   * @throws BadRequestException if test configuration fails validation.
+   * @throws UnauthorizedException if authentication token is missing or invalid.
+   * @throws ForbiddenException if caller is not an admin.
+   */
   @ApiOperation({ summary: 'Start a new stress test run' })
   @ApiResponse({
     status: 200,
@@ -82,6 +92,15 @@ export class StressTestController {
     return result;
   }
 
+  /**
+   * Retrieves status and metrics of a currently running stress test.
+   *
+   * @param testId Unique identifier of the active stress test run.
+   * @returns Current state and execution metrics of the stress test.
+   * @throws NotFoundException if the testId is not found.
+   * @throws UnauthorizedException if authentication token is missing or invalid.
+   * @throws ForbiddenException if caller is not an admin.
+   */
   @ApiOperation({ summary: 'Get the status of a single active stress test' })
   @ApiResponse({
     status: 200,
@@ -104,6 +123,13 @@ export class StressTestController {
     return result;
   }
 
+  /**
+   * Lists all stress tests currently executing.
+   *
+   * @returns Array of active stress test results.
+   * @throws UnauthorizedException if authentication token is missing or invalid.
+   * @throws ForbiddenException if caller is not an admin.
+   */
   @ApiOperation({ summary: 'List all currently active stress tests' })
   @ApiResponse({
     status: 200,

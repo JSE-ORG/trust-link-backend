@@ -1,4 +1,3 @@
-import { TracingService } from '../tracing/tracing.service';
 import {
   Inject,
   Injectable,
@@ -6,8 +5,9 @@ import {
   OnModuleInit,
   Optional,
 } from '@nestjs/common';
-import { StrKey } from '@stellar/stellar-sdk';
 import * as crypto from 'crypto';
+import { TracingService } from '../tracing/tracing.service';
+import { isValidStellarPublicKey } from '../stellar/key-validation';
 import { EscrowRecord, NotificationType } from '../prisma/prisma.service';
 import { ConfigService } from '../config/config.service';
 import {
@@ -549,7 +549,7 @@ export class NotificationsService implements OnModuleInit {
     let attemptCount = 0;
     let lastResponseCode: number | null = null;
 
-    if (StrKey.isValidEd25519PublicKey(recipientAddress)) {
+    if (isValidStellarPublicKey(recipientAddress)) {
       await this.recordUndeliverable(
         type,
         escrow,
@@ -667,7 +667,7 @@ export class NotificationsService implements OnModuleInit {
     let attemptCount = 0;
     let lastResponseCode: number | null = null;
 
-    if (StrKey.isValidEd25519PublicKey(recipientAddress)) {
+    if (isValidStellarPublicKey(recipientAddress)) {
       await this.recordUndeliverable(
         type,
         escrow,

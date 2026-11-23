@@ -11,7 +11,12 @@ export class AdminVendorsQueryDto {
   @IsString()
   search?: string;
 
-  @ApiPropertyOptional({ minimum: 1, maximum: 1_000_000, default: 1 })
+  @ApiPropertyOptional({
+    minimum: 1,
+    maximum: 1_000_000,
+    default: 1,
+    example: 1,
+  })
   @Type(() => Number)
   @IsOptional()
   @IsInt()
@@ -19,7 +24,7 @@ export class AdminVendorsQueryDto {
   @Max(1_000_000)
   page?: number;
 
-  @ApiPropertyOptional({ minimum: 1, maximum: 100, default: 20 })
+  @ApiPropertyOptional({ minimum: 1, maximum: 100, default: 20, example: 20 })
   @Type(() => Number)
   @IsOptional()
   @IsInt()

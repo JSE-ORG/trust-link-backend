@@ -81,6 +81,9 @@ export class GiglLogisticsService extends LogisticsService {
     super(repository, configService);
   }
 
+  /**
+   * Initializes GIGL provider credentials and validates client configuration.
+   */
   override async onModuleInit(): Promise<void> {
     await super.onModuleInit();
     if (!this.client) {
