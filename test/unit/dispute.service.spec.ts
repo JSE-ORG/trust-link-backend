@@ -33,6 +33,7 @@ const disputedEscrow: EscrowRecord = {
   vendorAddress: 'vendor-address',
   state: 'DISPUTED',
   trackingId: 'TRK-XYZ',
+  carrier: null,
   shippedAt: new Date('2026-01-01T00:00:00.000Z'),
   deliveredAt: null,
   deliveryRecordedAt: null,

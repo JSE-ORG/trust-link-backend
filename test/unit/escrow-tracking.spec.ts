@@ -3,7 +3,7 @@ import { Test } from '@nestjs/testing';
 import { EscrowService } from '../../src/escrow/escrow.service';
 import { LogisticsStatus } from '../../src/logistics/logistics.service';
 import { EscrowRepository } from '../../src/escrow/escrow.repository';
-import { LogisticsService } from '../../src/logistics/logistics.service';
+import { LogisticsProviderRegistry } from '../../src/logistics/logistics-provider.registry';
 import { CacheService } from '../../src/cache/cache.service';
 import { NotificationsService } from '../../src/notifications/notifications.service';
 import { EscrowRecord } from '../../src/prisma/prisma.service';
@@ -15,7 +15,7 @@ import { createTracingMock } from './tracing-mock';
 describe('EscrowService.getTracking (issue #58)', () => {
   let service: EscrowService;
   let repository: jest.Mocked<EscrowRepository>;
-  let logisticsService: jest.Mocked<LogisticsService>;
+  let logisticsRegistry: jest.Mocked<LogisticsProviderRegistry>;
   let cacheService: jest.Mocked<CacheService>;
 
   const mockEscrow: EscrowRecord = {
@@ -29,6 +29,7 @@ describe('EscrowService.getTracking (issue #58)', () => {
     vendorAddress: 'vendor-address',
     state: 'SHIPPED',
     trackingId: 'TRK-123',
+    carrier: null,
     shippedAt: new Date('2026-01-01T00:00:00.000Z'),
     deliveredAt: null,
     deliveryRecordedAt: null,
@@ -45,9 +46,10 @@ describe('EscrowService.getTracking (issue #58)', () => {
       findById: jest.fn(),
     } as unknown as jest.Mocked<EscrowRepository>;
 
-    logisticsService = {
+    logisticsRegistry = {
       getStatus: jest.fn(),
-    } as unknown as jest.Mocked<LogisticsService>;
+      detectCarrier: jest.fn().mockReturnValue('GIGL'),
+    } as unknown as jest.Mocked<LogisticsProviderRegistry>;
 
     cacheService = {
       get: jest.fn(),
@@ -61,7 +63,7 @@ describe('EscrowService.getTracking (issue #58)', () => {
         { provide: TracingService, useValue: createTracingMock().service },
         EscrowService,
         { provide: EscrowRepository, useValue: repository },
-        { provide: LogisticsService, useValue: logisticsService },
+        { provide: LogisticsProviderRegistry, useValue: logisticsRegistry },
         { provide: CacheService, useValue: cacheService },
         { provide: NotificationsService, useValue: notificationsService },
         { provide: S3PresignService, useValue: {} },
@@ -95,7 +97,7 @@ describe('EscrowService.getTracking (issue #58)', () => {
 
     repository.findById.mockResolvedValue(mockEscrow);
     cacheService.get.mockResolvedValue(null);
-    logisticsService.getStatus.mockResolvedValue(providerResponse);
+    logisticsRegistry.getStatus.mockResolvedValue(providerResponse);
 
     const result = await service.getTracking('escrow-1');
 
@@ -105,7 +107,7 @@ describe('EscrowService.getTracking (issue #58)', () => {
       carrier: providerResponse.carrier,
       events: providerResponse.events,
     });
-    expect(logisticsService.getStatus).toHaveBeenCalledWith('TRK-123');
+    expect(logisticsRegistry.getStatus).toHaveBeenCalledWith(null, 'TRK-123');
     expect(cacheService.set).toHaveBeenCalledWith(
       'tracking:TRK-123',
       {
@@ -138,7 +140,7 @@ describe('EscrowService.getTracking (issue #58)', () => {
     const result = await service.getTracking('escrow-1');
 
     expect(result).toEqual(cachedDetails);
-    expect(logisticsService.getStatus).not.toHaveBeenCalled();
+    expect(logisticsRegistry.getStatus).not.toHaveBeenCalled();
   });
 
   it('returns 404 when tracking ID is not set', async () => {
@@ -170,7 +172,7 @@ describe('EscrowService.getTracking (issue #58)', () => {
 
     repository.findById.mockResolvedValue(mockEscrow);
     cacheService.get.mockResolvedValue(null);
-    logisticsService.getStatus.mockResolvedValue(providerResponse);
+    logisticsRegistry.getStatus.mockResolvedValue(providerResponse);
 
     await service.getTracking('escrow-1');
 
@@ -189,7 +191,7 @@ describe('EscrowService.getTracking (issue #58)', () => {
   it('does not cache a provider failure', async () => {
     repository.findById.mockResolvedValue(mockEscrow);
     cacheService.get.mockResolvedValue(null);
-    logisticsService.getStatus.mockRejectedValue(
+    logisticsRegistry.getStatus.mockRejectedValue(
       new Error('Carrier API unavailable'),
     );
 
@@ -229,7 +231,7 @@ describe('EscrowService.getTracking (issue #58)', () => {
 
     repository.findById.mockResolvedValue(mockEscrow);
     cacheService.get.mockResolvedValue(null);
-    logisticsService.getStatus.mockResolvedValue(providerResponse);
+    logisticsRegistry.getStatus.mockResolvedValue(providerResponse);
 
     const result = await service.getTracking('escrow-1');
 
@@ -269,6 +271,6 @@ describe('EscrowService.getTracking (issue #58)', () => {
     );
     expect(result.events).toHaveLength(1);
     expect(result.events[0].status).toBe('DELIVERED');
-    expect(logisticsService.getStatus).not.toHaveBeenCalled();
+    expect(logisticsRegistry.getStatus).not.toHaveBeenCalled();
   });
 });

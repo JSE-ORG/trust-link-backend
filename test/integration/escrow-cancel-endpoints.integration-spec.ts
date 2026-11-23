@@ -87,6 +87,7 @@ describe('Escrow Cancel Endpoints (issue #516)', () => {
         vendorAddress,
         state: 'SHIPPED',
         trackingId: 'TRK-12345',
+        carrier: null,
       },
     });
   });

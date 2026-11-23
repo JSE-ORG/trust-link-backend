@@ -6,9 +6,9 @@ import {
   ServiceUnavailableException,
   UnprocessableEntityException,
 } from '@nestjs/common';
+import { Test } from '@nestjs/testing';
 import { TracingService } from '../../src/tracing/tracing.service';
 import { createTracingMock } from './tracing-mock';
-import { Test } from '@nestjs/testing';
 import { NotificationsService } from '../../src/notifications/notifications.service';
 import { EscrowRecord } from '../../src/prisma/prisma.service';
 import { EscrowRepository } from '../../src/escrow/escrow.repository';
@@ -16,6 +16,7 @@ import { EscrowService } from '../../src/escrow/escrow.service';
 import { S3PresignService } from '../../src/common/services/s3-presign.service';
 import { ContractService } from '../../src/stellar/contract.service';
 import { LogisticsService } from '../../src/logistics/logistics.service';
+import { LogisticsProviderRegistry } from '../../src/logistics/logistics-provider.registry';
 import { CacheService } from '../../src/cache/cache.service';
 import { PrismaService } from '../../src/prisma/prisma.service';
 import { ConfigService } from '../../src/config/config.service';
@@ -37,6 +38,7 @@ describe('EscrowService.handleShipment (issue #16)', () => {
     vendorAddress: 'vendor-address',
     state: 'FUNDED',
     trackingId: null,
+    carrier: null,
     shippedAt: null,
     deliveredAt: null,
     deliveryRecordedAt: null,
@@ -84,6 +86,7 @@ describe('EscrowService.handleShipment (issue #16)', () => {
       ...fundedEscrow,
       state: 'SHIPPED' as const,
       trackingId: 'TRK-123',
+      carrier: null,
     };
     repository.findById.mockResolvedValue(fundedEscrow);
     repository.markShipped.mockResolvedValue(shipped);
@@ -93,7 +96,11 @@ describe('EscrowService.handleShipment (issue #16)', () => {
       service.handleShipment('escrow-1', 'vendor-address', 'TRK-123'),
     ).resolves.toEqual(shipped);
 
-    expect(repository.markShipped).toHaveBeenCalledWith('escrow-1', 'TRK-123');
+    expect(repository.markShipped).toHaveBeenCalledWith(
+      'escrow-1',
+      'TRK-123',
+      null,
+    );
     expect(notifications.notifyShipped).toHaveBeenCalledWith(shipped);
   });
 
@@ -422,6 +429,7 @@ describe('EscrowService: tracking, idempotency, evidence upload, and vendor list
     vendorAddress: 'vendor-1',
     state: 'SHIPPED',
     trackingId: 'TRK-1',
+    carrier: null,
     shippedAt: new Date('2026-01-02T00:00:00.000Z'),
     deliveredAt: null,
     deliveryRecordedAt: null,
@@ -460,6 +468,7 @@ describe('EscrowService: tracking, idempotency, evidence upload, and vendor list
         { provide: S3PresignService, useValue: s3Presign },
         { provide: ContractService, useValue: {} },
         { provide: LogisticsService, useValue: logistics },
+        LogisticsProviderRegistry,
         { provide: CacheService, useValue: cache },
         { provide: PrismaService, useValue: undefined },
         { provide: TracingService, useValue: createTracingMock().service },
@@ -475,6 +484,7 @@ describe('EscrowService: tracking, idempotency, evidence upload, and vendor list
       repository.findById.mockResolvedValue({
         ...shippedEscrow,
         trackingId: null,
+        carrier: null,
       });
 
       await expect(service.getTracking(shippedEscrow.id)).rejects.toThrow(

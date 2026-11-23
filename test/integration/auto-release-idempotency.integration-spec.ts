@@ -61,6 +61,7 @@ describe('Auto-Release Idempotency Key Locking (issue #296)', () => {
         vendorAddress: 'vendor-address',
         state: 'SHIPPED',
         trackingId: 'TRK-001',
+        carrier: null,
         shippedAt: new Date(Date.now() - 60 * 60 * 60 * 1000),
         deliveredAt: pastDelivery,
         deliveryRecordedAt: pastDelivery,

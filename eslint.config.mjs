@@ -4,6 +4,30 @@ import eslintPluginPrettierRecommended from 'eslint-plugin-prettier/recommended'
 import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
+const importOrderPlugin = {
+  rules: {
+    'external-before-internal': {
+      meta: {
+        type: 'problem',
+        docs: { description: 'place package imports before relative imports' },
+        schema: [],
+        messages: { order: 'External package imports must precede internal imports.' },
+      },
+      create(context) {
+        let sawInternal = false;
+        return {
+          ImportDeclaration(node) {
+            if (node.specifiers.length === 0) return;
+            const isInternal = node.source.value.startsWith('.') || node.source.value.startsWith('/');
+            if (isInternal) sawInternal = true;
+            else if (sawInternal) context.report({ node, messageId: 'order' });
+          },
+        };
+      },
+    },
+  },
+};
+
 export default tseslint.config(
   {
     ignores: ['eslint.config.mjs'],
@@ -11,6 +35,10 @@ export default tseslint.config(
   eslint.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,
   eslintPluginPrettierRecommended,
+  {
+    plugins: { 'local-import-order': importOrderPlugin },
+    rules: { 'local-import-order/external-before-internal': 'error' },
+  },
   {
     languageOptions: {
       globals: {

@@ -1,5 +1,3 @@
-import { TracingService } from '../../src/tracing/tracing.service';
-import { createTracingMock } from './tracing-mock';
 import { Test } from '@nestjs/testing';
 import {
   Address,
@@ -7,6 +5,8 @@ import {
   scValToNative,
   xdr,
 } from '@stellar/stellar-sdk';
+import { TracingService } from '../../src/tracing/tracing.service';
+import { createTracingMock } from './tracing-mock';
 import { BlockchainListenerService } from '../../src/stellar/blockchain-listener.service';
 
 /**

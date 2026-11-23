@@ -1,10 +1,10 @@
-import { buildPaginatedEnvelope } from '../../common/pagination/pagination.helper';
 import {
   ConflictException,
   Injectable,
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { buildPaginatedEnvelope } from '../../common/pagination/pagination.helper';
 import {
   DisputeRecord,
   DisputeState,

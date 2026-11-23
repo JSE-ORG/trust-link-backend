@@ -1,5 +1,6 @@
-import { createTracingMock } from '../../test/unit/tracing-mock';
 import { Logger } from '@nestjs/common';
+import { Test } from '@nestjs/testing';
+import { createTracingMock } from '../../test/unit/tracing-mock';
 import { AutoReleaseWorker } from './auto-release.worker';
 import { EscrowRepository } from '../escrow/escrow.repository';
 import { DisputeRepository } from '../dispute/dispute.repository';
@@ -9,7 +10,6 @@ import {
   ConfigService,
 } from '../config/config.service';
 import { EscrowRecord, DisputeRecord } from '../prisma/prisma.service';
-import { Test } from '@nestjs/testing';
 import { TracingService } from '../tracing/tracing.service';
 
 const TEST_AUTO_RELEASE_SOURCE =
@@ -27,6 +27,7 @@ function makeEscrow(overrides: Partial<EscrowRecord> = {}): EscrowRecord {
     vendorAddress: 'vendor-addr',
     state: 'SHIPPED',
     trackingId: 'track-1',
+    carrier: null,
     shippedAt: new Date('2024-01-01'),
     deliveredAt: new Date('2024-01-02'),
     deliveryRecordedAt: new Date('2024-01-02'),

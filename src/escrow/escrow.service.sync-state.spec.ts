@@ -29,6 +29,7 @@ function makeEscrow(overrides: Partial<EscrowRecord> = {}): EscrowRecord {
     vendorAddress: 'vendor-addr',
     state: 'FUNDED',
     trackingId: null,
+    carrier: null,
     shippedAt: null,
     deliveredAt: null,
     deliveryRecordedAt: null,
@@ -90,7 +91,7 @@ describe('EscrowService.syncStateFromChain', () => {
       notifications,
       {} as S3PresignService,
       {} as ContractService,
-      undefined, // logisticsService
+      undefined, // logisticsRegistry
       undefined, // cacheService
       undefined, // vendor profile repository
       disputeRepository,
@@ -247,6 +248,7 @@ describe('EscrowService.syncStateFromChain', () => {
       const shipped = makeEscrow({
         state: 'SHIPPED',
         trackingId: 'TRK-EXISTING',
+        carrier: null,
       });
       repo.findById.mockResolvedValue(
         makeEscrow({ state: 'FUNDED', trackingId: 'TRK-EXISTING' }),

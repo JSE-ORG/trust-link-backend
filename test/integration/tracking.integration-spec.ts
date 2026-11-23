@@ -63,6 +63,7 @@ describe('GET /escrow/:id/tracking integration (issue #54)', () => {
         vendorAddress,
         state: 'SHIPPED',
         trackingId: 'TRACK123',
+        carrier: null,
       },
     });
 
@@ -110,6 +111,7 @@ describe('GET /escrow/:id/tracking integration (issue #54)', () => {
         vendorAddress,
         state: 'SHIPPED',
         trackingId: 'CACHE123',
+        carrier: null,
       },
     });
 

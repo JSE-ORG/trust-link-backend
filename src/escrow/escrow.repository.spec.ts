@@ -620,6 +620,7 @@ describe('EscrowRepository', () => {
       expect(shipped).toMatchObject({
         state: 'SHIPPED',
         trackingId: 'TRACK-2',
+        carrier: null,
       });
       expect(shipped.shippedAt).toBeInstanceOf(Date);
 
@@ -695,6 +696,7 @@ describe('EscrowRepository', () => {
         data: {
           state: 'SHIPPED',
           trackingId: 'TRACK-3',
+          carrier: null,
           contractEscrowId: 99n,
         },
       });

@@ -467,6 +467,7 @@ describe('EscrowController', () => {
         VENDOR_ADDRESS,
         validShipDto.trackingId,
         false,
+        undefined,
       );
       expect(res.body).toEqual(mockResult);
     });

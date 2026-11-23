@@ -7,9 +7,9 @@
  * Suite 3 (issue #562): Verifies checkHealth(), folded in from AppController's
  * previously ad-hoc, untestable checkHorizon.
  */
-import { createTracingMock } from './tracing-mock';
 import { Logger } from '@nestjs/common';
 import axios from 'axios';
+import { createTracingMock } from './tracing-mock';
 import {
   DEFAULT_HORIZON_URL,
   HEALTH_CHECK_TIMEOUT_MS,

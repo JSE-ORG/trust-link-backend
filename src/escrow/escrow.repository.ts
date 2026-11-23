@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { Injectable, Optional } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 import { CacheService } from '../cache/cache.service';
 import { ConfigService } from '../config/config.service';
-import type { Prisma } from '@prisma/client';
 import {
   EscrowRecord,
   EscrowState,
@@ -318,13 +318,17 @@ export class EscrowRepository {
   }
 
   /**
-   * Transitions the escrow to SHIPPED, records the tracking ID and ship
-   * timestamp, then invalidates the cache.
+   * Transitions the escrow to SHIPPED, records the tracking ID, optional
+   * carrier, and ship timestamp, then invalidates the cache.
    */
-  async markShipped(id: string, trackingId: string): Promise<EscrowRecord> {
+  async markShipped(
+    id: string,
+    trackingId: string,
+    carrier: string | null = null,
+  ): Promise<EscrowRecord> {
     const result = await this.prisma.escrow.update({
       where: { id },
-      data: { state: 'SHIPPED', trackingId, shippedAt: new Date() },
+      data: { state: 'SHIPPED', trackingId, carrier, shippedAt: new Date() },
     });
     await this.invalidate(id);
     return toEscrowRecord(result);
