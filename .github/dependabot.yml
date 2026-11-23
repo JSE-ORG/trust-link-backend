@@ -8,7 +8,7 @@ updates:
       day: "monday"
       time: "09:00"
       timezone: "UTC"
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 5
     labels:
       - "dependencies"
     commit-message:
@@ -28,7 +28,7 @@ updates:
           - "minor"
           - "patch"
     # Major version npm updates remain as individual pull requests since they
-    # require manual review for breaking changes. The open queue limit (10)
+    # require manual review for breaking changes. The open queue limit (5)
     # caps how many accumulate before Dependabot pauses.
 
   # ── GitHub Actions ────────────────────────────────────────────────────────────
@@ -39,7 +39,7 @@ updates:
       day: "monday"
       time: "09:00"
       timezone: "UTC"
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 5
     labels:
       - "dependencies"
       - "github_actions"

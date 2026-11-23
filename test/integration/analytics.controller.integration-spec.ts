@@ -5,10 +5,11 @@
  * through the Nest testing module.  Verifies authentication, vendor data
  * isolation, and response shapes for both routes.
  */
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { EscrowState } from '@prisma/client';
 import request from 'supertest';
+import { createGlobalPipes } from '../../src/common/pipes/global-pipes';
 import { AppModule } from '../../src/app.module';
 import { PrismaService } from '../../src/prisma/prisma.service';
 import { bearer } from '../auth-helper';
@@ -31,9 +32,7 @@ describe('Analytics controller endpoints (issue #641)', () => {
     }).compile();
 
     app = moduleFixture.createNestApplication();
-    app.useGlobalPipes(
-      new ValidationPipe({ whitelist: true, transform: true }),
-    );
+    app.useGlobalPipes(...createGlobalPipes());
     await app.init();
 
     prisma = app.get(PrismaService);

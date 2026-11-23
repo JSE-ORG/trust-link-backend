@@ -57,7 +57,8 @@ function makeService(
     repo?: Partial<jest.Mocked<EscrowRepository>>;
     notifications?: Partial<jest.Mocked<NotificationsService>>;
     cacheService?: { get: jest.Mock; set: jest.Mock; del: jest.Mock };
-    prisma?: object;
+    vendorProfileRepository?: object;
+    disputeRepository?: object;
     contractService?: Partial<jest.Mocked<ContractService>>;
   } = {},
 ): EscrowService {
@@ -90,7 +91,8 @@ function makeService(
     contractService,
     undefined,
     overrides.cacheService as never,
-    overrides.prisma as never,
+    overrides.vendorProfileRepository as never,
+    overrides.disputeRepository as never,
   );
 }
 
@@ -108,8 +110,8 @@ describe('stableStringify (via createIdempotentInternal)', () => {
       findByVendorAndItem: jest.fn().mockResolvedValue(null),
       create: jest.fn().mockResolvedValue(makeEscrow()),
     } as unknown as jest.Mocked<EscrowRepository>;
-    const prisma = {
-      vendorProfile: { upsert: jest.fn().mockResolvedValue({}) },
+    const vendorProfileRepository = {
+      ensurePlaceholder: jest.fn().mockResolvedValue({}),
     };
 
     const svc = new EscrowService(
@@ -120,7 +122,7 @@ describe('stableStringify (via createIdempotentInternal)', () => {
       {} as ContractService,
       undefined,
       cache as never,
-      prisma as never,
+      vendorProfileRepository as never,
     );
 
     const dto = {
@@ -133,6 +135,7 @@ describe('stableStringify (via createIdempotentInternal)', () => {
     // Two calls with the same dto should hash identically → cache hit on second
     await (svc as unknown as Priv)['createIdempotentInternal']('key', dto, 'V');
     expect(cache.set).toHaveBeenCalledTimes(1);
+    expect(vendorProfileRepository.ensurePlaceholder).toHaveBeenCalledWith('V');
   });
 
   it('serialises objects with keys sorted', async () => {
@@ -187,8 +190,8 @@ describe('EscrowService.createIdempotentInternal', () => {
       findByVendorAndItem: jest.fn().mockResolvedValue(null),
       create: jest.fn().mockResolvedValue(makeEscrow()),
     } as unknown as jest.Mocked<EscrowRepository>;
-    const prisma = {
-      vendorProfile: { upsert: jest.fn().mockResolvedValue({}) },
+    const vendorProfileRepository = {
+      ensurePlaceholder: jest.fn().mockResolvedValue({}),
     };
 
     const svc = new EscrowService(
@@ -199,7 +202,7 @@ describe('EscrowService.createIdempotentInternal', () => {
       {} as ContractService,
       undefined,
       undefined,
-      prisma as never,
+      vendorProfileRepository as never,
     );
 
     const dto = {
@@ -215,6 +218,7 @@ describe('EscrowService.createIdempotentInternal', () => {
       'V',
     );
     expect(result).toBeDefined();
+    expect(vendorProfileRepository.ensurePlaceholder).toHaveBeenCalledWith('V');
   });
 
   it('throws UnprocessableEntityException on request-hash mismatch', async () => {
@@ -243,7 +247,7 @@ describe('EscrowService.createIdempotentInternal', () => {
 // ── ensureVendorProfile ───────────────────────────────────────────────────────
 
 describe('EscrowService.ensureVendorProfile', () => {
-  it('returns immediately when prisma is absent', async () => {
+  it('returns immediately when the vendor repository is absent', async () => {
     const svc = makeService();
     await expect(
       (svc as unknown as Priv)['ensureVendorProfile']('ADDR'),
@@ -518,10 +522,14 @@ describe('EscrowService remaining branches (issue #1223)', () => {
       findByVendorAndItem: jest.fn().mockResolvedValue(null),
       create: jest.fn().mockResolvedValue(makeEscrow()),
     } as unknown as jest.Mocked<EscrowRepository>;
-    const prisma = {
-      vendorProfile: { upsert: jest.fn().mockResolvedValue({}) },
+    const vendorProfileRepository = {
+      ensurePlaceholder: jest.fn().mockResolvedValue({}),
     };
-    const svc = makeService({ repo, cacheService: cache, prisma });
+    const svc = makeService({
+      repo,
+      cacheService: cache,
+      vendorProfileRepository,
+    });
 
     const dto = {
       itemName: 'x',

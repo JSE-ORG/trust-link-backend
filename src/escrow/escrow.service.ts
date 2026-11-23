@@ -15,8 +15,7 @@ import {
 import { buildPaginatedEnvelope } from '../common/pagination/pagination.helper';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ConfigService } from '../config/config.service';
-import { EscrowRecord } from '../prisma/prisma.service';
-import { PrismaService } from '../prisma/prisma.service';
+import type { EscrowRecord } from '../prisma/prisma.service';
 import { LogisticsProviderRegistry } from '../logistics/logistics-provider.registry';
 import { CacheService } from '../cache/cache.service';
 import { ContractService } from '../stellar/contract.service';
@@ -27,7 +26,8 @@ import { EVIDENCE_FILE_EXTENSIONS } from './dto/evidence-upload-query.dto';
 import { S3PresignService } from '../common/services/s3-presign.service';
 import { EscrowRepository } from './escrow.repository';
 import { UpdateBuyerContactDto } from './dto/update-buyer-contact.dto';
-import { VENDOR_PROFILE_PLACEHOLDER_DESCRIPTION } from '../vendor/vendor-profile.constants';
+import { VendorProfileRepository } from '../vendor/vendor-profile.repository';
+import { DisputeRepository } from '../dispute/dispute.repository';
 import {
   encryptContact,
   isContactEncryptionConfigured,
@@ -124,7 +124,9 @@ export class EscrowService {
     @Optional()
     private readonly cacheService?: CacheService,
     @Optional()
-    private readonly prisma?: PrismaService,
+    private readonly vendorProfileRepository?: VendorProfileRepository,
+    @Optional()
+    private readonly disputeRepository?: DisputeRepository,
     @Optional()
     private readonly configService?: ConfigService,
   ) {}
@@ -317,16 +319,7 @@ export class EscrowService {
    * `update` leaves an existing profile untouched.
    */
   private async ensureVendorProfile(vendorAddress: string): Promise<void> {
-    if (!this.prisma) return;
-    await this.prisma.vendorProfile.upsert({
-      where: { address: vendorAddress },
-      create: {
-        address: vendorAddress,
-        businessName: vendorAddress,
-        description: VENDOR_PROFILE_PLACEHOLDER_DESCRIPTION,
-      },
-      update: {},
-    });
+    await this.vendorProfileRepository?.ensurePlaceholder(vendorAddress);
   }
 
   /**
@@ -1157,7 +1150,7 @@ export class EscrowService {
    * beforehand). Handled types are `EscrowFunded`, `EscrowShipped`,
    * `EscrowCompleted`, `DisputeRaised`, `DisputeResolved` and `AutoReleased`;
    * any other type is skipped as `unknown_event_type`. The two dispute events
-   * also touch the dispute table, but only when Prisma is wired in. All
+   * also touch the dispute table, but only when its repository is wired in. All
    * notifications are dispatched fire-and-forget, so a notification failure
    * neither fails the sync nor blocks the poller's cursor.
    *
@@ -1250,17 +1243,13 @@ export class EscrowService {
         if (TERMINAL_STATES.has(escrow.state)) {
           return { skipped: true, reason: 'terminal_state' };
         }
-        if (this.prisma) {
-          await this.prisma.dispute.create({
-            data: {
-              id: crypto.randomUUID(),
-              escrowId,
-              reason: event.reason ?? 'on-chain dispute',
-              description: '',
-              evidenceUrls: [],
-            },
-          });
-        }
+        await this.disputeRepository?.create({
+          id: crypto.randomUUID(),
+          escrowId,
+          reason: event.reason ?? 'on-chain dispute',
+          description: '',
+          evidenceUrls: [],
+        });
         const disputed = await this.escrowRepository.updateState(
           escrowId,
           'DISPUTED',
@@ -1275,15 +1264,13 @@ export class EscrowService {
         if (TERMINAL_STATES.has(escrow.state)) {
           return { skipped: true, reason: 'terminal_state' };
         }
-        if (this.prisma) {
-          const dispute = await this.prisma.dispute.findFirst({
-            where: { escrowId },
-          });
+        if (this.disputeRepository) {
+          const dispute = await this.disputeRepository.findByEscrow(escrowId);
           if (dispute?.status === 'RESOLVED') {
             return { skipped: true, reason: 'dispute_already_resolved' };
           }
           if (dispute) {
-            await this.prisma.dispute.update({
+            await this.disputeRepository.update({
               where: { id: dispute.id },
               data: { status: 'RESOLVED', resolvedAt: new Date() },
             });

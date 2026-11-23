@@ -13,6 +13,7 @@ export class DisputeRepository {
 
   /** Creates a new dispute record linked to the given escrow. */
   create(data: {
+    id?: string;
     escrowId: string;
     reason: string;
     description?: string;

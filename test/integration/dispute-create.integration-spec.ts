@@ -1,7 +1,8 @@
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { getStorageToken, ThrottlerStorage } from '@nestjs/throttler';
+import { createGlobalPipes } from '../../src/common/pipes/global-pipes';
 import { AppModule } from '../../src/app.module';
 import { EscrowRepository } from '../../src/escrow/escrow.repository';
 import { PrismaService } from '../../src/prisma/prisma.service';
@@ -33,9 +34,7 @@ describe('POST /escrow/:id/dispute integration (issue #51)', () => {
     }).compile();
 
     app = moduleFixture.createNestApplication();
-    app.useGlobalPipes(
-      new ValidationPipe({ whitelist: true, transform: true }),
-    );
+    app.useGlobalPipes(...createGlobalPipes());
     await app.init();
     prisma = app.get(PrismaService);
     escrowRepository = app.get(EscrowRepository);

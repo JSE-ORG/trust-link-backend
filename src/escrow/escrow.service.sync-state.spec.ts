@@ -2,7 +2,7 @@
  * Unit tests for EscrowService.syncStateFromChain (Issue #40).
  *
  * All external dependencies (EscrowRepository, NotificationsService,
- * PrismaService) are replaced with Jest mocks so the tests run in-process
+ * repositories) are replaced with Jest mocks so the tests run in-process
  * without a database or network.
  */
 
@@ -10,7 +10,8 @@ import { createTracingMock } from '../../test/unit/tracing-mock';
 import { EscrowService, SorobanChainEvent } from './escrow.service';
 import { EscrowRepository } from './escrow.repository';
 import { NotificationsService } from '../notifications/notifications.service';
-import { PrismaService, EscrowRecord } from '../prisma/prisma.service';
+import { EscrowRecord } from '../prisma/prisma.service';
+import { DisputeRepository } from '../dispute/dispute.repository';
 import { S3PresignService } from '../common/services/s3-presign.service';
 import { ContractService } from '../stellar/contract.service';
 
@@ -55,7 +56,7 @@ describe('EscrowService.syncStateFromChain', () => {
   let service: EscrowService;
   let repo: jest.Mocked<EscrowRepository>;
   let notifications: jest.Mocked<NotificationsService>;
-  let prisma: jest.Mocked<PrismaService>;
+  let disputeRepository: jest.Mocked<DisputeRepository>;
 
   beforeEach(() => {
     repo = {
@@ -76,17 +77,13 @@ describe('EscrowService.syncStateFromChain', () => {
       notifyRefunded: jest.fn().mockResolvedValue(undefined),
     } as unknown as jest.Mocked<NotificationsService>;
 
-    prisma = {
-      dispute: {
-        create: jest
-          .fn()
-          .mockResolvedValue({ id: 'dispute-1', status: 'OPEN' }),
-        findFirst: jest.fn().mockResolvedValue(null),
-        update: jest
-          .fn()
-          .mockResolvedValue({ id: 'dispute-1', status: 'RESOLVED' }),
-      },
-    } as unknown as jest.Mocked<PrismaService>;
+    disputeRepository = {
+      create: jest.fn().mockResolvedValue({ id: 'dispute-1', status: 'OPEN' }),
+      findByEscrow: jest.fn().mockResolvedValue(null),
+      update: jest
+        .fn()
+        .mockResolvedValue({ id: 'dispute-1', status: 'RESOLVED' }),
+    } as unknown as jest.Mocked<DisputeRepository>;
 
     service = new EscrowService(
       createTracingMock().service,
@@ -96,7 +93,8 @@ describe('EscrowService.syncStateFromChain', () => {
       {} as ContractService,
       undefined, // logisticsRegistry
       undefined, // cacheService
-      prisma,
+      undefined, // vendor profile repository
+      disputeRepository,
     );
   });
 
@@ -312,12 +310,10 @@ describe('EscrowService.syncStateFromChain', () => {
       );
 
       expect(result).toEqual({ skipped: false });
-      expect(prisma.dispute.create).toHaveBeenCalledWith(
+      expect(disputeRepository.create).toHaveBeenCalledWith(
         expect.objectContaining({
-          data: expect.objectContaining({
-            escrowId: 'escrow-1',
-            reason: 'Item not delivered',
-          }),
+          escrowId: 'escrow-1',
+          reason: 'Item not delivered',
         }),
       );
       expect(repo.updateState).toHaveBeenCalledWith('escrow-1', 'DISPUTED');
@@ -333,7 +329,7 @@ describe('EscrowService.syncStateFromChain', () => {
       );
 
       expect(result).toEqual({ skipped: true, reason: 'already_disputed' });
-      expect(prisma.dispute.create).not.toHaveBeenCalled();
+      expect(disputeRepository.create).not.toHaveBeenCalled();
     });
 
     it('skips when escrow is in a terminal state (not DISPUTED itself)', async () => {
@@ -344,7 +340,7 @@ describe('EscrowService.syncStateFromChain', () => {
       );
 
       expect(result).toEqual({ skipped: true, reason: 'terminal_state' });
-      expect(prisma.dispute.create).not.toHaveBeenCalled();
+      expect(disputeRepository.create).not.toHaveBeenCalled();
     });
 
     it('defaults the dispute reason when the event omits one', async () => {
@@ -354,19 +350,17 @@ describe('EscrowService.syncStateFromChain', () => {
 
       await service.syncStateFromChain(makeEvent('DisputeRaised'));
 
-      expect(prisma.dispute.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({ reason: 'on-chain dispute' }),
-        }),
+      expect(disputeRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({ reason: 'on-chain dispute' }),
       );
     });
 
-    it('still transitions to DISPUTED when no PrismaService is configured', async () => {
+    it('still transitions to DISPUTED when no dispute repository is configured', async () => {
       const disputed = makeEscrow({ state: 'DISPUTED' });
       repo.findById.mockResolvedValue(makeEscrow({ state: 'FUNDED' }));
       repo.updateState.mockResolvedValue(disputed);
 
-      const noPrismaService = new EscrowService(
+      const noRepositoryService = new EscrowService(
         createTracingMock().service,
         repo,
         notifications,
@@ -374,11 +368,12 @@ describe('EscrowService.syncStateFromChain', () => {
         {} as ContractService,
         undefined,
         undefined,
-        undefined, // prisma
+        undefined, // vendor profile repository
+        undefined, // dispute repository
       );
 
-      const result = await noPrismaService.syncStateFromChain(
-        makeEvent('DisputeRaised', { reason: 'no prisma configured' }),
+      const result = await noRepositoryService.syncStateFromChain(
+        makeEvent('DisputeRaised', { reason: 'no repository configured' }),
       );
 
       expect(result).toEqual({ skipped: false });
@@ -393,7 +388,7 @@ describe('EscrowService.syncStateFromChain', () => {
       const completed = makeEscrow({ state: 'COMPLETED' });
       repo.findById.mockResolvedValue(makeEscrow({ state: 'DISPUTED' }));
       repo.markCompleted.mockResolvedValue(completed);
-      prisma.dispute.findFirst = jest
+      disputeRepository.findByEscrow = jest
         .fn()
         .mockResolvedValue({ id: 'dispute-1', status: 'OPEN' });
 
@@ -402,7 +397,7 @@ describe('EscrowService.syncStateFromChain', () => {
       );
 
       expect(result).toEqual({ skipped: false });
-      expect(prisma.dispute.update).toHaveBeenCalledWith(
+      expect(disputeRepository.update).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { id: 'dispute-1' },
           data: expect.objectContaining({ status: 'RESOLVED' }),
@@ -417,7 +412,7 @@ describe('EscrowService.syncStateFromChain', () => {
       const refunded = makeEscrow({ state: 'REFUNDED' });
       repo.findById.mockResolvedValue(makeEscrow({ state: 'DISPUTED' }));
       repo.markRefunded.mockResolvedValue(refunded);
-      prisma.dispute.findFirst = jest
+      disputeRepository.findByEscrow = jest
         .fn()
         .mockResolvedValue({ id: 'dispute-1', status: 'OPEN' });
 
@@ -426,7 +421,7 @@ describe('EscrowService.syncStateFromChain', () => {
       );
 
       expect(result).toEqual({ skipped: false });
-      expect(prisma.dispute.update).toHaveBeenCalledWith(
+      expect(disputeRepository.update).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { id: 'dispute-1' },
           data: expect.objectContaining({ status: 'RESOLVED' }),
@@ -441,7 +436,7 @@ describe('EscrowService.syncStateFromChain', () => {
 
     it('skips when dispute is already RESOLVED (idempotent)', async () => {
       repo.findById.mockResolvedValue(makeEscrow({ state: 'DISPUTED' }));
-      prisma.dispute.findFirst = jest
+      disputeRepository.findByEscrow = jest
         .fn()
         .mockResolvedValue({ id: 'dispute-1', status: 'RESOLVED' });
 
@@ -475,23 +470,23 @@ describe('EscrowService.syncStateFromChain', () => {
       const completed = makeEscrow({ state: 'COMPLETED' });
       repo.findById.mockResolvedValue(makeEscrow({ state: 'DISPUTED' }));
       repo.markCompleted.mockResolvedValue(completed);
-      prisma.dispute.findFirst = jest.fn().mockResolvedValue(null);
+      disputeRepository.findByEscrow = jest.fn().mockResolvedValue(null);
 
       const result = await service.syncStateFromChain(
         makeEvent('DisputeResolved'),
       );
 
       expect(result).toEqual({ skipped: false });
-      expect(prisma.dispute.update).not.toHaveBeenCalled();
+      expect(disputeRepository.update).not.toHaveBeenCalled();
       expect(repo.markCompleted).toHaveBeenCalledWith('escrow-1');
     });
 
-    it('still completes the escrow when no PrismaService is configured', async () => {
+    it('still completes the escrow when no dispute repository is configured', async () => {
       const completed = makeEscrow({ state: 'COMPLETED' });
       repo.findById.mockResolvedValue(makeEscrow({ state: 'DISPUTED' }));
       repo.markCompleted.mockResolvedValue(completed);
 
-      const noPrismaService = new EscrowService(
+      const noRepositoryService = new EscrowService(
         createTracingMock().service,
         repo,
         notifications,
@@ -499,10 +494,11 @@ describe('EscrowService.syncStateFromChain', () => {
         {} as ContractService,
         undefined,
         undefined,
-        undefined, // prisma
+        undefined, // vendor profile repository
+        undefined, // dispute repository
       );
 
-      const result = await noPrismaService.syncStateFromChain(
+      const result = await noRepositoryService.syncStateFromChain(
         makeEvent('DisputeResolved'),
       );
 
@@ -527,7 +523,7 @@ describe('EscrowService.syncStateFromChain', () => {
       'skips a $state escrow resolved with $resolution without any write',
       async ({ state, resolution }) => {
         repo.findById.mockResolvedValue(makeEscrow({ state }));
-        prisma.dispute.findFirst = jest
+        disputeRepository.findByEscrow = jest
           .fn()
           .mockResolvedValue({ id: 'dispute-1', status: 'OPEN' });
 
@@ -536,7 +532,7 @@ describe('EscrowService.syncStateFromChain', () => {
         );
 
         expect(result).toEqual({ skipped: true, reason: 'terminal_state' });
-        expect(prisma.dispute.update).not.toHaveBeenCalled();
+        expect(disputeRepository.update).not.toHaveBeenCalled();
         expect(repo.markCompleted).not.toHaveBeenCalled();
         expect(repo.markRefunded).not.toHaveBeenCalled();
         expect(notifications.notifyCompleted).not.toHaveBeenCalled();

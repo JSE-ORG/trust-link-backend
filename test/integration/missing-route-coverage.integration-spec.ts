@@ -6,10 +6,11 @@
  *  - GET  /stress-test/active/:testId   — 404 on unknown id, 403 for vendor,
  *    401 for unauthenticated.
  */
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { Keypair } from '@stellar/stellar-sdk';
 import request from 'supertest';
+import { createGlobalPipes } from '../../src/common/pipes/global-pipes';
 import { AppModule } from '../../src/app.module';
 import { ConfigService } from '../../src/config/config.service';
 import { PrismaService } from '../../src/prisma/prisma.service';
@@ -26,9 +27,7 @@ describe('Missing route coverage (issue #1122)', () => {
     }).compile();
 
     app = moduleFixture.createNestApplication();
-    app.useGlobalPipes(
-      new ValidationPipe({ whitelist: true, transform: true }),
-    );
+    app.useGlobalPipes(...createGlobalPipes());
     await app.init();
 
     prisma = app.get(PrismaService);

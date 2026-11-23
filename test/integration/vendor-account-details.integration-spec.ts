@@ -1,6 +1,7 @@
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
+import { createGlobalPipes } from '../../src/common/pipes/global-pipes';
 import { AppModule } from '../../src/app.module';
 import { PrismaService } from '../../src/prisma/prisma.service';
 import { bearer } from '../auth-helper';
@@ -21,13 +22,7 @@ describe('Vendor account details (issue #484)', () => {
     app = moduleFixture.createNestApplication();
     // Match the production validation policy. Silently stripping an unexpected
     // field is not sufficient for an endpoint accepting regulated data.
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        forbidNonWhitelisted: true,
-        transform: true,
-      }),
-    );
+    app.useGlobalPipes(...createGlobalPipes());
     await app.init();
     prisma = app.get(PrismaService);
     await prisma.reset();

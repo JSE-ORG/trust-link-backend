@@ -4,9 +4,10 @@
  * Verifies pre-signed URL generation, file type handling, JWT auth requirement,
  * URL expiration, and user-specific path isolation.
  */
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
+import { createGlobalPipes } from '../../src/common/pipes/global-pipes';
 import { AppModule } from '../../src/app.module';
 import { PrismaService } from '../../src/prisma/prisma.service';
 import { bearer } from '../auth-helper';
@@ -27,9 +28,7 @@ describe('POST /escrow/evidence-upload (issue #295)', () => {
     }).compile();
 
     app = moduleFixture.createNestApplication();
-    app.useGlobalPipes(
-      new ValidationPipe({ whitelist: true, transform: true }),
-    );
+    app.useGlobalPipes(...createGlobalPipes());
     await app.init();
     prisma = app.get(PrismaService);
     await prisma.reset();
