@@ -16,6 +16,13 @@ import { resolveWorkflow } from './tracing.middleware';
 export class TracingInterceptor implements NestInterceptor {
   constructor(private readonly tracing: TracingService) {}
 
+  /**
+   * Traces handler execution with an OpenTelemetry child span.
+   *
+   * @param context Execution context of the request.
+   * @param next Call handler for the request.
+   * @returns Observable stream with active span.
+   */
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
     if (!this.tracing.isEnabled()) {
       return next.handle();

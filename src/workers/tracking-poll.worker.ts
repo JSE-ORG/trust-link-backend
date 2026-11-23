@@ -88,6 +88,9 @@ export class TrackingPollWorker implements OnModuleInit, OnApplicationShutdown {
     return address;
   }
 
+  /**
+   * Starts the periodic shipment tracking poll interval on module initialization.
+   */
   onModuleInit(): void {
     if (this.configService.get('NODE_ENV') === 'test') {
       return;
@@ -98,6 +101,9 @@ export class TrackingPollWorker implements OnModuleInit, OnApplicationShutdown {
     }, TEN_MINUTES_MS);
   }
 
+  /**
+   * Cleans up the polling interval timer during application shutdown.
+   */
   onApplicationShutdown(): void {
     if (this.timer) {
       clearInterval(this.timer);
@@ -105,6 +111,9 @@ export class TrackingPollWorker implements OnModuleInit, OnApplicationShutdown {
     }
   }
 
+  /**
+   * Executes a polling cycle to sync shipment delivery status from carriers and update escrows.
+   */
   async run(): Promise<void> {
     // #840 — Skip a tick that arrives while the previous run is still going,
     // rather than starting a second overlapping cycle.

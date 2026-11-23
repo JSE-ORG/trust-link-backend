@@ -65,6 +65,12 @@ export class TerminalAfricaLogisticsService implements Pick<
     private readonly client?: TerminalAfricaClient | null,
   ) {}
 
+  /**
+   * Fetches shipment tracking status from Terminal Africa.
+   *
+   * @param trackingId Carrier shipment or tracking ID.
+   * @returns Normalized tracking status and history.
+   */
   async getStatus(trackingId: string): Promise<TrackingDetails> {
     if (!this.client) {
       throw new Error(`Terminal Africa is not configured for ${trackingId}`);
@@ -72,6 +78,12 @@ export class TerminalAfricaLogisticsService implements Pick<
     return mapTrackingData(await this.client.fetchTracking(trackingId));
   }
 
+  /**
+   * Delegates tracking details retrieval to getStatus.
+   *
+   * @param trackingId Carrier shipment or tracking ID.
+   * @returns Normalized tracking status and history.
+   */
   getTrackingDetails(trackingId: string): Promise<TrackingDetails> {
     return this.getStatus(trackingId);
   }

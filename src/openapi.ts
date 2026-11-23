@@ -7,6 +7,7 @@ import {
   ReadinessResponseDto,
   ReadinessComponentHealthDto,
 } from './common/dto/readiness-response.dto';
+import { getAppVersion } from './common/version';
 
 export function setupOpenApiUi(
   app: INestApplication,
@@ -31,7 +32,30 @@ export function createOpenApiDocument(app: INestApplication) {
     .setDescription(
       'REST API for the TrustLink escrow backend. Auto-generated from DTO decorators.',
     )
-    .setVersion('1.0')
+    .setVersion(getAppVersion())
+    .addTag('Admin', 'Administrative and operational management endpoints.')
+    .addTag(
+      'Auth',
+      'Authentication and SEP-10 challenge verification endpoints.',
+    )
+    .addTag(
+      'Buyer',
+      'Buyer operations and escrow purchase management endpoints.',
+    )
+    .addTag(
+      'Escrow',
+      'Escrow lifecycle, funding, shipping, and settlement endpoints.',
+    )
+    .addTag('Health', 'Service health and liveness checks.')
+    .addTag(
+      'Stress Test',
+      'Load generation and system performance evaluation endpoints.',
+    )
+    .addTag(
+      'Vendor',
+      'Vendor management, escrow orders, and analytics endpoints.',
+    )
+    .addTag('Webhooks', 'Webhook event notifications and management.')
     .addBearerAuth()
     .build();
   const document = SwaggerModule.createDocument(app, swaggerConfig, {

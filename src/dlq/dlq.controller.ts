@@ -77,34 +77,15 @@ export class DlqController {
     }
   }
 
-  @ApiOperation({ summary: 'List failed transactions (admin DLQ)' })
-  @ApiQuery({
-    name: 'status',
-    required: false,
-    description: 'Filter by transaction status',
-  })
-  @ApiQuery({
-    name: 'operation',
-    required: false,
-    description: 'Filter by operation name',
-  })
-  @ApiQuery({
-    name: 'escrowId',
-    required: false,
-    description: 'Filter by escrow ID',
-  })
-  @ApiQuery({
-    name: 'page',
-    required: false,
-    type: Number,
-    description: 'Page number (default 1)',
-  })
-  @ApiQuery({
-    name: 'limit',
-    required: false,
-    type: Number,
-    description: 'Maximum records per page (default 20, max 100)',
-  })
+  /**
+   * Lists failed contract transactions available for review and replay.
+   *
+   * @param query Filtering and pagination parameters (status, operation, escrowId, from, to, page, limit).
+   * @returns Paginated failed transaction records.
+   * @throws BadRequestException if query parameters are invalid or from is after to.
+   * @throws UnauthorizedException if authentication token is missing or invalid.
+   * @throws ForbiddenException if caller is not an admin.
+   */
   @ApiOperation({
     summary:
       'List failed contract transactions available for review and replay',
@@ -114,6 +95,7 @@ export class DlqController {
     description: 'Failed transaction records returned.',
     type: PaginatedFailedTransactions,
   })
+  @ApiResponse({ status: 400, description: 'Invalid query parameters.' })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   @ApiResponse({ status: 403, description: 'Admin access required.' })
   @ApiQuery({
@@ -134,6 +116,31 @@ export class DlqController {
     description: 'Filter failed transactions by escrow ID.',
     example: '9d9e2e16-0c78-4a84-9c8c-0f3a5eb2d4e3',
   })
+  @ApiQuery({
+    name: 'from',
+    required: false,
+    description: 'Earliest createdAt, inclusive (ISO 8601).',
+    example: '2026-01-01',
+  })
+  @ApiQuery({
+    name: 'to',
+    required: false,
+    description:
+      'Latest createdAt, inclusive (ISO 8601). A date without a time covers the whole day.',
+    example: '2026-12-31',
+  })
+  @ApiQuery({
+    name: 'page',
+    required: false,
+    type: Number,
+    description: 'Page number (default 1)',
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+    description: 'Maximum records per page (default 20, max 100)',
+  })
   @ApiResponse({ status: 429, description: 'Too many requests.' })
   @ApiResponse({ status: 500, description: 'Internal server error.' })
   @Throttle({ default: { limit: 20, ttl: THROTTLE_WINDOW_MS } })
@@ -142,6 +149,15 @@ export class DlqController {
     return this.dlq.list(query);
   }
 
+  /**
+   * Retrieves details for a specific failed transaction record.
+   *
+   * @param id Unique identifier of the failed transaction record.
+   * @returns Detailed failed transaction record.
+   * @throws NotFoundException if the record is not found.
+   * @throws UnauthorizedException if authentication token is missing or invalid.
+   * @throws ForbiddenException if caller is not an admin.
+   */
   @ApiOperation({ summary: 'Get details for a failed transaction record' })
   @ApiResponse({
     status: 200,
@@ -164,11 +180,20 @@ export class DlqController {
   }
 
   /**
-   * Re-execute the original operation. Today the only auto-retryable operation
-   * is auto-release; other operations are flagged and must be replayed by
-   * hand. Either way the record is updated on the outcome.
+   * Re-executes the original failed operation.
    *
+   * Today the only auto-retryable operation is auto-release; other operations
+   * must be replayed manually. Either way the record is updated with the outcome.
    * Issue #953: Successful replays are logged to the audit trail.
+   *
+   * @param id Unique identifier of the failed transaction to replay.
+   * @param admin Authenticated admin user initiating the replay.
+   * @returns Updated failed transaction record marked as replayed.
+   * @throws NotFoundException if the record is not found.
+   * @throws ConflictException if the record is not in pending review status or contract escrow ID is missing.
+   * @throws BadRequestException if the operation cannot be automatically replayed.
+   * @throws UnauthorizedException if authentication token is missing or invalid.
+   * @throws ForbiddenException if caller is not an admin.
    */
   @ApiOperation({ summary: 'Replay a failed on-chain transaction attempt' })
   @ApiResponse({
@@ -238,6 +263,17 @@ export class DlqController {
     return result;
   }
 
+  /**
+   * Abandons a failed transaction record and prevents future replay attempts.
+   *
+   * @param id Unique identifier of the failed transaction record to abandon.
+   * @param admin Authenticated admin user abandoning the record.
+   * @returns Updated failed transaction record marked as abandoned.
+   * @throws NotFoundException if the record is not found.
+   * @throws ConflictException if the record is not in pending review status.
+   * @throws UnauthorizedException if authentication token is missing or invalid.
+   * @throws ForbiddenException if caller is not an admin.
+   */
   @ApiOperation({
     summary:
       'Abandon a failed transaction record and prevent future replay attempts',

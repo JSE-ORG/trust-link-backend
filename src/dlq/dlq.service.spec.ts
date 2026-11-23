@@ -154,6 +154,58 @@ describe('DlqService', () => {
         take: 10,
       });
     });
+
+    it('should filter by from and to dates', async () => {
+      repoMock.findMany.mockResolvedValue([mockRecord]);
+      repoMock.count.mockResolvedValue(1);
+
+      await service.list({
+        from: '2026-01-01T00:00:00.000Z',
+        to: '2026-01-31T23:59:59.000Z',
+      });
+      expect(repoMock.findMany).toHaveBeenCalledWith({
+        where: {
+          createdAt: {
+            gte: new Date('2026-01-01T00:00:00.000Z'),
+            lte: new Date('2026-01-31T23:59:59.000Z'),
+          },
+        },
+        skip: 0,
+        take: 20,
+      });
+    });
+
+    it('should treat date-only to as covering the whole day', async () => {
+      repoMock.findMany.mockResolvedValue([mockRecord]);
+      repoMock.count.mockResolvedValue(1);
+
+      await service.list({
+        from: '2026-01-01',
+        to: '2026-01-31',
+      });
+      const expectedEnd = new Date('2026-01-31');
+      expectedEnd.setUTCDate(expectedEnd.getUTCDate() + 1);
+
+      expect(repoMock.findMany).toHaveBeenCalledWith({
+        where: {
+          createdAt: {
+            gte: new Date('2026-01-01'),
+            lt: expectedEnd,
+          },
+        },
+        skip: 0,
+        take: 20,
+      });
+    });
+
+    it('should throw BadRequestException when from is after to', async () => {
+      await expect(
+        service.list({
+          from: '2026-02-01',
+          to: '2026-01-01',
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
   });
 
   describe('get', () => {

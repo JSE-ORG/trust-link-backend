@@ -33,6 +33,16 @@ export class ApiKeysController {
     private readonly auditLog?: AuditLogService,
   ) {}
 
+  /**
+   * Rotates the logistics provider API key and stores it encrypted.
+   *
+   * @param dto DTO containing the new API key.
+   * @param admin Authenticated admin user performing the rotation.
+   * @returns Success response confirming the key update.
+   * @throws BadRequestException if the request payload is invalid.
+   * @throws UnauthorizedException if authentication token is missing or invalid.
+   * @throws ForbiddenException if caller is not an admin.
+   */
   @ApiOperation({
     summary: 'Rotate the logistics provider API key (admin only)',
   })

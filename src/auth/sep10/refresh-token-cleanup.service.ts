@@ -22,6 +22,9 @@ export class RefreshTokenCleanupService {
     private readonly refreshTokenRepository: RefreshTokenRepository,
   ) {}
 
+  /**
+   * Purges expired refresh tokens that have exceeded the retention grace period.
+   */
   @Cron('0 0 * * *')
   async cleanupExpiredRefreshTokens(): Promise<void> {
     this.logger.log('Starting expired refresh token cleanup');

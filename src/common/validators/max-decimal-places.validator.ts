@@ -30,6 +30,13 @@ export function countDecimalPlaces(value: number): number {
  */
 @ValidatorConstraint({ name: 'maxDecimalPlaces', async: false })
 export class MaxDecimalPlacesConstraint implements ValidatorConstraintInterface {
+  /**
+   * Validates that the number does not exceed the allowed decimal precision.
+   *
+   * @param value Number value to validate.
+   * @param args Validation metadata and constraints.
+   * @returns True if value has fewer than or equal to max decimal places.
+   */
   validate(value: unknown, args: ValidationArguments): boolean {
     const [maxPlaces] = args.constraints as [number];
     return (
@@ -39,6 +46,12 @@ export class MaxDecimalPlacesConstraint implements ValidatorConstraintInterface 
     );
   }
 
+  /**
+   * Generates the default error message when validation fails.
+   *
+   * @param args Validation metadata.
+   * @returns Validation failure message.
+   */
   defaultMessage(args: ValidationArguments): string {
     const [maxPlaces] = args.constraints as [number];
     return `${args.property} must have at most ${maxPlaces} decimal places`;

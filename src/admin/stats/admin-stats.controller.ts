@@ -21,6 +21,15 @@ import { AdminStatsChartBucketDto } from './dto/admin-stats-chart-bucket.dto';
 export class AdminStatsController {
   constructor(private readonly adminStatsService: AdminStatsService) {}
 
+  /**
+   * Retrieves daily aggregated platform volume and escrow status metrics for charting.
+   *
+   * @param query Query containing days timeframe to query.
+   * @returns Array of daily stats buckets.
+   * @throws BadRequestException if days parameter fails validation.
+   * @throws UnauthorizedException if authentication token is missing or invalid.
+   * @throws ForbiddenException if caller is not an admin.
+   */
   @ApiOperation({ summary: 'Get daily platform stats chart (admin only)' })
   @ApiResponse({
     status: 200,
@@ -37,6 +46,13 @@ export class AdminStatsController {
     return this.adminStatsService.getChart(query?.days);
   }
 
+  /**
+   * Retrieves overall platform statistics including volume, escrow states, and disputes.
+   *
+   * @returns Aggregated platform statistics.
+   * @throws UnauthorizedException if authentication token is missing or invalid.
+   * @throws ForbiddenException if caller is not an admin.
+   */
   @ApiOperation({ summary: 'Get platform-wide statistics (admin only)' })
   @ApiResponse({
     status: 200,

@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   Logger,
@@ -19,6 +20,16 @@ import {
   ReplayFn,
   REPLAYING_STALE_THRESHOLD_MS,
 } from './dlq.types';
+
+/** A date-only `to` (YYYY-MM-DD) includes that whole day. */
+function endOfRange(to: string): { lt: Date } | { lte: Date } {
+  const date = new Date(to);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(to)) {
+    date.setUTCDate(date.getUTCDate() + 1);
+    return { lt: date };
+  }
+  return { lte: date };
+}
 
 /**
  * Issue #303 – Persistent dead-letter queue backed by Prisma.
@@ -64,16 +75,30 @@ export class DlqService {
 
   /**
    * Returns a page of dead-letter rows, newest first, with optional
-   * `status` / `operation` / `escrowId` filters.
+   * `status` / `operation` / `escrowId` / `from` / `to` filters.
    *
    * Pagination is clamped, not validated: `page` floors to 1 and `limit` is
    * forced into `[1, 100]` (default 20), so an out-of-range query returns a
    * best-effort page instead of a 400. `total` is the count for the same
    * filter, so `Math.ceil(total / limit)` gives the page count.
+   *
+   * @param query Optional filtering and pagination criteria.
+   * @returns Paginated envelope with matched dead-letter records.
+   * @throws BadRequestException if `from` is after `to`.
    */
   async list(
     query: ListFailedTransactionsQuery = {},
   ): Promise<PaginatedFailedTransactions> {
+    if (query.from && query.to) {
+      const fromTime = new Date(query.from).getTime();
+      const toDate = new Date(query.to);
+      const isDateOnly = /^\d{4}-\d{2}-\d{2}$/.test(query.to);
+      const toTime = isDateOnly ? toDate.getTime() + 86_400_000 : toDate.getTime();
+      if (isDateOnly ? fromTime >= toTime : fromTime > toTime) {
+        throw new BadRequestException('from must not be after to');
+      }
+    }
+
     const page = Math.max(1, Number(query.page) || 1);
     const rawLimit = Number(query.limit) || 20;
     const limit = Math.min(100, Math.max(1, rawLimit));
@@ -83,6 +108,12 @@ export class DlqService {
     if (query.status) where.status = query.status;
     if (query.operation) where.operation = query.operation;
     if (query.escrowId) where.escrowId = query.escrowId;
+    if (query.from || query.to) {
+      where.createdAt = {
+        ...(query.from ? { gte: new Date(query.from) } : {}),
+        ...(query.to ? endOfRange(query.to) : {}),
+      };
+    }
 
     const [records, total] = await Promise.all([
       this.failedTransactions.findMany({ where, skip, take: limit }),

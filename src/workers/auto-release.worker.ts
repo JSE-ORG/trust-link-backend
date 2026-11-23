@@ -91,6 +91,9 @@ export class AutoReleaseWorker implements OnModuleInit, OnApplicationShutdown {
     return this.configService.requireAutoReleaseSourceAddress();
   }
 
+  /**
+   * Starts the periodic auto-release polling interval on module initialization.
+   */
   onModuleInit(): void {
     if (this.configService.get('NODE_ENV') === 'test') {
       return;
@@ -101,6 +104,9 @@ export class AutoReleaseWorker implements OnModuleInit, OnApplicationShutdown {
     }, FIVE_MINUTES_MS);
   }
 
+  /**
+   * Clears the interval timer during application shutdown.
+   */
   onApplicationShutdown(): void {
     if (this.timer) {
       clearInterval(this.timer);
@@ -108,6 +114,11 @@ export class AutoReleaseWorker implements OnModuleInit, OnApplicationShutdown {
     }
   }
 
+  /**
+   * Executes a single auto-release worker cycle, querying eligible escrows and submitting releases.
+   *
+   * @param referenceTime Timestamp used to evaluate release windows (defaults to now).
+   */
   async run(referenceTime = new Date()): Promise<void> {
     // #840 — Skip a tick that arrives while the previous run is still going,
     // rather than starting a second overlapping cycle.

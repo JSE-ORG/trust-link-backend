@@ -27,6 +27,15 @@ import { AdminEscrowsQueryDto } from './dto/admin-escrows-query.dto';
 export class AdminEscrowsController {
   constructor(private readonly adminEscrows: AdminEscrowsService) {}
 
+  /**
+   * Lists escrows across all buyers and vendors with pagination and filters.
+   *
+   * @param query Admin escrow filtering and pagination parameters.
+   * @returns Paginated list of escrows.
+   * @throws BadRequestException if query parameters fail validation.
+   * @throws UnauthorizedException if authentication token is missing or invalid.
+   * @throws ForbiddenException if caller is not an admin.
+   */
   @ApiOperation({ summary: 'List escrows (admin only)' })
   @ApiResponse({ status: 200, description: 'Paginated list of escrows.' })
   @ApiResponse({ status: 400, description: 'Invalid query parameters.' })
@@ -39,6 +48,14 @@ export class AdminEscrowsController {
     return this.adminEscrows.list(query);
   }
 
+  /**
+   * Exports matching escrows as a CSV file download.
+   *
+   * @param query Query filters matching the escrows to export.
+   * @returns CSV file content.
+   * @throws UnauthorizedException if authentication token is missing or invalid.
+   * @throws ForbiddenException if caller is not an admin.
+   */
   @ApiOperation({ summary: 'Export escrows as CSV (admin only)' })
   @ApiResponse({ status: 200, description: 'CSV of matching escrows.' })
   @ApiResponse({ status: 403, description: 'Admin access required.' })
@@ -51,6 +68,15 @@ export class AdminEscrowsController {
     return this.adminEscrows.exportCsv(query);
   }
 
+  /**
+   * Retrieves a single escrow along with its dispute details, if any.
+   *
+   * @param id Unique identifier of the escrow.
+   * @returns Escrow record and optional dispute information.
+   * @throws NotFoundException if the escrow is not found.
+   * @throws UnauthorizedException if authentication token is missing or invalid.
+   * @throws ForbiddenException if caller is not an admin.
+   */
   @ApiOperation({ summary: 'Get one escrow with its dispute (admin only)' })
   @ApiResponse({ status: 200, description: 'Escrow and its dispute, if any.' })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })

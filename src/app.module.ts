@@ -122,6 +122,11 @@ export function buildThrottlerOptions(
   ],
 })
 export class AppModule implements NestModule {
+  /**
+   * Configures global middleware applied across all routes.
+   *
+   * @param consumer Middleware consumer to bind pipeline middleware.
+   */
   configure(consumer: MiddlewareConsumer) {
     consumer
       .apply(

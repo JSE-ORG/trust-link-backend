@@ -377,6 +377,11 @@ export class StressTestService {
     return Array.from(this.activeTests.values());
   }
 
+  /**
+   * Generates a unique stress test execution identifier.
+   *
+   * @returns Generated test identifier string.
+   */
   generateTestId(): string {
     return `test_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   }

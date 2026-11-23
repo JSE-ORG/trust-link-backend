@@ -30,6 +30,9 @@ export class QueueDashboardService
 
   constructor(private readonly config: ConfigService) {}
 
+  /**
+   * Initializes BullMQ queues if REDIS_URL is configured.
+   */
   onModuleInit(): void {
     const redisUrl = this.config.get('REDIS_URL');
     if (!redisUrl) {
@@ -63,6 +66,9 @@ export class QueueDashboardService
     }
   }
 
+  /**
+   * Closes all active BullMQ queue connections during application shutdown.
+   */
   async onApplicationShutdown(): Promise<void> {
     for (const queue of this.queues) {
       try {
@@ -73,6 +79,11 @@ export class QueueDashboardService
     }
   }
 
+  /**
+   * Returns job counts and statuses for all registered queues.
+   *
+   * @returns Queues dashboard data with current counts.
+   */
   async getDashboard(): Promise<QueuesDashboardDto> {
     this.logger.log(
       JSON.stringify({ msg: 'admin.queues.dashboard_requested' }),

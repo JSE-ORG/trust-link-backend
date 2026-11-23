@@ -31,6 +31,13 @@ export class LoggerMiddleware implements NestMiddleware {
     private readonly logger: JsonLoggerService = new JsonLoggerService(),
   ) {}
 
+  /**
+   * Logs structured request metadata and response timing upon response completion.
+   *
+   * @param req Express request object.
+   * @param res Express response object.
+   * @param next Next middleware function.
+   */
   use(req: Request, res: Response, next: NextFunction): void {
     const { method, originalUrl, ip } = req;
     const userAgent = req.get('User-Agent') ?? '';
